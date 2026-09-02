@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Call Driver - Pick Up</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed-dim": "#bac6e6",
+                        "on-tertiary-container": "#91826a",
+                        "surface": "#fcf8fb",
+                        "primary-fixed": "#dde1ff",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "tertiary-container": "#231a09",
+                        "primary-container": "#151a31",
+                        "inverse-surface": "#313032",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#57637e",
+                        "surface-dim": "#dcd9db",
+                        "surface-tint": "#585d77",
+                        "on-primary-fixed": "#151a31",
+                        "surface-container-low": "#f6f3f5",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "surface-container": "#f0edef",
+                        "surface-bright": "#fcf8fb",
+                        "outline-variant": "#c7c5ce",
+                        "inverse-on-surface": "#f3f0f2",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "on-surface": "#1b1b1d",
+                        "secondary-container": "#d4dfff",
+                        "on-secondary-fixed": "#0e1b33",
+                        "background": "#fcf8fb",
+                        "on-primary-container": "#7e829e",
+                        "on-secondary": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "on-error": "#ffffff",
+                        "secondary": "#525e79",
+                        "tertiary": "#000000",
+                        "on-background": "#1b1b1d",
+                        "primary": "#000000",
+                        "error": "#ba1a1a",
+                        "on-surface-variant": "#46464d",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "tertiary-fixed": "#f3e0c5",
+                        "on-tertiary-fixed": "#231a09",
+                        "error-container": "#ffdad6",
+                        "outline": "#77767e",
+                        "surface-container-highest": "#e5e1e4",
+                        "inverse-primary": "#c0c5e3",
+                        "surface-variant": "#e5e1e4",
+                        "surface-container-high": "#eae7e9",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed-variant": "#40465e",
+                        "on-error-container": "#93000a"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px",
+                        "calling": "24px"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "container-padding": "16px",
+                        "row-height-sm": "40px",
+                        "row-height-md": "56px",
+                        "gutter": "12px"
+                    },
+                    "fontFamily": {
+                        "data-mono": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "headline-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .ripple {
+            animation: ripple-effect 2s infinite linear;
+        }
+        @keyframes ripple-effect {
+            0% { box-shadow: 0 0 0 0 rgba(21, 26, 49, 0.4); }
+            100% { box-shadow: 0 0 0 40px rgba(21, 26, 49, 0); }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface h-screen w-full flex flex-col font-body-md overflow-hidden antialiased">
+<!-- App Bar -->
+<header class="w-full sticky top-0 bg-surface flex items-center justify-between px-container-padding h-row-height-md max-w-7xl mx-auto z-10">
+<button class="flex items-center justify-center p-2 rounded-full hover:bg-surface-container-low transition-colors active:scale-95 duration-150 text-primary">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary flex-1 text-center pr-10">Pick Up</h1>
+</header>
+<!-- Main Calling Canvas -->
+<main class="flex-1 flex flex-col items-center justify-between px-container-padding py-8 max-w-md mx-auto w-full relative z-0">
+<!-- Top Context -->
+<div class="flex flex-col items-center gap-6 w-full mt-4">
+<div class="text-center space-y-1">
+<p class="font-headline-md text-headline-md text-primary animate-pulse">Calling...</p>
+<p class="font-body-md text-body-md text-on-surface-variant">Ramesh Kumar</p>
+</div>
+<!-- Profile Avatar with Ripple -->
+<div class="relative flex items-center justify-center w-32 h-32 mt-4">
+<div class="absolute inset-0 rounded-full bg-primary-container opacity-10 ripple"></div>
+<div class="absolute inset-0 rounded-full bg-primary-container opacity-20 ripple" style="animation-delay: 0.5s;"></div>
+<img alt="Ramesh Kumar" class="w-24 h-24 rounded-full object-cover z-10 border-4 border-surface shadow-sm" data-alt="A professional headshot of an Indian male driver wearing a neat blue uniform shirt, set against a soft, bright out-of-focus urban background. The lighting is bright and clean, emphasizing a modern, reliable mobility service context. High quality, soft light-mode aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCZboiIwPVfQAB6r3OnqGR6-izLI9HeKxwjPgpEBhGc6CsZ-8f4g8pI40vW2XWtNIpEzsaIOOgYYJTu2f3xzGcwXdh9g2GGs_0k1XPXLyRy3jt7cRcDtelFucN8Bj6Sec4G6Wik2FmPrCUqZgH7tE2eNjW5178hyuPwx75A1U1GjWtj6vFMz131mh1F6MHLZaDrMTKWJBjC4l7opwh1EDx7R48n-bzoSFpZYk85QEe4LSMHftdUM1JY"/>
+<div class="absolute bottom-1 right-1 bg-surface-container-lowest border border-surface-container-highest rounded-full px-2 py-0.5 flex items-center gap-1 z-20 shadow-sm">
+<span class="material-symbols-outlined text-[12px] text-primary" data-icon="star" data-weight="fill" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="font-label-caps text-label-caps text-on-surface">4.8</span>
+</div>
+</div>
+<!-- Vehicle & Trip Context Cards -->
+<div class="w-full flex flex-col gap-2 mt-6">
+<div class="bg-surface-container-low rounded-calling p-4 flex items-center gap-3">
+<div class="bg-surface-variant rounded-full p-2 flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="local_shipping">local_shipping</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Vehicle</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Tata Ace • RJ 19 XX 1234</span>
+</div>
+</div>
+<div class="bg-surface-container-low rounded-calling p-4 flex items-center gap-3">
+<div class="bg-surface-variant rounded-full p-2 flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="location_on">location_on</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Pickup Location</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Sardarpura Warehouse</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Controls -->
+<div class="w-full flex flex-col items-center gap-8 mt-auto mb-4">
+<!-- Privacy Note -->
+<div class="bg-primary-fixed bg-opacity-30 rounded-calling p-4 flex items-start gap-3 w-full border border-primary-fixed-dim border-opacity-50">
+<span class="material-symbols-outlined text-primary-container mt-0.5" data-icon="shield_lock">shield_lock</span>
+<p class="font-label-sm text-label-sm text-on-primary-fixed-variant leading-relaxed">
+                    Your personal number is hidden. This call is routed through Pick Up for your privacy and security.
+                </p>
+</div>
+<!-- Action Buttons -->
+<div class="flex flex-col items-center w-full gap-8">
+<!-- Secondary Actions -->
+<div class="flex justify-center gap-6 w-full">
+<button class="flex flex-col items-center gap-2 group">
+<div class="w-14 h-14 rounded-full bg-surface-container-highest flex items-center justify-center text-on-surface-variant group-hover:bg-surface-variant transition-colors active:scale-95">
+<span class="material-symbols-outlined" data-icon="mic_off">mic_off</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Mute</span>
+</button>
+<button class="flex flex-col items-center gap-2 group">
+<div class="w-14 h-14 rounded-full bg-surface-container-highest flex items-center justify-center text-on-surface-variant group-hover:bg-surface-variant transition-colors active:scale-95">
+<span class="material-symbols-outlined" data-icon="dialpad">dialpad</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Keypad</span>
+</button>
+<button class="flex flex-col items-center gap-2 group">
+<div class="w-14 h-14 rounded-full bg-surface-container-highest flex items-center justify-center text-on-surface-variant group-hover:bg-surface-variant transition-colors active:scale-95">
+<span class="material-symbols-outlined" data-icon="volume_up">volume_up</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Speaker</span>
+</button>
+</div>
+<!-- Primary Action: End Call -->
+<button class="w-full bg-error-container text-on-error-container hover:opacity-90 active:scale-[0.98] transition-all duration-200 rounded-full h-16 flex items-center justify-center gap-2 shadow-sm font-headline-sm text-headline-sm font-bold">
+<span class="material-symbols-outlined" data-icon="call_end" data-weight="fill" style="font-variation-settings: 'FILL' 1;">call_end</span>
+                    End Call
+                </button>
+</div>
+</div>
+</main>
+</body></html>

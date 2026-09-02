@@ -1,0 +1,52 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Local checkout of Pickup-Go-Core-Engine for development only.
+# The backend lives in its own repo: github.com/vickysingh009/Pickup-Go-Core-Engine
+engine/
+
+# Standalone driver app lives at pickup-driver/. It has its own package.json,
+# .env and .gitignore. We commit the source so teammates get both customer and
+# driver in one clone, but the folder's own .gitignore keeps .env / node_modules
+# / .expo out of the tree.
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files — hold the API base URL and Google Maps key
+.env
+.env*.local
+!.env.example
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android

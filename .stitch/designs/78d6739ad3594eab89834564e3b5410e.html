@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Pick Up - Loading State Reference</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-family: 'Material Symbols Outlined';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Custom animation for linear loader */
+        @keyframes indeterminate {
+            0% { transform: translateX(-100%) scaleX(0.2); }
+            50% { transform: translateX(0%) scaleX(0.5); }
+            100% { transform: translateX(100%) scaleX(0.2); }
+        }
+        .animate-indeterminate {
+            animation: indeterminate 1.5s infinite ease-in-out;
+            transform-origin: left center;
+        }
+    </style>
+<!-- Tailwind Config -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-tint": "#585d77",
+                        "on-primary": "#ffffff",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "on-tertiary-container": "#91826a",
+                        "surface-container-high": "#eae7e9",
+                        "surface-variant": "#e5e1e4",
+                        "inverse-primary": "#c0c5e3",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "on-error": "#ffffff",
+                        "tertiary": "#000000",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-highest": "#e5e1e4",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "error-container": "#ffdad6",
+                        "outline-variant": "#c7c5ce",
+                        "on-secondary-fixed": "#0e1b33",
+                        "on-secondary-container": "#57637e",
+                        "error": "#ba1a1a",
+                        "tertiary-container": "#231a09",
+                        "on-background": "#1b1b1d",
+                        "on-tertiary-fixed": "#231a09",
+                        "secondary-container": "#d4dfff",
+                        "on-primary-fixed-variant": "#40465e",
+                        "background": "#fcf8fb",
+                        "surface-container-low": "#f6f3f5",
+                        "on-error-container": "#93000a",
+                        "on-surface-variant": "#46464d",
+                        "primary-fixed": "#dde1ff",
+                        "primary-container": "#151a31",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "inverse-surface": "#313032",
+                        "on-surface": "#1b1b1d",
+                        "tertiary-fixed": "#f3e0c5",
+                        "outline": "#77767e",
+                        "surface-container": "#f0edef",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary": "#525e79",
+                        "on-secondary": "#ffffff",
+                        "on-primary-container": "#7e829e",
+                        "inverse-on-surface": "#f3f0f2",
+                        "surface-bright": "#fcf8fb",
+                        "secondary-fixed": "#d8e2ff",
+                        "surface-dim": "#dcd9db",
+                        "surface": "#fcf8fb",
+                        "on-primary-fixed": "#151a31",
+                        "primary": "#000000"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "12px",
+                        "row-height-md": "56px",
+                        "container-padding": "16px",
+                        "row-height-sm": "40px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col relative pb-[80px]">
+<!-- TopAppBar -->
+<header class="bg-surface w-full top-0 sticky z-50 flex items-center justify-between px-container-padding h-row-height-md shadow-sm">
+<div class="flex items-center gap-3">
+<button class="text-on-surface-variant hover:bg-surface-container-highest transition-colors active:scale-95 duration-150 p-2 rounded-full">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+</div>
+<h1 class="font-headline-md text-headline-md font-bold text-primary">Pick Up</h1>
+<div class="flex items-center">
+<button class="text-on-surface-variant hover:bg-surface-container-highest transition-colors active:scale-95 duration-150 p-1 rounded-full overflow-hidden w-8 h-8 bg-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 px-container-padding py-6 flex flex-col gap-6">
+<div class="mb-2">
+<h2 class="font-headline-md text-headline-md text-on-background mb-1">Loading States</h2>
+<p class="font-body-md text-on-surface-variant">Reference library for asynchronous operations.</p>
+</div>
+<!-- 1. Global Process Loading -->
+<section class="bg-surface-container-low rounded-lg p-5 flex flex-col gap-4 border border-surface-container shadow-sm">
+<h3 class="font-headline-sm text-headline-sm text-on-background flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-primary" data-icon="progress_activity">progress_activity</span>
+                Global Process Loading
+            </h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant mb-2">Used for primary actions requiring network latency.</p>
+<button class="w-full bg-primary-container text-on-primary-container font-headline-sm text-headline-sm h-14 rounded-full relative overflow-hidden flex items-center justify-center active:scale-95 transition-transform">
+<span class="z-10">Processing Request...</span>
+<!-- Linear Loader Track -->
+<div class="absolute bottom-0 left-0 w-full h-[3px] bg-secondary-container/30"></div>
+<!-- Linear Loader Indicator -->
+<div class="absolute bottom-0 left-0 w-full h-[3px] bg-secondary-fixed animate-indeterminate"></div>
+</button>
+</section>
+<!-- Bento Grid for Skeletons -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- 2. Trip History Item Skeleton -->
+<section class="bg-surface-container-lowest rounded-lg p-4 border border-surface-container-high shadow-sm flex flex-col gap-3">
+<h4 class="font-label-caps text-label-caps text-outline uppercase tracking-wider mb-2">Trip History Item</h4>
+<div class="flex gap-4 items-center animate-pulse">
+<!-- Icon Placeholder -->
+<div class="w-12 h-12 rounded bg-surface-variant flex-shrink-0"></div>
+<div class="flex-1 flex flex-col gap-2">
+<div class="h-4 bg-surface-variant rounded-full w-3/4"></div>
+<div class="h-3 bg-surface-container-high rounded-full w-1/2"></div>
+</div>
+<div class="flex flex-col items-end gap-2">
+<div class="h-4 bg-surface-variant rounded-full w-16"></div>
+<div class="h-3 bg-surface-container-high rounded-full w-12"></div>
+</div>
+</div>
+</section>
+<!-- 2b. Address Search Result Skeleton -->
+<section class="bg-surface-container-lowest rounded-lg p-4 border border-surface-container-high shadow-sm flex flex-col gap-3">
+<h4 class="font-label-caps text-label-caps text-outline uppercase tracking-wider mb-2">Address Search</h4>
+<div class="flex flex-col gap-3">
+<!-- Row 1 -->
+<div class="flex gap-3 items-center animate-pulse">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex-shrink-0"></div>
+<div class="flex-1 flex flex-col gap-[6px]">
+<div class="h-3 bg-surface-variant rounded-full w-full"></div>
+<div class="h-[10px] bg-surface-container-high rounded-full w-2/3"></div>
+</div>
+</div>
+<!-- Row 2 -->
+<div class="flex gap-3 items-center animate-pulse">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex-shrink-0"></div>
+<div class="flex-1 flex flex-col gap-[6px]">
+<div class="h-3 bg-surface-variant rounded-full w-11/12"></div>
+<div class="h-[10px] bg-surface-container-high rounded-full w-3/4"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- 2c. Fare Breakdown Skeleton -->
+<section class="bg-surface-container-lowest rounded-lg p-4 border border-surface-container-high shadow-sm flex flex-col gap-3">
+<h4 class="font-label-caps text-label-caps text-outline uppercase tracking-wider mb-2">Fare Breakdown</h4>
+<div class="flex flex-col gap-2 animate-pulse">
+<div class="flex justify-between items-center">
+<div class="h-3 bg-surface-container-high rounded-full w-1/3"></div>
+<div class="h-3 bg-surface-variant rounded-full w-16"></div>
+</div>
+<div class="flex justify-between items-center">
+<div class="h-3 bg-surface-container-high rounded-full w-1/4"></div>
+<div class="h-3 bg-surface-variant rounded-full w-12"></div>
+</div>
+<div class="h-[1px] bg-surface-variant my-1 w-full"></div>
+<div class="flex justify-between items-center mt-1">
+<div class="h-4 bg-surface-variant rounded-full w-1/3"></div>
+<div class="h-4 bg-surface-variant rounded-full w-20"></div>
+</div>
+</div>
+</section>
+<!-- 4b. Payment Processing Skeleton -->
+<section class="bg-surface-container-lowest rounded-lg p-4 border border-surface-container-high shadow-sm flex flex-col gap-3 justify-center">
+<h4 class="font-label-caps text-label-caps text-outline uppercase tracking-wider mb-1">Payment Active</h4>
+<div class="flex items-center justify-between p-3 border border-surface-variant rounded animate-pulse bg-surface-container-lowest">
+<div class="flex items-center gap-3">
+<div class="w-10 h-6 bg-surface-variant rounded-sm"></div>
+<div class="h-3 bg-surface-container-high rounded-full w-24"></div>
+</div>
+<div class="w-5 h-5 border-2 border-surface-variant border-t-outline-variant rounded-full animate-spin"></div>
+</div>
+</section>
+</div>
+<!-- 3. Map & Tracking Loaders -->
+<section class="flex flex-col gap-4">
+<!-- Map Loading Overlay -->
+<div class="relative w-full h-48 rounded-lg overflow-hidden border border-surface-variant">
+<!-- Map Background Placeholder -->
+<div class="absolute inset-0 bg-cover bg-center grayscale opacity-60" data-alt="A clean, minimalist vector map interface showing a modern city layout in light mode. The map features muted gray roads, subtle green parks, and a clean white background. High precision, corporate mobility aesthetic." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBSDkEFAmfKNGFKwUgXfzUw4id0Mop1z82S51a7BisVeHLBudawMPW1VuL-9zIJrCzXZqECJe8qOqTxlNVmIBCOH342oTn9Kqu8_7v44FB-rMJyNyJpDouTlVeOWH8sQbwZNeqj99K0Ds0NXc5LqJQAW3ZuCBPQqgv4NMK2Dx3E90vsVSYEzZyqF1rfGwIkBDCvROZumDv7SZYQngWVqmW8YVY9ZUsIccTWC7T8cyKnIxDYbS0MFp6e')"></div>
+<!-- Loading Overlay -->
+<div class="absolute inset-0 bg-surface/50 backdrop-blur-[2px] flex flex-col items-center justify-center gap-3">
+<span class="material-symbols-outlined text-primary text-[32px] animate-spin" data-icon="refresh">refresh</span>
+<span class="font-headline-sm text-headline-sm text-on-surface bg-surface-container-lowest px-4 py-1.5 rounded-full shadow-sm">Locating Driver...</span>
+</div>
+</div>
+<!-- Live Tracking Skeleton (Floating Card style) -->
+<div class="bg-surface-container-lowest rounded-lg p-4 shadow-sm border border-surface-variant -mt-8 relative z-10 mx-2 flex flex-col gap-4">
+<div class="flex justify-between items-center animate-pulse">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 bg-surface-variant rounded-full"></div>
+<div class="flex flex-col gap-1.5">
+<div class="h-4 bg-surface-variant rounded-full w-24"></div>
+<div class="h-3 bg-surface-container-high rounded-full w-16"></div>
+</div>
+</div>
+<div class="w-10 h-10 bg-surface-container-highest rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-outline-variant" data-icon="call">call</span>
+</div>
+</div>
+<!-- Progress bar skeleton -->
+<div class="w-full h-1 bg-surface-variant rounded-full overflow-hidden animate-pulse mt-2">
+<div class="w-1/3 h-full bg-surface-container-high rounded-full"></div>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="bg-surface fixed bottom-0 w-full z-50 flex justify-around items-center px-4 py-3 pb-safe border-t border-surface-container-lowest shadow-[0_-2px_10px_rgba(0,0,0,0.02)]">
+<!-- Active Nav Item (Home semantic match for root reference screen) -->
+<div class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-lg px-4 py-1 cursor-pointer active:scale-90 transition-transform">
+<span class="material-symbols-outlined" data-icon="home" data-weight="fill" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="font-label-sm text-label-sm mt-1">Home</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-highest rounded-lg px-4 py-1 cursor-pointer active:scale-90 transition-transform">
+<span class="material-symbols-outlined" data-icon="local_shipping">local_shipping</span>
+<span class="font-label-sm text-label-sm mt-1">Trips</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-highest rounded-lg px-4 py-1 cursor-pointer active:scale-90 transition-transform">
+<span class="material-symbols-outlined" data-icon="account_balance_wallet">account_balance_wallet</span>
+<span class="font-label-sm text-label-sm mt-1">Wallet</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-highest rounded-lg px-4 py-1 cursor-pointer active:scale-90 transition-transform">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-label-sm text-label-sm mt-1">Account</span>
+</div>
+</nav>
+</body></html>

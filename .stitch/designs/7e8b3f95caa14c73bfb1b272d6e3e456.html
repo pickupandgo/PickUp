@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Cancellation Reason - Precision Mobility</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-primary": "#ffffff",
+                      "on-tertiary-fixed": "#231a09",
+                      "primary-fixed": "#dde1ff",
+                      "on-background": "#1b1b1d",
+                      "on-surface": "#1b1b1d",
+                      "on-surface-variant": "#46464d",
+                      "surface-container-high": "#eae7e9",
+                      "on-tertiary": "#ffffff",
+                      "tertiary-fixed-dim": "#d6c4aa",
+                      "on-secondary-container": "#57637e",
+                      "background": "#fcf8fb",
+                      "on-primary-container": "#7e829e",
+                      "surface-dim": "#dcd9db",
+                      "surface-container-lowest": "#ffffff",
+                      "surface-bright": "#fcf8fb",
+                      "on-secondary": "#ffffff",
+                      "on-error-container": "#93000a",
+                      "tertiary": "#000000",
+                      "surface-variant": "#e5e1e4",
+                      "outline": "#77767e",
+                      "surface": "#fcf8fb",
+                      "surface-tint": "#585d77",
+                      "primary": "#000000",
+                      "tertiary-fixed": "#f3e0c5",
+                      "surface-container-low": "#f6f3f5",
+                      "outline-variant": "#c7c5ce",
+                      "tertiary-container": "#231a09",
+                      "surface-container-highest": "#e5e1e4",
+                      "on-tertiary-container": "#91826a",
+                      "primary-fixed-dim": "#c0c5e3",
+                      "secondary-container": "#d4dfff",
+                      "inverse-on-surface": "#f3f0f2",
+                      "on-primary-fixed-variant": "#40465e",
+                      "on-error": "#ffffff",
+                      "surface-container": "#f0edef",
+                      "on-secondary-fixed": "#0e1b33",
+                      "error": "#ba1a1a",
+                      "on-secondary-fixed-variant": "#3b4760",
+                      "secondary-fixed": "#d8e2ff",
+                      "on-tertiary-fixed-variant": "#514531",
+                      "secondary": "#525e79",
+                      "error-container": "#ffdad6",
+                      "secondary-fixed-dim": "#bac6e6",
+                      "on-primary-fixed": "#151a31",
+                      "primary-container": "#151a31",
+                      "inverse-surface": "#313032",
+                      "inverse-primary": "#c0c5e3"
+              },
+              "borderRadius": {
+                      "DEFAULT": "1rem",
+                      "lg": "2rem",
+                      "xl": "3rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "row-height-md": "56px",
+                      "gutter": "12px",
+                      "container-padding": "16px",
+                      "unit": "4px",
+                      "row-height-sm": "40px"
+              },
+              "fontFamily": {
+                      "headline-md": [
+                              "Inter"
+                      ],
+                      "headline-sm": [
+                              "Inter"
+                      ],
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "data-mono": [
+                              "Inter"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "body-lg": [
+                              "Inter"
+                      ],
+                      "label-sm": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "headline-md": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-sm": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "label-caps": [
+                              "11px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "data-mono": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-lg": [
+                              "15px",
+                              {
+                                      "lineHeight": "22px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "500"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body-md antialiased selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-md transition-colors duration-200">
+<div class="flex justify-between items-center h-row-height-md px-container-padding w-full">
+<button aria-label="Back" class="flex items-center justify-center p-2 rounded-full hover:bg-surface-variant/50 text-primary transition-colors duration-200">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary truncate mx-4">Reason for Cancellation</h1>
+<button aria-label="Help" class="flex items-center justify-center p-2 rounded-full hover:bg-surface-variant/50 text-primary transition-colors duration-200">
+<span class="material-symbols-outlined">help</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-grow pt-[calc(var(--spacing-row-height-md)+var(--spacing-gutter))] px-container-padding pb-32 flex flex-col items-center">
+<div class="w-full max-w-md w-full flex flex-col space-y-6">
+<section class="text-center mt-4 mb-2">
+<p class="font-body-lg text-body-lg text-on-surface-variant">Please let us know why you're cancelling to help us improve.</p>
+</section>
+<!-- Cancellation Options (Bento/Card style wrapper for a premium feel) -->
+<div class="bg-surface-container-low rounded-lg p-2 shadow-sm border border-outline-variant/30">
+<form class="flex flex-col" id="cancellation-form">
+<!-- Option 1 -->
+<label class="flex items-center justify-between p-4 cursor-pointer hover:bg-surface-variant/30 transition-colors rounded-md group border-b border-outline-variant/20 last:border-0">
+<span class="font-body-lg text-body-lg text-on-surface group-hover:text-primary transition-colors">Driver requested cancellation</span>
+<div class="relative flex items-center justify-center w-6 h-6">
+<input class="peer appearance-none w-5 h-5 rounded-full border-2 border-outline checked:border-primary checked:bg-primary transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 focus:ring-offset-surface-container-low outline-none bg-surface-container-lowest cursor-pointer shrink-0" name="cancel_reason" type="radio" value="driver_requested"/>
+<span class="material-symbols-outlined absolute text-on-primary text-[14px] opacity-0 peer-checked:opacity-100 pointer-events-none font-bold" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</label>
+<!-- Option 2 -->
+<label class="flex items-center justify-between p-4 cursor-pointer hover:bg-surface-variant/30 transition-colors rounded-md group border-b border-outline-variant/20 last:border-0">
+<span class="font-body-lg text-body-lg text-on-surface group-hover:text-primary transition-colors">Driver is not moving</span>
+<div class="relative flex items-center justify-center w-6 h-6">
+<input class="peer appearance-none w-5 h-5 rounded-full border-2 border-outline checked:border-primary checked:bg-primary transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 focus:ring-offset-surface-container-low outline-none bg-surface-container-lowest cursor-pointer shrink-0" name="cancel_reason" type="radio" value="driver_not_moving"/>
+<span class="material-symbols-outlined absolute text-on-primary text-[14px] opacity-0 peer-checked:opacity-100 pointer-events-none font-bold" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</label>
+<!-- Option 3 -->
+<label class="flex items-center justify-between p-4 cursor-pointer hover:bg-surface-variant/30 transition-colors rounded-md group border-b border-outline-variant/20 last:border-0">
+<span class="font-body-lg text-body-lg text-on-surface group-hover:text-primary transition-colors">Longer wait time than expected</span>
+<div class="relative flex items-center justify-center w-6 h-6">
+<input class="peer appearance-none w-5 h-5 rounded-full border-2 border-outline checked:border-primary checked:bg-primary transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 focus:ring-offset-surface-container-low outline-none bg-surface-container-lowest cursor-pointer shrink-0" name="cancel_reason" type="radio" value="long_wait"/>
+<span class="material-symbols-outlined absolute text-on-primary text-[14px] opacity-0 peer-checked:opacity-100 pointer-events-none font-bold" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</label>
+<!-- Option 4 -->
+<label class="flex items-center justify-between p-4 cursor-pointer hover:bg-surface-variant/30 transition-colors rounded-md group border-b border-outline-variant/20 last:border-0">
+<span class="font-body-lg text-body-lg text-on-surface group-hover:text-primary transition-colors">Changed my mind</span>
+<div class="relative flex items-center justify-center w-6 h-6">
+<input class="peer appearance-none w-5 h-5 rounded-full border-2 border-outline checked:border-primary checked:bg-primary transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 focus:ring-offset-surface-container-low outline-none bg-surface-container-lowest cursor-pointer shrink-0" name="cancel_reason" type="radio" value="changed_mind"/>
+<span class="material-symbols-outlined absolute text-on-primary text-[14px] opacity-0 peer-checked:opacity-100 pointer-events-none font-bold" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</label>
+<!-- Option 5 -->
+<label class="flex items-center justify-between p-4 cursor-pointer hover:bg-surface-variant/30 transition-colors rounded-md group border-b border-outline-variant/20 last:border-0">
+<span class="font-body-lg text-body-lg text-on-surface group-hover:text-primary transition-colors">Incorrect pickup location</span>
+<div class="relative flex items-center justify-center w-6 h-6">
+<input class="peer appearance-none w-5 h-5 rounded-full border-2 border-outline checked:border-primary checked:bg-primary transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 focus:ring-offset-surface-container-low outline-none bg-surface-container-lowest cursor-pointer shrink-0" name="cancel_reason" type="radio" value="wrong_location"/>
+<span class="material-symbols-outlined absolute text-on-primary text-[14px] opacity-0 peer-checked:opacity-100 pointer-events-none font-bold" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</label>
+<!-- Option 6 -->
+<label class="flex items-center justify-between p-4 cursor-pointer hover:bg-surface-variant/30 transition-colors rounded-md group last:border-0">
+<span class="font-body-lg text-body-lg text-on-surface group-hover:text-primary transition-colors">Other</span>
+<div class="relative flex items-center justify-center w-6 h-6">
+<input class="peer appearance-none w-5 h-5 rounded-full border-2 border-outline checked:border-primary checked:bg-primary transition-all duration-200 focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 focus:ring-offset-surface-container-low outline-none bg-surface-container-lowest cursor-pointer shrink-0" name="cancel_reason" type="radio" value="other"/>
+<span class="material-symbols-outlined absolute text-on-primary text-[14px] opacity-0 peer-checked:opacity-100 pointer-events-none font-bold" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</label>
+</form>
+</div>
+<!-- Optional Text Area for 'Other' (Hidden by default, shown via JS if needed, keeping it simple for now) -->
+<div class="hidden opacity-0 transition-opacity duration-300 ease-in-out" id="other-text-container">
+<textarea class="w-full bg-surface-variant border-none rounded-md p-4 text-body-md text-on-surface placeholder:text-on-surface-variant focus:ring-2 focus:ring-primary resize-none h-24" placeholder="Please specify..."></textarea>
+</div>
+</div>
+</main>
+<!-- Bottom Action Area -->
+<div class="fixed bottom-0 left-0 w-full p-container-padding bg-gradient-to-t from-background via-background/90 to-transparent z-40 pb-safe">
+<div class="max-w-md mx-auto w-full">
+<button class="w-full h-14 bg-primary text-on-primary font-headline-sm text-headline-sm rounded-full flex items-center justify-center hover:opacity-90 active:scale-[0.98] transition-all shadow-md">
+                SUBMIT &amp; CANCEL
+            </button>
+</div>
+</div>
+<style>
+        /* Safe area padding for mobile devices */
+        @supports (padding-bottom: env(safe-area-inset-bottom)) {
+            .pb-safe {
+                padding-bottom: max(var(--spacing-container-padding), env(safe-area-inset-bottom));
+            }
+        }
+    </style>
+<script>
+        // Simple logic to reveal text area if 'Other' is selected
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('cancellation-form');
+            const otherContainer = document.getElementById('other-text-container');
+            const radios = form.querySelectorAll('input[type="radio"]');
+
+            radios.forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    if (e.target.value === 'other') {
+                        otherContainer.classList.remove('hidden');
+                        // Small delay to allow display:block to apply before animating opacity
+                        setTimeout(() => {
+                            otherContainer.classList.remove('opacity-0');
+                        }, 10);
+                    } else {
+                        otherContainer.classList.add('opacity-0');
+                        setTimeout(() => {
+                            otherContainer.classList.add('hidden');
+                        }, 300); // match duration
+                    }
+                });
+            });
+        });
+    </script>
+</body></html>

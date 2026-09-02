@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Pick Up - Customer Login</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed-dim": "#c0c5e3",
+                        "on-primary": "#ffffff",
+                        "status-green": "#2D6A4F",
+                        "inverse-on-surface": "#eff1f4",
+                        "on-surface": "#191c1e",
+                        "on-secondary": "#ffffff",
+                        "surface-bright": "#f7f9fc",
+                        "primary-container": "#151a31",
+                        "secondary": "#525e79",
+                        "outline": "#77767e",
+                        "on-secondary-fixed": "#0e1b33",
+                        "primary": "#03071D", // Updated to reflect #03071D from prompt
+                        "surface-dim": "#d8dadd",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-container": "#7e829e",
+                        "outline-hairline": "#E2E8F0",
+                        "surface-container": "#ECEEF1",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "error": "#ba1a1a",
+                        "surface": "#f7f9fc",
+                        "inverse-primary": "#c0c5e3",
+                        "tertiary-container": "#231a09",
+                        "surface-container-low": "#f2f4f7",
+                        "on-tertiary-container": "#91826a",
+                        "on-surface-variant": "#46464d",
+                        "error-container": "#ffdad6",
+                        "outline-variant": "#c7c5ce",
+                        "on-tertiary-fixed": "#231a09",
+                        "on-error-container": "#93000a",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed-variant": "#40465e",
+                        "on-primary-fixed": "#151a31",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "secondary-fixed": "#d8e2ff",
+                        "surface-container-high": "#e6e8eb",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "surface-tint": "#585d77",
+                        "background": "#f7f9fc",
+                        "secondary-container": "#d4dfff",
+                        "inverse-surface": "#2d3133",
+                        "primary-fixed": "#dde1ff",
+                        "on-secondary-container": "#57637e",
+                        "status-red": "#BA1A1A",
+                        "on-background": "#191c1e",
+                        "tertiary": "#000000",
+                        "tertiary-fixed": "#f3e0c5",
+                        "on-error": "#ffffff",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "surface-variant": "#e0e3e6",
+                        "surface-container-highest": "#e0e3e6"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "stack-gap-md": "16px",
+                        "stack-gap-sm": "8px",
+                        "margin-mobile": "16px",
+                        "unit": "4px",
+                        "gutter-sm": "12px",
+                        "row-height-standard": "56px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "label-caps": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "normal", "fontWeight": "400" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "letterSpacing": "normal", "fontWeight": "400" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "normal", "fontWeight": "500" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Hide scrollbar for clean UI */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+        
+        /* Loading animation */
+        .loading-bar-container {
+            width: 100%;
+            height: 4px;
+            background-color: theme('colors.primary-fixed-dim');
+            overflow: hidden;
+            border-radius: theme('borderRadius.DEFAULT');
+        }
+        
+        .loading-bar {
+            width: 50%;
+            height: 100%;
+            background-color: theme('colors.on-primary');
+            animation: indeterminate 1.5s infinite linear;
+            transform-origin: left center;
+        }
+        
+        @keyframes indeterminate {
+            0% { transform: translateX(-100%) scaleX(0.2); }
+            50% { transform: translateX(0) scaleX(1); }
+            100% { transform: translateX(200%) scaleX(0.2); }
+        }
+
+        /* Ghost shadow utility */
+        .ghost-shadow {
+            box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.04);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex items-center justify-center p-4">
+<!-- Mobile Container (Simulation of App Screen) -->
+<main class="w-full max-w-[487px] h-[100dvh] md:h-[90vh] md:max-h-[900px] bg-surface-container-lowest rounded-xl md:ghost-shadow relative flex flex-col overflow-hidden border border-outline-hairline md:border-outline-variant/30">
+<!-- Subtle Reference Background (Image 6) - Absolute positioned and highly transparent for reference -->
+<div class="absolute inset-0 z-0 pointer-events-none opacity-5 mix-blend-multiply" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuD7KCTcrpbdMXi1bFzpuLE3Yt73YhFP066fj-7PmjHAm-U5DeUJ8Un0pzpaQv_Rf20ufNT5e6tXBoINjGqWVhrdEn30UNBEEv4FcEWuVcypBRwBVvweZCjZlbYR9ZQEXk1BCIBH1PDuSo-wMvMjtcXEwd4V4ztLcqEO0rchK1qgDvXAh20zq2xKPgp51l0ZhhwieBlyX6W_nAR62iJF-pEHobpkvku8ma-uh2fB19CUaMN68xxNum3QYFPFwZAmUBc-Vg'); background-size: cover; background-position: center;"></div>
+<!-- Header / Branding -->
+<header class="w-full px-margin-mobile pt-[60px] pb-[32px] z-10 flex flex-col items-center border-b border-outline-hairline bg-surface-container-lowest">
+<!-- Minimal Logo -->
+<div class="w-16 h-16 rounded-lg bg-primary text-on-primary flex items-center justify-center mb-stack-gap-md ghost-shadow">
+<span class="material-symbols-outlined text-[32px]" style="font-variation-settings: 'FILL' 1;">package</span>
+</div>
+<h1 class="text-headline-md font-headline-md text-on-surface mb-unit text-center">Welcome to Pick Up</h1>
+<p class="text-body-md font-body-md text-on-surface-variant text-center max-w-[280px]">Enter your mobile number to sign in or create an account.</p>
+</header>
+<!-- Main Content Area -->
+<section class="flex-1 px-margin-mobile py-[32px] z-10 flex flex-col gap-stack-gap-md bg-surface">
+<!-- Default / Active Input State -->
+<div class="flex flex-col gap-unit">
+<label class="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider" for="mobile-number">Mobile Number</label>
+<div class="relative flex items-center h-row-height-standard bg-surface-container-lowest border border-outline-hairline focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-colors overflow-hidden rounded-xl">
+<div class="flex items-center justify-center h-full px-4 border-r border-outline-hairline bg-surface-container-low text-body-md font-body-md text-on-surface-variant select-none">
+                        +91
+                    </div>
+<input class="flex-1 h-full bg-transparent border-none focus:ring-0 text-body-md font-body-md text-on-surface px-4 placeholder-outline-variant" id="mobile-number" maxlength="10" pattern="[0-9]{10}" placeholder="Enter 10-digit number" type="tel"/>
+</div>
+</div>
+<!-- Invalid State Example (Hidden by default, shown for demonstration) -->
+<div class="flex flex-col gap-unit hidden" id="error-state">
+<label class="text-label-sm font-label-sm text-error uppercase tracking-wider" for="mobile-number-error">Mobile Number</label>
+<div class="relative flex items-center h-row-height-standard bg-error-container/20 border border-error rounded-lg overflow-hidden">
+<div class="flex items-center justify-center h-full px-4 border-r border-error/30 bg-error-container/40 text-body-md font-body-md text-error select-none">
+                        +91
+                    </div>
+<input aria-invalid="true" class="flex-1 h-full bg-transparent border-none focus:ring-0 text-body-md font-body-md text-error px-4" id="mobile-number-error" type="tel" value="98765"/>
+<span class="material-symbols-outlined text-error pr-4">error</span>
+</div>
+<p class="text-label-sm font-label-sm text-error mt-1 flex items-center gap-1">
+                    Please enter a valid 10-digit number.
+                </p>
+</div>
+<!-- Network Error Alert (Hidden by default) -->
+<div class="hidden bg-error-container text-on-error-container px-4 py-3 rounded-lg border border-error/20 flex items-start gap-3 mt-2" id="network-error">
+<span class="material-symbols-outlined text-error mt-0.5" style="font-variation-settings: 'FILL' 1;">wifi_off</span>
+<div class="flex-1">
+<p class="text-body-md font-body-md font-medium">Connection Error</p>
+<p class="text-label-sm font-label-sm opacity-80">Unable to reach the server. Please check your network and try again.</p>
+</div>
+</div>
+</section>
+<!-- Footer / Action Area -->
+<footer class="w-full px-margin-mobile py-[24px] pb-safe z-10 bg-surface-container-lowest border-t border-outline-hairline mt-auto flex flex-col gap-stack-gap-md">
+<p class="text-label-sm font-label-sm text-on-surface-variant text-center px-4">
+                By continuing, you agree to our <a class="text-primary underline decoration-outline-hairline underline-offset-2" href="#">Terms of Service</a> and <a class="text-primary underline decoration-outline-hairline underline-offset-2" href="#">Privacy Policy</a>.
+            </p>
+<!-- Primary Action Button -->
+<button class="w-full h-[56px] bg-primary text-on-primary text-headline-sm font-headline-sm flex items-center justify-center transition-all hover:bg-opacity-90 active:scale-[0.98] relative overflow-hidden rounded-full" id="submit-btn">
+<span id="btn-text">Get OTP</span>
+<!-- Loading State (Hidden by default) -->
+<div class="hidden absolute inset-0 flex flex-col justify-end" id="btn-loading">
+<div class="loading-bar-container rounded-none h-1 absolute bottom-0 left-0 bg-primary-fixed-dim/30">
+<div class="loading-bar bg-on-primary"></div>
+</div>
+</div>
+</button>
+</footer>
+</main>
+<script>
+        // Simple interactions for demonstration purposes
+        const input = document.getElementById('mobile-number');
+        const submitBtn = document.getElementById('submit-btn');
+        const btnText = document.getElementById('btn-text');
+        const btnLoading = document.getElementById('btn-loading');
+        
+        // Simulating the loading state on click
+        submitBtn.addEventListener('click', () => {
+            if(input.value.length === 10) {
+                // Show loading
+                btnText.textContent = 'Sending...';
+                btnLoading.classList.remove('hidden');
+                submitBtn.classList.add('opacity-90', 'cursor-not-allowed');
+                
+                // Reset after 2 seconds
+                setTimeout(() => {
+                    btnText.textContent = 'Get OTP';
+                    btnLoading.classList.add('hidden');
+                    submitBtn.classList.remove('opacity-90', 'cursor-not-allowed');
+                }, 2000);
+            } else {
+                // Just for demo - showing invalid state logic could be added here
+                input.focus();
+            }
+        });
+    </script>
+</body></html>

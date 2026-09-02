@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Payment Successful - Pick Up</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary": "#ffffff",
+                        "surface": "#fcf8fb",
+                        "surface-container-high": "#eae7e9",
+                        "on-surface-variant": "#46464d",
+                        "tertiary-fixed": "#f3e0c5",
+                        "surface-bright": "#fcf8fb",
+                        "on-background": "#1b1b1d",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6",
+                        "on-tertiary-container": "#91826a",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "outline": "#77767e",
+                        "inverse-surface": "#313032",
+                        "primary-fixed": "#dde1ff",
+                        "on-secondary-container": "#57637e",
+                        "surface-variant": "#e5e1e4",
+                        "on-surface": "#1b1b1d",
+                        "inverse-on-surface": "#f3f0f2",
+                        "inverse-primary": "#c0c5e3",
+                        "on-primary-fixed": "#151a31",
+                        "on-primary-container": "#7e829e",
+                        "on-error-container": "#93000a",
+                        "primary": "#000000",
+                        "secondary": "#525e79",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "surface-tint": "#585d77",
+                        "outline-variant": "#c7c5ce",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary-container": "#d4dfff",
+                        "surface-container-low": "#f6f3f5",
+                        "on-primary": "#ffffff",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "primary-container": "#151a31",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "on-primary-fixed-variant": "#40465e",
+                        "on-secondary-fixed": "#0e1b33",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "on-tertiary": "#ffffff",
+                        "surface-dim": "#dcd9db",
+                        "tertiary-container": "#231a09",
+                        "surface-container": "#f0edef",
+                        "surface-container-highest": "#e5e1e4",
+                        "on-tertiary-fixed": "#231a09",
+                        "background": "#fcf8fb",
+                        "tertiary": "#000000"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "12px",
+                        "row-height-md": "56px",
+                        "container-padding": "16px",
+                        "row-height-sm": "40px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "body-md": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface h-screen flex flex-col antialiased">
+<!-- Main Canvas: Focused Transactional Flow (Navigation Suppressed) -->
+<main class="flex-1 flex flex-col items-center justify-center px-container-padding relative overflow-hidden">
+<!-- Ambient Background Glow -->
+<div class="absolute inset-0 pointer-events-none flex items-center justify-center">
+<div class="w-[300px] h-[300px] bg-secondary-container/50 rounded-full blur-[80px]"></div>
+</div>
+<div class="z-10 flex flex-col items-center max-w-md w-full animate-[fade-in-up_0.6s_ease-out]">
+<!-- Success Icon -->
+<div class="w-24 h-24 bg-surface-container-low rounded-full flex items-center justify-center mb-8 shadow-sm">
+<div class="w-16 h-16 bg-primary-fixed rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-[32px] text-on-primary-fixed" style="font-variation-settings: 'FILL' 1;">
+                        check_circle
+                    </span>
+</div>
+</div>
+<!-- Headline -->
+<h1 class="font-headline-md text-headline-md text-on-surface mb-2 text-center">Payment Successful</h1>
+<!-- Amount -->
+<div class="font-data-mono text-data-mono text-4xl font-bold tracking-tight text-on-surface mb-8">
+                ₹ 340
+            </div>
+<!-- Details Card -->
+<div class="w-full bg-surface-container-low rounded-lg p-6 mb-8 shadow-sm border border-surface-variant/30">
+<div class="flex justify-between items-center mb-4">
+<span class="font-body-md text-body-md text-on-surface-variant">Transaction ID</span>
+<span class="font-data-mono text-data-mono text-on-surface">TXN-8472910</span>
+</div>
+<div class="flex justify-between items-center mb-4">
+<span class="font-body-md text-body-md text-on-surface-variant">Date</span>
+<span class="font-body-md text-body-md text-on-surface">Oct 24, 2023</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-body-md text-body-md text-on-surface-variant">Payment Method</span>
+<span class="font-body-md text-body-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">account_balance_wallet</span>
+                        Wallet
+                    </span>
+</div>
+</div>
+<!-- Action Button -->
+<button class="w-full bg-primary text-on-primary font-headline-sm text-headline-sm h-row-height-md rounded-full flex items-center justify-center transition-transform duration-200 active:scale-95 hover:bg-on-surface/90 shadow-sm">
+                View Booking
+            </button>
+<button class="mt-4 w-full bg-transparent text-on-surface-variant font-label-sm text-label-sm h-row-height-sm rounded-full flex items-center justify-center transition-colors duration-200 hover:bg-surface-container-high">
+                Back to Home
+            </button>
+</div>
+</main>
+<style>
+        @keyframes fade-in-up {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</body></html>

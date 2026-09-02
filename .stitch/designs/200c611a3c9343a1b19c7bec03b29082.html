@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Drop Completed</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-container": "#d4dfff",
+                        "surface-bright": "#fcf8fb",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed": "#f3e0c5",
+                        "primary-container": "#151a31",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "outline": "#77767e",
+                        "background": "#fcf8fb",
+                        "error-container": "#ffdad6",
+                        "outline-variant": "#c7c5ce",
+                        "tertiary-container": "#231a09",
+                        "inverse-on-surface": "#f3f0f2",
+                        "on-surface": "#1b1b1d",
+                        "on-surface-variant": "#46464d",
+                        "on-error-container": "#93000a",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "on-secondary": "#ffffff",
+                        "surface-variant": "#e5e1e4",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "surface": "#fcf8fb",
+                        "inverse-surface": "#313032",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#57637e",
+                        "primary-fixed": "#dde1ff",
+                        "on-tertiary-container": "#91826a",
+                        "on-primary-fixed-variant": "#40465e",
+                        "surface-container-high": "#eae7e9",
+                        "on-primary-fixed": "#151a31",
+                        "primary": "#000000",
+                        "inverse-primary": "#c0c5e3",
+                        "secondary-fixed": "#d8e2ff",
+                        "error": "#ba1a1a",
+                        "surface-container": "#f0edef",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary-fixed": "#0e1b33",
+                        "on-tertiary-fixed": "#231a09",
+                        "on-background": "#1b1b1d",
+                        "surface-container-low": "#f6f3f5",
+                        "surface-tint": "#585d77",
+                        "on-tertiary": "#ffffff",
+                        "secondary": "#525e79",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "surface-container-highest": "#e5e1e4",
+                        "surface-dim": "#dcd9db",
+                        "on-primary-container": "#7e829e",
+                        "tertiary": "#000000"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "row-height-md": "56px",
+                        "container-padding": "16px",
+                        "row-height-sm": "40px",
+                        "unit": "4px",
+                        "gutter": "12px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "body-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-caps": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface font-body-md antialiased min-h-screen flex flex-col pb-24">
+<!-- Top App Bar -->
+<header class="bg-surface w-full top-0 sticky flex justify-between items-center px-container-padding h-row-height-md z-40">
+<button class="text-primary hover:bg-surface-container-high transition-colors active:scale-95 duration-150 p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-headline-sm text-headline-sm text-primary">Trip Progress</h1>
+<button class="text-primary hover:bg-surface-container-high transition-colors active:scale-95 duration-150 p-2 rounded-full font-label-sm text-label-sm">
+            Help
+        </button>
+</header>
+<main class="flex-1 px-container-padding pt-4 space-y-6">
+<!-- Success Banner -->
+<div class="bg-[#e8f5e9] rounded-[24px] p-6 flex flex-col items-center justify-center text-center space-y-2 border border-[#c8e6c9]">
+<div class="bg-[#4caf50] text-white rounded-full w-12 h-12 flex items-center justify-center mb-2">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+<h2 class="font-headline-md text-headline-md text-[#2e7d32]">DROP 2 COMPLETED</h2>
+<p class="font-body-md text-body-md text-[#388e3c]">Delivery successfully handed over.</p>
+</div>
+<!-- Stop Details Card -->
+<div class="bg-surface-container-low rounded-[24px] p-6 space-y-5">
+<div class="flex items-start justify-between border-b border-outline-variant pb-4">
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">Destination</p>
+<p class="font-headline-sm text-headline-sm text-primary">Pal Road Business Center</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">10:45 AM, Oct 24</p>
+</div>
+</div>
+<div class="flex items-center space-x-4 border-b border-outline-variant pb-4">
+<div class="w-10 h-10 bg-secondary-container rounded-full flex items-center justify-center text-on-secondary-container">
+<span class="material-symbols-outlined">person</span>
+</div>
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-1">Receiver</p>
+<p class="font-headline-sm text-headline-sm text-primary">Aravind Sharma</p>
+</div>
+</div>
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-3">Delivery Proof</p>
+<div class="flex items-center space-x-3 bg-surface-variant rounded-xl p-3">
+<div class="w-12 h-12 rounded-lg bg-surface flex items-center justify-center overflow-hidden flex-shrink-0" data-alt="A close up photo of a small cardboard delivery box resting on a modern glass reception desk in a brightly lit corporate office lobby. The lighting is soft and professional, emphasizing the smooth textures of the glass and the corrugated cardboard. The mood is efficient and calm." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDYHXtLNRxeITV8r4LMLNBHPsD3JBUASih7-9196z6kCBVEAvoQJBS4-TCzaKtDD0SOjPNAONo79X7rHWdB5Zm2ecEu44_2FcBXzrbM3UICr78N1QW3AISu5iNvwrQ70NNJMh1Z0nDs-iCgdiqlqnBNsrDipR-QS3MzdyIbZJ-YMEkrFIbEQdMlzH_3ROiOKkIBDXY0v0VQFcM1P6yEidAB05iSYylfJvburUZ-9E7EDANlIJBcgifS')">
+<!-- Image placeholder background -->
+</div>
+<div class="flex-1">
+<p class="font-body-md text-body-md text-primary font-medium">Verified &amp; Photo Uploaded</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant">System timestamp: 10:46 AM</p>
+</div>
+<span class="material-symbols-outlined text-[#4caf50]" style="font-variation-settings: 'FILL' 1;">verified</span>
+</div>
+</div>
+</div>
+<!-- Next Stop Section -->
+<div class="bg-surface-container-low rounded-[24px] p-6 space-y-4 border border-secondary-fixed-dim">
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider mb-2">NEXT STOP</p>
+<h3 class="font-headline-md text-headline-md text-primary">Drop 3 of 3: Basni Phase II</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Est. 12 mins away (4.2 km)</p>
+</div>
+<button class="w-full bg-primary text-on-primary py-4 rounded-full font-headline-sm text-headline-sm hover:bg-inverse-surface transition-colors active:scale-95 duration-150 flex items-center justify-center space-x-2">
+<span>Track Next Stop</span>
+<span class="material-symbols-outlined">directions_car</span>
+</button>
+</div>
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 pb-safe bg-surface-container-lowest shadow-[0_-4px_12px_0_rgba(0,0,0,0.05)] rounded-t-lg">
+<a class="flex flex-col items-center justify-center text-on-secondary-fixed-variant hover:bg-surface-container-high transition-colors p-2 rounded-lg" href="#">
+<span class="material-symbols-outlined mb-1">home_pin</span>
+<span class="font-label-sm text-label-sm">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-6 py-1 active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">package_2</span>
+<span class="font-label-sm text-label-sm font-bold">Orders</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-secondary-fixed-variant hover:bg-surface-container-high transition-colors p-2 rounded-lg" href="#">
+<span class="material-symbols-outlined mb-1">account_balance_wallet</span>
+<span class="font-label-sm text-label-sm">Wallet</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-secondary-fixed-variant hover:bg-surface-container-high transition-colors p-2 rounded-lg" href="#">
+<span class="material-symbols-outlined mb-1">person</span>
+<span class="font-label-sm text-label-sm">Account</span>
+</a>
+</nav>
+</body></html>

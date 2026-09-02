@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Finding Nearby Driver</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Design System Configuration -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "error": "#ba1a1a",
+                    "outline-variant": "#c7c5ce",
+                    "on-tertiary": "#ffffff",
+                    "primary-container": "#151a31",
+                    "surface-container-low": "#f6f3f5",
+                    "surface-bright": "#fcf8fb",
+                    "tertiary-fixed-dim": "#d6c4aa",
+                    "on-background": "#1b1b1d",
+                    "surface-container-highest": "#e5e1e4",
+                    "on-surface": "#1b1b1d",
+                    "on-primary-container": "#7e829e",
+                    "background": "#fcf8fb",
+                    "surface-container-high": "#eae7e9",
+                    "secondary": "#525e79",
+                    "tertiary-container": "#231a09",
+                    "on-primary-fixed-variant": "#40465e",
+                    "primary-fixed": "#dde1ff",
+                    "on-tertiary-fixed": "#231a09",
+                    "secondary-container": "#d4dfff",
+                    "outline": "#77767e",
+                    "surface-container-lowest": "#ffffff",
+                    "on-error": "#ffffff",
+                    "surface": "#fcf8fb",
+                    "on-secondary": "#ffffff",
+                    "surface-dim": "#dcd9db",
+                    "secondary-fixed": "#d8e2ff",
+                    "secondary-fixed-dim": "#bac6e6",
+                    "on-error-container": "#93000a",
+                    "tertiary-fixed": "#f3e0c5",
+                    "inverse-surface": "#313032",
+                    "on-secondary-fixed": "#0e1b33",
+                    "inverse-primary": "#c0c5e3",
+                    "on-tertiary-container": "#91826a",
+                    "error-container": "#ffdad6",
+                    "on-primary": "#ffffff",
+                    "surface-tint": "#585d77",
+                    "primary": "#000000",
+                    "tertiary": "#000000",
+                    "on-tertiary-fixed-variant": "#514531",
+                    "surface-container": "#f0edef",
+                    "primary-fixed-dim": "#c0c5e3",
+                    "on-secondary-fixed-variant": "#3b4760",
+                    "on-surface-variant": "#46464d",
+                    "inverse-on-surface": "#f3f0f2",
+                    "surface-variant": "#e5e1e4",
+                    "on-primary-fixed": "#151a31",
+                    "on-secondary-container": "#57637e"
+            },
+            "borderRadius": {
+                    "DEFAULT": "1rem",
+                    "lg": "2rem",
+                    "xl": "3rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "gutter": "12px",
+                    "container-padding": "16px",
+                    "row-height-sm": "40px",
+                    "unit": "4px",
+                    "row-height-md": "56px"
+            },
+            "fontFamily": {
+                    "headline-sm": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "label-sm": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "data-mono": ["Inter"],
+                    "label-caps": ["Inter"],
+                    "body-md": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-sm": ["16px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "body-lg": ["15px", {"lineHeight": "22px", "fontWeight": "400"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                    "data-mono": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+                    "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        /* Custom Animations for Radar and Scanning */
+        @keyframes radar-pulse {
+            0% { transform: scale(0.5); opacity: 0.8; }
+            100% { transform: scale(4); opacity: 0; }
+        }
+        .animate-radar {
+            animation: radar-pulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+        .animate-radar-delayed {
+            animation: radar-pulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+            animation-delay: 1s;
+        }
+        
+        @keyframes scan-sweep {
+            0% { transform: translateX(-150%); }
+            100% { transform: translateX(250%); }
+        }
+        .animate-scan {
+            animation: scan-sweep 2.5s infinite linear;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md h-screen w-full overflow-hidden flex justify-center">
+<!-- Mobile Viewport Container -->
+<div class="relative w-full h-full max-w-md bg-surface overflow-hidden shadow-2xl">
+<!-- Top Navigation Bar (from JSON Schema) -->
+<header class="fixed top-0 left-0 w-full md:max-w-md md:relative z-50 flex justify-between items-center px-container-padding h-row-height-md bg-surface/80 backdrop-blur-md">
+<div class="flex items-center gap-gutter">
+<button class="p-2 -ml-2 rounded-full hover:bg-surface-container-high transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-[24px]">menu</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold tracking-tight text-primary">Pick Up</h1>
+</div>
+<div class="w-8 h-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant">
+<img alt="User profile avatar" class="w-full h-full object-cover" data-alt="A small, professional profile picture of a premium user. The portrait is brightly lit, modern, and fits seamlessly into a minimalist interface, conveying trust and reliability." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCdShGwBMmiOaFp7LtKlB08orVY_7zeHGJOH0tHGh0mf-OzkW2-YYbEBznY5y4myLFBW6mNOxrqTT8FIA2GmSWo_iYWSYn7_kFCoEMOfyE1eaxts8gIA_DZbcz4AfRjDPmk3qVU_Kgmn93ZYLeinI9lrDhFHVr8-WHk-9qTkcPSvpYjxNEctIJI_FXnFNo9zJMT8BxEJ_A6bnoE4lJts1MkZWJMTcYTAxlwqBu9VAWaqnqYtdufXgqa"/>
+</div>
+</header>
+<!-- Map Background Layer -->
+<div class="absolute inset-0 z-0">
+<div class="w-full h-full bg-cover bg-center bg-surface-container-high" data-alt="A top-down, highly detailed view of a modern city map interface in light mode. The map features clean, minimal roads in subtle greys, geometric building footprints, and soft pastel green parks. The overall style is highly professional, matching a calm-tech, high-density corporate aesthetic with pristine whites and soft ambient lighting." data-location="Metropolis Downtown" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBvOXOSJRjnub1GIodoCVy1P_p2_0NHK0El_4LAKVp1OfCLaY5w5JGrqAtzIH6vMjrjT_UJHqyN9jWQsOoG4RKNCXpUc-vDIwqR34icHpRqLjEVuSyfpdIHIbqtsPE8L2ng2x8QI5af9N7byXP_89pH7VawsIKn_idqrLe_gHldUu6V8ckYapUPyOxartz0ZCtHJ-7y9Ve-8BE5DhWS0FJGRYowXF2u993PTkmbINnySMBWGY7d2EY-')"></div>
+<!-- Gradient Overlay for better contrast -->
+<div class="absolute inset-0 bg-gradient-to-b from-surface/40 via-transparent to-surface-container-low/80"></div>
+</div>
+<!-- Radar Pulse Animation Layer -->
+<div class="absolute top-[45%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center">
+<!-- Pulsing Rings -->
+<div class="absolute w-16 h-16 rounded-full bg-primary/20 animate-radar"></div>
+<div class="absolute w-16 h-16 rounded-full bg-primary/20 animate-radar-delayed"></div>
+<!-- Center Pin Base -->
+<div class="relative w-6 h-6 rounded-full bg-surface shadow-md flex items-center justify-center">
+<div class="w-2.5 h-2.5 rounded-full bg-primary"></div>
+</div>
+</div>
+<!-- Bottom Floating Action Card (Task-Focused Focus Mode) -->
+<div class="absolute bottom-6 left-container-padding right-container-padding bg-surface-container-lowest rounded-lg p-container-padding shadow-lg z-20 flex flex-col gap-5 border border-outline-variant/30 backdrop-blur-md">
+<!-- Status Header -->
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary animate-spin" style="font-variation-settings: 'wght' 300;">progress_activity</span>
+<h2 class="font-headline-sm text-headline-sm text-primary">Finding a Driver...</h2>
+</div>
+<!-- Vehicle Scanning List -->
+<div class="relative w-full h-16 bg-surface-container-low rounded-DEFAULT overflow-hidden flex items-center justify-around px-4 border border-outline-variant/50">
+<!-- Scanning Sweep Effect -->
+<div class="absolute top-0 bottom-0 left-0 w-24 bg-gradient-to-r from-transparent via-primary/10 to-transparent animate-scan z-10 blur-sm pointer-events-none"></div>
+<!-- Vehicle Silhouettes -->
+<div class="flex flex-col items-center justify-center gap-1 z-0 relative group">
+<span class="material-symbols-outlined text-[28px] text-outline group-hover:text-primary transition-colors duration-300" style="font-variation-settings: 'FILL' 1;">directions_car</span>
+<span class="font-label-caps text-label-caps text-outline-variant">AUTO</span>
+</div>
+<div class="w-px h-8 bg-outline-variant/30 z-0"></div>
+<div class="flex flex-col items-center justify-center gap-1 z-0 relative group">
+<span class="material-symbols-outlined text-[28px] text-outline group-hover:text-primary transition-colors duration-300" style="font-variation-settings: 'FILL' 1;">local_taxi</span>
+<span class="font-label-caps text-label-caps text-outline-variant">CAB</span>
+</div>
+<div class="w-px h-8 bg-outline-variant/30 z-0"></div>
+<div class="flex flex-col items-center justify-center gap-1 z-0 relative group">
+<span class="material-symbols-outlined text-[28px] text-outline group-hover:text-primary transition-colors duration-300" style="font-variation-settings: 'FILL' 1;">airport_shuttle</span>
+<span class="font-label-caps text-label-caps text-outline-variant">VAN</span>
+</div>
+</div>
+<!-- Cancel Action -->
+<button class="w-full h-row-height-sm rounded-full border border-outline text-on-surface font-label-sm text-label-sm flex items-center justify-center hover:bg-surface-variant hover:text-primary transition-colors active:scale-[0.98] duration-150">
+                Cancel
+            </button>
+</div>
+</div>
+</body></html>

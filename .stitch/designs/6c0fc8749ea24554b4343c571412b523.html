@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Customer Active Trip - Pick Up</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-container": "#d4dfff",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-primary-fixed": "#151a31",
+                        "on-background": "#1b1b1d",
+                        "on-secondary-container": "#57637e",
+                        "tertiary-fixed": "#f3e0c5",
+                        "on-primary-container": "#7e829e",
+                        "on-primary-fixed-variant": "#40465e",
+                        "on-error": "#ffffff",
+                        "on-surface": "#1b1b1d",
+                        "on-error-container": "#93000a",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "primary": "#000000",
+                        "inverse-on-surface": "#f3f0f2",
+                        "outline-variant": "#c7c5ce",
+                        "surface-container-low": "#f6f3f5",
+                        "inverse-primary": "#c0c5e3",
+                        "error-container": "#ffdad6",
+                        "surface-dim": "#dcd9db",
+                        "surface-container": "#f0edef",
+                        "outline": "#77767e",
+                        "on-primary": "#ffffff",
+                        "primary-fixed": "#dde1ff",
+                        "surface-tint": "#585d77",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-surface": "#313032",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "tertiary-container": "#231a09",
+                        "on-tertiary-container": "#91826a",
+                        "secondary": "#525e79",
+                        "surface": "#fcf8fb",
+                        "on-surface-variant": "#46464d",
+                        "tertiary": "#000000",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "surface-bright": "#fcf8fb",
+                        "error": "#ba1a1a",
+                        "surface-variant": "#e5e1e4",
+                        "primary-container": "#151a31",
+                        "on-secondary": "#ffffff",
+                        "surface-container-high": "#eae7e9",
+                        "on-tertiary-fixed": "#231a09",
+                        "surface-container-highest": "#e5e1e4",
+                        "background": "#fcf8fb",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-fixed": "#0e1b33",
+                        "primary-fixed-dim": "#c0c5e3"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "12px",
+                        "row-height-sm": "40px",
+                        "container-padding": "16px",
+                        "row-height-md": "56px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .pulse-ring {
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(2.4); opacity: 0; }
+        }
+        .map-gradient {
+            background: linear-gradient(180deg, rgba(252,248,251,0) 50%, rgba(252,248,251,0.9) 100%);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md h-screen w-screen overflow-hidden flex flex-col relative antialiased selection:bg-secondary-container selection:text-on-secondary-container">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-md transition-colors duration-200 flex justify-between items-center h-row-height-md px-container-padding">
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:bg-surface-variant/50 p-2 rounded-full transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="arrow_back" data-weight="fill" style="font-variation-settings: 'FILL' 1;">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary tracking-tight">Trip Tracking</h1>
+</div>
+<button class="text-on-surface-variant hover:bg-surface-variant/50 p-2 rounded-full transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+</header>
+<!-- Map Canvas (Simulated) -->
+<main class="flex-1 relative w-full h-full -mt-row-height-md pt-row-height-md">
+<!-- Using a placeholder map image tailored for Jodhpur context as requested by prompt drops -->
+<div class="absolute inset-0 bg-cover bg-center bg-no-repeat z-0 opacity-80" data-alt="A clean, minimalist digital map interface showing a top-down view of city streets in Jodhpur, India. The map uses a light-mode aesthetic with soft greys, white roads, and subtle green park areas, aligning with a modern corporate design system. It is brightly lit and highly detailed but uncluttered, suitable for a logistics tracking application background." data-location="Jodhpur" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuChdxfy0i22oHT8cnQNEvUuujhJZgxsHr5SqO4NfA4BaUzs_K-7cNBSTJw8qozMfoxfsjYawKtmqa5NOUaXX8YuRiTHR8hSfouRuOlIntpxBuNJb6sMpyyHy9TD0F2yt31f9JyIW1jljmPYdNxxg8y_2S9raMMVR5LZYEsvXZzC3VxIHd6IufPpbX1-WzWbvM8d8X187lSxBxRcqeutnIn4ejUUsd9NO1hTk7SkjM8TDj4N9qoHyApA')"></div>
+<!-- Map Overlay Gradient to blend with bottom sheet -->
+<div class="absolute inset-0 map-gradient z-0 pointer-events-none"></div>
+<!-- Route Line SVG (Simulated) -->
+<svg class="absolute inset-0 w-full h-full z-10 pointer-events-none" preserveaspectratio="none" viewbox="0 0 1000 1000">
+<!-- Completed Route -->
+<path d="M 300 400 Q 400 350, 450 450 T 600 500" fill="none" opacity="0.6" stroke="#000000" stroke-dasharray="8 8" stroke-width="4"></path>
+<!-- Current Active Route -->
+<path d="M 600 500 Q 650 600, 500 700" fill="none" stroke="#000000" stroke-width="5"></path>
+<!-- Upcoming Route -->
+<path d="M 500 700 Q 400 800, 350 750" fill="none" stroke="#77767e" stroke-dasharray="6 6" stroke-width="4"></path>
+</svg>
+<!-- Map Markers Container -->
+<div class="absolute inset-0 w-full h-full z-20 pointer-events-none">
+<!-- Pickup (Completed) -->
+<div class="absolute" style="top: 38%; left: 28%; transform: translate(-50%, -50%);">
+<div class="bg-surface border-2 border-primary text-primary rounded-full w-6 h-6 flex items-center justify-center shadow-md">
+<span class="material-symbols-outlined text-[14px]" data-icon="check" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</div>
+<!-- Drop 1 (Completed) -->
+<div class="absolute" style="top: 48%; left: 58%; transform: translate(-50%, -50%);">
+<div class="bg-surface border-2 border-primary text-primary rounded-full w-6 h-6 flex items-center justify-center shadow-md">
+<span class="material-symbols-outlined text-[14px]" data-icon="check" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</div>
+<!-- Drop 2 (Current Destination) -->
+<div class="absolute" style="top: 72%; left: 48%; transform: translate(-50%, -50%);">
+<div class="relative">
+<div class="absolute inset-0 bg-primary/20 rounded-full pulse-ring"></div>
+<div class="bg-primary text-on-primary rounded-full w-10 h-10 flex items-center justify-center shadow-lg relative z-10">
+<span class="font-headline-sm text-headline-sm">2</span>
+</div>
+</div>
+</div>
+<!-- Drop 3 (Upcoming) -->
+<div class="absolute" style="top: 77%; left: 33%; transform: translate(-50%, -50%);">
+<div class="bg-surface-container-low border-2 border-outline text-outline rounded-full w-8 h-8 flex items-center justify-center shadow-sm">
+<span class="font-headline-sm text-headline-sm">3</span>
+</div>
+</div>
+<!-- Driver Vehicle (Tata Ace simulated) -->
+<div class="absolute transition-all duration-1000 ease-linear" style="top: 58%; left: 56%; transform: translate(-50%, -50%);">
+<div class="bg-surface shadow-lg rounded-full p-2 border border-surface-variant flex items-center justify-center relative">
+<span class="material-symbols-outlined text-primary" data-icon="local_shipping" data-weight="fill" style="font-variation-settings: 'FILL' 1;">local_shipping</span>
+<!-- Direction indicator -->
+<div class="absolute -bottom-1 -right-1 bg-primary text-on-primary rounded-full w-4 h-4 flex items-center justify-center">
+<span class="material-symbols-outlined text-[10px]" data-icon="navigation" data-weight="fill" style="font-variation-settings: 'FILL' 1;">navigation</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Panel (Softly Rounded Sheet) -->
+<div class="absolute bottom-0 w-full z-40 pb-6 px-4 pt-4 pointer-events-none">
+<div class="bg-surface shadow-xl rounded-[24px] pointer-events-auto border border-surface-variant overflow-hidden flex flex-col max-h-[530px]">
+<!-- Handle for dragging affordance -->
+<div class="w-full flex justify-center py-3 pb-1 cursor-grab active:cursor-grabbing">
+<div class="w-12 h-1.5 bg-outline-variant rounded-full"></div>
+</div>
+<!-- ETA & Status Header -->
+<div class="px-5 pt-3 pb-4 border-b border-surface-variant flex justify-between items-end">
+<div>
+<h2 class="font-headline-md text-headline-md font-bold text-primary tracking-tight">Arriving in 8 mins</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-0.5">Drop 2 • Pal Road</p>
+</div>
+<div class="text-right">
+<span class="bg-secondary-container text-on-secondary-container font-label-sm text-label-sm px-2 py-1 rounded-full whitespace-nowrap">On Time</span>
+<p class="font-label-caps text-label-caps text-outline mt-1.5 uppercase tracking-wider">Updated 30s ago</p>
+</div>
+</div>
+<!-- Multi-drop Timeline Progression -->
+<div class="px-5 py-4 overflow-y-auto flex-1">
+<div class="relative pl-6 space-y-6">
+<!-- Vertical Line -->
+<div class="absolute left-[11px] top-2 bottom-2 w-0.5 bg-outline-variant z-0"></div>
+<!-- Pickup (Completed) -->
+<div class="relative z-10 flex items-start group">
+<div class="absolute -left-6 top-0.5 bg-surface rounded-full p-0.5">
+<div class="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary text-[12px]" data-icon="check" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</div>
+<div>
+<p class="font-data-mono text-data-mono text-outline line-through">Pickup</p>
+<p class="font-body-md text-body-md text-outline">Sardarpura Warehouse</p>
+</div>
+</div>
+<!-- Drop 1 (Completed) -->
+<div class="relative z-10 flex items-start group">
+<div class="absolute -left-6 top-0.5 bg-surface rounded-full p-0.5">
+<div class="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary text-[12px]" data-icon="check" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</div>
+<div>
+<p class="font-data-mono text-data-mono text-outline line-through">Drop 1</p>
+<p class="font-body-md text-body-md text-outline">Ratanada Hub</p>
+</div>
+</div>
+<!-- Drop 2 (Current) -->
+<div class="relative z-10 flex items-start group">
+<div class="absolute -left-6 top-0.5 bg-surface rounded-full p-0.5">
+<div class="w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-md relative">
+<div class="absolute inset-0 rounded-full bg-primary animate-ping opacity-20"></div>
+<div class="w-2 h-2 rounded-full bg-surface"></div>
+</div>
+</div>
+<div>
+<p class="font-headline-sm text-headline-sm text-primary">Drop 2 (Current)</p>
+<p class="font-body-lg text-body-lg text-on-surface">Pal Road</p>
+</div>
+</div>
+<!-- Drop 3 (Upcoming) -->
+<div class="relative z-10 flex items-start group">
+<div class="absolute -left-6 top-0.5 bg-surface rounded-full p-0.5">
+<div class="w-5 h-5 rounded-full border-2 border-outline bg-surface"></div>
+</div>
+<div>
+<p class="font-data-mono text-data-mono text-on-surface-variant">Drop 3</p>
+<p class="font-body-md text-body-md text-on-surface-variant">Basni Phase II</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Action Bar (Capsule Buttons) -->
+<div class="px-5 py-4 bg-surface-container-low border-t border-surface-variant flex gap-3">
+<button class="flex-1 bg-secondary-container text-on-secondary-container font-headline-sm text-headline-sm py-3 px-4 rounded-full flex items-center justify-center gap-2 hover:bg-secondary-fixed-dim transition-colors">
+<span class="material-symbols-outlined text-[20px]" data-icon="call" data-weight="fill" style="font-variation-settings: 'FILL' 1;">call</span>
+                    Call
+                </button>
+<button class="flex-1 bg-secondary-container text-on-secondary-container font-headline-sm text-headline-sm py-3 px-4 rounded-full flex items-center justify-center gap-2 hover:bg-secondary-fixed-dim transition-colors">
+<span class="material-symbols-outlined text-[20px]" data-icon="chat" data-weight="fill" style="font-variation-settings: 'FILL' 1;">chat</span>
+                    Chat
+                </button>
+<button class="flex-none bg-surface border border-outline-variant text-on-surface-variant p-3 rounded-full flex items-center justify-center hover:bg-surface-variant transition-colors aspect-square">
+<span class="material-symbols-outlined text-[20px]" data-icon="share">share</span>
+</button>
+</div>
+</div>
+</div>
+</body></html>

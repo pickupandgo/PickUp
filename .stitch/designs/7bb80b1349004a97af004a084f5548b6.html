@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Pick Up - Location Permission</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-low": "#f6f3f5",
+                        "surface": "#fcf8fb",
+                        "error-container": "#ffdad6",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "on-tertiary-container": "#91826a",
+                        "on-secondary-fixed": "#0e1b33",
+                        "tertiary": "#000000",
+                        "primary-container": "#151a31",
+                        "on-error": "#ffffff",
+                        "on-primary-fixed": "#151a31",
+                        "on-surface": "#1b1b1d",
+                        "on-primary-container": "#7e829e",
+                        "surface-container-high": "#eae7e9",
+                        "outline-variant": "#c7c5ce",
+                        "on-secondary": "#ffffff",
+                        "surface-dim": "#dcd9db",
+                        "surface-variant": "#e5e1e4",
+                        "secondary-fixed": "#d8e2ff",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "surface-container": "#f0edef",
+                        "inverse-on-surface": "#f3f0f2",
+                        "on-primary-fixed-variant": "#40465e",
+                        "outline": "#77767e",
+                        "tertiary-container": "#231a09",
+                        "on-error-container": "#93000a",
+                        "background": "#fcf8fb",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "surface-container-lowest": "#ffffff",
+                        "on-background": "#1b1b1d",
+                        "on-tertiary-fixed": "#231a09",
+                        "error": "#ba1a1a",
+                        "on-surface-variant": "#46464d",
+                        "primary": "#000000",
+                        "primary-fixed": "#dde1ff",
+                        "on-secondary-container": "#57637e",
+                        "surface-bright": "#fcf8fb",
+                        "on-primary": "#ffffff",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "secondary-container": "#d4dfff",
+                        "inverse-surface": "#313032",
+                        "inverse-primary": "#c0c5e3",
+                        "on-tertiary": "#ffffff",
+                        "surface-tint": "#585d77",
+                        "secondary": "#525e79",
+                        "tertiary-fixed": "#f3e0c5",
+                        "surface-container-highest": "#e5e1e4",
+                        "on-tertiary-fixed-variant": "#514531"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "row-height-sm": "40px",
+                        "container-padding": "16px",
+                        "unit": "4px",
+                        "row-height-md": "56px",
+                        "gutter": "12px"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "data-mono": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.on-background');
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        /* Subtle pulse animation for the location icon */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+        .pulse-effect::before {
+            content: '';
+            position: absolute;
+            left: 50%; top: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%; height: 100%;
+            background-color: theme('colors.primary');
+            border-radius: 50%;
+            z-index: -1;
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="min-h-screen flex flex-col md:flex-row items-center justify-center p-4 md:p-8 gap-8 overflow-x-hidden">
+<!-- Top App Bar (Hidden on this specific view as it's a full screen flow, but included per instructions if it was a standard screen. We'll render it at the top of the viewport but out of the flow of the main cards) -->
+<header class="fixed top-0 w-full flex items-center justify-between px-container-padding h-row-height-md bg-background z-50">
+<button aria-label="Go back" class="text-primary hover:opacity-80 transition-opacity active:scale-95">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary">Pick Up</h1>
+<button aria-label="Close" class="text-primary hover:opacity-80 transition-opacity active:scale-95">
+<span class="material-symbols-outlined">close</span>
+</button>
+</header>
+<!-- State 1: Request -->
+<main class="w-full max-w-sm mt-16 md:mt-0 flex flex-col gap-6">
+<section class="bg-surface-container-low rounded-[24px] p-8 flex flex-col items-center text-center shadow-sm relative overflow-hidden">
+<!-- Ambient geometric decoration -->
+<div class="absolute top-0 right-0 -mr-16 -mt-16 w-32 h-32 rounded-full bg-primary-fixed-dim opacity-20 blur-2xl"></div>
+<div class="absolute bottom-0 left-0 -ml-16 -mb-16 w-40 h-40 rounded-full bg-secondary-fixed-dim opacity-20 blur-2xl"></div>
+<div class="relative w-24 h-24 mb-6 flex items-center justify-center pulse-effect">
+<div class="w-16 h-16 bg-primary-container rounded-full flex items-center justify-center z-10 shadow-sm">
+<span class="material-symbols-outlined text-[32px] text-on-primary-container" style="font-variation-settings: 'FILL' 1;">location_on</span>
+</div>
+</div>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-3">Enable Location</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mb-8 px-4">
+                We need your location to find nearby drivers and ensure accurate pickups.
+            </p>
+<button class="w-full bg-primary text-on-primary font-headline-sm text-headline-sm py-4 px-6 rounded-full hover:opacity-90 active:scale-95 transition-all shadow-sm">
+                Allow Access
+            </button>
+<button class="w-full mt-3 bg-transparent text-primary font-label-sm text-label-sm py-3 px-6 rounded-full hover:bg-surface-variant active:scale-95 transition-all">
+                Not Now
+            </button>
+</section>
+</main>
+<!-- State 2: Denied -->
+<main class="w-full max-w-sm flex flex-col gap-6 opacity-75 md:opacity-100 scale-95 md:scale-100 transition-all">
+<section class="bg-surface-container-low rounded-[24px] p-8 flex flex-col items-center text-center shadow-sm border border-error-container relative overflow-hidden">
+<div class="absolute top-0 right-0 w-32 h-32 rounded-full bg-error-container opacity-20 blur-xl"></div>
+<div class="w-16 h-16 mb-6 bg-error-container rounded-full flex items-center justify-center shadow-sm relative">
+<span class="material-symbols-outlined text-[28px] text-error" style="font-variation-settings: 'FILL' 0;">location_off</span>
+</div>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-3">Location Access Denied</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mb-8 px-4">
+                Without location, you'll need to enter all addresses manually.
+            </p>
+<button class="w-full bg-secondary-container text-on-secondary-container font-headline-sm text-headline-sm py-4 px-6 rounded-full hover:opacity-90 active:scale-95 transition-all shadow-sm">
+                Enter Address Manually
+            </button>
+</section>
+</main>
+<!-- State 3: Settings Guidance -->
+<main class="w-full max-w-sm flex flex-col gap-6 opacity-50 md:opacity-100 scale-90 md:scale-100 transition-all">
+<section class="bg-surface-container-lowest rounded-[24px] p-8 flex flex-col items-center text-center shadow-sm border border-outline-variant">
+<div class="w-12 h-12 mb-6 bg-surface-variant rounded-full flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-[24px] text-on-surface-variant" style="font-variation-settings: 'FILL' 0;">settings</span>
+</div>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-3">Update Settings</h2>
+<div class="bg-surface rounded-lg p-4 w-full mb-6 text-left border border-surface-variant">
+<p class="font-body-md text-body-md text-on-surface-variant">
+                    To enable, go to:
+                </p>
+<div class="mt-3 flex items-center gap-2 font-data-mono text-data-mono text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-primary">smartphone</span>
+<span>App Settings</span>
+<span class="material-symbols-outlined text-[16px] text-outline">chevron_right</span>
+</div>
+<div class="mt-2 flex items-center gap-2 font-data-mono text-data-mono text-on-surface pl-2 border-l-2 border-surface-variant">
+<span class="material-symbols-outlined text-[16px] text-primary">security</span>
+<span>Permissions</span>
+<span class="material-symbols-outlined text-[16px] text-outline">chevron_right</span>
+</div>
+<div class="mt-2 flex items-center gap-2 font-data-mono text-data-mono text-primary font-semibold pl-4 border-l-2 border-primary">
+<span class="material-symbols-outlined text-[16px] text-primary" style="font-variation-settings: 'FILL' 1;">location_on</span>
+<span>Location</span>
+</div>
+</div>
+<button class="w-full bg-surface-variant text-on-surface font-headline-sm text-headline-sm py-4 px-6 rounded-full hover:bg-surface-dim active:scale-95 transition-all shadow-sm">
+                Open Settings
+            </button>
+</section>
+</main>
+</body></html>

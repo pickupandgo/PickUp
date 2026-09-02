@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Receiver Details</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-surface": "#1b1b1d",
+                      "error-container": "#ffdad6",
+                      "on-tertiary-fixed": "#231a09",
+                      "on-secondary-fixed-variant": "#3b4760",
+                      "primary": "#000000",
+                      "surface": "#fcf8fb",
+                      "background": "#fcf8fb",
+                      "primary-fixed": "#dde1ff",
+                      "on-error-container": "#93000a",
+                      "tertiary-fixed-dim": "#d6c4aa",
+                      "surface-container-high": "#eae7e9",
+                      "secondary-fixed-dim": "#bac6e6",
+                      "on-primary-container": "#7e829e",
+                      "error": "#ba1a1a",
+                      "on-secondary": "#ffffff",
+                      "on-secondary-fixed": "#0e1b33",
+                      "surface-dim": "#dcd9db",
+                      "outline": "#77767e",
+                      "surface-bright": "#fcf8fb",
+                      "secondary-fixed": "#d8e2ff",
+                      "secondary": "#525e79",
+                      "on-secondary-container": "#57637e",
+                      "on-primary-fixed": "#151a31",
+                      "on-tertiary-fixed-variant": "#514531",
+                      "tertiary": "#000000",
+                      "inverse-on-surface": "#f3f0f2",
+                      "surface-container": "#f0edef",
+                      "on-background": "#1b1b1d",
+                      "surface-variant": "#e5e1e4",
+                      "surface-container-highest": "#e5e1e4",
+                      "on-primary": "#ffffff",
+                      "on-error": "#ffffff",
+                      "surface-tint": "#585d77",
+                      "surface-container-lowest": "#ffffff",
+                      "outline-variant": "#c7c5ce",
+                      "tertiary-container": "#231a09",
+                      "inverse-surface": "#313032",
+                      "surface-container-low": "#f6f3f5",
+                      "on-primary-fixed-variant": "#40465e",
+                      "on-tertiary-container": "#91826a",
+                      "secondary-container": "#d4dfff",
+                      "inverse-primary": "#c0c5e3",
+                      "primary-fixed-dim": "#c0c5e3",
+                      "primary-container": "#151a31",
+                      "tertiary-fixed": "#f3e0c5",
+                      "on-surface-variant": "#46464d",
+                      "on-tertiary": "#ffffff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "1rem",
+                      "lg": "2rem",
+                      "xl": "3rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "container-padding": "16px",
+                      "row-height-sm": "40px",
+                      "row-height-md": "56px",
+                      "gutter": "12px",
+                      "unit": "4px"
+              },
+              "fontFamily": {
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "data-mono": [
+                              "Inter"
+                      ],
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "label-sm": [
+                              "Inter"
+                      ],
+                      "headline-sm": [
+                              "Inter"
+                      ],
+                      "body-lg": [
+                              "Inter"
+                      ],
+                      "headline-md": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "data-mono": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "label-caps": [
+                              "11px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "label-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-sm": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-lg": [
+                              "15px",
+                              {
+                                      "lineHeight": "22px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-md": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col relative pb-32">
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky bg-surface dark:bg-background z-50">
+<div class="flex justify-between items-center px-container-padding h-row-height-md w-full">
+<button aria-label="Go back" class="text-primary dark:text-primary-fixed hover:bg-surface-container-high dark:hover:bg-surface-variant transition-colors active:scale-95 duration-150 p-2 -ml-2 rounded-full">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-sm text-headline-sm-mobile md:text-headline-sm text-primary dark:text-on-primary-fixed flex-1 text-center font-bold mr-8">Delivery</h1>
+</div>
+</header>
+<main class="flex-1 px-container-padding pt-6 flex flex-col gap-8 max-w-2xl mx-auto w-full">
+<!-- Destination Header -->
+<section class="bg-surface-container-low rounded-lg p-6 flex items-start gap-4 shadow-sm border border-surface-container-highest">
+<div class="bg-secondary-container text-on-secondary-container rounded-full p-3 flex-shrink-0 mt-1">
+<span class="material-symbols-outlined" data-icon="location_on">location_on</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps text-secondary mb-1">DROP 1</span>
+<p class="font-headline-sm text-headline-sm text-on-surface">Shastri Nagar, Jodhpur</p>
+</div>
+</section>
+<!-- Form Section -->
+<section class="flex flex-col gap-6">
+<h2 class="font-headline-sm text-headline-sm text-on-surface mb-2">Who is receiving the goods?</h2>
+<!-- Input 1 (Name) -->
+<div class="flex flex-col gap-2">
+<label class="font-label-caps text-label-caps text-on-surface-variant uppercase" for="receiver-name">RECEIVER NAME</label>
+<div class="relative">
+<input class="w-full bg-surface-variant border-none rounded-[12px] px-4 py-3 font-body-lg text-body-lg text-on-surface placeholder-outline-variant focus:ring-2 focus:ring-primary focus:bg-surface transition-all duration-200" id="receiver-name" placeholder="Enter name" type="text"/>
+</div>
+</div>
+<!-- Input 2 (Contact) -->
+<div class="flex flex-col gap-2">
+<label class="font-label-caps text-label-caps text-on-surface-variant uppercase" for="contact-number">MOBILE NUMBER</label>
+<div class="relative flex items-center bg-surface-variant rounded-[12px] focus-within:ring-2 focus-within:ring-primary focus-within:bg-surface transition-all duration-200">
+<span class="pl-4 pr-2 font-data-mono text-data-mono text-on-surface-variant border-r border-outline-variant/30">+91</span>
+<input class="w-full bg-transparent border-none rounded-r-[12px] px-4 py-3 font-data-mono text-data-mono text-on-surface placeholder-outline-variant focus:ring-0" id="contact-number" placeholder="Enter 10-digit number" type="tel"/>
+</div>
+<!-- Validation State (Subtle Error) -->
+<div class="flex items-center gap-1 mt-1 text-error hidden" id="phone-error">
+<span class="material-symbols-outlined text-[16px]">error</span>
+<span class="font-label-sm text-label-sm">Please enter a valid 10-digit number</span>
+</div>
+</div>
+<!-- Input 3 (Instructions) -->
+<div class="flex flex-col gap-2">
+<label class="font-label-caps text-label-caps text-on-surface-variant uppercase" for="instructions">DELIVERY INSTRUCTIONS (OPTIONAL)</label>
+<textarea class="w-full bg-surface-variant border-none rounded-[12px] px-4 py-3 font-body-lg text-body-lg text-on-surface placeholder-outline-variant focus:ring-2 focus:ring-primary focus:bg-surface transition-all duration-200 resize-none" id="instructions" placeholder="e.g. Near the blue gate, 2nd floor..." rows="3"></textarea>
+</div>
+</section>
+</main>
+<!-- Bottom Action -->
+<div class="fixed bottom-0 left-0 w-full bg-surface-container-lowest/80 backdrop-blur-md border-t border-surface-container-highest p-4 pb-safe z-40">
+<div class="max-w-2xl mx-auto w-full">
+<button class="w-full bg-primary text-on-primary font-headline-sm text-headline-sm py-4 rounded-full hover:bg-primary/90 active:scale-[0.98] transition-all duration-200 shadow-md">
+                CONTINUE
+            </button>
+</div>
+</div>
+<script>
+        // Simple validation script for demo purposes
+        const phoneInput = document.getElementById('contact-number');
+        const phoneError = document.getElementById('phone-error');
+
+        phoneInput.addEventListener('input', (e) => {
+            const val = e.target.value.replace(/\D/g, '');
+            if (val.length > 0 && val.length < 10 && document.activeElement !== phoneInput) {
+               // Show error only if they typed something but not 10 digits and blurred (simplified logic for demo)
+            }
+        });
+        
+        phoneInput.addEventListener('blur', (e) => {
+             const val = e.target.value.replace(/\D/g, '');
+             if(val.length > 0 && val.length !== 10) {
+                 phoneError.classList.remove('hidden');
+                 phoneInput.closest('.relative').classList.add('ring-2', 'ring-error', 'bg-error-container/10');
+                 phoneInput.closest('.relative').classList.remove('focus-within:ring-primary', 'bg-surface-variant');
+             } else {
+                 phoneError.classList.add('hidden');
+                 phoneInput.closest('.relative').classList.remove('ring-2', 'ring-error', 'bg-error-container/10');
+                 phoneInput.closest('.relative').classList.add('focus-within:ring-primary', 'bg-surface-variant');
+             }
+        });
+    </script>
+</body></html>

@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Saved Addresses - Precision Mobility</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Design System Theme -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed": "#d8e2ff",
+                    "on-error": "#ffffff",
+                    "surface-container": "#f0edef",
+                    "on-primary-fixed": "#151a31",
+                    "primary-fixed": "#dde1ff",
+                    "primary-fixed-dim": "#c0c5e3",
+                    "tertiary": "#000000",
+                    "surface": "#fcf8fb",
+                    "secondary": "#525e79",
+                    "on-surface-variant": "#46464d",
+                    "on-tertiary": "#ffffff",
+                    "primary": "#000000",
+                    "error-container": "#ffdad6",
+                    "on-secondary-container": "#57637e",
+                    "on-tertiary-container": "#91826a",
+                    "inverse-surface": "#313032",
+                    "outline-variant": "#c7c5ce",
+                    "primary-container": "#151a31",
+                    "on-primary-container": "#7e829e",
+                    "tertiary-container": "#231a09",
+                    "tertiary-fixed-dim": "#d6c4aa",
+                    "inverse-primary": "#c0c5e3",
+                    "surface-dim": "#dcd9db",
+                    "secondary-fixed-dim": "#bac6e6",
+                    "on-tertiary-fixed-variant": "#514531",
+                    "background": "#fcf8fb",
+                    "on-error-container": "#93000a",
+                    "secondary-container": "#d4dfff",
+                    "on-tertiary-fixed": "#231a09",
+                    "outline": "#77767e",
+                    "on-surface": "#1b1b1d",
+                    "surface-tint": "#585d77",
+                    "on-secondary-fixed": "#0e1b33",
+                    "on-background": "#1b1b1d",
+                    "surface-container-lowest": "#ffffff",
+                    "on-secondary": "#ffffff",
+                    "surface-bright": "#fcf8fb",
+                    "surface-variant": "#e5e1e4",
+                    "surface-container-high": "#eae7e9",
+                    "on-secondary-fixed-variant": "#3b4760",
+                    "tertiary-fixed": "#f3e0c5",
+                    "on-primary": "#ffffff",
+                    "on-primary-fixed-variant": "#40465e",
+                    "surface-container-low": "#f6f3f5",
+                    "surface-container-highest": "#e5e1e4",
+                    "error": "#ba1a1a",
+                    "inverse-on-surface": "#f3f0f2"
+            },
+            "borderRadius": {
+                    "DEFAULT": "1rem",
+                    "lg": "2rem",
+                    "xl": "3rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "container-padding": "16px",
+                    "unit": "4px",
+                    "row-height-sm": "40px",
+                    "gutter": "12px",
+                    "row-height-md": "56px"
+            },
+            "fontFamily": {
+                    "headline-sm": ["Inter"],
+                    "label-caps": ["Inter"],
+                    "body-md": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "data-mono": ["Inter"],
+                    "label-sm": ["Inter"],
+                    "headline-md": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-sm": ["16px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "body-lg": ["15px", {"lineHeight": "22px", "fontWeight": "400"}],
+                    "data-mono": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600"}]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .icon-fill {
+          font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        /* Smooth transitions for modals */
+        .modal-enter { opacity: 0; transform: translateY(20px); }
+        .modal-enter-active { opacity: 1; transform: translateY(0); transition: opacity 300ms ease-out, transform 300ms ease-out; }
+        .modal-leave { opacity: 1; transform: translateY(0); }
+        .modal-leave-active { opacity: 0; transform: translateY(20px); transition: opacity 200ms ease-in, transform 200ms ease-in; }
+        
+        .backdrop-enter { opacity: 0; }
+        .backdrop-enter-active { opacity: 1; transition: opacity 300ms ease-out; }
+        .backdrop-leave { opacity: 1; }
+        .backdrop-leave-active { opacity: 0; transition: opacity 200ms ease-in; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen pb-[90px] pt-row-height-md relative overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-md flex justify-between items-center h-row-height-md px-container-padding transition-colors duration-200">
+<div class="flex items-center gap-4">
+<button class="text-primary hover:bg-surface-variant/50 p-2 rounded-full transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary">Saved Addresses</h1>
+</div>
+<button class="text-primary hover:bg-surface-variant/50 p-2 rounded-full transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined">help</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="px-container-padding py-6 max-w-3xl mx-auto flex flex-col gap-4">
+<!-- Address Card 1: Home -->
+<article class="bg-surface-container-low rounded-lg p-5 flex flex-col gap-4 relative overflow-hidden group hover:bg-surface-container transition-colors duration-300">
+<!-- Decorative accent line -->
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary-fixed"></div>
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container">
+<span class="material-symbols-outlined icon-fill">home</span>
+</div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Home</h2>
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-widest">Primary</span>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="p-2 text-on-surface-variant hover:text-primary hover:bg-surface-variant rounded-full transition-colors" onclick="openEditModal('Home', '12, Sector C, Shastri Nagar', 'Near Shiva Temple, Jodhpur, 342003')">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:text-error hover:bg-error-container rounded-full transition-colors" onclick="openDeleteDialog('Home')">
+<span class="material-symbols-outlined text-[20px]">delete</span>
+</button>
+</div>
+</div>
+<div class="pl-13 mt-1">
+<p class="font-body-md text-body-md text-on-surface">12, Sector C, Shastri Nagar</p>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 flex items-start gap-1">
+<span class="material-symbols-outlined text-[16px] mt-0.5">location_on</span>
+                    Near Shiva Temple, Jodhpur, 342003
+                </p>
+</div>
+</article>
+<!-- Address Card 2: Office -->
+<article class="bg-surface-container-low rounded-lg p-5 flex flex-col gap-4 relative overflow-hidden group hover:bg-surface-container transition-colors duration-300">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined">work</span>
+</div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Office</h2>
+</div>
+</div>
+<div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity md:opacity-100">
+<button class="p-2 text-on-surface-variant hover:text-primary hover:bg-surface-variant rounded-full transition-colors" onclick="openEditModal('Office', 'Tech Hub, 4th Floor, Ratanada', 'Opposite Circuit House, Jodhpur, 342011')">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:text-error hover:bg-error-container rounded-full transition-colors" onclick="openDeleteDialog('Office')">
+<span class="material-symbols-outlined text-[20px]">delete</span>
+</button>
+</div>
+</div>
+<div class="pl-13 mt-1">
+<p class="font-body-md text-body-md text-on-surface">Tech Hub, 4th Floor, Ratanada</p>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 flex items-start gap-1">
+<span class="material-symbols-outlined text-[16px] mt-0.5">location_on</span>
+                    Opposite Circuit House, Jodhpur, 342011
+                </p>
+</div>
+</article>
+<!-- Address Card 3: Warehouse -->
+<article class="bg-surface-container-low rounded-lg p-5 flex flex-col gap-4 relative overflow-hidden group hover:bg-surface-container transition-colors duration-300">
+<div class="flex justify-between items-start">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined">warehouse</span>
+</div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Warehouse B</h2>
+</div>
+</div>
+<div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity md:opacity-100">
+<button class="p-2 text-on-surface-variant hover:text-primary hover:bg-surface-variant rounded-full transition-colors" onclick="openEditModal('Warehouse B', 'Plot 45, Basni Industrial Area Phase II', 'Near AIIMS Road, Jodhpur, 342005')">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:text-error hover:bg-error-container rounded-full transition-colors" onclick="openDeleteDialog('Warehouse B')">
+<span class="material-symbols-outlined text-[20px]">delete</span>
+</button>
+</div>
+</div>
+<div class="pl-13 mt-1">
+<p class="font-body-md text-body-md text-on-surface">Plot 45, Basni Industrial Area Phase II</p>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 flex items-start gap-1">
+<span class="material-symbols-outlined text-[16px] mt-0.5">location_on</span>
+                    Near AIIMS Road, Jodhpur, 342005
+                </p>
+</div>
+</article>
+</main>
+<!-- Floating Action Button for Add Address (Desktop/Tablet) -->
+<div class="fixed bottom-24 right-container-padding z-40 hidden md:block">
+<button class="bg-primary text-on-primary rounded-full px-6 py-4 flex items-center gap-2 shadow-lg hover:shadow-xl hover:bg-primary/90 transition-all active:scale-95" onclick="openAddModal()">
+<span class="material-symbols-outlined">add</span>
+<span class="font-label-sm text-label-sm uppercase tracking-wider font-semibold">New Address</span>
+</button>
+</div>
+<!-- Fixed Bottom Action Area (Mobile) -->
+<div class="fixed bottom-row-height-md md:hidden w-full bg-surface/90 backdrop-blur-md p-container-padding border-t border-surface-variant z-40">
+<button class="w-full bg-primary text-on-primary rounded-full h-[52px] flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-transform" onclick="openAddModal()">
+<span class="material-symbols-outlined">add</span>
+<span class="font-headline-sm text-headline-sm">Add New Address</span>
+</button>
+</div>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center pt-2 pb-6 px-4 bg-surface dark:bg-on-background shadow-[0_-4px_12px_rgba(0,0,0,0.05)] rounded-t-lg z-50 md:hidden">
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:opacity-80 scale-95 active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-label-sm text-label-sm mt-1">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:opacity-80 scale-95 active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined">local_shipping</span>
+<span class="font-label-sm text-label-sm mt-1">Trips</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:opacity-80 scale-95 active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined">account_balance_wallet</span>
+<span class="font-label-sm text-label-sm mt-1">Wallet</span>
+</a>
+<!-- Active State: Account/Profile context -->
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 hover:opacity-80 scale-95 active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined icon-fill">person</span>
+<span class="font-label-sm text-label-sm mt-1">Account</span>
+</a>
+</nav>
+<!-- Modals & Overlays -->
+<!-- Backdrop -->
+<div class="fixed inset-0 bg-on-background/40 backdrop-blur-sm z-[60] hidden opacity-0 transition-opacity duration-300" id="modalBackdrop" onclick="closeAllModals()"></div>
+<!-- Add/Edit Address Modal (Bottom Sheet on Mobile, Centered Modal on Desktop) -->
+<div class="fixed bottom-0 left-0 right-0 md:inset-0 md:m-auto w-full md:max-w-lg bg-surface md:rounded-lg rounded-t-[28px] md:h-fit z-[70] hidden transform translate-y-full md:translate-y-4 opacity-0 transition-all duration-300 ease-out shadow-2xl flex flex-col" id="addressModal">
+<!-- Drag Handle (Mobile) -->
+<div class="w-full flex justify-center pt-4 pb-2 md:hidden">
+<div class="w-12 h-1.5 bg-surface-variant rounded-full"></div>
+</div>
+<div class="px-6 py-4 flex justify-between items-center border-b border-surface-variant/50">
+<h3 class="font-headline-md text-headline-md font-bold text-on-surface" id="modalTitle">Add Address</h3>
+<button class="p-2 -mr-2 text-on-surface-variant hover:bg-surface-variant rounded-full transition-colors" onclick="closeAllModals()">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="p-6 flex-1 overflow-y-auto flex flex-col gap-5">
+<!-- Label Input -->
+<div class="flex flex-col gap-2">
+<label class="font-label-sm text-label-sm text-on-surface-variant" for="addressLabel">Save as (e.g., Home, Office)</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant">label</span>
+<input class="w-full bg-surface-variant border-transparent focus:border-primary focus:ring-0 rounded-md pl-12 pr-4 py-3 font-body-md text-body-md text-on-surface placeholder-on-surface-variant/50 transition-colors" id="addressLabel" placeholder="Address Label" type="text"/>
+</div>
+</div>
+<!-- Full Address Input -->
+<div class="flex flex-col gap-2">
+<label class="font-label-sm text-label-sm text-on-surface-variant" for="fullAddress">Full Address</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-4 top-4 text-on-surface-variant">map</span>
+<textarea class="w-full bg-surface-variant border-transparent focus:border-primary focus:ring-0 rounded-md pl-12 pr-4 py-3 font-body-md text-body-md text-on-surface placeholder-on-surface-variant/50 transition-colors resize-none" id="fullAddress" placeholder="Enter complete address details..." rows="3"></textarea>
+</div>
+</div>
+<!-- Landmark Input -->
+<div class="flex flex-col gap-2">
+<label class="font-label-sm text-label-sm text-on-surface-variant" for="landmark">Landmark (Optional)</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant">pin_drop</span>
+<input class="w-full bg-surface-variant border-transparent focus:border-primary focus:ring-0 rounded-md pl-12 pr-4 py-3 font-body-md text-body-md text-on-surface placeholder-on-surface-variant/50 transition-colors" id="landmark" placeholder="Near Apollo Hospital" type="text"/>
+</div>
+</div>
+<!-- Map Preview Area -->
+<div class="h-32 bg-surface-container rounded-lg mt-2 overflow-hidden relative flex items-center justify-center border border-surface-variant">
+<div class="absolute inset-0 bg-cover bg-center opacity-70" data-alt="A minimal, light-mode stylized digital map interface centered on Jodhpur, India. The map uses subtle grays and off-whites for terrain, with thin precise lines for roads. A single, elegant charcoal-indigo location pin marks a central spot. The aesthetic is clean, modern, calm-tech, resembling a high-end mobility application interface without any text or labels." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAHPmWhp-3ybceM1W7Sy6T9qVXL5aozywOCH-ZHc9vYCmJV3qWRS5iy2CQkPZBxxdPCodNz6gMnQik22qDKVxG70qH2Ew3qSA7WnnTJR0VYgXjYBX68jD8lBBMxqITvsF0NKnSyr1zsUBLJSpSl7SaiyxRLLHzBo1IGpQk5zgdFtLqBzr7erChLuGszW7byC1s9vbDRtftCBg2HRffvZblsbbEsS_kLbZmynMMPE2VH7T22GH_Sm3WS')"></div>
+<div class="relative z-10 flex flex-col items-center gap-1 bg-surface/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+<span class="material-symbols-outlined text-primary text-[20px]">my_location</span>
+<span class="font-label-caps text-label-caps text-primary">Pin Location</span>
+</div>
+</div>
+</div>
+<div class="p-6 bg-surface pt-4 mt-auto border-t border-surface-variant/30">
+<button class="w-full bg-primary text-on-primary rounded-full h-[52px] flex items-center justify-center font-headline-sm text-headline-sm shadow-md active:scale-[0.98] transition-transform" onclick="closeAllModals()">
+                Save Address
+            </button>
+</div>
+</div>
+<!-- Delete Confirmation Dialog -->
+<div class="fixed inset-0 m-auto w-[90%] max-w-sm h-fit bg-surface rounded-[24px] z-[70] hidden flex-col p-6 shadow-2xl opacity-0 transform scale-95 transition-all duration-200" id="deleteDialog">
+<div class="w-12 h-12 rounded-full bg-error-container text-error flex items-center justify-center mb-4 mx-auto">
+<span class="material-symbols-outlined">delete_forever</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-center text-on-surface mb-2">Delete Address?</h3>
+<p class="font-body-md text-body-md text-center text-on-surface-variant mb-6">Are you sure you want to remove '<span class="font-semibold text-on-surface" id="deleteItemName"></span>'? This action cannot be undone.</p>
+<div class="flex flex-col gap-3">
+<button class="w-full bg-error text-on-error rounded-full py-3 font-headline-sm text-headline-sm shadow-sm active:scale-[0.98] transition-transform" onclick="closeAllModals()">
+                Delete
+            </button>
+<button class="w-full bg-secondary-container text-on-secondary-container rounded-full py-3 font-headline-sm text-headline-sm active:scale-[0.98] transition-transform" onclick="closeAllModals()">
+                Cancel
+            </button>
+</div>
+</div>
+<script>
+        const backdrop = document.getElementById('modalBackdrop');
+        const addressModal = document.getElementById('addressModal');
+        const deleteDialog = document.getElementById('deleteDialog');
+        const modalTitle = document.getElementById('modalTitle');
+        const addressLabel = document.getElementById('addressLabel');
+        const fullAddress = document.getElementById('fullAddress');
+        const landmark = document.getElementById('landmark');
+        const deleteItemName = document.getElementById('deleteItemName');
+
+        function showBackdrop() {
+            backdrop.classList.remove('hidden');
+            // Trigger reflow
+            void backdrop.offsetWidth;
+            backdrop.classList.remove('opacity-0');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function hideBackdrop() {
+            backdrop.classList.add('opacity-0');
+            setTimeout(() => {
+                backdrop.classList.add('hidden');
+                document.body.style.overflow = '';
+            }, 300);
+        }
+
+        function openAddModal() {
+            modalTitle.textContent = 'Add New Address';
+            addressLabel.value = '';
+            fullAddress.value = '';
+            landmark.value = '';
+            
+            showBackdrop();
+            addressModal.classList.remove('hidden');
+            void addressModal.offsetWidth;
+            
+            if (window.innerWidth < 768) {
+                addressModal.classList.remove('translate-y-full', 'opacity-0');
+                addressModal.classList.add('translate-y-0', 'opacity-100');
+            } else {
+                addressModal.classList.remove('translate-y-4', 'opacity-0');
+                addressModal.classList.add('translate-y-0', 'opacity-100');
+            }
+        }
+
+        function openEditModal(label, address, lmark) {
+            modalTitle.textContent = 'Edit Address';
+            addressLabel.value = label;
+            fullAddress.value = address;
+            landmark.value = lmark;
+            
+            showBackdrop();
+            addressModal.classList.remove('hidden');
+            void addressModal.offsetWidth;
+            
+            if (window.innerWidth < 768) {
+                addressModal.classList.remove('translate-y-full', 'opacity-0');
+                addressModal.classList.add('translate-y-0', 'opacity-100');
+            } else {
+                addressModal.classList.remove('translate-y-4', 'opacity-0');
+                addressModal.classList.add('translate-y-0', 'opacity-100');
+            }
+        }
+
+        function openDeleteDialog(name) {
+            deleteItemName.textContent = name;
+            showBackdrop();
+            
+            deleteDialog.classList.remove('hidden');
+            deleteDialog.style.display = 'flex';
+            void deleteDialog.offsetWidth;
+            
+            deleteDialog.classList.remove('opacity-0', 'scale-95');
+            deleteDialog.classList.add('opacity-100', 'scale-100');
+        }
+
+        function closeAllModals() {
+            hideBackdrop();
+            
+            // Close Address Modal
+            if (window.innerWidth < 768) {
+                addressModal.classList.remove('translate-y-0', 'opacity-100');
+                addressModal.classList.add('translate-y-full', 'opacity-0');
+            } else {
+                addressModal.classList.remove('translate-y-0', 'opacity-100');
+                addressModal.classList.add('translate-y-4', 'opacity-0');
+            }
+            
+            // Close Delete Dialog
+            deleteDialog.classList.remove('opacity-100', 'scale-100');
+            deleteDialog.classList.add('opacity-0', 'scale-95');
+            
+            setTimeout(() => {
+                addressModal.classList.add('hidden');
+                deleteDialog.classList.add('hidden');
+                deleteDialog.style.display = '';
+            }, 300);
+        }
+    </script>
+</body></html>

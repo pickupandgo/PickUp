@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-width=1.0" name="viewport"/>
+<title>Payment Method Selected</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary": "#ffffff",
+                        "surface": "#fcf8fb",
+                        "surface-container-high": "#eae7e9",
+                        "on-surface-variant": "#46464d",
+                        "tertiary-fixed": "#f3e0c5",
+                        "surface-bright": "#fcf8fb",
+                        "on-background": "#1b1b1d",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6",
+                        "on-tertiary-container": "#91826a",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "outline": "#77767e",
+                        "inverse-surface": "#313032",
+                        "primary-fixed": "#dde1ff",
+                        "on-secondary-container": "#57637e",
+                        "surface-variant": "#e5e1e4",
+                        "on-surface": "#1b1b1d",
+                        "inverse-on-surface": "#f3f0f2",
+                        "inverse-primary": "#c0c5e3",
+                        "on-primary-fixed": "#151a31",
+                        "on-primary-container": "#7e829e",
+                        "on-error-container": "#93000a",
+                        "primary": "#000000",
+                        "secondary": "#525e79",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "surface-tint": "#585d77",
+                        "outline-variant": "#c7c5ce",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary-container": "#d4dfff",
+                        "surface-container-low": "#f6f3f5",
+                        "on-primary": "#ffffff",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "primary-container": "#151a31",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "on-primary-fixed-variant": "#40465e",
+                        "on-secondary-fixed": "#0e1b33",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "on-tertiary": "#ffffff",
+                        "surface-dim": "#dcd9db",
+                        "tertiary-container": "#231a09",
+                        "surface-container": "#f0edef",
+                        "surface-container-highest": "#e5e1e4",
+                        "on-tertiary-fixed": "#231a09",
+                        "background": "#fcf8fb",
+                        "tertiary": "#000000"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "12px",
+                        "row-height-md": "56px",
+                        "container-padding": "16px",
+                        "row-height-sm": "40px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "body-md": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface min-h-screen flex flex-col antialiased selection:bg-primary-fixed selection:text-on-primary-fixed">
+<!-- TopAppBar (Transactional - Minimal) -->
+<header class="w-full top-0 sticky bg-surface dark:bg-surface-dim z-40">
+<div class="flex items-center justify-between px-container-padding h-row-height-md w-full">
+<button aria-label="Go back" class="flex items-center justify-center p-2 rounded-full hover:bg-surface-container-high transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined text-on-surface" style="font-variation-settings: 'FILL' 0;">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-on-surface">Payment</h1>
+<div class="w-10"></div> <!-- Spacer for centering -->
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 px-container-padding py-6 flex flex-col gap-6 max-w-lg mx-auto w-full">
+<!-- Booking Summary Bento Card -->
+<section class="bg-surface-container-low rounded-lg p-6 shadow-sm border border-surface-container-highest">
+<div class="flex items-center gap-4 mb-6 pb-6 border-b border-surface-container-highest/50">
+<div class="bg-surface-variant w-12 h-12 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">directions_car</span>
+</div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Ride to Downtown</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Today, 2:30 PM</p>
+</div>
+</div>
+<div class="space-y-4">
+<div class="flex justify-between items-center">
+<span class="font-body-lg text-body-lg text-on-surface-variant">Base Fare</span>
+<span class="font-data-mono text-data-mono text-on-surface">₹ 300</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-body-lg text-body-lg text-on-surface-variant">Taxes &amp; Fees</span>
+<span class="font-data-mono text-data-mono text-on-surface">₹ 40</span>
+</div>
+<div class="pt-4 mt-2 flex justify-between items-center border-t border-surface-container-highest border-dashed">
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold">Total</span>
+<span class="font-headline-md text-headline-md text-primary font-bold">₹ 340</span>
+</div>
+</div>
+</section>
+<!-- Selected Payment Method Card -->
+<section>
+<h3 class="font-label-caps text-label-caps text-outline uppercase tracking-wider mb-3 px-2">Selected Method</h3>
+<div class="bg-secondary-container/30 border border-secondary-fixed-dim/50 rounded-lg p-4 flex items-center justify-between relative overflow-hidden">
+<!-- Subtle background glow -->
+<div class="absolute inset-0 bg-gradient-to-br from-primary-fixed/10 to-transparent pointer-events-none"></div>
+<div class="flex items-center gap-4 relative z-10">
+<div class="bg-surface w-10 h-10 rounded-full flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">account_balance_wallet</span>
+</div>
+<div>
+<p class="font-body-md text-body-md text-on-surface font-semibold">UPI Payment</p>
+<p class="font-data-mono text-data-mono text-on-surface-variant text-sm mt-0.5">user@upi</p>
+</div>
+</div>
+<button class="relative z-10 font-label-sm text-label-sm text-secondary font-medium px-3 py-1.5 rounded-full hover:bg-surface-variant/50 transition-colors">
+                    Change
+                </button>
+</div>
+</section>
+<!-- Security Badge -->
+<div class="flex items-center justify-center gap-2 mt-auto pt-8 pb-4 text-on-surface-variant">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">verified_user</span>
+<span class="font-label-sm text-label-sm">Payments are secure and encrypted</span>
+</div>
+</main>
+<!-- Bottom Action Area -->
+<div class="w-full bg-surface-container-low border-t border-surface-container-highest p-container-padding pb-safe sticky bottom-0 z-40">
+<div class="max-w-lg mx-auto">
+<button class="w-full bg-primary text-on-primary font-headline-sm text-headline-sm h-[56px] rounded-full flex items-center justify-center gap-2 hover:bg-primary/90 active:scale-[0.98] transition-all duration-200 shadow-sm">
+<span>Pay ₹ 340</span>
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">arrow_forward</span>
+</button>
+</div>
+</div>
+</body></html>

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Logout Confirmation - Pick Up</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed": "#dde1ff",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "surface-tint": "#585d77",
+                        "primary": "#000000",
+                        "tertiary": "#000000",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "on-tertiary-fixed": "#231a09",
+                        "on-secondary-container": "#57637e",
+                        "surface-container": "#f0edef",
+                        "on-surface-variant": "#46464d",
+                        "on-primary-fixed": "#151a31",
+                        "on-error-container": "#93000a",
+                        "inverse-surface": "#313032",
+                        "inverse-on-surface": "#f3f0f2",
+                        "tertiary-fixed": "#f3e0c5",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "tertiary-container": "#231a09",
+                        "surface-variant": "#e5e1e4",
+                        "error": "#ba1a1a",
+                        "surface-bright": "#fcf8fb",
+                        "secondary": "#525e79",
+                        "outline-variant": "#c7c5ce",
+                        "error-container": "#ffdad6",
+                        "on-primary": "#ffffff",
+                        "secondary-container": "#d4dfff",
+                        "outline": "#77767e",
+                        "surface-container-highest": "#e5e1e4",
+                        "secondary-fixed": "#d8e2ff",
+                        "inverse-primary": "#c0c5e3",
+                        "on-tertiary-container": "#91826a",
+                        "on-secondary": "#ffffff",
+                        "primary-container": "#151a31",
+                        "on-surface": "#1b1b1d",
+                        "on-secondary-fixed": "#0e1b33",
+                        "on-primary-container": "#7e829e",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "background": "#fcf8fb",
+                        "surface-dim": "#dcd9db",
+                        "surface": "#fcf8fb",
+                        "surface-container-high": "#eae7e9",
+                        "on-primary-fixed-variant": "#40465e",
+                        "on-background": "#1b1b1d",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "surface-container-lowest": "#ffffff",
+                        "on-error": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-low": "#f6f3f5"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "row-height-sm": "40px",
+                        "container-padding": "16px",
+                        "gutter": "12px",
+                        "row-height-md": "56px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-caps": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background font-body-md text-on-background antialiased relative min-h-screen flex flex-col items-center justify-center">
+<!-- Mock Background (Settings Screen - Dimmed) -->
+<div class="absolute inset-0 z-0 bg-surface flex flex-col filter blur-[2px]">
+<!-- Top App Bar -->
+<header class="w-full sticky top-0 bg-surface text-primary font-headline-md text-headline-md flex items-center justify-between px-container-padding h-row-height-md">
+<button class="flex items-center justify-center p-2 rounded-full hover:bg-surface-container-low transition-colors duration-200">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">arrow_back</span>
+</button>
+<div class="font-headline-md text-headline-md text-on-surface">Settings</div>
+<div class="w-10"></div> <!-- Spacer for centering -->
+</header>
+<!-- Dummy Settings Content -->
+<main class="flex-1 p-container-padding space-y-4">
+<div class="h-20 bg-surface-container-low rounded-lg w-full"></div>
+<div class="h-12 bg-surface-container-low rounded-md w-full"></div>
+<div class="h-12 bg-surface-container-low rounded-md w-full"></div>
+<div class="h-12 bg-surface-container-low rounded-md w-full"></div>
+<div class="h-12 bg-surface-container-low rounded-md w-full"></div>
+</main>
+<!-- Bottom Nav Bar -->
+<nav class="fixed bottom-0 w-full z-50 rounded-t-lg bg-surface-container-lowest border-t border-outline-variant shadow-sm flex justify-around items-center h-row-height-md px-4">
+<div class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-high scale-95 active:transition-transform rounded-full px-4 py-1">
+<span class="material-symbols-outlined font-headline-sm text-headline-sm text-primary" data-icon="grid_view" data-weight="fill">grid_view</span>
+<span class="font-label-sm text-label-sm">Dashboard</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-high scale-95 active:transition-transform rounded-full px-4 py-1">
+<span class="material-symbols-outlined font-headline-sm text-headline-sm text-primary" data-icon="local_shipping" data-weight="fill">local_shipping</span>
+<span class="font-label-sm text-label-sm">Shipments</span>
+</div>
+<div class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 hover:bg-surface-container-high scale-95 active:transition-transform">
+<span class="material-symbols-outlined font-headline-sm text-headline-sm text-primary" data-icon="settings" data-weight="fill">settings</span>
+<span class="font-label-sm text-label-sm">Settings</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container-high scale-95 active:transition-transform rounded-full px-4 py-1">
+<span class="material-symbols-outlined font-headline-sm text-headline-sm text-primary" data-icon="contact_support" data-weight="fill">contact_support</span>
+<span class="font-label-sm text-label-sm">Support</span>
+</div>
+</nav>
+</div>
+<!-- Overlay Dimmer -->
+<div class="absolute inset-0 bg-primary/40 z-40 transition-opacity duration-300"></div>
+<!-- Modal / Bottom Sheet -->
+<!-- Positioning for bottom sheet on mobile, centered modal on md+ -->
+<div class="absolute bottom-0 w-full md:w-[400px] md:bottom-auto md:top-1/2 md:-translate-y-1/2 z-50 bg-surface-container-lowest rounded-t-[24px] md:rounded-[24px] shadow-lg flex flex-col p-container-padding pb-8 md:pb-container-padding transform transition-transform duration-300 translate-y-0">
+<!-- Drag Handle (Mobile Only) -->
+<div class="w-full flex justify-center mb-6 md:hidden">
+<div class="w-12 h-1.5 bg-outline-variant rounded-full"></div>
+</div>
+<div class="flex flex-col items-center text-center space-y-4 mb-8">
+<div class="w-12 h-12 rounded-full bg-error-container flex items-center justify-center mb-2">
+<span class="material-symbols-outlined text-error" style="font-variation-settings: 'FILL' 1;">logout</span>
+</div>
+<h2 class="font-headline-md text-headline-md text-on-surface">Log out of Pick Up?</h2>
+<p class="font-body-md text-body-md text-on-surface-variant px-4">
+                You will need to sign in again to book a trip or view your history.
+            </p>
+</div>
+<div class="flex flex-col space-y-3 w-full">
+<button class="w-full bg-error text-on-error font-label-sm text-label-sm h-row-height-sm rounded-full flex items-center justify-center hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-error focus:ring-offset-2">
+                Log Out
+            </button>
+<button class="w-full bg-transparent text-primary border border-outline font-label-sm text-label-sm h-row-height-sm rounded-full flex items-center justify-center hover:bg-surface-variant transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">
+                Cancel
+            </button>
+</div>
+</div>
+</body></html>

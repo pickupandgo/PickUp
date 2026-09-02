@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Pick Up Customer Chat Exception States</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .animate-pulse-slow {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-tint": "#585d77",
+                      "inverse-surface": "#313032",
+                      "primary-fixed": "#dde1ff",
+                      "surface-container-low": "#f6f3f5",
+                      "on-surface-variant": "#46464d",
+                      "background": "#fcf8fb",
+                      "inverse-on-surface": "#f3f0f2",
+                      "on-error-container": "#93000a",
+                      "surface-container-highest": "#e5e1e4",
+                      "on-background": "#1b1b1d",
+                      "on-secondary": "#ffffff",
+                      "on-primary-fixed-variant": "#40465e",
+                      "error": "#ba1a1a",
+                      "secondary-fixed-dim": "#bac6e6",
+                      "on-surface": "#1b1b1d",
+                      "on-tertiary-container": "#91826a",
+                      "outline-variant": "#c7c5ce",
+                      "on-primary": "#ffffff",
+                      "surface": "#fcf8fb",
+                      "surface-variant": "#e5e1e4",
+                      "primary-container": "#151a31",
+                      "on-secondary-fixed-variant": "#3b4760",
+                      "inverse-primary": "#c0c5e3",
+                      "surface-container-lowest": "#ffffff",
+                      "tertiary-fixed-dim": "#d6c4aa",
+                      "on-primary-container": "#7e829e",
+                      "on-tertiary-fixed-variant": "#514531",
+                      "tertiary-fixed": "#f3e0c5",
+                      "on-secondary-fixed": "#0e1b33",
+                      "on-tertiary": "#ffffff",
+                      "on-error": "#ffffff",
+                      "secondary-container": "#d4dfff",
+                      "tertiary": "#000000",
+                      "secondary": "#525e79",
+                      "on-secondary-container": "#57637e",
+                      "on-tertiary-fixed": "#231a09",
+                      "surface-container": "#f0edef",
+                      "primary-fixed-dim": "#c0c5e3",
+                      "surface-bright": "#fcf8fb",
+                      "error-container": "#ffdad6",
+                      "outline": "#77767e",
+                      "secondary-fixed": "#d8e2ff",
+                      "tertiary-container": "#231a09",
+                      "primary": "#000000",
+                      "surface-dim": "#dcd9db",
+                      "on-primary-fixed": "#151a31",
+                      "surface-container-high": "#eae7e9"
+              },
+              "borderRadius": {
+                      "DEFAULT": "1rem",
+                      "lg": "2rem",
+                      "xl": "3rem",
+                      "full": "9999px",
+                      "bubble": "12px",
+                      "bubble-sm": "8px"
+              },
+              "spacing": {
+                      "row-height-sm": "40px",
+                      "row-height-md": "56px",
+                      "gutter": "12px",
+                      "container-padding": "16px",
+                      "unit": "4px"
+              },
+              "fontFamily": {
+                      "label-sm": ["Inter"],
+                      "headline-md": ["Inter"],
+                      "body-md": ["Inter"],
+                      "label-caps": ["Inter"],
+                      "body-lg": ["Inter"],
+                      "headline-sm": ["Inter"],
+                      "data-mono": ["Inter"]
+              },
+              "fontSize": {
+                      "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                      "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                      "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                      "body-lg": ["15px", {"lineHeight": "22px", "fontWeight": "400"}],
+                      "headline-sm": ["16px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "data-mono": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md h-screen flex flex-col antialiased">
+<!-- Top App Bar -->
+<header class="bg-surface top-0 sticky w-full z-10">
+<div class="flex items-center justify-between px-container-padding h-row-height-md bg-surface-container">
+<button class="text-primary hover:bg-surface-container-high rounded-full p-2 transition-colors duration-200 flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-sm text-headline-sm text-primary">Customer Chat</h1>
+<button class="text-primary hover:bg-surface-container-high rounded-full p-2 transition-colors duration-200 flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="local_shipping">local_shipping</span>
+</button>
+</div>
+</header>
+<!-- Network/Reconnecting Banner (Exception State 5) -->
+<div class="bg-surface-container-low w-full flex items-center justify-center py-2 px-container-padding text-on-surface-variant font-label-sm text-label-sm gap-2 border-b border-surface-variant">
+<span class="material-symbols-outlined text-[16px] animate-spin">sync</span>
+<span>Connection lost. Reconnecting...</span>
+</div>
+<!-- Main Chat Canvas -->
+<main class="flex-1 overflow-y-auto p-container-padding flex flex-col gap-6 relative">
+<!-- Date Divider -->
+<div class="flex items-center justify-center mt-4 mb-2">
+<span class="bg-surface-container-low text-on-surface-variant font-label-caps text-label-caps px-3 py-1 rounded-full uppercase">Today, 10:42 AM</span>
+</div>
+<!-- Received Message (Context) -->
+<div class="flex flex-col items-start max-w-[80%]">
+<div class="bg-surface-container-high text-on-surface px-4 py-3 rounded-bubble rounded-tl-sm">
+<p class="font-body-md text-body-md">Hi, I'm at the pickup location but can't find you. Where exactly are you parked?</p>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant mt-1 ml-1 opacity-70">10:42 AM</span>
+</div>
+<!-- 1. Message sending -->
+<div class="flex flex-col items-end self-end max-w-[80%]">
+<div class="bg-primary-container text-on-primary-container px-4 py-3 rounded-bubble rounded-tr-sm opacity-80">
+<p class="font-body-md text-body-md">I am parked near the north entrance, right by the loading dock.</p>
+</div>
+<div class="flex items-center gap-1 mt-1 mr-1 text-outline">
+<span class="font-label-sm text-label-sm">Sending...</span>
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+</div>
+</div>
+<!-- 2. Message failed -->
+<div class="flex flex-col items-end self-end max-w-[80%]">
+<div class="bg-primary-container text-on-primary-container px-4 py-3 rounded-bubble rounded-tr-sm relative">
+<p class="font-body-md text-body-md">Let me know if you want me to move closer to the main gate.</p>
+<div class="absolute -left-6 top-1/2 -translate-y-1/2 text-error flex items-center justify-center bg-surface rounded-full">
+<span class="material-symbols-outlined text-[20px]" data-weight="fill">error</span>
+</div>
+</div>
+<div class="flex items-center gap-1 mt-1 mr-1">
+<span class="font-label-sm text-label-sm text-error">Failed</span>
+<span class="text-outline-variant text-[10px]">•</span>
+<button class="font-label-sm text-label-sm text-primary hover:underline font-semibold">Retry</button>
+</div>
+</div>
+<!-- 3. Media uploading -->
+<div class="flex flex-col items-end self-end max-w-[70%]">
+<div class="relative rounded-bubble overflow-hidden bg-surface-container border border-surface-variant w-48 h-48 flex items-center justify-center">
+<div class="absolute inset-0 bg-cover bg-center opacity-40" data-alt="A detailed view of a delivery van parked near a building entrance, slightly blurry to indicate loading state, modern corporate style, light mode, muted colors." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuB-bCu1KdgbmpvvkweDSpcWyGmpoOO0fklCS6AS0EKbj9yJ6TzMcFolnydty1tC5XGwWtqM8rS2wvtsG_W2sEvOBnD1dp_67x8uEj_dCPj-9C5XUjkC0jtFuMDHq0bsbHGh1j0mIEmAFMYrcrQ8d-V2sDHIA6x9itFDZSdh1sDoTKKRIIxpnVbGe7wOnW1hbh746eg6JhMemOUS7b2T3oFCuQwJeB0IZYVECyDewbJTYozdboEDBQZS')"></div>
+<!-- Progress Bar Overlay -->
+<div class="absolute bottom-0 left-0 right-0 bg-surface/90 backdrop-blur-sm p-3 flex flex-col gap-2">
+<div class="flex justify-between items-center w-full">
+<span class="font-label-sm text-label-sm text-on-surface">Uploading</span>
+<span class="font-label-caps text-label-caps text-primary">65%</span>
+</div>
+<div class="w-full h-1 bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full w-[65%]"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- 4. Media upload failed -->
+<div class="flex flex-col items-end self-end max-w-[70%]">
+<div class="relative rounded-bubble overflow-hidden bg-surface-container border border-error-container w-48 h-48 group cursor-pointer">
+<div class="absolute inset-0 bg-cover bg-center" data-alt="A clear photo of a loading dock, intended as a location reference, modern corporate aesthetic, light mode, professional lighting." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDei17EUyy-XfKEjTfimraqksYK_IBmBcgk4LB-vMKLA4xC9WLtuH5pyBALYqdCaKHghKyY8YGgrVAeGNuMVXkF7p6r3ZmKaWnLNrBqY59GIf7P39i7YCZ0g2hx3znmtZXos-Eg3l9UnkkxIQlhBqQtvtZ7I4rwpivUEDLLkf1ei28O1A1L_BSz9_BQcVeZB7SbRRtbiQ7p7BW0n4GyhPJruNSmDeu65XxQeEFB3B05bGwIZWXGoOPa')"></div>
+<!-- Error Overlay -->
+<div class="absolute inset-0 bg-error/10 flex flex-col items-center justify-center gap-2 transition-colors group-hover:bg-error/20">
+<div class="bg-surface/90 backdrop-blur-sm rounded-full p-2 text-error shadow-sm">
+<span class="material-symbols-outlined">cloud_off</span>
+</div>
+<span class="bg-surface/90 backdrop-blur-sm px-3 py-1 rounded-full font-label-sm text-label-sm text-on-surface shadow-sm">Tap to retry</span>
+</div>
+</div>
+</div>
+<!-- 6. Chat unavailable (Full state replacing content if truly unavailable, but shown here as an inline section for demonstration) -->
+<div class="flex-1 flex items-center justify-center mt-8 p-6 bg-surface-container-lowest rounded-xl border border-surface-variant border-dashed">
+<div class="flex flex-col items-center text-center max-w-xs gap-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center text-outline">
+<span class="material-symbols-outlined text-[24px]">chat_bubble_outline</span>
+</div>
+<div class="space-y-1">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Chat Unavailable</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Chat is currently unavailable. Please try again later.</p>
+</div>
+<button class="mt-2 bg-secondary-container text-on-secondary-container hover:opacity-90 font-label-sm text-label-sm px-6 py-2 rounded-full transition-opacity shadow-sm">
+                    Retry Connection
+                </button>
+</div>
+</div>
+</main>
+<!-- Bottom Navigation Shell (Chat Context) -->
+<nav class="fixed bottom-0 w-full z-50 rounded-t-lg bg-surface-container-lowest shadow-[0_-2px_8px_rgba(0,0,0,0.05)] md:hidden">
+<div class="flex justify-around items-center h-row-height-md w-full px-gutter">
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:opacity-80 transition-transform scale-95 active:scale-90">
+<span class="material-symbols-outlined" data-icon="package_2">package_2</span>
+<span class="font-label-sm text-label-sm mt-1">Shipments</span>
+</button>
+<button class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 hover:opacity-80 transition-transform scale-95 active:scale-90">
+<span class="material-symbols-outlined" data-icon="chat_bubble" data-weight="fill" style="font-variation-settings: 'FILL' 1;">chat_bubble</span>
+<span class="font-label-sm text-label-sm mt-1">Chat</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:opacity-80 transition-transform scale-95 active:scale-90">
+<span class="material-symbols-outlined" data-icon="distance">distance</span>
+<span class="font-label-sm text-label-sm mt-1">Map</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:opacity-80 transition-transform scale-95 active:scale-90">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-label-sm text-label-sm mt-1">Profile</span>
+</button>
+</div>
+</nav>
+</body></html>

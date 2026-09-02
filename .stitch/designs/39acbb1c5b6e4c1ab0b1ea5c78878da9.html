@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Map Reconnecting</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-tint": "#585d77",
+                      "primary-fixed-dim": "#c0c5e3",
+                      "inverse-on-surface": "#f3f0f2",
+                      "secondary-container": "#d4dfff",
+                      "on-tertiary-fixed": "#231a09",
+                      "on-primary-fixed-variant": "#40465e",
+                      "secondary": "#525e79",
+                      "surface-container-low": "#f6f3f5",
+                      "on-error": "#ffffff",
+                      "outline": "#77767e",
+                      "surface-container-highest": "#e5e1e4",
+                      "secondary-fixed-dim": "#bac6e6",
+                      "surface-dim": "#dcd9db",
+                      "tertiary-fixed-dim": "#d6c4aa",
+                      "on-surface": "#1b1b1d",
+                      "on-tertiary-fixed-variant": "#514531",
+                      "tertiary-fixed": "#f3e0c5",
+                      "primary-fixed": "#dde1ff",
+                      "on-secondary-fixed-variant": "#3b4760",
+                      "on-primary-container": "#7e829e",
+                      "on-primary-fixed": "#151a31",
+                      "error": "#ba1a1a",
+                      "on-secondary": "#ffffff",
+                      "tertiary-container": "#231a09",
+                      "outline-variant": "#c7c5ce",
+                      "on-error-container": "#93000a",
+                      "surface-container-high": "#eae7e9",
+                      "background": "#fcf8fb",
+                      "on-background": "#1b1b1d",
+                      "surface-bright": "#fcf8fb",
+                      "surface-variant": "#e5e1e4",
+                      "on-secondary-container": "#57637e",
+                      "surface-container-lowest": "#ffffff",
+                      "primary-container": "#151a31",
+                      "on-primary": "#ffffff",
+                      "inverse-surface": "#313032",
+                      "on-secondary-fixed": "#0e1b33",
+                      "primary": "#000000",
+                      "tertiary": "#000000",
+                      "on-surface-variant": "#46464d",
+                      "surface-container": "#f0edef",
+                      "inverse-primary": "#c0c5e3",
+                      "error-container": "#ffdad6",
+                      "secondary-fixed": "#d8e2ff",
+                      "surface": "#fcf8fb",
+                      "on-tertiary-container": "#91826a",
+                      "on-tertiary": "#ffffff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "1rem",
+                      "lg": "2rem",
+                      "xl": "3rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "row-height-sm": "40px",
+                      "gutter": "12px",
+                      "unit": "4px",
+                      "container-padding": "16px",
+                      "row-height-md": "56px"
+              },
+              "fontFamily": {
+                      "headline-md": [
+                              "Inter"
+                      ],
+                      "data-mono": [
+                              "Inter"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "body-lg": [
+                              "Inter"
+                      ],
+                      "label-sm": [
+                              "Inter"
+                      ],
+                      "headline-sm": [
+                              "Inter"
+                      ],
+                      "label-caps": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "headline-md": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "data-mono": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-lg": [
+                              "15px",
+                              {
+                                      "lineHeight": "22px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-sm": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "label-caps": [
+                              "11px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        .map-desaturated {
+            filter: grayscale(80%) opacity(70%);
+        }
+        @keyframes spin-slow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin-slow {
+            animation: spin-slow 2s linear infinite;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background h-screen w-screen overflow-hidden flex flex-col font-body-md">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface-bright dark:bg-surface-dim shadow-sm flex justify-between items-center px-container-padding h-row-height-md">
+<div class="flex items-center gap-gutter">
+<div class="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center overflow-hidden">
+<span class="material-symbols-outlined text-primary dark:text-primary-fixed-dim" data-icon="person">person</span>
+</div>
+<span class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed-dim">LogisticsPro</span>
+</div>
+<button class="w-10 h-10 rounded-full hover:bg-surface-container-high dark:hover:bg-surface-variant transition-colors flex items-center justify-center active:scale-95 transition-transform duration-150 text-primary dark:text-primary-fixed-dim">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+</header>
+<!-- Main Content Area (Map) -->
+<main class="flex-grow relative mt-row-height-md mb-row-height-md md:mb-0 w-full h-full bg-surface-container-low">
+<!-- Map Image Container (Desaturated) -->
+<div class="absolute inset-0 w-full h-full bg-surface-container-lowest">
+<img class="w-full h-full object-cover map-desaturated" data-alt="A detailed, desaturated top-down map view of a modern city grid with logistics routes highlighted in muted blues and greys. The style is minimalist and corporate, utilizing a calm-tech aesthetic suitable for a professional dashboard. Lighting is even and soft, emphasizing clarity over dramatic shadows, keeping the overall mood calm and analytical." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAuWbuTIydG7Z_LqsrpXcmhmfsZWEY4XfIHxyiyeRPKo5V595xTN52_SYqKhTmQOB7UpAjioTCpi2O_SgC99vPsCihBJd40YobzvAQpo1C6IPCtYF0QtpdxPNyNIQGy5rfEAAyrvSjJBbUHw7I2Xhw74daiFk1xkSjcXW8PXwGr9mzip1CGj-iWoGyPk6MX8fGd5c6GtdabUA3G96CnprZocCqx-nBVNTaeF5uBpeQsGJjyaEH4kA4u"/>
+<!-- Map Overlays (Faded due to desaturation of parent or styled directly) -->
+<div class="absolute inset-0 bg-black/10 mix-blend-multiply pointer-events-none"></div>
+<!-- Simulated Route Path -->
+<svg class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3/4 h-3/4 opacity-50 pointer-events-none" preserveaspectratio="none" viewbox="0 0 100 100">
+<path class="text-primary-fixed-dim" d="M10,90 Q30,50 50,70 T90,10" fill="none" stroke="currentColor" stroke-dasharray="4,4" stroke-width="2"></path>
+<circle class="text-primary-fixed-dim" cx="90" cy="10" fill="currentColor" r="3"></circle>
+<circle class="text-primary" cx="10" cy="90" fill="currentColor" r="3"></circle>
+</svg>
+</div>
+<!-- Reconnecting Banner/Toast -->
+<div class="absolute top-container-padding left-1/2 -translate-x-1/2 z-40 w-auto max-w-[90%] md:max-w-md">
+<div class="bg-surface-container-high dark:bg-surface-variant rounded-full px-6 py-3 flex items-center gap-3 shadow-[0_4px_20px_rgba(0,0,0,0.1)] border border-outline-variant/30 backdrop-blur-sm">
+<span class="material-symbols-outlined text-primary dark:text-primary-fixed-dim animate-spin-slow" data-icon="sync">sync</span>
+<span class="font-data-mono text-data-mono text-on-surface-variant dark:text-outline-variant tracking-wide">Reconnecting...</span>
+</div>
+</div>
+<!-- Status Card Overlay (Bottom Left) -->
+<div class="absolute bottom-container-padding left-container-padding z-30 hidden md:block">
+<div class="bg-surface-bright/90 dark:bg-surface-dim/90 backdrop-blur-md rounded-lg p-4 shadow-sm border border-outline-variant/20 w-64">
+<h3 class="font-label-caps text-label-caps text-on-surface-variant dark:text-outline-variant uppercase mb-2">Last Known Status</h3>
+<div class="flex items-center gap-2 mb-1">
+<div class="w-2 h-2 rounded-full bg-outline"></div>
+<span class="font-body-md text-body-md text-on-surface">Offline - Awaiting Signal</span>
+</div>
+<p class="font-label-sm text-label-sm text-on-surface-variant dark:text-outline-variant">Data synced 2m ago</p>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 w-full z-50 rounded-t-lg bg-surface-container-lowest dark:bg-inverse-surface shadow-[0_-2px_10px_rgba(0,0,0,0.05)] pb-safe h-row-height-md flex justify-around items-center">
+<!-- Home (Active - Map is technically the main view, assuming Home/Dashboard) -->
+<button class="flex flex-col items-center justify-center bg-secondary-container dark:bg-on-secondary-fixed-variant text-on-secondary-container dark:text-secondary-fixed rounded-full px-4 py-1 active:scale-90 transition-transform duration-200">
+<span class="material-symbols-outlined" data-icon="home" data-weight="fill">home</span>
+<span class="font-label-sm text-label-sm mt-unit">Home</span>
+</button>
+<!-- Trips -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-4 py-1 hover:bg-surface-container-high dark:hover:bg-surface-variant rounded-full active:scale-90 transition-transform duration-200">
+<span class="material-symbols-outlined" data-icon="local_shipping">local_shipping</span>
+<span class="font-label-sm text-label-sm mt-unit">Trips</span>
+</button>
+<!-- Wallet -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-4 py-1 hover:bg-surface-container-high dark:hover:bg-surface-variant rounded-full active:scale-90 transition-transform duration-200">
+<span class="material-symbols-outlined" data-icon="account_balance_wallet">account_balance_wallet</span>
+<span class="font-label-sm text-label-sm mt-unit">Wallet</span>
+</button>
+<!-- Account -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-4 py-1 hover:bg-surface-container-high dark:hover:bg-surface-variant rounded-full active:scale-90 transition-transform duration-200">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-label-sm text-label-sm mt-unit">Account</span>
+</button>
+</nav>
+<!-- Desktop Nav Cluster (Hidden on Mobile) -->
+<div class="hidden md:flex fixed top-0 right-16 h-row-height-md z-50 items-center gap-gutter px-container-padding">
+<button class="px-4 py-2 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm font-medium transition-colors">
+            Home
+        </button>
+<button class="px-4 py-2 rounded-full text-on-surface-variant hover:bg-surface-container-high font-label-sm text-label-sm font-medium transition-colors">
+            Trips
+        </button>
+<button class="px-4 py-2 rounded-full text-on-surface-variant hover:bg-surface-container-high font-label-sm text-label-sm font-medium transition-colors">
+            Wallet
+        </button>
+<button class="px-4 py-2 rounded-full text-on-surface-variant hover:bg-surface-container-high font-label-sm text-label-sm font-medium transition-colors">
+            Account
+        </button>
+</div>
+</body></html>

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Customer Live Tracking - Exceptions</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS with Configuration -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "error": "#ba1a1a",
+                        "surface-container-highest": "#e5e1e4",
+                        "on-tertiary-fixed": "#231a09",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-variant": "#e5e1e4",
+                        "error-container": "#ffdad6",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "surface": "#fcf8fb",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "on-primary-fixed-variant": "#40465e",
+                        "surface-container-high": "#eae7e9",
+                        "on-error": "#ffffff",
+                        "tertiary": "#000000",
+                        "on-surface": "#1b1b1d",
+                        "primary": "#000000",
+                        "tertiary-fixed": "#f3e0c5",
+                        "surface-container": "#f0edef",
+                        "surface-bright": "#fcf8fb",
+                        "on-surface-variant": "#46464d",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "inverse-surface": "#313032",
+                        "inverse-on-surface": "#f3f0f2",
+                        "tertiary-container": "#231a09",
+                        "on-secondary-fixed": "#0e1b33",
+                        "on-primary": "#ffffff",
+                        "outline-variant": "#c7c5ce",
+                        "on-primary-container": "#7e829e",
+                        "background": "#fcf8fb",
+                        "secondary": "#525e79",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "on-secondary-container": "#57637e",
+                        "surface-tint": "#585d77",
+                        "primary-fixed": "#dde1ff",
+                        "inverse-primary": "#c0c5e3",
+                        "on-background": "#1b1b1d",
+                        "surface-container-low": "#f6f3f5",
+                        "primary-container": "#151a31",
+                        "secondary-container": "#d4dfff",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-error-container": "#93000a",
+                        "on-primary-fixed": "#151a31",
+                        "surface-dim": "#dcd9db",
+                        "outline": "#77767e",
+                        "on-tertiary-container": "#91826a"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "1.5rem",
+                        "xl": "2rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "12px",
+                        "unit": "4px",
+                        "row-height-md": "56px",
+                        "row-height-sm": "40px",
+                        "container-padding": "16px"
+                    },
+                    "fontFamily": {
+                        "data-mono": ["Inter", "monospace"],
+                        "label-sm": ["Inter", "sans-serif"],
+                        "body-lg": ["Inter", "sans-serif"],
+                        "headline-md": ["Inter", "sans-serif"],
+                        "headline-sm": ["Inter", "sans-serif"],
+                        "label-caps": ["Inter", "sans-serif"],
+                        "body-md": ["Inter", "sans-serif"]
+                    },
+                    "fontSize": {
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .map-bg {
+            background-color: #e5e3df; /* Subtle map-like background color */
+            background-image: 
+                radial-gradient(circle at 50% 50%, rgba(255,255,255,0.8) 0%, rgba(229,227,223,0) 100%),
+                linear-gradient(45deg, rgba(200,200,200,0.1) 25%, transparent 25%, transparent 75%, rgba(200,200,200,0.1) 75%, rgba(200,200,200,0.1)),
+                linear-gradient(45deg, rgba(200,200,200,0.1) 25%, transparent 25%, transparent 75%, rgba(200,200,200,0.1) 75%, rgba(200,200,200,0.1));
+            background-size: 100% 100%, 20px 20px, 20px 20px;
+            background-position: 0 0, 0 0, 10px 10px;
+        }
+        
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+        .animate-pulse-ring::before {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            background-color: theme('colors.secondary');
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        
+        @keyframes slideDown {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .toast-enter { animation: slideDown 0.4s ease-out forwards; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface h-full flex flex-col antialiased">
+<!-- App Bar -->
+<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-md flex justify-between items-center h-row-height-md px-container-padding">
+<div class="flex items-center gap-4">
+<button class="p-2 rounded-full hover:bg-surface-variant/50 transition-colors duration-200 text-primary">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary">Precision Mobility</h1>
+</div>
+<button class="p-2 rounded-full hover:bg-surface-variant/50 transition-colors duration-200 text-primary">
+<span class="material-symbols-outlined">help</span>
+</button>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 relative pt-row-height-md overflow-hidden bg-surface-container-low">
+<!-- Map Container (Simulated with CSS pattern and an image placeholder) -->
+<div class="absolute inset-0 z-0">
+<div class="w-full h-full relative">
+<img class="object-cover w-full h-full opacity-60" data-alt="A clean, minimalist digital map interface showing city streets in a light mode aesthetic. The map features soft greys, crisp white roads, and subtle topography lines, creating a calm, high-end professional navigation context. The lighting is even and flat, emphasizing clarity and precision mobility." data-location="Chicago" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCWIZ4xi_OCcQPYky1sZtDXCsB3aHSOFjz29eiQWGPY1YtA5aKqnSAKlEZTmZHFdoivK3MkwIINZFW3LNyGr_TeJjntSE_7FQ4Fs4mwjBGg5elqpHtPwMWmKKwdOnv8ajbHOTo57K6SyGW0ziuRkzGYaDXEjWDJ42C-nUlbleE0TMf_D1cS4jpM998eoxtpUBFPS4XfeR8TkOrTKZ-HHKRjLEMud8WPttUt2hNSvvH5FCrVcTpc890e"/>
+</div>
+</div>
+<!-- 
+            EXCEPTION STATES SHOWCASE 
+            Note: In a real app, these would be toggled based on state. 
+            Here we display them using a grid overlay to demonstrate the UI patterns.
+        -->
+<div class="absolute inset-0 z-10 pointer-events-none p-container-padding flex flex-col justify-end gap-4 pb-32 overflow-y-auto">
+<!-- Global Toast: Network Disconnected -->
+<div class="pointer-events-auto absolute top-row-height-md left-0 w-full px-container-padding pt-4 z-50 flex justify-center toast-enter">
+<div class="bg-error-container text-on-error-container px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 w-full max-w-md border border-error/20">
+<span class="material-symbols-outlined text-error" style="font-variation-settings: 'FILL' 1;">wifi_off</span>
+<div class="flex-1">
+<p class="font-label-sm text-label-sm font-semibold">Network disconnected</p>
+<p class="text-[10px] opacity-80">Reconnecting...</p>
+</div>
+<div class="w-4 h-4 rounded-full border-2 border-error border-t-transparent animate-spin"></div>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 pointer-events-auto">
+<!-- Map Marker & Tag: Updating Location -->
+<div class="relative bg-surface/90 backdrop-blur-sm p-4 rounded-lg shadow-sm border border-outline-variant/30 flex items-start gap-4">
+<div class="relative w-8 h-8 flex-shrink-0">
+<div class="absolute inset-0 bg-primary-container rounded-full flex items-center justify-center z-10 shadow-sm border-2 border-surface">
+<span class="material-symbols-outlined text-[16px] text-on-primary-container">local_shipping</span>
+</div>
+<div class="absolute inset-0 animate-pulse-ring z-0"></div>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<p class="font-headline-sm text-headline-sm">Driver Approaching</p>
+<span class="bg-secondary-container/50 text-on-secondary-container px-2 py-0.5 rounded-full font-label-caps text-label-caps flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
+                                Live
+                            </span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Location updating...</p>
+</div>
+</div>
+<!-- Map Marker & Tag: Stale Data -->
+<div class="relative bg-surface/90 backdrop-blur-sm p-4 rounded-lg shadow-sm border border-outline-variant/30 flex items-start gap-4">
+<div class="relative w-8 h-8 flex-shrink-0 opacity-60 grayscale">
+<div class="absolute inset-0 bg-surface-variant rounded-full flex items-center justify-center z-10 border-2 border-surface">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">local_shipping</span>
+</div>
+</div>
+<div>
+<p class="font-headline-sm text-headline-sm text-on-surface-variant">Last Known Location</p>
+<div class="flex items-center gap-1.5 mt-1 text-outline">
+<span class="material-symbols-outlined text-[14px]">history</span>
+<p class="font-body-md text-body-md">Last seen at 14th St &amp; Broadway • 2 mins ago</p>
+</div>
+</div>
+</div>
+<!-- Tag: GPS Weak -->
+<div class="relative bg-surface-container-low/95 backdrop-blur-md p-4 rounded-lg shadow-sm border border-surface-variant flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-error-container/30 flex items-center justify-center text-error">
+<span class="material-symbols-outlined">satellite_alt</span>
+</div>
+<div>
+<p class="font-label-sm text-label-sm font-semibold">Poor GPS Signal</p>
+<p class="font-body-md text-body-md text-on-surface-variant">Location accuracy reduced</p>
+</div>
+</div>
+</div>
+<!-- Overlay Card: Tracking Temporarily Unavailable -->
+<div class="relative bg-surface p-5 rounded-lg shadow-md border border-outline-variant/20 md:col-span-2 flex flex-col sm:flex-row items-center gap-5">
+<div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-on-surface-variant">location_disabled</span>
+</div>
+<div class="flex-1 text-center sm:text-left">
+<h3 class="font-headline-sm text-headline-sm text-primary">Live Tracking Unavailable</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">We've temporarily lost connection with the vehicle. The driver is still en route to your destination.</p>
+</div>
+<button class="bg-primary-container text-on-primary-container px-4 py-2 rounded-full font-label-sm text-label-sm font-semibold whitespace-nowrap hover:opacity-90 transition-opacity">
+                        Call Driver
+                    </button>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Nav Bar -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center pt-2 pb-6 px-4 bg-surface shadow-[0_-4px_12px_rgba(0,0,0,0.05)] rounded-t-lg z-50">
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:opacity-80 transition-transform scale-95 active:scale-90">
+<span class="material-symbols-outlined mb-1">home</span>
+<span class="font-label-sm text-label-sm">Home</span>
+</button>
+<button class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 hover:opacity-80 transition-transform scale-95 active:scale-90">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">local_shipping</span>
+<span class="font-label-sm text-label-sm font-semibold">Trips</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:opacity-80 transition-transform scale-95 active:scale-90">
+<span class="material-symbols-outlined mb-1">account_balance_wallet</span>
+<span class="font-label-sm text-label-sm">Wallet</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:opacity-80 transition-transform scale-95 active:scale-90">
+<span class="material-symbols-outlined mb-1">person</span>
+<span class="font-label-sm text-label-sm">Account</span>
+</button>
+</nav>
+</body></html>

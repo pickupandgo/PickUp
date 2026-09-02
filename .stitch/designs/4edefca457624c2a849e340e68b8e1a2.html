@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Pick Up - Active Booking Chat</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1;
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-secondary-fixed-variant": "#3b4760",
+                    "surface": "#fcf8fb",
+                    "on-secondary": "#ffffff",
+                    "surface-bright": "#fcf8fb",
+                    "on-surface-variant": "#46464d",
+                    "surface-container": "#f0edef",
+                    "on-background": "#1b1b1d",
+                    "secondary": "#525e79",
+                    "surface-container-low": "#f6f3f5",
+                    "on-primary-fixed": "#151a31",
+                    "secondary-container": "#d4dfff",
+                    "on-primary-fixed-variant": "#40465e",
+                    "on-secondary-fixed": "#0e1b33",
+                    "on-tertiary-container": "#91826a",
+                    "background": "#fcf8fb",
+                    "primary-fixed": "#dde1ff",
+                    "primary": "#000000",
+                    "secondary-fixed-dim": "#bac6e6",
+                    "error-container": "#ffdad6",
+                    "outline-variant": "#c7c5ce",
+                    "surface-container-highest": "#e5e1e4",
+                    "on-secondary-container": "#57637e",
+                    "surface-dim": "#dcd9db",
+                    "secondary-fixed": "#d8e2ff",
+                    "outline": "#77767e",
+                    "primary-container": "#151a31",
+                    "inverse-on-surface": "#f3f0f2",
+                    "on-surface": "#1b1b1d",
+                    "surface-container-high": "#eae7e9",
+                    "tertiary-container": "#231a09",
+                    "error": "#ba1a1a",
+                    "tertiary": "#000000",
+                    "on-error": "#ffffff",
+                    "on-tertiary": "#ffffff",
+                    "on-primary-container": "#7e829e",
+                    "on-tertiary-fixed": "#231a09",
+                    "inverse-surface": "#313032",
+                    "on-error-container": "#93000a",
+                    "on-primary": "#ffffff",
+                    "on-tertiary-fixed-variant": "#514531",
+                    "surface-container-lowest": "#ffffff",
+                    "surface-variant": "#e5e1e4",
+                    "surface-tint": "#585d77",
+                    "tertiary-fixed-dim": "#d6c4aa",
+                    "inverse-primary": "#c0c5e3",
+                    "tertiary-fixed": "#f3e0c5",
+                    "primary-fixed-dim": "#c0c5e3"
+            },
+            "borderRadius": {
+                    "DEFAULT": "1rem",
+                    "lg": "2rem",
+                    "xl": "3rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "unit": "4px",
+                    "row-height-md": "56px",
+                    "container-padding": "16px",
+                    "gutter": "12px",
+                    "row-height-sm": "40px"
+            },
+            "fontFamily": {
+                    "label-sm": ["Inter"],
+                    "label-caps": ["Inter"],
+                    "headline-sm": ["Inter"],
+                    "data-mono": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "body-md": ["Inter"],
+                    "headline-md": ["Inter"]
+            },
+            "fontSize": {
+                    "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "headline-sm": ["16px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "data-mono": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+                    "body-lg": ["15px", {"lineHeight": "22px", "fontWeight": "400"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600"}]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md h-screen flex flex-col antialiased overflow-hidden">
+<!-- Header -->
+<header class="w-full sticky top-0 bg-surface z-10 flex flex-col shadow-sm">
+<div class="flex items-center justify-between px-container-padding h-row-height-md w-full max-w-7xl mx-auto">
+<button class="text-on-surface-variant hover:bg-surface-container-low transition-colors active:scale-95 p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<div class="flex flex-col items-center">
+<h1 class="font-headline-sm text-headline-sm text-on-surface">Ramesh Kumar</h1>
+<div class="flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm">
+<span>Tata Ace</span>
+<span class="w-1 h-1 bg-outline-variant rounded-full mx-1"></span>
+<span class="material-symbols-outlined fill text-[14px] text-on-tertiary-container">star</span>
+<span>4.8</span>
+</div>
+</div>
+<button class="text-on-surface-variant hover:bg-surface-container-low transition-colors active:scale-95 p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+</div>
+<!-- Trip Context Banner -->
+<div class="bg-surface-container-low border-t border-outline-variant/30 py-2 px-container-padding flex justify-center items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-secondary">local_shipping</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">En route to Drop 1 of 3</span>
+</div>
+</header>
+<!-- Chat Canvas -->
+<main class="flex-1 overflow-y-auto px-container-padding py-6 flex flex-col gap-6 max-w-3xl mx-auto w-full">
+<!-- Date Divider -->
+<div class="flex items-center justify-center gap-4">
+<div class="h-px bg-outline-variant/30 flex-1"></div>
+<span class="font-label-caps text-label-caps text-outline">TODAY</span>
+<div class="h-px bg-outline-variant/30 flex-1"></div>
+</div>
+<!-- System Message -->
+<div class="flex justify-center">
+<div class="bg-surface-container rounded-full px-4 py-1.5 font-label-sm text-label-sm text-on-surface-variant flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]">location_on</span>
+                Driver arrived at Pickup Location
+            </div>
+</div>
+<!-- Driver Message -->
+<div class="flex flex-col gap-1 items-start w-full">
+<div class="bg-surface-container-high text-on-surface p-3 rounded-2xl rounded-tl-sm max-w-[80%] font-body-md shadow-sm">
+                I have reached the pickup point. Loading is in progress.
+            </div>
+<span class="font-label-sm text-label-sm text-outline px-1">10:15 AM</span>
+</div>
+<!-- Customer Message -->
+<div class="flex flex-col gap-1 items-end w-full">
+<div class="bg-primary text-on-primary p-3 rounded-2xl rounded-tr-sm max-w-[80%] font-body-md shadow-sm">
+                Great. Please ensure all 12 boxes are secured.
+            </div>
+<div class="flex items-center gap-1 font-label-sm text-label-sm text-outline px-1">
+<span>10:18 AM</span>
+<span class="material-symbols-outlined text-[14px] text-primary">done_all</span>
+</div>
+</div>
+<!-- System Message -->
+<div class="flex justify-center mt-2">
+<div class="bg-surface-container rounded-full px-4 py-1.5 font-label-sm text-label-sm text-on-surface-variant flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]">route</span>
+                En route to Drop 1: Sardarada Warehouse
+            </div>
+</div>
+<!-- Driver Message -->
+<div class="flex flex-col gap-1 items-start w-full">
+<div class="bg-surface-container-high text-on-surface p-3 rounded-2xl rounded-tl-sm max-w-[80%] font-body-md shadow-sm">
+                Arriving at Sardarada Warehouse in 5 mins. Traffic is light.
+            </div>
+<span class="font-label-sm text-label-sm text-outline px-1">11:45 AM</span>
+</div>
+<!-- Media Attachment (Uploading State) -->
+<div class="flex flex-col gap-1 items-end w-full">
+<div class="bg-primary p-1 rounded-2xl rounded-tr-sm max-w-[80%] shadow-sm relative">
+<div class="w-48 h-32 rounded-xl overflow-hidden relative bg-surface-variant flex items-center justify-center">
+<img class="object-cover w-full h-full opacity-50 grayscale" data-alt="A modern minimalist warehouse entrance shot during daytime with bright even lighting, subtle grey and white tones, crisp corporate aesthetic, low contrast shadows, logistics focus." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCAgsW0QCCUjG3BZXWJpElmFSQG5GXK1CiJvqKlv7wdIU9r-RTet_5Dc5Mu9L91SO2tV3DchNxg1cn2lWeLZ6hPMMjaFoy1f2UFDOb7LpOP9A7rVBGTBsrZ1cC--Yjo-RvqHxVyB5DrxTQCmyJxt7yQknfEko04rIZay7lsew0SJIaRinmb-qcYQpfXLo_m6CJ_6dEXW1s1nOXKRwHBoN_0eMDE-VFx7TsE6730wbPS9gRsSYdRUaP5"/>
+<div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-surface/40 backdrop-blur-[2px]">
+<span class="material-symbols-outlined animate-spin text-on-surface">progress_activity</span>
+<span class="font-label-sm text-label-sm text-on-surface bg-surface/80 px-2 py-0.5 rounded-full">Uploading...</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Pending Text Message -->
+<div class="flex flex-col gap-1 items-end w-full">
+<div class="bg-primary text-on-primary p-3 rounded-2xl rounded-tr-sm max-w-[80%] font-body-md shadow-sm opacity-80">
+                Wait near Gate B, someone will assist you.
+            </div>
+<div class="flex items-center gap-1 font-label-sm text-label-sm text-outline px-1">
+<span>Sending...</span>
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+</div>
+</div>
+<!-- Invisible spacer for bottom input -->
+<div class="h-4"></div>
+</main>
+<!-- Message Input Area -->
+<div class="bg-surface w-full pb-safe border-t border-outline-variant/30">
+<div class="max-w-3xl mx-auto px-container-padding py-3 flex items-center gap-3">
+<button class="text-on-surface-variant hover:bg-surface-container-low p-2 rounded-full transition-colors flex-shrink-0 flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="attach_file">attach_file</span>
+</button>
+<div class="flex-1 bg-surface-variant rounded-full flex items-center px-4 py-2 border-none focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+<input class="bg-transparent border-none focus:ring-0 w-full font-body-md text-on-surface placeholder:text-on-surface-variant/70 px-0 py-1" placeholder="Message Ramesh..." type="text"/>
+</div>
+<button class="bg-primary text-on-primary hover:opacity-90 p-3 rounded-full transition-all active:scale-95 flex-shrink-0 flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-[20px] ml-0.5" data-icon="send">send</span>
+</button>
+</div>
+</div>
+</body></html>

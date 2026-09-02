@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Current Drop Details</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface": "#fcf8fb",
+                        "on-tertiary-container": "#91826a",
+                        "outline-variant": "#c7c5ce",
+                        "tertiary-fixed": "#f3e0c5",
+                        "on-secondary-container": "#57637e",
+                        "primary": "#000000",
+                        "on-error": "#ffffff",
+                        "primary-container": "#151a31",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "on-error-container": "#93000a",
+                        "surface-container-highest": "#e5e1e4",
+                        "on-tertiary-fixed": "#231a09",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "secondary": "#525e79",
+                        "surface-container": "#f0edef",
+                        "error": "#ba1a1a",
+                        "tertiary": "#000000",
+                        "surface-dim": "#dcd9db",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "background": "#fcf8fb",
+                        "on-surface": "#1b1b1d",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-high": "#eae7e9",
+                        "on-primary": "#ffffff",
+                        "surface-container-low": "#f6f3f5",
+                        "on-secondary-fixed": "#0e1b33",
+                        "inverse-primary": "#c0c5e3",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed-variant": "#40465e",
+                        "outline": "#77767e",
+                        "on-background": "#1b1b1d",
+                        "inverse-on-surface": "#f3f0f2",
+                        "surface-variant": "#e5e1e4",
+                        "error-container": "#ffdad6",
+                        "surface-tint": "#585d77",
+                        "on-secondary": "#ffffff",
+                        "surface-bright": "#fcf8fb",
+                        "on-surface-variant": "#46464d",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "secondary-fixed": "#d8e2ff",
+                        "secondary-container": "#d4dfff",
+                        "inverse-surface": "#313032",
+                        "tertiary-container": "#231a09",
+                        "on-primary-container": "#7e829e",
+                        "on-primary-fixed": "#151a31",
+                        "primary-fixed": "#dde1ff"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "row-height-md": "56px",
+                        "container-padding": "16px",
+                        "gutter": "12px",
+                        "row-height-sm": "40px",
+                        "unit": "4px"
+                    },
+                    fontFamily: {
+                        "body-md": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "headline-md": ["Inter"]
+                    },
+                    fontSize: {
+                        "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+                        "label-caps": ["11px", { lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "600" }],
+                        "data-mono": ["14px", { lineHeight: "20px", letterSpacing: "-0.01em", fontWeight: "500" }],
+                        "label-sm": ["12px", { lineHeight: "16px", fontWeight: "500" }],
+                        "body-lg": ["15px", { lineHeight: "22px", fontWeight: "400" }],
+                        "headline-sm": ["16px", { lineHeight: "24px", letterSpacing: "-0.01em", fontWeight: "600" }],
+                        "headline-md": ["20px", { lineHeight: "28px", letterSpacing: "-0.02em", fontWeight: "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .pulse-indicator {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.2); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(0, 0, 0, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface font-body-md antialiased h-screen flex flex-col md:hidden">
+<!-- Top App Bar -->
+<header class="w-full top-0 sticky bg-surface dark:bg-surface flex items-center justify-between px-container-padding h-row-height-md w-full max-w-7xl mx-auto z-10 border-b border-surface-container-high">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors active:scale-95 text-primary">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-headline-sm text-headline-sm text-primary font-bold">Trip Details</h1>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors active:scale-95 text-primary">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</header>
+<!-- Main Canvas -->
+<main class="flex-1 overflow-y-auto p-container-padding space-y-6 pb-24">
+<!-- Active Stop Highlight Card -->
+<section class="bg-surface-container-lowest rounded-lg shadow-sm border border-surface-container-high p-6 space-y-4">
+<div class="flex justify-between items-start">
+<div>
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider bg-surface-container px-3 py-1 rounded-full inline-block mb-3">Drop 2 of 3</span>
+<h2 class="font-headline-md text-headline-md text-primary mb-1">Pal Road Business Center</h2>
+<p class="font-body-md text-body-md text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">location_on</span> Near Jodhpur Arpt
+                    </p>
+</div>
+<div class="bg-primary-container text-on-primary-container px-4 py-3 rounded-[1.5rem] flex flex-col items-center justify-center shadow-sm min-w-[80px]">
+<span class="font-headline-sm text-headline-sm font-bold">8</span>
+<span class="font-label-sm text-label-sm uppercase">mins</span>
+</div>
+</div>
+<div class="flex items-center gap-3 pt-2 border-t border-surface-container">
+<div class="w-3 h-3 bg-primary rounded-full pulse-indicator"></div>
+<span class="font-body-md text-body-md font-medium text-primary flex-1">In Transit</span>
+<span class="font-data-mono text-data-mono text-on-surface-variant">2.4 km</span>
+</div>
+</section>
+<!-- Receiver & Instructions Bento -->
+<section class="grid grid-cols-1 gap-4">
+<div class="bg-surface-container-low rounded-lg p-5 flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined">person</span>
+</div>
+<div class="flex-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant block mb-0.5">Receiver</span>
+<h3 class="font-body-lg text-body-lg text-primary font-medium">Aravind Sharma</h3>
+</div>
+</div>
+<div class="bg-surface-container-low rounded-lg p-5 border-l-4 border-primary">
+<div class="flex items-center gap-2 mb-2 text-primary">
+<span class="material-symbols-outlined text-[20px]">assignment</span>
+<span class="font-label-sm text-label-sm font-semibold uppercase tracking-wide">Instructions</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant">Leave at security gate and call upon arrival.</p>
+</div>
+</section>
+<!-- Vertical Timeline (Compact) -->
+<section class="bg-surface-container-lowest rounded-lg p-6 border border-surface-container-high">
+<h3 class="font-headline-sm text-headline-sm text-primary mb-6">Trip Route</h3>
+<div class="relative ml-3 space-y-6">
+<!-- Line connecting stops -->
+<div class="absolute left-1.5 top-2 bottom-2 w-0.5 bg-surface-container-highest"></div>
+<!-- Stop 1: Pickup (Done) -->
+<div class="relative flex items-start gap-4">
+<div class="absolute -left-1.5 top-1.5 w-3.5 h-3.5 rounded-full bg-surface-variant border-2 border-surface-container-lowest z-10 flex items-center justify-center">
+<div class="w-1.5 h-1.5 bg-outline-variant rounded-full"></div>
+</div>
+<div>
+<span class="font-label-sm text-label-sm text-on-surface-variant block">Pickup</span>
+<p class="font-body-md text-body-md text-outline-variant line-through">Sardarpura Warehouse</p>
+</div>
+</div>
+<!-- Stop 2: Drop 1 (Done) -->
+<div class="relative flex items-start gap-4">
+<div class="absolute -left-1.5 top-1.5 w-3.5 h-3.5 rounded-full bg-surface-variant border-2 border-surface-container-lowest z-10 flex items-center justify-center">
+<div class="w-1.5 h-1.5 bg-outline-variant rounded-full"></div>
+</div>
+<div>
+<span class="font-label-sm text-label-sm text-on-surface-variant block">Drop 1</span>
+<p class="font-body-md text-body-md text-outline-variant line-through">Ratanada Hub</p>
+</div>
+</div>
+<!-- Stop 3: Drop 2 (Current) -->
+<div class="relative flex items-start gap-4">
+<div class="absolute -left-[9px] top-1 w-[18px] h-[18px] rounded-full bg-primary-container border-4 border-surface-container-lowest z-10 flex items-center justify-center shadow-sm">
+<div class="w-2 h-2 bg-primary rounded-full"></div>
+</div>
+<div class="bg-surface-container-low px-3 py-1.5 rounded-md -mt-1 flex-1 border border-surface-container-high">
+<span class="font-label-sm text-label-sm text-primary font-medium block">Drop 2 of 3</span>
+<p class="font-body-md text-body-md text-primary font-medium">Pal Road</p>
+</div>
+</div>
+<!-- Stop 4: Drop 3 (Upcoming) -->
+<div class="relative flex items-start gap-4">
+<div class="absolute -left-1.5 top-1.5 w-3.5 h-3.5 rounded-full bg-surface-container-lowest border-2 border-outline-variant z-10"></div>
+<div>
+<span class="font-label-sm text-label-sm text-on-surface-variant block">Drop 3</span>
+<p class="font-body-md text-body-md text-on-surface-variant">Basni Phase II</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Primary Actions -->
+<section class="grid grid-cols-3 gap-3 pt-2">
+<button class="bg-surface-container-low hover:bg-surface-container-high active:scale-95 transition-all text-primary font-label-sm text-label-sm py-3 px-2 rounded-full flex flex-col items-center justify-center gap-1">
+<span class="material-symbols-outlined">call</span>
+                Call Driver
+            </button>
+<button class="bg-surface-container-low hover:bg-surface-container-high active:scale-95 transition-all text-primary font-label-sm text-label-sm py-3 px-2 rounded-full flex flex-col items-center justify-center gap-1">
+<span class="material-symbols-outlined">chat</span>
+                Chat
+            </button>
+<button class="bg-primary hover:bg-primary/90 active:scale-95 transition-all text-on-primary font-label-sm text-label-sm py-3 px-2 rounded-full flex flex-col items-center justify-center gap-1">
+<span class="material-symbols-outlined text-on-primary">map</span>
+                Track Map
+            </button>
+</section>
+</main>
+<!-- Bottom Navigation Bar (Suppressed as per rules for Task-focused/Details sub-page with a Back button) -->
+<!-- The prompt specifically asked for a top bar with a back button, making this a secondary/details view. Contextual suppression applies. -->
+</body></html>

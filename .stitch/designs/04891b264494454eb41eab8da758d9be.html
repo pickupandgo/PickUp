@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Write a Review - Pick Up</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary": "#ffffff",
+                        "surface-container-high": "#eae7e9",
+                        "inverse-primary": "#c0c5e3",
+                        "on-error": "#ffffff",
+                        "surface-container-low": "#f6f3f5",
+                        "on-tertiary-container": "#91826a",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "inverse-on-surface": "#f3f0f2",
+                        "on-background": "#1b1b1d",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "error": "#ba1a1a",
+                        "surface": "#fcf8fb",
+                        "tertiary-fixed": "#f3e0c5",
+                        "surface-dim": "#dcd9db",
+                        "on-error-container": "#93000a",
+                        "surface-container-highest": "#e5e1e4",
+                        "secondary": "#525e79",
+                        "inverse-surface": "#313032",
+                        "on-primary-fixed": "#151a31",
+                        "on-tertiary": "#ffffff",
+                        "secondary-fixed": "#d8e2ff",
+                        "outline-variant": "#c7c5ce",
+                        "tertiary": "#000000",
+                        "outline": "#77767e",
+                        "on-surface-variant": "#46464d",
+                        "background": "#fcf8fb",
+                        "primary-fixed": "#dde1ff",
+                        "surface-bright": "#fcf8fb",
+                        "surface-container": "#f0edef",
+                        "on-secondary-fixed": "#0e1b33",
+                        "on-primary-fixed-variant": "#40465e",
+                        "on-tertiary-fixed": "#231a09",
+                        "on-secondary-container": "#57637e",
+                        "surface-container-lowest": "#ffffff",
+                        "primary": "#000000",
+                        "surface-variant": "#e5e1e4",
+                        "on-primary": "#ffffff",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "error-container": "#ffdad6",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "tertiary-container": "#231a09",
+                        "on-surface": "#1b1b1d",
+                        "secondary-container": "#d4dfff",
+                        "primary-container": "#151a31",
+                        "surface-tint": "#585d77",
+                        "on-primary-container": "#7e829e"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "row-height-md": "56px",
+                        "unit": "4px",
+                        "container-padding": "16px",
+                        "gutter": "12px",
+                        "row-height-sm": "40px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "headline-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { -webkit-tap-highlight-color: transparent; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .icon-filled { font-variation-settings: 'FILL' 1; }
+        
+        textarea:focus {
+            outline: none;
+            box-shadow: none;
+            border-color: transparent;
+        }
+        textarea {
+            resize: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md antialiased min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopAppBar -->
+<header class="bg-surface sticky top-0 w-full z-40 transition-colors">
+<div class="flex items-center justify-between px-container-padding h-row-height-md w-full">
+<button aria-label="Go back" class="flex items-center justify-center w-10 h-10 rounded-full text-on-surface-variant hover:bg-surface-container-low active:scale-95 transition-all duration-150" type="button">
+<span class="material-symbols-outlined text-[24px]">arrow_back</span>
+</button>
+<h1 class="font-headline-sm text-headline-sm text-primary absolute left-1/2 -translate-x-1/2 pointer-events-none">
+                Write a Review
+            </h1>
+<button class="font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors px-2 py-1 active:scale-95" type="button">
+                Skip
+            </button>
+</div>
+</header>
+<!-- Main Content -->
+<main class="flex-1 flex flex-col px-container-padding pt-6 pb-24 max-w-2xl mx-auto w-full">
+<!-- Header Text -->
+<div class="mb-8">
+<h2 class="font-headline-md text-headline-md text-on-background mb-2">How can we improve?</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                Your detailed feedback helps us ensure a premium experience for everyone on the platform.
+            </p>
+</div>
+<!-- Text Area Container -->
+<div class="bg-surface-container-low rounded-[24px] p-1 flex flex-col transition-all duration-200 border border-transparent focus-within:border-outline-variant focus-within:bg-surface-container focus-within:shadow-sm">
+<div class="relative w-full rounded-[20px] bg-transparent overflow-hidden">
+<textarea aria-label="Written feedback" class="w-full min-h-[200px] p-5 bg-transparent border-0 font-body-lg text-body-lg text-on-surface placeholder-outline-variant focus:ring-0 leading-relaxed" id="review-text" maxlength="500" placeholder="Tell us more about your experience..."></textarea>
+</div>
+<!-- Footer of Text Area -->
+<div class="flex justify-between items-center px-5 pb-4 pt-2">
+<div class="flex gap-2 text-on-surface-variant">
+<button aria-label="Add photo" class="w-8 h-8 rounded-full flex items-center justify-center hover:bg-surface-container-highest transition-colors" type="button">
+<span class="material-symbols-outlined text-[20px]">add_a_photo</span>
+</button>
+<button aria-label="Add location" class="w-8 h-8 rounded-full flex items-center justify-center hover:bg-surface-container-highest transition-colors" type="button">
+<span class="material-symbols-outlined text-[20px]">location_on</span>
+</button>
+</div>
+<div class="font-data-mono text-data-mono text-outline text-xs">
+<span id="char-count">0</span> / 500
+                </div>
+</div>
+</div>
+<!-- Contextual Tags (Optional/Bento style suggestion) -->
+<div class="mt-8">
+<p class="font-label-sm text-label-sm text-on-surface-variant mb-3 uppercase tracking-wider">Suggested Topics</p>
+<div class="flex flex-wrap gap-2">
+<button class="px-4 py-2 rounded-full bg-surface-variant text-on-surface-variant font-label-sm text-label-sm hover:bg-surface-container-high transition-colors">Vehicle Cleanliness</button>
+<button class="px-4 py-2 rounded-full bg-surface-variant text-on-surface-variant font-label-sm text-label-sm hover:bg-surface-container-high transition-colors">Driving Smoothness</button>
+<button class="px-4 py-2 rounded-full bg-surface-variant text-on-surface-variant font-label-sm text-label-sm hover:bg-surface-container-high transition-colors">Navigation</button>
+<button class="px-4 py-2 rounded-full bg-surface-variant text-on-surface-variant font-label-sm text-label-sm hover:bg-surface-container-high transition-colors">Professionalism</button>
+</div>
+</div>
+<div class="mt-auto pt-10 pb-safe-bottom">
+<button class="w-full h-14 bg-primary text-on-primary rounded-full font-label-sm text-label-sm flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:active:scale-100 disabled:cursor-not-allowed" id="submit-btn" type="button">
+<span>SUBMIT REVIEW</span>
+<span class="material-symbols-outlined text-[18px]">send</span>
+</button>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="bg-surface-container fixed bottom-0 w-full rounded-t-lg shadow-sm z-50 md:hidden">
+<div class="flex justify-around items-center px-4 py-3 pb-safe w-full">
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:opacity-80 active:scale-90 transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-[24px]">home</span>
+<span class="font-label-caps text-label-caps mt-1 opacity-0 h-0 overflow-hidden">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:opacity-80 active:scale-90 transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-[24px]">local_shipping</span>
+<span class="font-label-caps text-label-caps mt-1 opacity-0 h-0 overflow-hidden">Shipments</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 active:scale-90 transition-all duration-200 pointer-events-none" href="#">
+<span class="material-symbols-outlined text-[24px] icon-filled">rate_review</span>
+<span class="font-label-caps text-label-caps mt-1">Feedback</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:opacity-80 active:scale-90 transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-[24px]">person</span>
+<span class="font-label-caps text-label-caps mt-1 opacity-0 h-0 overflow-hidden">Profile</span>
+</a>
+</div>
+</nav>
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const textarea = document.getElementById('review-text');
+            const charCount = document.getElementById('char-count');
+            const submitBtn = document.getElementById('submit-btn');
+
+            // Initial state
+            checkEmpty();
+
+            textarea.addEventListener('input', (e) => {
+                const length = e.target.value.length;
+                charCount.textContent = length;
+                
+                // Visual feedback when approaching limit
+                if (length >= 450) {
+                    charCount.classList.add('text-error');
+                    charCount.classList.remove('text-outline');
+                } else {
+                    charCount.classList.remove('text-error');
+                    charCount.classList.add('text-outline');
+                }
+
+                checkEmpty();
+            });
+
+            function checkEmpty() {
+                if(textarea.value.trim().length === 0) {
+                    submitBtn.disabled = true;
+                    submitBtn.classList.add('opacity-50');
+                } else {
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('opacity-50');
+                }
+            }
+
+            // Tag selection interaction
+            const tags = document.querySelectorAll('.mt-8 button');
+            tags.forEach(tag => {
+                tag.addEventListener('click', function() {
+                    const currentText = textarea.value;
+                    const tagText = this.textContent;
+                    
+                    if (!currentText.includes(tagText)) {
+                        textarea.value = currentText ? `${currentText} ${tagText}, ` : `${tagText}, `;
+                        // Trigger input event to update counter
+                        textarea.dispatchEvent(new Event('input'));
+                        textarea.focus();
+                        
+                        // Visual bump
+                        this.classList.replace('bg-surface-variant', 'bg-primary-container');
+                        this.classList.replace('text-on-surface-variant', 'text-on-primary-container');
+                        setTimeout(() => {
+                            this.classList.replace('bg-primary-container', 'bg-surface-variant');
+                            this.classList.replace('text-on-primary-container', 'text-on-surface-variant');
+                        }, 200);
+                    }
+                });
+            });
+        });
+    </script>
+</body></html>

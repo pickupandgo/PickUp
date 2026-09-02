@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>Pick Up - Select Vehicle</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-variant": "#e5e1e4",
+                        "error": "#ba1a1a",
+                        "surface-bright": "#fcf8fb",
+                        "surface-tint": "#585d77",
+                        "tertiary-container": "#231a09",
+                        "outline": "#77767e",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "secondary": "#525e79",
+                        "primary-container": "#151a31",
+                        "primary-fixed": "#dde1ff",
+                        "inverse-surface": "#313032",
+                        "surface-container-highest": "#e5e1e4",
+                        "tertiary-fixed": "#f3e0c5",
+                        "on-error-container": "#93000a",
+                        "on-secondary": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "background": "#fcf8fb",
+                        "on-surface-variant": "#46464d",
+                        "outline-variant": "#c7c5ce",
+                        "on-secondary-fixed": "#0e1b33",
+                        "surface-container-lowest": "#ffffff",
+                        "surface": "#fcf8fb",
+                        "tertiary": "#000000",
+                        "inverse-on-surface": "#f3f0f2",
+                        "surface-container-high": "#eae7e9",
+                        "on-tertiary-fixed": "#231a09",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "secondary-container": "#d4dfff",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "inverse-primary": "#c0c5e3",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-primary-fixed-variant": "#40465e",
+                        "primary": "#03071D", /* Custom primary based on prompt request */
+                        "on-secondary-container": "#57637e",
+                        "on-background": "#1b1b1d",
+                        "error-container": "#ffdad6",
+                        "on-tertiary-container": "#91826a",
+                        "surface-container-low": "#f6f3f5",
+                        "on-primary": "#ffffff",
+                        "surface-dim": "#dcd9db",
+                        "on-surface": "#1b1b1d",
+                        "surface-container": "#f0edef",
+                        "on-primary-container": "#7e829e",
+                        "on-error": "#ffffff",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "on-primary-fixed": "#151a31"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px",
+                        "vehicle-card": "24px" /* Specific radius from prompt */
+                    },
+                    "spacing": {
+                        "row-height-md": "56px",
+                        "container-padding": "16px",
+                        "unit": "4px",
+                        "row-height-sm": "40px",
+                        "gutter": "12px",
+                        "safe-bottom": "env(safe-area-inset-bottom)"
+                    },
+                    "fontFamily": {
+                        "label-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "data-mono": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+                        "headline-sm": ["16px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "body-lg": ["15px", {"lineHeight": "22px", "fontWeight": "400"}],
+                        "headline-sm-mobile": ["16px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "headline-md-mobile": ["18px", {"lineHeight": "26px", "letterSpacing": "-0.02em", "fontWeight": "600"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .vehicle-card { transition: all 0.2s ease-in-out; }
+        .vehicle-card.selected { border-color: #03071D; background-color: #f8f9fc; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body-md antialiased md:max-w-md md:mx-auto md:shadow-xl md:rounded-[40px] md:my-8 md:overflow-hidden relative">
+<!-- TopAppBar JSON Blueprint -->
+<header class="w-full top-0 sticky bg-surface dark:bg-background flat no shadows z-50">
+<div class="flex justify-between items-center px-container-padding h-row-height-md w-full">
+<button aria-label="Go back" class="flex items-center justify-center p-2 rounded-full hover:bg-surface-container-high transition-colors active:scale-95 duration-150">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 0;">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md-mobile md:text-headline-md text-primary font-bold">Select Vehicle</h1>
+<button class="font-label-sm text-label-sm text-on-surface-variant hover:bg-surface-container-high transition-colors px-3 py-2 rounded-full active:scale-95 duration-150">
+                Help
+            </button>
+</div>
+</header>
+<!-- Main Canvas -->
+<main class="flex-1 overflow-y-auto px-container-padding pb-32 hide-scrollbar">
+<p class="font-body-md text-body-md text-on-surface-variant mb-6 mt-2 px-1">Choose the right vehicle for your load.</p>
+<div class="flex flex-col gap-4">
+<!-- Bike -->
+<div class="vehicle-card relative flex items-center p-4 bg-surface-container-lowest border border-outline-variant rounded-vehicle-card hover:bg-surface-container-low cursor-pointer">
+<div class="w-20 h-16 mr-4 bg-surface-container-high rounded-lg flex items-center justify-center overflow-hidden shrink-0">
+<img class="w-full h-full object-contain p-2" data-alt="A clean, minimalist 3D rendering of a delivery scooter or 2-wheeler bike on a soft light grey background. The style is modern, professional, calm-tech, with soft studio lighting, showcasing the vehicle clearly." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXY000fGYx7XpW1kYD53XPXCR-oasdn-mKkIlbqrwNQFngvyOa6nW_xzm3G5VgJ70GS8Ll4x-R5bd3a7j6gCLwtxOOE_ihiI5LoARrMTPX2Vlj_sg10p1_X0aUNqU_hfSbuL3xk4g-VbpXTH5oX5dBJFqNEFSfYddbT0WMzsFH3GDgG1R18vn7fkCFy_P0QBXT5bMf-mz-NIJQLP1uI_1-n1h1bvtw_Bm0xB7eugQaUxBSkOp_8oxb"/>
+</div>
+<div class="flex-1">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Bike / 2-Wheeler</h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Capacity: Up to 20kg</p>
+</div>
+<div class="text-right ml-2 shrink-0">
+<span class="font-headline-sm text-headline-sm text-primary">Est. ₹50</span>
+</div>
+</div>
+<!-- 3 Wheeler -->
+<div class="vehicle-card relative flex items-center p-4 bg-surface-container-lowest border border-outline-variant rounded-vehicle-card hover:bg-surface-container-low cursor-pointer">
+<div class="w-20 h-16 mr-4 bg-surface-container-high rounded-lg flex items-center justify-center overflow-hidden shrink-0">
+<img class="w-full h-full object-contain p-2" data-alt="A clean, minimalist 3D rendering of an electric 3-wheeler cargo loader on a soft light grey background. The style is modern, professional, calm-tech, with soft studio lighting, showcasing the vehicle clearly." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC9sIuDmXlDuGWgcUb9VMlyein9ap6_9aVw14lCiJuOzmgdb6DZsHc3VTJ8CI3dnkKG0J-V2YP1cEw-St0kI-8AM4k7dzrfKvgwKAUNQVTAuY4vl7QTopbBRuTQhZokkJa1K84BSYg7LEPaJxhEsuXNjfwijW1Mk6qK655kkZzHpxw2vroe80nYhMgKMni4NvRikWpEvR7lPqxGCAHPmGunMMnpdWlt6BmBi4XjhE9qlZVlaAZBirsz"/>
+</div>
+<div class="flex-1">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">3-Wheeler / E-Loader</h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Capacity: Up to 500kg</p>
+</div>
+<div class="text-right ml-2 shrink-0">
+<span class="font-headline-sm text-headline-sm text-primary">Est. ₹150</span>
+</div>
+</div>
+<!-- Mini Truck (Selected State) -->
+<div class="vehicle-card selected relative flex items-center p-4 bg-surface-container-lowest border-2 rounded-vehicle-card cursor-pointer shadow-[0_4px_20px_0_rgba(3,7,29,0.08)]">
+<div class="absolute -top-2 -right-2 bg-primary text-on-primary rounded-full w-6 h-6 flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+<div class="w-20 h-16 mr-4 bg-white rounded-lg flex items-center justify-center overflow-hidden shrink-0 border border-outline-variant/30">
+<img class="w-full h-full object-contain p-1" data-alt="A clean, minimalist 3D rendering of a small commercial mini-truck like a Tata Ace on a soft light grey background. The style is modern, professional, calm-tech, with soft studio lighting, showcasing the vehicle clearly." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBUjS9k93uTT-P769pOcdZJOBqX9DN0I-zjuvv-4HaRQJqN2zVGSN8IUzoRbmtUxMfqfcXzSXp5k2ct_aV61b94B3FgwoFNYj-7ervR-9ssN_p0dFrIOMqcOf4jG5u6Hymb2_g8k5OTLRAF9TgukIxRv1T2iSWxOafwddQVPc1zbpdffw2z7DukIxLIYWiwkCl2FFmse4MjtjQXgkhGiJj1x3L4NFKg28CqcHa133M3vAD28OOosEcM"/>
+</div>
+<div class="flex-1">
+<h3 class="font-headline-sm text-headline-sm text-primary">Mini Truck / Tata Ace</h3>
+<p class="font-label-sm text-label-sm text-primary/70 mt-1">Capacity: Up to 850kg</p>
+</div>
+<div class="text-right ml-2 shrink-0">
+<span class="font-headline-sm text-headline-sm text-primary">Est. ₹250</span>
+</div>
+</div>
+<!-- Pickup -->
+<div class="vehicle-card relative flex items-center p-4 bg-surface-container-lowest border border-outline-variant rounded-vehicle-card hover:bg-surface-container-low cursor-pointer">
+<div class="w-20 h-16 mr-4 bg-surface-container-high rounded-lg flex items-center justify-center overflow-hidden shrink-0">
+<img class="w-full h-full object-contain p-2" data-alt="A clean, minimalist 3D rendering of a sturdy pickup truck like a Mahindra Bolero on a soft light grey background. The style is modern, professional, calm-tech, with soft studio lighting, showcasing the vehicle clearly." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDrvsI9Per9utb1RHCz_G0PE0zkHo0q0-y_HEwgP68cMfpI4a9D_Rm1ysRXo4XR3QvUk5pZcqfUVKIjlQhLR8Addx7X-CVOu0blmD3bSkFIqvTlbG6v1M8vldJeydLZUwcngjrQNiFJ48kad80jGmX6Ia1kAuihtB5x7Hc4ouR7GjIzA1FSgBg9FfISRv1Pv3SJWzp83FSQpR3rkqzmp3wrAc3fOU0TBnzDRzyUoSBCpXNjVR0nil-M"/>
+</div>
+<div class="flex-1">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Pickup / Bolero</h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Capacity: Up to 1.5 Tons</p>
+</div>
+<div class="text-right ml-2 shrink-0">
+<span class="font-headline-sm text-headline-sm text-primary">Est. ₹400</span>
+</div>
+</div>
+<!-- JCB -->
+<div class="vehicle-card relative flex items-center p-4 bg-surface-container-lowest border border-outline-variant rounded-vehicle-card hover:bg-surface-container-low cursor-pointer">
+<div class="w-20 h-16 mr-4 bg-surface-container-high rounded-lg flex items-center justify-center overflow-hidden shrink-0">
+<span class="material-symbols-outlined text-outline-variant text-4xl">front_loader</span>
+</div>
+<div class="flex-1">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">JCB</h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Industrial Use</p>
+</div>
+<div class="text-right ml-2 shrink-0">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Get Quote</span>
+</div>
+</div>
+<!-- Crane -->
+<div class="vehicle-card relative flex items-center p-4 bg-surface-container-lowest border border-outline-variant rounded-vehicle-card hover:bg-surface-container-low cursor-pointer">
+<div class="w-20 h-16 mr-4 bg-surface-container-high rounded-lg flex items-center justify-center overflow-hidden shrink-0">
+<span class="material-symbols-outlined text-outline-variant text-4xl">type_specimen</span>
+</div>
+<div class="flex-1">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Crane</h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Heavy Lifting</p>
+</div>
+<div class="text-right ml-2 shrink-0">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Get Quote</span>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Action Bar (Contextual FAB replacement for transactional flow) -->
+<div class="fixed md:absolute bottom-0 left-0 w-full bg-surface-container-lowest border-t border-surface-container p-container-padding pb-[calc(16px+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_0_rgba(0,0,0,0.04)] z-40">
+<button class="w-full bg-primary text-on-primary font-headline-sm text-headline-sm rounded-full py-4 px-6 flex justify-between items-center active:scale-[0.98] transition-transform duration-200">
+<span>CONTINUE</span>
+<div class="flex items-center gap-2">
+<span class="font-body-md text-body-md opacity-90">₹250</span>
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 0;">arrow_forward</span>
+</div>
+</button>
+</div>
+</body></html>

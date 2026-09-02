@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Fare Estimate - Logistics App</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-primary-fixed": "#151a31",
+                        "inverse-surface": "#313032",
+                        "surface-container-high": "#eae7e9",
+                        "surface-container-low": "#f6f3f5",
+                        "error": "#ba1a1a",
+                        "on-surface": "#1b1b1d",
+                        "surface-container-highest": "#e5e1e4",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-fixed": "#0e1b33",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "on-primary": "#ffffff",
+                        "surface-dim": "#dcd9db",
+                        "surface-container": "#f0edef",
+                        "on-tertiary-container": "#91826a",
+                        "on-tertiary-fixed": "#231a09",
+                        "tertiary-container": "#231a09",
+                        "outline-variant": "#c7c5ce",
+                        "on-error": "#ffffff",
+                        "on-secondary-container": "#57637e",
+                        "on-primary-container": "#7e829e",
+                        "tertiary": "#000000",
+                        "inverse-primary": "#c0c5e3",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "outline": "#77767e",
+                        "background": "#fcf8fb",
+                        "surface-variant": "#e5e1e4",
+                        "primary": "#000000",
+                        "inverse-on-surface": "#f3f0f2",
+                        "on-error-container": "#93000a",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "primary-container": "#151a31",
+                        "secondary-container": "#d4dfff",
+                        "primary-fixed": "#dde1ff",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "tertiary-fixed": "#f3e0c5",
+                        "secondary": "#525e79",
+                        "on-background": "#1b1b1d",
+                        "on-primary-fixed-variant": "#40465e",
+                        "on-surface-variant": "#46464d",
+                        "error-container": "#ffdad6",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "surface-tint": "#585d77",
+                        "on-secondary": "#ffffff",
+                        "surface-bright": "#fcf8fb",
+                        "secondary-fixed": "#d8e2ff",
+                        "surface": "#fcf8fb",
+                        "surface-container-lowest": "#ffffff"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px",
+                        "24": "24px"
+                    },
+                    spacing: {
+                        "unit": "4px",
+                        "gutter": "12px",
+                        "container-padding": "16px",
+                        "row-height-md": "56px",
+                        "row-height-sm": "40px"
+                    },
+                    fontFamily: {
+                        "body-lg": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-caps": ["Inter"]
+                    },
+                    fontSize: {
+                        "body-lg": ["15px", { lineHeight: "22px", fontWeight: "400" }],
+                        "headline-sm": ["16px", { lineHeight: "24px", letterSpacing: "-0.01em", fontWeight: "600" }],
+                        "data-mono": ["14px", { lineHeight: "20px", letterSpacing: "-0.01em", fontWeight: "500" }],
+                        "headline-md": ["20px", { lineHeight: "28px", letterSpacing: "-0.02em", fontWeight: "600" }],
+                        "label-sm": ["12px", { lineHeight: "16px", fontWeight: "500" }],
+                        "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+                        "label-caps": ["11px", { lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body-lg">
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky z-50 bg-surface dark:bg-background flat no shadows flex justify-between items-center px-container-padding h-row-height-md">
+<button class="text-primary dark:text-primary-fixed active:scale-95 duration-150 p-2 -ml-2 rounded-full hover:bg-surface-container-high transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md text-primary dark:text-primary-fixed absolute left-1/2 transform -translate-x-1/2">Delivery</h1>
+<button class="text-primary dark:text-on-primary-fixed font-headline-sm text-headline-sm active:scale-95 duration-150 hover:bg-surface-container-high transition-colors px-3 py-2 rounded-full">
+            Help
+        </button>
+</header>
+<!-- Main Content Area -->
+<main class="flex-grow px-container-padding py-gutter flex flex-col gap-6 pb-24">
+<!-- Screen Title -->
+<div>
+<h2 class="font-headline-md text-headline-md text-on-background">Fare Estimate</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Review the estimated cost for your delivery.</p>
+</div>
+<!-- Calculating State (Hidden by default, used for demonstration) -->
+<div class="hidden flex-col gap-4 animate-pulse" id="state-calculating">
+<div class="bg-surface-container-high h-32 rounded-[24px] w-full"></div>
+<div class="bg-surface-container-high h-64 rounded-[24px] w-full mt-4"></div>
+</div>
+<!-- Available State (Main content) -->
+<div class="flex flex-col gap-6" id="state-available">
+<!-- Summary Card -->
+<div class="bg-primary-container text-on-primary-container rounded-[24px] p-6 shadow-sm flex flex-col items-center justify-center relative overflow-hidden">
+<div class="absolute inset-0 opacity-10" data-alt="Subtle abstract geometric pattern in shades of dark charcoal and indigo, soft lighting, modern calm tech aesthetic, vector style graphics repeating seamlessly across the background." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDqQ18VtrqPQE74D1OixflaHPGdrYy0XVKZGSJbhu8DtInZjeDqeK1ZWQnR697qGbzfVCnd89G3rOIIYe0LPQO0DYOY2mLqT8Fdi_h_T83Mi1VVslQ_p_Em5cuv74-SzZBDbmNXqKzlPhDRjDbHRU81qwFhs96T-GoYbk6V7Qw2T4Yb1O_HviA2JrU5kGlpHPXzHrNRI4ZKNGUDQySYQI5DayQrJF-68rrpNGL1TfHnBRoPd7hnn40W')"></div>
+<span class="font-label-caps text-label-caps text-on-primary-container/80 tracking-widest relative z-10 uppercase mb-2">Estimated Total</span>
+<div class="flex items-start gap-1 relative z-10 text-on-primary-fixed">
+<span class="font-headline-md text-headline-md mt-2">₹</span>
+<span class="text-[48px] font-semibold leading-tight tracking-tight">450</span>
+<span class="font-headline-md text-headline-md mt-2">.00</span>
+</div>
+</div>
+<!-- Detailed Breakdown -->
+<div class="bg-surface-container-low rounded-[24px] p-6 shadow-sm flex flex-col gap-4">
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2">Breakdown</h3>
+<div class="flex justify-between items-center py-2 border-b border-surface-variant/50">
+<span class="font-body-md text-body-md text-on-surface-variant">Base Fare</span>
+<span class="font-data-mono text-data-mono text-on-surface">₹ 150.00</span>
+</div>
+<div class="flex justify-between items-center py-2 border-b border-surface-variant/50">
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface-variant">Distance</span>
+<span class="font-label-sm text-label-sm text-outline">12.5 km</span>
+</div>
+<span class="font-data-mono text-data-mono text-on-surface">₹ 180.00</span>
+</div>
+<div class="flex justify-between items-center py-2 border-b border-surface-variant/50">
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface-variant">Additional Drops</span>
+<span class="font-label-sm text-label-sm text-outline">2 locations</span>
+</div>
+<span class="font-data-mono text-data-mono text-on-surface">₹ 80.00</span>
+</div>
+<div class="flex justify-between items-center py-2 border-b border-surface-variant/50">
+<span class="font-body-md text-body-md text-error flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">traffic</span>
+                        Traffic Surcharge
+                    </span>
+<span class="font-data-mono text-data-mono text-on-surface">₹ 25.00</span>
+</div>
+<div class="flex justify-between items-center py-2">
+<span class="font-body-md text-body-md text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">health_and_safety</span>
+                        Insurance
+                    </span>
+<span class="font-data-mono text-data-mono text-on-surface">₹ 15.00</span>
+</div>
+</div>
+<!-- Disclaimer -->
+<div class="flex items-start gap-2 px-2">
+<span class="material-symbols-outlined text-outline text-[18px] mt-0.5">info</span>
+<p class="font-label-sm text-label-sm text-outline leading-snug">
+                    Final fare may vary based on actual distance, waiting time, and unforeseen route changes during transit.
+                </p>
+</div>
+</div>
+<!-- Error State (Hidden by default) -->
+<div class="hidden flex-col items-center justify-center text-center py-12 gap-4" id="state-error">
+<div class="w-16 h-16 rounded-full bg-error-container text-on-error-container flex items-center justify-center mb-2">
+<span class="material-symbols-outlined text-[32px]">cloud_off</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Unable to load estimate</h3>
+<p class="font-body-md text-body-md text-on-surface-variant px-8">Please check your connection or try again in a moment.</p>
+<button class="mt-4 px-6 py-2 bg-secondary-container text-on-secondary-container rounded-full font-headline-sm text-headline-sm active:scale-95 transition-transform">
+                Retry
+            </button>
+</div>
+</main>
+<!-- Bottom Action Button -->
+<div class="fixed bottom-0 left-0 w-full bg-surface-container-lowest/90 backdrop-blur-md px-container-padding py-4 pb-safe border-t border-surface-variant/20 z-40">
+<button class="w-full bg-primary text-on-primary rounded-full py-4 font-headline-sm text-headline-sm flex justify-center items-center gap-2 active:scale-95 transition-transform duration-200 shadow-md">
+            CONTINUE
+            <span class="material-symbols-outlined text-[20px]">arrow_forward</span>
+</button>
+</div>
+<script>
+        // Simple state management simulation
+        function showState(stateId) {
+            document.getElementById('state-calculating').classList.add('hidden');
+            document.getElementById('state-available').classList.add('hidden');
+            document.getElementById('state-error').classList.add('hidden');
+            document.getElementById(stateId).classList.remove('hidden');
+            document.getElementById(stateId).classList.add('flex');
+        }
+
+        // Default to available state for design review
+        showState('state-available');
+        
+        // Uncomment to test states
+        // setTimeout(() => showState('state-calculating'), 1000);
+        // setTimeout(() => showState('state-error'), 3000);
+        // setTimeout(() => showState('state-available'), 5000);
+    </script>
+</body></html>

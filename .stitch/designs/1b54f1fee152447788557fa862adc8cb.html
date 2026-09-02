@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Trip Summary</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed": "#0e1b33",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "surface": "#fcf8fb",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "tertiary-fixed": "#f3e0c5",
+                        "on-secondary-container": "#57637e",
+                        "on-tertiary-fixed": "#231a09",
+                        "inverse-primary": "#c0c5e3",
+                        "background": "#fcf8fb",
+                        "error-container": "#ffdad6",
+                        "surface-tint": "#585d77",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "surface-dim": "#dcd9db",
+                        "primary-container": "#151a31",
+                        "on-primary-fixed": "#151a31",
+                        "on-tertiary-container": "#91826a",
+                        "on-surface-variant": "#46464d",
+                        "outline-variant": "#c7c5ce",
+                        "on-error": "#ffffff",
+                        "error": "#ba1a1a",
+                        "secondary-fixed": "#d8e2ff",
+                        "tertiary-container": "#231a09",
+                        "on-secondary": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-highest": "#e5e1e4",
+                        "on-primary-fixed-variant": "#40465e",
+                        "primary": "#000000",
+                        "surface-container": "#f0edef",
+                        "secondary-container": "#d4dfff",
+                        "secondary": "#525e79",
+                        "on-primary": "#ffffff",
+                        "on-background": "#1b1b1d",
+                        "surface-bright": "#fcf8fb",
+                        "inverse-on-surface": "#f3f0f2",
+                        "outline": "#77767e",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-high": "#eae7e9",
+                        "primary-fixed": "#dde1ff",
+                        "on-error-container": "#93000a",
+                        "surface-variant": "#e5e1e4",
+                        "inverse-surface": "#313032",
+                        "on-surface": "#1b1b1d",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "tertiary": "#000000",
+                        "on-primary-container": "#7e829e",
+                        "surface-container-low": "#f6f3f5",
+                        "tertiary-fixed-dim": "#d6c4aa"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "row-height-md": "56px",
+                        "unit": "4px",
+                        "container-padding": "16px",
+                        "row-height-sm": "40px",
+                        "gutter": "12px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background antialiased min-h-screen flex flex-col pb-[56px] md:pb-0">
+<!-- TopAppBar -->
+<header class="bg-surface dark:bg-background w-full top-0 sticky flat no shadows flex items-center justify-between px-container-padding h-row-height-md z-40">
+<button aria-label="Go back" class="text-primary dark:text-primary-fixed hover:bg-surface-container-low transition-colors active:opacity-80 transition-opacity p-2 rounded-full -ml-2">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-sm text-headline-sm font-bold text-on-surface dark:text-on-background">Trip Summary</h1>
+<div class="w-10"></div> <!-- Placeholder for alignment -->
+</header>
+<main class="flex-grow p-container-padding flex flex-col gap-6 max-w-2xl mx-auto w-full pb-32">
+<!-- Success Banner -->
+<div class="bg-[#e8f5e9] text-[#1b5e20] p-4 rounded-xl flex items-center gap-3">
+<span class="material-symbols-outlined text-[#2e7d32]">check_circle</span>
+<span class="font-label-caps text-label-caps tracking-widest text-[#1b5e20]">ALL DELIVERIES COMPLETED</span>
+</div>
+<!-- Trip Overview Card -->
+<div class="bg-surface-container-low rounded-[24px] p-6 shadow-sm flex flex-col gap-6 border border-outline-variant/30">
+<div class="flex flex-col gap-2">
+<div class="flex justify-between items-start">
+<span class="font-headline-md text-headline-md text-on-surface">Overall Status</span>
+<div class="bg-[#e8f5e9] text-[#1b5e20] px-3 py-1 rounded-full font-label-sm text-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">done_all</span>
+                        Delivered
+                    </div>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant">Total Duration: 1h 45m</p>
+</div>
+<div class="h-[1px] w-full bg-outline-variant/30"></div>
+<div class="flex flex-col gap-0 relative">
+<!-- Vertical Line connecting dots -->
+<div class="absolute left-[11px] top-4 bottom-4 w-[2px] bg-outline-variant/50 z-0"></div>
+<!-- Pickup -->
+<div class="flex gap-4 relative z-10 pb-6">
+<div class="mt-1 bg-surface-container-low p-1 rounded-full border-[2px] border-primary-container">
+<div class="w-2 h-2 rounded-full bg-primary-container"></div>
+</div>
+<div class="flex-grow">
+<p class="font-headline-sm text-headline-sm text-on-surface">Pickup: Sardarpura Warehouse</p>
+<p class="font-body-sm text-label-sm text-on-surface-variant">Completed at 9:30 AM</p>
+</div>
+</div>
+<!-- Drop 1 -->
+<div class="flex gap-4 relative z-10 pb-6">
+<div class="mt-1 bg-surface-container-low p-1 rounded-full border-[2px] border-primary-container">
+<div class="w-2 h-2 rounded-full bg-primary-container"></div>
+</div>
+<div class="flex-grow">
+<p class="font-headline-sm text-headline-sm text-on-surface">Drop 1: Ratanada Hub</p>
+<p class="font-body-sm text-label-sm text-on-surface-variant">Completed at 10:15 AM</p>
+</div>
+</div>
+<!-- Drop 2 -->
+<div class="flex gap-4 relative z-10 pb-6">
+<div class="mt-1 bg-surface-container-low p-1 rounded-full border-[2px] border-primary-container">
+<div class="w-2 h-2 rounded-full bg-primary-container"></div>
+</div>
+<div class="flex-grow">
+<p class="font-headline-sm text-headline-sm text-on-surface">Drop 2: Pal Road Business Center</p>
+<p class="font-body-sm text-label-sm text-on-surface-variant">Completed at 10:45 AM</p>
+</div>
+</div>
+<!-- Drop 3 -->
+<div class="flex gap-4 relative z-10">
+<div class="mt-1 bg-surface-container-low p-1 rounded-full border-[2px] border-primary-container">
+<div class="w-2 h-2 rounded-full bg-primary-container"></div>
+</div>
+<div class="flex-grow">
+<p class="font-headline-sm text-headline-sm text-on-surface">Drop 3: Basni Phase II</p>
+<p class="font-body-sm text-label-sm text-on-surface-variant">Completed at 11:15 AM</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Proof Section -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-4 flex items-center justify-between">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container" data-icon="verified_user">verified_user</span>
+<span class="font-body-md text-body-md text-on-surface">All Delivery Proofs Verified</span>
+</div>
+<span class="material-symbols-outlined text-primary-container text-sm">check</span>
+</div>
+</main>
+<!-- Payment Confirmation Section (Bottom Docked) -->
+<div class="fixed bottom-[56px] md:bottom-0 w-full bg-surface-container-lowest p-container-padding pb-safe border-t border-outline-variant/20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40 max-w-2xl mx-auto left-0 right-0">
+<button class="w-full bg-primary-container text-on-primary rounded-full py-4 px-6 font-headline-sm text-headline-sm active:opacity-80 transition-opacity flex justify-center items-center gap-2">
+<span>CONFIRM PAYMENT &amp; CLOSE TRIP</span>
+</button>
+</div>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden bg-surface-container-lowest dark:bg-primary-container fixed bottom-0 w-full z-50 shadow-sm fixed bottom-0 w-full flex justify-around items-center h-row-height-md px-gutter pb-safe">
+<a class="flex flex-col items-center justify-center text-on-secondary-container/60 dark:text-on-secondary-container/40 hover:bg-surface-container-high dark:hover:bg-on-secondary-fixed-variant transition-all active:scale-95 duration-200 px-2 py-1 rounded-xl" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-caps text-[10px] mt-1">Dashboard</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary rounded-full px-4 py-1 hover:bg-surface-container-high dark:hover:bg-on-secondary-fixed-variant transition-all active:scale-95 duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="local_shipping" data-weight="fill" style="font-variation-settings: 'FILL' 1;">local_shipping</span>
+<span class="font-label-caps text-[10px] mt-1">Deliveries</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-secondary-container/60 dark:text-on-secondary-container/40 hover:bg-surface-container-high dark:hover:bg-on-secondary-fixed-variant transition-all active:scale-95 duration-200 px-2 py-1 rounded-xl" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-label-caps text-[10px] mt-1">History</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-secondary-container/60 dark:text-on-secondary-container/40 hover:bg-surface-container-high dark:hover:bg-on-secondary-fixed-variant transition-all active:scale-95 duration-200 px-2 py-1 rounded-xl" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-label-caps text-[10px] mt-1">Account</span>
+</a>
+</nav>
+</body></html>

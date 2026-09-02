@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Select Pickup Location</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-fixed": "#d8e2ff",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "tertiary-fixed": "#f3e0c5",
+                        "error-container": "#ffdad6",
+                        "on-tertiary-container": "#91826a",
+                        "on-error-container": "#93000a",
+                        "tertiary": "#000000",
+                        "on-primary-container": "#7e829e",
+                        "surface-container-lowest": "#ffffff",
+                        "error": "#ba1a1a",
+                        "on-tertiary-fixed": "#231a09",
+                        "on-primary-fixed-variant": "#40465e",
+                        "outline-variant": "#c7c5ce",
+                        "surface-container-low": "#f6f3f5",
+                        "secondary": "#525e79",
+                        "on-secondary-fixed": "#0e1b33",
+                        "surface": "#fcf8fb",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "tertiary-container": "#231a09",
+                        "on-secondary-container": "#57637e",
+                        "primary": "#000000",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "inverse-surface": "#313032",
+                        "surface-container-highest": "#e5e1e4",
+                        "surface-container-high": "#eae7e9",
+                        "outline": "#77767e",
+                        "surface-variant": "#e5e1e4",
+                        "background": "#fcf8fb",
+                        "surface-container": "#f0edef",
+                        "on-primary-fixed": "#151a31",
+                        "surface-bright": "#fcf8fb",
+                        "surface-tint": "#585d77",
+                        "on-surface-variant": "#46464d",
+                        "secondary-container": "#d4dfff",
+                        "primary-fixed": "#dde1ff",
+                        "on-tertiary": "#ffffff",
+                        "on-surface": "#1b1b1d",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "on-background": "#1b1b1d",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "inverse-primary": "#c0c5e3",
+                        "inverse-on-surface": "#f3f0f2",
+                        "primary-container": "#151a31",
+                        "on-primary": "#ffffff",
+                        "surface-dim": "#dcd9db",
+                        "on-error": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "row-height-md": "56px",
+                        "container-padding": "16px",
+                        "row-height-sm": "40px",
+                        "gutter": "12px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "data-mono": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .map-container { position: relative; width: 100%; height: 100%; }
+        .map-bg { 
+            position: absolute; inset: 0;
+            background-color: #f0edef;
+            background-image: radial-gradient(#dcd9db 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .pin {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -100%);
+            z-index: 10;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background h-screen flex flex-col overflow-hidden">
+<!-- Top App Bar -->
+<header class="flex justify-between items-center w-full px-container-padding h-row-height-md bg-surface dark:bg-background flat no shadows docked full-width top-0 z-50">
+<button aria-label="Go back" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-on-surface">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md text-on-surface">Pick Up Location</h1>
+<div class="w-10 h-10"></div> <!-- Spacer for centering -->
+</header>
+<!-- Map Canvas & Search -->
+<main class="flex-1 relative flex flex-col">
+<!-- Search Overlay -->
+<div class="absolute top-4 left-container-padding right-container-padding z-20">
+<div class="flex items-center bg-surface-container-lowest rounded-full shadow-sm px-4 h-12 border border-outline-variant">
+<span class="material-symbols-outlined text-on-surface-variant mr-3">search</span>
+<input class="w-full bg-transparent border-none outline-none font-body-md text-body-md text-on-surface placeholder:text-on-surface-variant focus:ring-0" placeholder="Search pickup location" type="text"/>
+</div>
+<!-- Optional Search Results Dropdown (Hidden by default, shown for structure) -->
+<div class="hidden mt-2 bg-surface-container-lowest rounded-lg shadow-lg border border-outline-variant overflow-hidden">
+<ul class="py-2">
+<li class="flex items-center px-4 py-3 hover:bg-surface-container-low cursor-pointer">
+<span class="material-symbols-outlined text-on-surface-variant mr-4">location_on</span>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface font-medium">Sardarpura</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Jodhpur, Rajasthan</span>
+</div>
+</li>
+<li class="flex items-center px-4 py-3 hover:bg-surface-container-low cursor-pointer border-t border-outline-variant/30">
+<span class="material-symbols-outlined text-on-surface-variant mr-4">location_on</span>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface font-medium">Ratanada</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Jodhpur, Rajasthan</span>
+</div>
+</li>
+</ul>
+</div>
+</div>
+<!-- Map Area Placeholder -->
+<div class="map-container flex-1 bg-surface-variant relative overflow-hidden" data-location="Jodhpur" style="">
+<img class="absolute inset-0 w-full h-full object-cover opacity-60 mix-blend-multiply" data-alt="A clean, minimalist logistics-style map showing the city layout of Jodhpur with soft, muted tones of light grey and cream, creating a bright, modern light-mode aesthetic perfect for a corporate delivery application." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCN9fQd9TZvZtrMZ-DK-HCu-ur1PLzNKQxb4pqlKmHKqCvb39NXbwnU16zWRj1g2Ef7yHthamk_9gZm-YTiN6_1SeQQdwXL2uB1dxgLRtiEFvaasusNNcQaNRdpqH5ItrcPLUvNTxogJ8jdyqZInx8NlH7V6ew3KHYMrlQrnlqAXl79UxFAMT-BqOlwzCDozKybsy-0N3V3TaVmIMzBeG27VmfwONg6ZYXulY-uguDTcCDTmvKFuE06"/>
+<!-- Map Pin -->
+<div class="pin flex flex-col items-center">
+<div class="bg-primary text-on-primary rounded-full p-2 shadow-lg mb-1">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">location_on</span>
+</div>
+<div class="w-2 h-2 bg-primary rounded-full shadow-md"></div>
+</div>
+<!-- GPS Action button -->
+<button class="absolute right-4 bottom-[calc(100%-8rem)] md:bottom-[24rem] w-12 h-12 bg-surface-container-lowest rounded-full shadow-md flex items-center justify-center text-primary z-20">
+<span class="material-symbols-outlined">my_location</span>
+</button>
+</div>
+<!-- Bottom Sheet Selection Card -->
+<div class="bg-surface-container-lowest rounded-t-[24px] shadow-[0_-4px_20px_rgba(0,0,0,0.05)] w-full relative z-30 flex flex-col -mt-4 pt-2">
+<!-- Drag Handle -->
+<div class="w-12 h-1.5 bg-outline-variant/50 rounded-full mx-auto mb-4"></div>
+<div class="px-container-padding pb-safe">
+<!-- Location Info -->
+<div class="flex items-start mb-6">
+<span class="material-symbols-outlined text-primary mt-1 mr-3" style="font-variation-settings: 'FILL' 1;">location_on</span>
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-1">Sardarpura Warehouse</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Jodhpur, Rajasthan 342003</p>
+</div>
+</div>
+<!-- Inputs -->
+<div class="space-y-4 mb-6">
+<div class="flex flex-col">
+<label class="font-label-sm text-label-sm text-on-surface-variant mb-1 ml-1 uppercase tracking-wider">Landmark (Optional)</label>
+<input class="bg-surface-container-low border border-transparent focus:border-primary-fixed-dim rounded-md px-4 py-3 font-body-md text-body-md text-on-surface focus:outline-none focus:ring-0 transition-colors" placeholder="e.g. Near Gate No. 2" type="text"/>
+</div>
+<div class="flex flex-col">
+<label class="font-label-sm text-label-sm text-on-surface-variant mb-1 ml-1 uppercase tracking-wider">Pickup Instructions</label>
+<textarea class="bg-surface-container-low border border-transparent focus:border-primary-fixed-dim rounded-md px-4 py-3 font-body-md text-body-md text-on-surface focus:outline-none focus:ring-0 transition-colors resize-none" placeholder="e.g. Wait at the main entrance" rows="2"></textarea>
+</div>
+</div>
+<!-- Action Button -->
+<button class="w-full bg-primary text-on-primary font-headline-sm text-headline-sm rounded-full py-4 shadow-md hover:bg-primary/90 transition-colors mb-4 flex justify-center items-center">
+                    CONFIRM PICKUP
+                </button>
+</div>
+</div>
+</main>
+</body></html>

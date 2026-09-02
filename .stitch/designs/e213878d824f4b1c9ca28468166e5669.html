@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Pick Up - Logistics & Delivery</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/history@5/umd/history.development.js"></script>
+    <script src="https://unpkg.com/react-router@6.3.0/umd/react-router.development.js"></script>
+    <script src="https://unpkg.com/react-router-dom@6.3.0/umd/react-router-dom.development.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#03071d",
+                        "on-primary": "#ffffff",
+                        "secondary": "#525e79",
+                        "background": "#fcf8fb",
+                        "on-background": "#1b1b1d",
+                        "surface": "#fcf8fb",
+                        "on-surface": "#1b1b1d",
+                        "surface-variant": "#e5e1e4",
+                        "on-surface-variant": "#46464d",
+                        "outline": "#77767e",
+                        "outline-variant": "#c7c5ce",
+                        "primary-container": "#151a31",
+                        "on-primary-container": "#7e829e",
+                        "secondary-container": "#d4dfff",
+                        "on-secondary-container": "#57637e",
+                        "surface-container-low": "#f6f3f5",
+                        "surface-container": "#f0edef",
+                        "surface-container-high": "#eae7e9",
+                        "surface-container-highest": "#e5e1e4",
+                        "surface-container-lowest": "#ffffff",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6",
+                        "on-error-container": "#93000a",
+                        "status-green": "#2D6A4F",
+                        "status-red": "#BA1A1A"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "9999px",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px",
+                        "card": "24px"
+                    },
+                    spacing: {
+                        "container-padding": "16px",
+                        "row-height-md": "56px",
+                        "row-height-sm": "40px",
+                        "gutter": "12px",
+                        "unit": "4px"
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        body: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .filled-icon {
+            font-variation-settings: 'FILL' 1;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #c7c5ce;
+            border-radius: 9999px;
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            80%, 100% { transform: scale(2.5); opacity: 0; }
+        }
+        .pulse-animation {
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background antialiased min-h-screen flex flex-col font-sans">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { createRoot } = ReactDOM;
+        const { MemoryRouter, Routes, Route, Link, useNavigate, useLocation } = ReactRouterDOM;
+
+        /** 
+         * Components 
+         */
+
+        const TopAppBar = ({ title, showBack = true, showHelp = true, customRight }) => {
+            const navigate = useNavigate();
+            return (
+                <header class="w-full top-0 sticky bg-surface dark:bg-background z-40 border-b border-surface-variant/30">
+                    <div class="flex justify-between items-center px-container-padding h-row-height-md w-full max-w-2xl mx-auto">
+                        {showBack ? (
+                            <button onClick={() => navigate(-1)} class="text-on-surface-variant p-2 rounded-full hover:bg-surface-container-high transition-colors active:scale-95 duration-150">
+                                <span class="material-symbols-outlined">arrow_back</span>
+                            </button>
+                        ) : <div class="w-10"></div>}
+                        
+                        <h1 class="font-semibold text-lg text-primary truncate flex-1 text-center">{title}</h1>
+                        
+                        {customRight ? customRight : (showHelp ? (
+                            <button class="text-on-surface-variant p-2 rounded-full hover:bg-surface-container-high transition-colors">
+                                <span class="material-symbols-outlined">help</span>
+                            </button>
+                        ) : <div class="w-10"></div>)}
+                    </div>
+                </header>
+            );
+        };
+
+        const BottomNav = () => {
+            const location = useLocation();
+            const isActive = (path) => location.pathname === path;
+            
+            return (
+                <nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center bg-surface border-t border-outline-variant/30 px-2 py-2 pb-safe shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+                    <Link to="/home" class={`flex flex-col items-center justify-center px-4 py-1 rounded-full transition-all ${isActive('/home') ? 'text-primary bg-secondary-container' : 'text-on-surface-variant'}`}>
+                        <span class={`material-symbols-outlined mb-1 ${isActive('/home') ? 'filled-icon' : ''}`}>home</span>
+                        <span class="text-[10px] font-bold uppercase tracking-tighter">Home</span>
+                    </Link>
+                    <Link to="/trips" class={`flex flex-col items-center justify-center px-4 py-1 rounded-full transition-all ${isActive('/trips') ? 'text-primary bg-secondary-container' : 'text-on-surface-variant'}`}>
+                        <span class={`material-symbols-outlined mb-1 ${isActive('/trips') ? 'filled-icon' : ''}`}>route</span>
+                        <span class="text-[10px] font-bold uppercase tracking-tighter">Trips</span>
+                    </Link>
+                    <Link to="/wallet" class={`flex flex-col items-center justify-center px-4 py-1 rounded-full transition-all ${isActive('/wallet') ? 'text-primary bg-secondary-container' : 'text-on-surface-variant'}`}>
+                        <span class={`material-symbols-outlined mb-1 ${isActive('/wallet') ? 'filled-icon' : ''}`}>account_balance_wallet</span>
+                        <span class="text-[10px] font-bold uppercase tracking-tighter">Wallet</span>
+                    </Link>
+                    <Link to="/profile" class={`flex flex-col items-center justify-center px-4 py-1 rounded-full transition-all ${isActive('/profile') ? 'text-primary bg-secondary-container' : 'text-on-surface-variant'}`}>
+                        <span class={`material-symbols-outlined mb-1 ${isActive('/profile') ? 'filled-icon' : ''}`}>person</span>
+                        <span class="text-[10px] font-bold uppercase tracking-tighter">Account</span>
+                    </Link>
+                </nav>
+            );
+        };
+
+        /** 
+         * Screens
+         */
+
+        const LoginScreen = () => {
+            const navigate = useNavigate();
+            const [number, setNumber] = useState("");
+            const [loading, setLoading] = useState(false);
+
+            const handleLogin = () => {
+                if (number.length === 10) {
+                    setLoading(true);
+                    setTimeout(() => navigate('/verify-otp'), 1000);
+                }
+            };
+
+            return (
+                <main class="flex-grow flex flex-col items-center justify-center p-6 bg-surface">
+                    <div class="w-20 h-20 bg-primary text-on-primary flex items-center justify-center rounded-2xl mb-8 shadow-lg">
+                        <span class="material-symbols-outlined text-4xl filled-icon">package_2</span>
+                    </div>
+                    <h1 class="text-2xl font-bold text-on-surface mb-2">Welcome to Pick Up</h1>
+                    <p class="text-on-surface-variant text-center mb-8">Enter your mobile number to get started.</p>
+                    
+                    <div class="w-full max-w-sm space-y-6">
+                        <div class="flex flex-col gap-2">
+                            <label class="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Mobile Number</label>
+                            <div class="flex items-center bg-surface-container-low border border-outline-variant rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-primary transition-all">
+                                <div class="px-4 py-4 border-r border-outline-variant bg-surface-container text-on-surface font-medium">+91</div>
+                                <input 
+                                    type="tel" 
+                                    maxLength="10" 
+                                    value={number}
+                                    onChange={(e) => setNumber(e.target.value.replace(/\D/g, ''))}
+                                    class="flex-1 px-4 py-4 bg-transparent border-none focus:ring-0 font-medium" 
+                                    placeholder="Enter 10-digit number"
+                                />
+                            </div>
+                        </div>
+                        
+                        <button 
+                            onClick={handleLogin}
+                            disabled={number.length !== 10 || loading}
+                            class="w-full bg-primary text-on-primary py-4 rounded-full font-bold shadow-md active:scale-95 transition-all disabled:opacity-50"
+                        >
+                            {loading ? "Sending..." : "GET OTP"}
+                        </button>
+                    </div>
+                </main>
+            );
+        };
+
+        const VerifyOtpScreen = () => {
+            const navigate = useNavigate();
+            const [loading, setLoading] = useState(false);
+            
+            const handleVerify = () => {
+                setLoading(true);
+                setTimeout(() => navigate('/home'), 1000);
+            };
+
+            return (
+                <main class="flex-grow flex flex-col items-center px-6 pt-20 bg-surface">
+                    <button onClick={() => navigate(-1)} class="absolute top-6 left-6 p-2 rounded-full bg-surface-container">
+                        <span class="material-symbols-outlined">arrow_back</span>
+                    </button>
+                    <h1 class="text-2xl font-bold text-on-surface mb-2">Verify Phone</h1>
+                    <p class="text-on-surface-variant text-center mb-10">We've sent a 4-digit code to +91 98765 43210</p>
+                    
+                    <div class="flex gap-4 mb-10">
+                        {[1, 2, 3, 4].map((i) => (
+                            <input key={i} type="text" maxLength="1" class="w-14 h-16 text-center text-2xl font-bold bg-surface-container-low border border-outline-variant rounded-2xl focus:ring-2 focus:ring-primary outline-none" />
+                        ))}
+                    </div>
+                    
+                    <div class="text-center space-y-4 mb-10">
+                        <button class="text-primary font-bold text-sm">Resend OTP (0:24)</button>
+                        <p class="text-on-surface-variant text-sm underline">Change Phone Number</p>
+                    </div>
+
+                    <button 
+                        onClick={handleVerify}
+                        class="w-full max-w-sm bg-primary text-on-primary py-4 rounded-full font-bold shadow-md"
+                    >
+                        {loading ? "Verifying..." : "VERIFY"}
+                    </button>
+                </main>
+            );
+        };
+
+        const HomeScreen = () => {
+            const navigate = useNavigate();
+            return (
+                <div class="flex-grow flex flex-col pb-20">
+                    <header class="flex justify-between items-center px-container-padding h-row-height-md bg-surface sticky top-0 z-40">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center overflow-hidden">
+                                <span class="material-symbols-outlined text-[20px]">person</span>
+                            </div>
+                            <h1 class="font-bold text-lg text-primary">Pick Up</h1>
+                        </div>
+                        <button class="relative w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low">
+                            <span class="material-symbols-outlined text-on-surface-variant">notifications</span>
+                            <span class="absolute top-2.5 right-2.5 w-2 h-2 bg-status-red rounded-full border-2 border-surface"></span>
+                        </button>
+                    </header>
+
+                    <main class="flex-grow px-container-padding flex flex-col gap-4 pt-2">
+                        {/* Mock Map Area */}
+                        <div class="relative w-full h-[240px] bg-surface-container-high rounded-3xl overflow-hidden shadow-inner border border-outline-variant/30">
+                            <div class="absolute inset-0 opacity-40 bg-[url('https://lh3.googleusercontent.com/aida-public/AB6AXuCN9fQd9TZvZtrMZ-DK-HCu-ur1PLzNKQxb4pqlKmHKqCvb39NXbwnU16zWRj1g2Ef7yHthamk_9gZm-YTiN6_1SeQQdwXL2uB1dxgLRtiEFvaasusNNcQaNRdpqH5ItrcPLUvNTxogJ8jdyqZInx8NlH7V6ew3KHYMrlQrnlqAXl79UxFAMT-BqOlwzCDozKybsy-0N3V3TaVmIMzBeG27VmfwONg6ZYXulY-uguDTcCDTmvKFuE06')] bg-cover"></div>
+                            
+                            <div class="absolute top-4 left-4 right-4 z-10">
+                                <div class="bg-surface/95 backdrop-blur-md rounded-2xl p-3 border border-outline-variant shadow-lg flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 bg-secondary-container rounded-full flex items-center justify-center">
+                                            <span class="material-symbols-outlined text-primary text-[20px]">local_shipping</span>
+                                        </div>
+                                        <div>
+                                            <div class="flex items-center gap-2">
+                                                <span class="w-2 h-2 rounded-full bg-status-green animate-pulse"></span>
+                                                <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wide">Ongoing Delivery</span>
+                                            </div>
+                                            <p class="text-xs font-bold">Ramesh • RJ 19 XX 1234</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => navigate('/trip-details')} class="p-2"><span class="material-symbols-outlined">chevron_right</span></button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Booking Controls */}
+                        <div class="-mt-8 relative z-20">
+                            <section class="bg-surface rounded-3xl border border-outline-variant/30 p-4 shadow-xl">
+                                <div class="flex flex-col gap-0 mb-4 relative">
+                                    <div class="absolute left-[11px] top-6 bottom-6 w-0.5 bg-outline-variant/30"></div>
+                                    
+                                    <div onClick={() => navigate('/select-pickup')} class="flex items-center gap-3 py-2 cursor-pointer">
+                                        <div class="w-6 h-6 flex items-center justify-center bg-surface relative z-10">
+                                            <div class="w-2 h-2 bg-primary rounded-full"></div>
+                                        </div>
+                                        <div class="flex-1 flex justify-between items-center border-b border-outline-variant/20 pb-2">
+                                            <div>
+                                                <p class="text-[10px] font-bold text-on-surface-variant uppercase">Pickup</p>
+                                                <p class="text-sm font-medium">Sardarpura Warehouse</p>
+                                            </div>
+                                            <span class="text-primary text-[10px] font-bold">Change</span>
+                                        </div>
+                                    </div>
+
+                                    <div onClick={() => navigate('/select-drop')} class="flex items-center gap-3 py-2 cursor-pointer">
+                                        <div class="w-6 h-6 flex items-center justify-center bg-surface relative z-10">
+                                            <span class="material-symbols-outlined text-status-red text-[18px] filled-icon">location_on</span>
+                                        </div>
+                                        <div class="flex-1">
+                                            <p class="text-sm text-on-surface-variant">Enter drop location</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button onClick={() => navigate('/review-route')} class="w-full bg-primary text-on-primary py-3.5 rounded-full font-bold shadow-lg hover:opacity-90 active:scale-[0.98] transition-all">
+                                    Start Booking
+                                </button>
+                            </section>
+                        </div>
+
+                        {/* Quick Access Grid */}
+                        <div class="grid grid-cols-2 gap-4">
+                            <button class="bg-surface-container-low p-4 rounded-3xl border border-outline-variant/20 text-left flex flex-col gap-2">
+                                <div class="w-10 h-10 bg-surface rounded-full flex items-center justify-center shadow-sm">
+                                    <span class="material-symbols-outlined text-secondary">history</span>
+                                </div>
+                                <p class="text-sm font-bold">Trip History</p>
+                                <p class="text-[10px] text-on-surface-variant">Review past deliveries</p>
+                            </button>
+                            <button class="bg-surface-container-low p-4 rounded-3xl border border-outline-variant/20 text-left flex flex-col gap-2">
+                                <div class="w-10 h-10 bg-surface rounded-full flex items-center justify-center shadow-sm">
+                                    <span class="material-symbols-outlined text-secondary">bookmarks</span>
+                                </div>
+                                <p class="text-sm font-bold">Saved Places</p>
+                                <p class="text-[10px] text-on-surface-variant">Manage addresses</p>
+                            </button>
+                        </div>
+                    </main>
+                    <BottomNav />
+                </div>
+            );
+        };
+
+        const SelectPickupScreen = () => {
+            const navigate = useNavigate();
+            return (
+                <div class="flex-grow flex flex-col">
+                    <TopAppBar title="Pickup Location" />
+                    <main class="flex-grow relative bg-surface-container-low">
+                        <img class="absolute inset-0 w-full h-full object-cover opacity-60" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCN9fQd9TZvZtrMZ-DK-HCu-ur1PLzNKQxb4pqlKmHKqCvb39NXbwnU16zWRj1g2Ef7yHthamk_9gZm-YTiN6_1SeQQdwXL2uB1dxgLRtiEFvaasusNNcQaNRdpqH5ItrcPLUvNTxogJ8jdyqZInx8NlH7V6ew3KHYMrlQrnlqAXl79UxFAMT-BqOlwzCDozKybsy-0N3V3TaVmIMzBeG27VmfwONg6ZYXulY-uguDTcCDTmvKFuE06"/>
+                        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full flex flex-col items-center">
+                            <div class="bg-primary text-on-primary p-2 rounded-full shadow-2xl animate-bounce">
+                                <span class="material-symbols-outlined filled-icon">location_on</span>
+                            </div>
+                        </div>
+                        
+                        <div class="absolute bottom-0 left-0 w-full bg-surface rounded-t-[32px] shadow-2xl p-6 flex flex-col gap-6">
+                            <div class="flex items-start gap-4">
+                                <span class="material-symbols-outlined text-primary mt-1">location_on</span>
+                                <div>
+                                    <h2 class="text-xl font-bold">Sardarpura Warehouse</h2>
+                                    <p class="text-sm text-on-surface-variant">Jodhpur, Rajasthan 342003</p>
+                                </div>
+                            </div>
+                            <div class="space-y-4">
+                                <input class="w-full bg-surface-container-low border-none rounded-2xl py-4 px-4 text-sm font-medium focus:ring-2 focus:ring-primary" placeholder="Landmark (Optional)" />
+                                <textarea class="w-full bg-surface-container-low border-none rounded-2xl py-4 px-4 text-sm font-medium focus:ring-2 focus:ring-primary h-24" placeholder="Pickup instructions for driver"></textarea>
+                            </div>
+                            <button onClick={() => navigate('/home')} class="w-full bg-primary text-on-primary py-4 rounded-full font-bold shadow-lg">
+                                CONFIRM PICKUP
+                            </button>
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const SelectDropScreen = () => {
+            const navigate = useNavigate();
+            return (
+                <div class="flex-grow flex flex-col">
+                    <TopAppBar title="Drop Location" />
+                    <main class="flex-grow relative bg-surface-container-low">
+                         <img class="absolute inset-0 w-full h-full object-cover opacity-60" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAHX5v6oEO5mXpNSd790XoqMkOxo9EvFZ0x3NYamS_sp84oQY_T0sj08XoELN2rr9vbXpY6JP3yJyFwf15VVLn2QI0StttP4vjXa58XHNxIe_lEFxgvhMmxpwwWru2MJ4j74RMhRyj1L2YZ_6Esh5-5C5tLb2vlp8Uf-_lbE-h_FnnZtUy90VgWxdEiR7WEOOWMLV-sKepCW_bv7PMRcAeWYgRqvqRTmDL1Hl69AP9iAGkv1hZzS1yY"/>
+                         <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full flex flex-col items-center">
+                            <div class="bg-status-red text-on-primary p-2 rounded-full shadow-2xl animate-bounce">
+                                <span class="material-symbols-outlined filled-icon">location_on</span>
+                            </div>
+                        </div>
+                        <div class="absolute bottom-0 left-0 w-full bg-surface rounded-t-[32px] shadow-2xl p-6 flex flex-col gap-6">
+                            <div>
+                                <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Drop Stop 1</p>
+                                <h2 class="text-xl font-bold">Shastri Nagar, Jodhpur</h2>
+                            </div>
+                            <button onClick={() => navigate('/receiver-details')} class="w-full bg-primary text-on-primary py-4 rounded-full font-bold shadow-lg flex items-center justify-center gap-2">
+                                CONFIRM DROP <span class="material-symbols-outlined text-[20px]">check</span>
+                            </button>
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const ReceiverDetailsScreen = () => {
+            const navigate = useNavigate();
+            return (
+                <div class="flex-grow flex flex-col bg-surface">
+                    <TopAppBar title="Delivery Details" />
+                    <main class="flex-grow p-6 flex flex-col gap-8 max-w-2xl mx-auto w-full">
+                        <section class="bg-surface-container-low rounded-3xl p-5 border border-outline-variant/30 flex items-center gap-4">
+                            <div class="w-10 h-10 bg-primary text-on-primary rounded-full flex items-center justify-center">
+                                <span class="material-symbols-outlined filled-icon">location_on</span>
+                            </div>
+                            <div>
+                                <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Selected Destination</p>
+                                <p class="font-bold">Shastri Nagar, Jodhpur</p>
+                            </div>
+                        </section>
+                        <section class="space-y-6">
+                            <h2 class="text-lg font-bold">Who is receiving?</h2>
+                            <div class="space-y-4">
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-[10px] font-bold uppercase text-on-surface-variant px-1">Receiver Name</label>
+                                    <input class="w-full bg-surface-container-low border-none rounded-2xl py-4 px-4 font-medium" placeholder="Enter name" />
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-[10px] font-bold uppercase text-on-surface-variant px-1">Mobile Number</label>
+                                    <div class="flex items-center bg-surface-container-low rounded-2xl">
+                                        <div class="px-4 py-4 text-on-surface-variant border-r border-outline-variant">+91</div>
+                                        <input class="flex-1 px-4 py-4 bg-transparent border-none font-medium focus:ring-0" placeholder="10-digit number" />
+                                    </div>
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-[10px] font-bold uppercase text-on-surface-variant px-1">Special Instructions</label>
+                                    <textarea class="w-full bg-surface-container-low border-none rounded-2xl py-4 px-4 font-medium h-24" placeholder="e.g. Near blue gate, 2nd floor..."></textarea>
+                                </div>
+                            </div>
+                        </section>
+                    </main>
+                    <div class="p-6 bg-surface">
+                         <button onClick={() => navigate('/review-route')} class="w-full bg-primary text-on-primary py-4 rounded-full font-bold shadow-lg">
+                            CONTINUE
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const ReviewRouteScreen = () => {
+            const navigate = useNavigate();
+            return (
+                <div class="flex-grow flex flex-col bg-surface">
+                    <TopAppBar title="Review Route" />
+                    <main class="flex-grow p-6 overflow-y-auto hide-scrollbar">
+                        <div class="relative pl-12 space-y-8">
+                            <div class="absolute left-[23px] top-6 bottom-6 w-0.5 bg-outline-variant/30"></div>
+                            
+                            <div class="relative flex items-center justify-between bg-surface-container-low p-4 rounded-3xl border border-outline-variant/20 shadow-sm">
+                                <div class="absolute -left-[35px] w-12 h-12 bg-primary-container text-on-primary rounded-full flex items-center justify-center border-4 border-surface">
+                                    <span class="material-symbols-outlined filled-icon">trip_origin</span>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-bold uppercase text-on-surface-variant mb-0.5">Pickup</p>
+                                    <p class="font-bold">Current Location</p>
+                                </div>
+                                <button class="p-2"><span class="material-symbols-outlined text-[20px]">edit</span></button>
+                            </div>
+
+                            <div class="relative flex items-center justify-between bg-surface-container-low p-4 rounded-3xl border border-outline-variant/20 shadow-sm">
+                                <div class="absolute -left-[35px] w-12 h-12 bg-surface-container-highest text-on-surface rounded-full flex items-center justify-center border-4 border-surface">
+                                    <span class="font-bold">1</span>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-bold uppercase text-on-surface-variant mb-0.5">Drop 1</p>
+                                    <p class="font-bold">Shastri Nagar, Jodhpur</p>
+                                    <p class="text-[10px] text-on-surface-variant">Rec: Akash Singh</p>
+                                </div>
+                                <button class="p-2"><span class="material-symbols-outlined text-[20px]">edit</span></button>
+                            </div>
+
+                            <div class="relative flex items-center justify-between bg-surface-container-low p-4 rounded-3xl border border-outline-variant/20 shadow-sm">
+                                <div class="absolute -left-[35px] w-12 h-12 bg-surface-container-highest text-on-surface rounded-full flex items-center justify-center border-4 border-surface">
+                                    <span class="font-bold">2</span>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-bold uppercase text-on-surface-variant mb-0.5">Drop 2</p>
+                                    <p class="font-bold">Ratanada Hub</p>
+                                </div>
+                                <button class="p-2"><span class="material-symbols-outlined text-[20px]">edit</span></button>
+                            </div>
+
+                            <button class="flex items-center gap-2 bg-secondary-container text-primary px-6 py-3 rounded-full font-bold ml-2">
+                                <span class="material-symbols-outlined text-[20px]">add</span> Add Drop
+                            </button>
+                        </div>
+                    </main>
+                    <div class="p-6 bg-surface border-t border-outline-variant/20 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+                        <div class="flex justify-between items-center mb-4 px-2">
+                            <span class="text-sm font-medium text-on-surface-variant">Estimated Route</span>
+                            <span class="text-lg font-bold">12.4 km total</span>
+                        </div>
+                        <button onClick={() => navigate('/select-vehicle')} class="w-full bg-primary text-on-primary py-4 rounded-full font-bold shadow-lg flex items-center justify-center gap-2">
+                            Select Vehicle <span class="material-symbols-outlined">arrow_forward</span>
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const SelectVehicleScreen = () => {
+            const navigate = useNavigate();
+            const vehicles = [
+                { id: 'bike', name: 'Bike / 2-Wheeler', cap: 'Up to 20kg', fare: '₹50', img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBXY000fGYx7XpW1kYD53XPXCR-oasdn-mKkIlbqrwNQFngvyOa6nW_xzm3G5VgJ70GS8Ll4x-R5bd3a7j6gCLwtxOOE_ihiI5LoARrMTPX2Vlj_sg10p1_X0aUNqU_hfSbuL3xk4g-VbpXTH5oX5dBJFqNEFSfYddbT0WMzsFH3GDgG1R18vn7fkCFy_P0QBXT5bMf-mz-NIJQLP1uI_1-n1h1bvtw_Bm0xB7eugQaUxBSkOp_8oxb' },
+                { id: '3w', name: '3-Wheeler / E-Loader', cap: 'Up to 500kg', fare: '₹150', img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC9sIuDmXlDuGWgcUb9VMlyein9ap6_9aVw14lCiJuOzmgdb6DZsHc3VTJ8CI3dnkKG0J-V2YP1cEw-St0kI-8AM4k7dzrfKvgwKAUNQVTAuY4vl7QTopbBRuTQhZokkJa1K84BSYg7LEPaJxhEsuXNjfwijW1Mk6qK655kkZzHpxw2vroe80nYhMgKMni4NvRikWpEvR7lPqxGCAHPmGunMMnpdWlt6BmBi4XjhE9qlZVlaAZBirsz' },
+                { id: 'ace', name: 'Mini Truck / Tata Ace', cap: 'Up to 850kg', fare: '₹250', selected: true, img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBUjS9k93uTT-P769pOcdZJOBqX9DN0I-zjuvv-4HaRQJqN2zVGSN8IUzoRbmtUxMfqfcXzSXp5k2ct_aV61b94B3FgwoFNYj-7ervR-9ssN_p0dFrIOMqcOf4jG5u6Hymb2_g8k5OTLRAF9TgukIxRv1T2iSWxOafwddQVPc1zbpdffw2z7DukIxLIYWiwkCl2FFmse4MjtjQXgkhGiJj1x3L4NFKg28CqcHa133M3vAD28OOosEcM' },
+                { id: 'bolero', name: 'Pickup / Bolero', cap: 'Up to 1.5 Tons', fare: '₹400', img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDrvsI9Per9utb1RHCz_G0PE0zkHo0q0-y_HEwgP68cMfpI4a9D_Rm1ysRXo4XR3QvUk5pZcqfUVKIjlQhLR8Addx7X-CVOu0blmD3bSkFIqvTlbG6v1M8vldJeydLZUwcngjrQNiFJ48kad80jGmX6Ia1kAuihtB5x7Hc4ouR7GjIzA1FSgBg9FfISRv1Pv3SJWzp83FSQpR3rkqzmp3wrAc3fOU0TBnzDRzyUoSBCpXNjVR0nil-M' }
+            ];
+
+            return (
+                <div class="flex-grow flex flex-col bg-surface">
+                    <TopAppBar title="Select Vehicle" />
+                    <main class="flex-grow p-6 overflow-y-auto space-y-4 hide-scrollbar">
+                        {vehicles.map((v) => (
+                            <div key={v.id} onClick={() => navigate('/goods-details')} class={`flex items-center gap-4 p-4 rounded-[28px] border-2 cursor-pointer transition-all ${v.selected ? 'bg-primary-container/5 border-primary shadow-lg ring-1 ring-primary/20' : 'bg-surface-container-low border-outline-variant/30 hover:border-primary/30'}`}>
+                                <div class="w-20 h-20 bg-surface rounded-2xl flex items-center justify-center overflow-hidden border border-outline-variant/10">
+                                    <img src={v.img} class="w-full h-full object-contain p-2" />
+                                </div>
+                                <div class="flex-1">
+                                    <h3 class={`font-bold ${v.selected ? 'text-primary' : ''}`}>{v.name}</h3>
+                                    <p class="text-xs text-on-surface-variant">{v.cap}</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="font-bold text-lg">{v.fare}</p>
+                                    {v.selected && <span class="material-symbols-outlined text-primary text-[20px] filled-icon">check_circle</span>}
+                                </div>
+                            </div>
+                        ))}
+                    </main>
+                    <div class="p-6 bg-surface shadow-[0_-8px_24px_rgba(0,0,0,0.04)]">
+                        <button onClick={() => navigate('/goods-details')} class="w-full bg-primary text-on-primary py-4 rounded-full font-bold shadow-lg flex justify-between px-8">
+                            <span>CONTINUE</span>
+                            <span class="flex items-center gap-2">₹250 <span class="material-symbols-outlined text-[20px]">arrow_forward</span></span>
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const GoodsDetailsScreen = () => {
+            const navigate = useNavigate();
+            return (
+                <div class="flex-grow flex flex-col bg-surface">
+                    <TopAppBar title="Goods Details" />
+                    <main class="flex-grow p-6 flex flex-col gap-6 max-w-2xl mx-auto w-full">
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold uppercase text-on-surface-variant px-1">Goods Type</label>
+                            <select class="w-full bg-surface-container-low border-none rounded-2xl py-4 px-4 font-medium focus:ring-2 focus:ring-primary">
+                                <option>Furniture</option>
+                                <option>Electronics</option>
+                                <option>Fragile Items</option>
+                                <option>Industrial Goods</option>
+                            </select>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold uppercase text-on-surface-variant px-1">Approximate Weight (kg)</label>
+                            <div class="flex gap-2">
+                                <input type="number" class="flex-1 bg-surface-container-low border-none rounded-2xl py-4 px-4 font-medium focus:ring-2 focus:ring-primary" placeholder="Enter weight" />
+                                <div class="bg-surface-container-high rounded-2xl p-1 flex">
+                                    <button class="bg-surface px-4 py-2 rounded-xl text-xs font-bold shadow-sm">kg</button>
+                                    <button class="px-4 py-2 text-xs font-bold text-on-surface-variant">lbs</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold uppercase text-on-surface-variant px-1">Declared Value (₹)</label>
+                            <input type="number" class="w-full bg-surface-container-low border-none rounded-2xl py-4 px-4 font-medium focus:ring-2 focus:ring-primary" placeholder="e.g. 50000" />
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold uppercase text-on-surface-variant px-1">Description</label>
+                            <textarea class="w-full bg-surface-container-low border-none rounded-2xl py-4 px-4 font-medium h-32" placeholder="Describe the goods..."></textarea>
+                        </div>
+                    </main>
+                    <div class="p-6 bg-surface">
+                        <button onClick={() => navigate('/insurance')} class="w-full bg-primary text-on-primary py-4 rounded-full font-bold shadow-lg">
+                            CONTINUE
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const InsuranceScreen = () => {
+            const navigate = useNavigate();
+            const [selected, setSelected] = useState(true);
+            return (
+                <div class="flex-grow flex flex-col bg-surface">
+                    <TopAppBar title="Goods Insurance" />
+                    <main class="flex-grow p-6 flex flex-col gap-6 max-w-2xl mx-auto w-full">
+                        <div class="flex flex-col gap-2">
+                            <h2 class="text-2xl font-bold">Protect Your Delivery</h2>
+                            <p class="text-on-surface-variant">Optional protection for eligible goods during transit.</p>
+                        </div>
+                        
+                        <div onClick={() => setSelected(!selected)} class={`p-6 rounded-[32px] border-2 cursor-pointer transition-all ${selected ? 'bg-primary-container text-on-primary border-primary shadow-xl' : 'bg-surface-container-low border-outline-variant/30 text-on-surface'}`}>
+                            <div class="flex justify-between items-start mb-4">
+                                <div class="flex gap-4">
+                                    <div class={`w-12 h-12 rounded-full flex items-center justify-center ${selected ? 'bg-on-primary text-primary' : 'bg-secondary-container text-primary'}`}>
+                                        <span class="material-symbols-outlined filled-icon">shield</span>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold text-lg">Goods Insurance</h3>
+                                        <p class={`text-xs ${selected ? 'text-on-primary/70' : 'text-on-surface-variant'}`}>Est. Premium: ₹250</p>
+                                    </div>
+                                </div>
+                                <div class={`w-6 h-6 rounded border-2 flex items-center justify-center ${selected ? 'bg-on-primary border-on-primary' : 'border-outline'}`}>
+                                    {selected && <span class="material-symbols-outlined text-primary text-[16px] font-bold">check</span>}
+                                </div>
+                            </div>
+                            <div class={`p-4 rounded-2xl ${selected ? 'bg-white/10' : 'bg-surface-variant/40'}`}>
+                                <p class="text-[10px] font-bold uppercase mb-2">Coverage Summary</p>
+                                <ul class="text-xs space-y-1 opacity-90 list-disc list-inside">
+                                    <li>Protection against loss or damage</li>
+                                    <li>Coverage up to declared value</li>
+                                    <li>Fast claim processing</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </main>
+                    <div class="p-6 bg-surface space-y-3">
+                        <button onClick={() => navigate('/fare-estimate')} class="w-full bg-primary text-on-primary py-4 rounded-full font-bold shadow-lg">
+                            CONTINUE
+                        </button>
+                        <button onClick={() => navigate('/fare-estimate')} class="w-full text-primary font-bold py-2">Skip Insurance</button>
+                    </div>
+                </div>
+            );
+        };
+
+        const FareEstimateScreen = () => {
+            const navigate = useNavigate();
+            return (
+                <div class="flex-grow flex flex-col bg-surface">
+                    <TopAppBar title="Fare Estimate" />
+                    <main class="flex-grow p-6 overflow-y-auto space-y-6 hide-scrollbar max-w-2xl mx-auto w-full">
+                        <div class="bg-primary-container text-on-primary p-10 rounded-[40px] flex flex-col items-center justify-center shadow-2xl relative overflow-hidden">
+                             <div class="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white via-transparent to-transparent"></div>
+                            <p class="text-[10px] font-bold uppercase tracking-widest mb-2 opacity-70">Estimated Total</p>
+                            <div class="flex items-baseline gap-1">
+                                <span class="text-2xl font-medium">₹</span>
+                                <span class="text-6xl font-bold tracking-tight">450</span>
+                                <span class="text-2xl font-medium">.00</span>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-surface-container-low p-6 rounded-[32px] border border-outline-variant/20 space-y-4">
+                            <h3 class="font-bold">Breakdown</h3>
+                            <div class="space-y-3">
+                                <div class="flex justify-between items-center py-2 border-b border-outline-variant/10">
+                                    <span class="text-sm text-on-surface-variant">Base Fare</span>
+                                    <span class="font-bold">₹150.00</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2 border-b border-outline-variant/10">
+                                    <div>
+                                        <p class="text-sm text-on-surface-variant">Distance (12.5 km)</p>
+                                    </div>
+                                    <span class="font-bold">₹180.00</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2 border-b border-outline-variant/10">
+                                    <span class="text-sm text-on-surface-variant">2 Locations</span>
+                                    <span class="font-bold">₹80.00</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2">
+                                    <span class="text-sm text-on-surface-variant">Insurance</span>
+                                    <span class="font-bold">₹40.00</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-3 px-2">
+                            <span class="material-symbols-outlined text-on-surface-variant text-[20px]">info</span>
+                            <p class="text-[10px] text-on-surface-variant leading-relaxed">
+                                Final fare may vary based on actual distance, waiting time, and unforeseen route changes during transit.
+                            </p>
+                        </div>
+                    </main>
+                    <div class="p-6 bg-surface">
+                        <button onClick={() => navigate('/payment-method')} class="w-full bg-primary text-on-primary py-4 rounded-full font-bold shadow-lg flex items-center justify-center gap-2">
+                            PROCEED TO PAY <span class="material-symbols-outlined text-[20px]">arrow_forward</span>
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const PaymentMethodScreen = () => {
+            const navigate = useNavigate();
+            const [method, setMethod] = useState('upi');
+            
+            return (
+                <div class="flex-grow flex flex-col bg-surface">
+                    <TopAppBar title="Payment Method" />
+                    <main class="flex-grow p-6 flex flex-col gap-6 max-w-2xl mx-auto w-full">
+                        <div class="bg-surface-container-low p-6 rounded-3xl border border-outline-variant/20 flex flex-col items-center justify-center gap-1">
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase">Amount to pay</p>
+                            <p class="text-2xl font-bold">₹450.00</p>
+                        </div>
+                        
+                        <div class="space-y-3">
+                            <div onClick={() => setMethod('cod')} class={`p-5 rounded-[28px] border-2 flex items-center gap-4 cursor-pointer transition-all ${method === 'cod' ? 'border-primary bg-primary-container/5 ring-1 ring-primary/20 shadow-lg' : 'border-outline-variant/30 bg-surface-container-low'}`}>
+                                <div class={`w-12 h-12 rounded-full flex items-center justify-center ${method === 'cod' ? 'bg-primary text-on-primary' : 'bg-surface-container-high'}`}>
+                                    <span class="material-symbols-outlined">payments</span>
+                                </div>
+                                <span class="flex-1 font-bold">Cash on Delivery</span>
+                                <div class={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${method === 'cod' ? 'border-primary' : 'border-outline'}`}>
+                                    {method === 'cod' && <div class="w-3 h-3 bg-primary rounded-full"></div>}
+                                </div>
+                            </div>
+
+                            <div onClick={() => setMethod('upi')} class={`p-5 rounded-[28px] border-2 flex items-center gap-4 cursor-pointer transition-all ${method === 'upi' ? 'border-primary bg-primary-container/5 ring-1 ring-primary/20 shadow-lg' : 'border-outline-variant/30 bg-surface-container-low'}`}>
+                                <div class={`w-12 h-12 rounded-full flex items-center justify-center ${method === 'upi' ? 'bg-primary text-on-primary' : 'bg-surface-container-high'}`}>
+                                    <span class="material-symbols-outlined filled-icon">account_balance</span>
+                                </div>
+                                <span class="flex-1 font-bold">Pay via UPI</span>
+                                <div class={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${method === 'upi' ? 'border-primary' : 'border-outline'}`}>
+                                    {method === 'upi' && <div class="w-3 h-3 bg-primary rounded-full"></div>}
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+                    <div class="p-6 bg-surface">
+                        <button onClick={() => navigate('/review-booking')} class="w-full bg-primary text-on-primary py-4 rounded-full font-bold shadow-lg">
+                            CONTINUE
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const ReviewBookingScreen = () => {
+            const navigate = useNavigate();
+            const [booking, setBooking] = useState(false);
+
+            const handleConfirm = () => {
+                setBooking(true);
+                setTimeout(() => navigate('/searching-driver'), 1500);
+            };
+
+            return (
+                <div class="flex-grow flex flex-col bg-surface">
+                    <TopAppBar title="Review Booking" />
+                    <main class="flex-grow p-6 overflow-y-auto space-y-4 hide-scrollbar max-w-2xl mx-auto w-full">
+                        <div class="h-32 bg-primary-container rounded-[32px] overflow-hidden relative shadow-lg">
+                            <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuBWbsXN7jrXXhpSQF5YcGyTXK8BfoEB0TrYPqkayKa7YqtQ9cqH4kygc4xUfhbkcPnWXcSpla3jOAr_TZM4rqSAX0A-Tq3O7jSr8A8qdxHp8LwVvLEnaXIAekhuj28AAvnyRoOfuEQYuiu7CeGZxVgEmt2hk45vQUYtoOOyaS1F0QKBi-tAd1suYguJb3wHEmYAlBDUgurYKYghnNb7Sos1cSRh9iFqNXdO0g18VBtLlHUze01aThI5z0sTQurrr7OSqA" class="w-full h-full object-cover opacity-60" />
+                            <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-4">
+                                <p class="text-white font-bold">Multiple Drops • 12.4 km</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-surface-container-low p-5 rounded-3xl border border-outline-variant/20 space-y-4">
+                            <div class="flex justify-between">
+                                <div class="flex gap-2 items-center text-[10px] font-bold uppercase text-on-surface-variant">
+                                    <span class="material-symbols-outlined text-primary text-[16px]">trip_origin</span>
+                                    Pickup
+                                </div>
+                                <button class="text-[10px] font-bold text-primary">Edit</button>
+                            </div>
+                            <p class="font-bold pl-6">Sardarpura Warehouse</p>
+                        </div>
+
+                        <div class="bg-surface-container-low p-5 rounded-3xl border border-outline-variant/20 space-y-4">
+                            <div class="flex justify-between">
+                                <div class="flex gap-2 items-center text-[10px] font-bold uppercase text-on-surface-variant">
+                                    <span class="material-symbols-outlined text-secondary text-[16px]">location_on</span>
+                                    Drops
+                                </div>
+                                <button class="text-[10px] font-bold text-primary">Edit</button>
+                            </div>
+                            <div class="space-y-3 pl-6">
+                                <p class="font-medium text-sm">• Shastri Nagar, Jodhpur</p>
+                                <p class="font-medium text-sm">• Ratanada Hub</p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-surface-container-low p-5 rounded-3xl border border-outline-variant/20">
+                                <p class="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Vehicle</p>
+                                <p class="font-bold">Tata Ace</p>
+                            </div>
+                            <div class="bg-surface-container-low p-5 rounded-3xl border border-outline-variant/20">
+                                <p class="text-[10px] font-bold uppercase text-on-surface-variant mb-1">Goods</p>
+                                <p class="font-bold">Electronics</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-surface-container p-6 rounded-[32px] flex justify-between items-center">
+                            <div>
+                                <p class="text-[10px] font-bold uppercase text-on-surface-variant">Total Fare</p>
+                                <p class="text-2xl font-bold">₹450.00</p>
+                            </div>
+                            <button class="p-2 bg-surface rounded-full shadow-sm">
+                                <span class="material-symbols-outlined">expand_more</span>
+                            </button>
+                        </div>
+                    </main>
+                    <div class="p-6 bg-surface">
+                        <button onClick={handleConfirm} class="w-full bg-primary text-on-primary py-4 rounded-full font-bold shadow-lg overflow-hidden relative">
+                            {booking ? (
+                                <span class="flex items-center justify-center gap-2">
+                                    <span class="material-symbols-outlined animate-spin">progress_activity</span> PROCESSING...
+                                </span>
+                            ) : "CONFIRM BOOKING"}
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const SearchingDriverScreen = () => {
+            const navigate = useNavigate();
+            useEffect(() => {
+                const timer = setTimeout(() => navigate('/trip-details'), 3000);
+                return () => clearTimeout(timer);
+            }, []);
+
+            return (
+                <div class="flex-grow flex flex-col relative overflow-hidden bg-surface">
+                    <img class="absolute inset-0 w-full h-full object-cover opacity-40" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwoKdogXLDviOGhD1X2B7fNQUBDa5m4V5AF0mQKHmmuMqx-nerI2-PYdE18EypUlA_hmsQcX44QaZXk528XOtiHUaSOmxsSy5kRpL7ksLowlE0yzo0erVktsFV9SgDjM9mZKltrLp7PzQ6WgFCDowItZDm0MeLJtBW3Psa7-vl3Z7LttTmFPV68OnMYPj9Vng7fIBtDSvDNL4ZUs2qxee5Yyd8hXkigQMuYJK2rTAe_ySsHrvxo7dq" />
+                    
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <div class="w-32 h-32 bg-primary/10 rounded-full flex items-center justify-center pulse-animation">
+                            <div class="w-4 h-4 bg-primary rounded-full ring-8 ring-white"></div>
+                        </div>
+                    </div>
+
+                    <main class="relative z-10 flex-grow flex flex-col justify-end p-6 gap-4">
+                        <div class="bg-surface/90 backdrop-blur-md p-6 rounded-[32px] border border-outline-variant/30 shadow-2xl space-y-6">
+                            <div class="space-y-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-[10px] font-bold uppercase text-on-surface-variant">Booking Status</span>
+                                    <span class="px-2 py-1 bg-secondary-container text-primary rounded-full text-[10px] font-bold">CONFIRMED</span>
+                                </div>
+                                <h2 class="text-xl font-bold">Searching for nearby drivers...</h2>
+                                <div class="h-1 bg-surface-container-highest rounded-full overflow-hidden">
+                                    <div class="h-full bg-primary w-1/3 animate-[indeterminate_1.5s_infinite_linear] origin-left"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-start gap-4 p-4 bg-surface rounded-2xl border border-outline-variant/20">
+                                <span class="material-symbols-outlined text-on-surface-variant">local_shipping</span>
+                                <div class="flex-1">
+                                    <p class="text-xs text-on-surface-variant">Pickup Location</p>
+                                    <p class="font-bold text-sm">Sardarpura Warehouse</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-xs text-on-surface-variant">Est. Fare</p>
+                                    <p class="font-bold">₹450</p>
+                                </div>
+                            </div>
+                        </div>
+                        <button onClick={() => navigate('/home')} class="w-full bg-surface-container-highest text-on-surface font-bold py-4 rounded-full">CANCEL BOOKING</button>
+                    </main>
+
+                    <style>{`
+                        @keyframes indeterminate {
+                            0% { transform: translateX(-100%) scaleX(0.5); }
+                            50% { transform: translateX(0) scaleX(1); }
+                            100% { transform: translateX(200%) scaleX(0.5); }
+                        }
+                    `}</style>
+                </div>
+            );
+        };
+
+        const TripDetailsScreen = () => {
+            const navigate = useNavigate();
+            return (
+                <div class="flex-grow flex flex-col bg-surface">
+                    <TopAppBar title="Trip Details" />
+                    <main class="flex-grow overflow-y-auto hide-scrollbar pb-10">
+                        <div class="h-60 bg-surface-container-low relative overflow-hidden">
+                            <img class="w-full h-full object-cover opacity-60" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA28cLUnVVRVaSHJOdRuzgZjKppEqFuT5so4q4W35xmGab0vLLcVZXOWINiIy68iUgn1VrfXRMfVXUkf0kBaQEefit23WUXhFbwvfRlPGkyqadWtqvDvsNDDazyD9MzN46EsEG-fyYTGM51950UdOMOp2wCwM9PKS7LLgNKbR-XThbtH7Ii7MtWc3NCD9LoRv5ajpMA35oFhTEquN7GaDHQVD7Bo_oSeu0wepcZoQgJXgsgiPjlEHqb" />
+                            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
+                                <div class="bg-white p-2 rounded-full shadow-lg border-2 border-primary">
+                                    <span class="material-symbols-outlined text-primary filled-icon">local_shipping</span>
+                                </div>
+                                <div class="bg-primary text-on-primary text-[8px] font-bold px-2 py-0.5 rounded-full mt-1">4 MIN</div>
+                            </div>
+                        </div>
+
+                        <div class="px-6 -mt-8 relative z-10 space-y-4">
+                            <div class="bg-surface p-6 rounded-[32px] shadow-xl border border-outline-variant/20 flex flex-col gap-6">
+                                <div class="flex items-center gap-4">
+                                    <div class="w-14 h-14 rounded-full bg-surface-container-high overflow-hidden border-2 border-white shadow-sm">
+                                        <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuAkxoEdQOf30gW6pDewFHY2PByhn6TVKuXsi_CmFRhj5u6pTDQXutuhNshIaV6Z8D4n9PD2i1WO2CS8Vw78R4JL4VF6Zgm8TSP4wOIO-iKdZzA-XiP0zY_ZjaUYA43Tk8QqXaM6Sjb04XuD5_weeYTIdXgZgy119Gnutg9LTzoT8Y9eNPc-rYTmvE0mXsbk1g7N6oPptLsfil-yqnPwi1DnlmsdbIinA4C-IIgmd4ygZ7gA4lhMm7nZ" class="w-full h-full object-cover" />
+                                    </div>
+                                    <div class="flex-1">
+                                        <h2 class="font-bold text-lg leading-tight">Ramesh Kumar</h2>
+                                        <div class="flex items-center gap-1">
+                                            <span class="material-symbols-outlined text-status-green text-[14px] filled-icon">star</span>
+                                            <span class="text-xs font-bold text-on-surface-variant">4.8</span>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="font-bold text-sm">Tata Ace</p>
+                                        <p class="text-[10px] text-on-surface-variant uppercase font-bold">RJ 19 XX 1234</p>
+                                    </div>
+                                </div>
+
+                                <div class="flex gap-3">
+                                    <button class="flex-1 bg-primary text-on-primary py-3.5 rounded-full font-bold shadow-md">Track Order</button>
+                                    <button class="w-12 h-12 bg-secondary-container text-primary rounded-full flex items-center justify-center shadow-sm">
+                                        <span class="material-symbols-outlined">call</span>
+                                    </button>
+                                    <button class="w-12 h-12 bg-secondary-container text-primary rounded-full flex items-center justify-center shadow-sm">
+                                        <span class="material-symbols-outlined">chat_bubble</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="bg-surface-container-low p-6 rounded-[32px] border border-outline-variant/20 space-y-4">
+                                <h3 class="font-bold">Logistics Summary</h3>
+                                <div class="relative pl-6 space-y-6">
+                                    <div class="absolute left-[7px] top-1.5 bottom-1.5 w-0.5 bg-outline-variant/30"></div>
+                                    
+                                    <div class="relative">
+                                        <div class="absolute -left-[23px] top-1 w-2 h-2 rounded-full bg-primary ring-4 ring-white"></div>
+                                        <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Pickup</p>
+                                        <p class="font-bold text-sm">Sardarpura Warehouse</p>
+                                    </div>
+
+                                    <div class="relative">
+                                        <div class="absolute -left-[23px] top-1 w-2 h-2 rounded-full bg-white border-2 border-primary ring-4 ring-white"></div>
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Drops</p>
+                                            <span class="bg-secondary-container text-[8px] font-bold px-2 py-0.5 rounded-full">2 STOPS</span>
+                                        </div>
+                                        <p class="font-medium text-sm text-on-surface-variant">Shastri Nagar • Ratanada</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+                    <div class="p-6 bg-surface">
+                        <button onClick={() => navigate('/home')} class="w-full text-error font-bold py-2">Cancel Booking</button>
+                    </div>
+                </div>
+            );
+        };
+
+        const ProfileScreen = () => {
+            const navigate = useNavigate();
+            return (
+                <div class="flex-grow flex flex-col bg-surface pb-20">
+                    <TopAppBar title="Profile" showBack={false} />
+                    <main class="flex-grow p-6 flex flex-col items-center gap-8 max-w-md mx-auto w-full">
+                        <div class="flex flex-col items-center text-center">
+                            <div class="w-24 h-24 rounded-full bg-surface-container-high overflow-hidden mb-4 border-2 border-primary p-1">
+                                <img class="w-full h-full rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCFrivD_zQyRA_6g_4JGTFg58gf367eMkUYEwAuh-9dBOfQd7KHsz-CQQcloeW60Vm48ciZb1mbh08F4koRc81PpDZxAlNdJhvvHZ3iMJIuv6Pzmd-fPTzCg6aYE6qBjL9ifB1TFAqIWlwJbio3Z0K142sK4XVOhBWh5EV6SwegJRnpmwoZ1yidw9agbmSuEisG1PWFPvIh5jGBBDHNEtoCgXLHeMRhiviNzqxbZflwt0YGp11uX-mE" />
+                            </div>
+                            <h2 class="text-xl font-bold">Arjun Sharma</h2>
+                            <div class="flex items-center gap-2 mt-1 bg-surface-container-low px-3 py-1 rounded-full">
+                                <span class="material-symbols-outlined text-[14px] text-status-green filled-icon">verified</span>
+                                <span class="text-sm font-medium">+91 98765 43210</span>
+                            </div>
+                            <button class="mt-4 px-6 py-2 bg-secondary-container text-primary rounded-full text-xs font-bold">Edit Profile</button>
+                        </div>
+
+                        <div class="w-full bg-surface-container-low rounded-[32px] border border-outline-variant/20 overflow-hidden">
+                            {[
+                                { icon: 'location_on', label: 'Saved Addresses' },
+                                { icon: 'history', label: 'Booking History' },
+                                { icon: 'notifications', label: 'Notifications' },
+                                { icon: 'settings', label: 'App Settings' }
+                            ].map((item, i) => (
+                                <div key={i} class="flex items-center gap-4 px-6 py-4 hover:bg-surface-container border-b border-outline-variant/10 last:border-none cursor-pointer">
+                                    <span class="material-symbols-outlined text-on-surface-variant">{item.icon}</span>
+                                    <span class="flex-1 font-medium">{item.label}</span>
+                                    <span class="material-symbols-outlined text-on-surface-variant/30">chevron_right</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        <button onClick={() => navigate('/')} class="w-full flex items-center justify-center gap-2 py-4 bg-error-container text-error rounded-2xl font-bold shadow-sm">
+                            <span class="material-symbols-outlined">logout</span> Logout
+                        </button>
+                    </main>
+                    <BottomNav />
+                </div>
+            );
+        };
+
+        const App = () => {
+            return (
+                <MemoryRouter>
+                    <div class="flex flex-col min-h-screen bg-background">
+                        <Routes>
+                            <Route path="/" element={<LoginScreen />} />
+                            <Route path="/verify-otp" element={<VerifyOtpScreen />} />
+                            <Route path="/home" element={<HomeScreen />} />
+                            <Route path="/profile" element={<ProfileScreen />} />
+                            <Route path="/select-pickup" element={<SelectPickupScreen />} />
+                            <Route path="/select-drop" element={<SelectDropScreen />} />
+                            <Route path="/receiver-details" element={<ReceiverDetailsScreen />} />
+                            <Route path="/review-route" element={<ReviewRouteScreen />} />
+                            <Route path="/select-vehicle" element={<SelectVehicleScreen />} />
+                            <Route path="/goods-details" element={<GoodsDetailsScreen />} />
+                            <Route path="/insurance" element={<InsuranceScreen />} />
+                            <Route path="/fare-estimate" element={<FareEstimateScreen />} />
+                            <Route path="/payment-method" element={<PaymentMethodScreen />} />
+                            <Route path="/review-booking" element={<ReviewBookingScreen />} />
+                            <Route path="/searching-driver" element={<SearchingDriverScreen />} />
+                            <Route path="/trip-details" element={<TripDetailsScreen />} />
+                            {/* Simple placeholders for other BottomNav items */}
+                            <Route path="/trips" element={<HomeScreen />} />
+                            <Route path="/wallet" element={<HomeScreen />} />
+                        </Routes>
+                    </div>
+                </MemoryRouter>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

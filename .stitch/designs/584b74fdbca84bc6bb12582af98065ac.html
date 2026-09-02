@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Booking Confirmed</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "error": "#ba1a1a",
+                        "outline-variant": "#c7c5ce",
+                        "on-tertiary": "#ffffff",
+                        "primary-container": "#151a31",
+                        "surface-container-low": "#f6f3f5",
+                        "surface-bright": "#fcf8fb",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "on-background": "#1b1b1d",
+                        "surface-container-highest": "#e5e1e4",
+                        "on-surface": "#1b1b1d",
+                        "on-primary-container": "#7e829e",
+                        "background": "#fcf8fb",
+                        "surface-container-high": "#eae7e9",
+                        "secondary": "#525e79",
+                        "tertiary-container": "#231a09",
+                        "on-primary-fixed-variant": "#40465e",
+                        "primary-fixed": "#dde1ff",
+                        "on-tertiary-fixed": "#231a09",
+                        "secondary-container": "#d4dfff",
+                        "outline": "#77767e",
+                        "surface-container-lowest": "#ffffff",
+                        "on-error": "#ffffff",
+                        "surface": "#fcf8fb",
+                        "on-secondary": "#ffffff",
+                        "surface-dim": "#dcd9db",
+                        "secondary-fixed": "#d8e2ff",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed": "#f3e0c5",
+                        "inverse-surface": "#313032",
+                        "on-secondary-fixed": "#0e1b33",
+                        "inverse-primary": "#c0c5e3",
+                        "on-tertiary-container": "#91826a",
+                        "error-container": "#ffdad6",
+                        "on-primary": "#ffffff",
+                        "surface-tint": "#585d77",
+                        "primary": "#000000",
+                        "tertiary": "#000000",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "surface-container": "#f0edef",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "on-surface-variant": "#46464d",
+                        "inverse-on-surface": "#f3f0f2",
+                        "surface-variant": "#e5e1e4",
+                        "on-primary-fixed": "#151a31",
+                        "on-secondary-container": "#57637e"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "12px",
+                        "container-padding": "16px",
+                        "row-height-sm": "40px",
+                        "unit": "4px",
+                        "row-height-md": "56px"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .progress-bar-anim {
+            animation: progress 2.5s infinite cubic-bezier(0.65, 0, 0.35, 1);
+            transform-origin: left;
+        }
+        @keyframes progress {
+            0% { transform: scaleX(0); opacity: 0.8; }
+            50% { transform: scaleX(0.7); opacity: 1; }
+            100% { transform: scaleX(1); opacity: 0; }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface-dim font-body-md text-body-md text-on-surface h-screen w-screen overflow-hidden relative selection:bg-primary-fixed selection:text-on-primary-fixed">
+<div class="absolute inset-0 bg-cover bg-center" data-alt="A high-altitude, top-down aerial map view of a modern metropolitan city. The streets are softly illuminated, contrasting with the dark geometric blocks of buildings. The style is highly minimal, utilizing a sophisticated, calm color palette dominated by deep greys and muted blues to serve as an elegant backdrop." data-location="New York" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBCNqQFkoYKnNnFAzyxakSUaqPfR_rXoth8KcCUfvZaqqLWEQuuRDxiHPircSK1GZ9Zhpsec_xrx19M_Q-_CQZkBte3TCMrSErPThJaoCsET164CCzdvfbAmYG5LuLGnLp7Fd0NT1WS4SnBwqHVj9WR4tUvPcRn4efryUMg4ycfMfUqLtv0ia484KLfLJp93_Z_-IH9Ly_S7LuWIQLTZqI28Iuzo5OzGwXqD3tW2aNelura2wQX8Ns3')"></div>
+<div class="absolute inset-0 bg-[#000000]/40 backdrop-blur-[2px]"></div>
+<div class="absolute bottom-0 left-0 w-full bg-surface-container-lowest rounded-t-lg shadow-2xl flex flex-col pt-6 pb-container-padding px-container-padding transform transition-transform duration-500 ease-out z-10">
+<div class="w-12 h-1.5 bg-surface-variant rounded-full mx-auto mb-8"></div>
+<div class="flex flex-col items-center text-center px-4">
+<div class="w-16 h-16 bg-secondary-container text-on-secondary-container rounded-full flex items-center justify-center mb-6 shadow-sm">
+<span class="material-symbols-outlined text-3xl" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<h1 class="font-headline-md text-headline-md text-on-surface mb-3">Booking Confirmed</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant mb-10 max-w-[280px]">
+                We are processing your request. Please stay on this screen.
+            </p>
+<div class="w-full h-1 bg-surface-variant rounded-full overflow-hidden mb-12">
+<div class="h-full bg-primary progress-bar-anim rounded-full w-full"></div>
+</div>
+<button class="w-full h-row-height-md rounded-full border border-secondary text-secondary font-label-caps text-label-caps uppercase tracking-wider hover:bg-surface-variant active:bg-surface-container-high transition-colors duration-200 flex items-center justify-center">
+                Cancel Booking
+            </button>
+</div>
+</div>
+</body></html>

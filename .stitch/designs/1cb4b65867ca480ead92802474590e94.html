@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Review Booking</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        /* Base typography overrides to enforce Inter */
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Smooth transitions */
+        .card-transition { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        .card-transition:hover { transform: translateY(-1px); }
+        
+        /* Hide scrollbar for cleaner look */
+        ::-webkit-scrollbar { display: none; }
+        * { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "outline-variant": "#c7c5ce",
+                    "surface-container-lowest": "#ffffff",
+                    "on-surface-variant": "#46464d",
+                    "on-primary-container": "#7e829e",
+                    "inverse-primary": "#c0c5e3",
+                    "surface": "#fcf8fb",
+                    "primary-container": "#151a31",
+                    "on-primary": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "inverse-surface": "#313032",
+                    "on-tertiary-fixed-variant": "#514531",
+                    "background": "#fcf8fb",
+                    "tertiary-fixed": "#f3e0c5",
+                    "tertiary-container": "#231a09",
+                    "surface-container": "#f0edef",
+                    "surface-container-high": "#eae7e9",
+                    "surface-container-low": "#f6f3f5",
+                    "on-background": "#1b1b1d",
+                    "primary-fixed-dim": "#c0c5e3",
+                    "surface-container-highest": "#e5e1e4",
+                    "on-tertiary": "#ffffff",
+                    "tertiary-fixed-dim": "#d6c4aa",
+                    "on-primary-fixed-variant": "#40465e",
+                    "surface-bright": "#fcf8fb",
+                    "error": "#ba1a1a",
+                    "secondary-fixed": "#d8e2ff",
+                    "primary": "#03071d", /* Updated to match prompt spec (#03071d) */
+                    "on-surface": "#1b1b1d",
+                    "on-secondary-fixed": "#0e1b33",
+                    "on-secondary-fixed-variant": "#3b4760",
+                    "on-primary-fixed": "#151a31",
+                    "outline": "#77767e",
+                    "surface-variant": "#e5e1e4",
+                    "secondary-fixed-dim": "#bac6e6",
+                    "secondary-container": "#d4dfff",
+                    "on-error-container": "#93000a",
+                    "secondary": "#525e79",
+                    "surface-tint": "#585d77",
+                    "on-secondary-container": "#57637e",
+                    "inverse-on-surface": "#f3f0f2",
+                    "on-secondary": "#ffffff",
+                    "on-tertiary-fixed": "#231a09",
+                    "surface-dim": "#dcd9db",
+                    "on-tertiary-container": "#91826a",
+                    "tertiary": "#000000",
+                    "primary-fixed": "#dde1ff",
+                    "on-error": "#ffffff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "1rem",
+                    "lg": "2rem",
+                    "xl": "3rem",
+                    "full": "9999px",
+                    "card": "24px"
+            },
+            "spacing": {
+                    "gutter": "12px",
+                    "row-height-sm": "40px",
+                    "unit": "4px",
+                    "container-padding": "16px",
+                    "row-height-md": "56px"
+            },
+            "fontFamily": {
+                    "data-mono": ["Inter"],
+                    "label-sm": ["Inter"],
+                    "headline-sm": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "body-md": ["Inter"],
+                    "label-caps": ["Inter"],
+                    "headline-md": ["Inter"]
+            },
+            "fontSize": {
+                    "data-mono": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "headline-sm": ["16px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "body-lg": ["15px", {"lineHeight": "22px", "fontWeight": "400"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600"}]
+            }
+          }
+        }
+      }
+    </script>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col relative pb-32">
+<!-- TopAppBar JSON Component -->
+<header class="w-full sticky top-0 bg-surface dark:bg-background z-40">
+<div class="flex items-center justify-between px-container-padding h-row-height-md w-full max-w-7xl mx-auto border-b border-surface-container-high md:border-none md:shadow-sm">
+<button aria-label="Go back" class="flex items-center justify-center p-2 rounded-full hover:bg-surface-container-low dark:hover:bg-surface-container-highest transition-colors active:scale-95 text-primary dark:text-primary-fixed-dim focus:outline-none">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed-dim absolute left-1/2 transform -translate-x-1/2">Review Booking</h1>
+<div class="w-10"></div> <!-- Placeholder for balance -->
+</div>
+</header>
+<main class="flex-1 w-full max-w-2xl mx-auto px-container-padding pt-6 flex flex-col gap-4">
+<!-- Context Image -->
+<div class="w-full h-32 rounded-card overflow-hidden relative shadow-sm mb-2" data-alt="A top-down view of a modern delivery route map displayed on a digital screen, featuring a sleek dark-mode interface with sharp indigo and charcoal accents, minimalist route lines, and a premium calm-tech aesthetic." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBWbsXN7jrXXhpSQF5YcGyTXK8BfoEB0TrYPqkayKa7YqtQ9cqH4kygc4xUfhbkcPnWXcSpla3jOAr_TZM4rqSAX0A-Tq3O7jSr8A8qdxHp8LwVvLEnaXIAekhuj28AAvnyRoOfuEQYuiu7CeGZxVgEmt2hk45vQUYtoOOyaS1F0QKBi-tAd1suYguJb3wHEmYAlBDUgurYKYghnNb7Sos1cSRh9iFqNXdO0g18VBtLlHUze01aThI5z0sTQurrr7OSqA'); background-size: cover; background-position: center 20%;">
+<div class="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+</div>
+<!-- PICKUP SECTION -->
+<div class="bg-surface-container-lowest rounded-card p-5 shadow-sm card-transition border border-surface-container-high/50">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-2 text-on-surface-variant font-label-caps text-label-caps uppercase">
+<span class="material-symbols-outlined text-[16px] text-primary">trip_origin</span>
+<span>Pickup</span>
+</div>
+<button class="text-primary font-label-sm text-label-sm hover:underline focus:outline-none">Edit</button>
+</div>
+<p class="font-body-lg text-body-lg text-on-background ml-6">Sardarpura Warehouse</p>
+</div>
+<!-- DROPS SECTION -->
+<div class="bg-surface-container-lowest rounded-card p-5 shadow-sm card-transition border border-surface-container-high/50 relative">
+<div class="absolute left-7 top-10 bottom-6 w-[2px] bg-surface-container-high z-0"></div>
+<div class="flex justify-between items-start mb-4 relative z-10">
+<div class="flex items-center gap-2 text-on-surface-variant font-label-caps text-label-caps uppercase">
+<span class="material-symbols-outlined text-[16px] text-secondary">location_on</span>
+<span>Drops</span>
+</div>
+<button class="text-primary font-label-sm text-label-sm hover:underline focus:outline-none">Edit</button>
+</div>
+<div class="flex flex-col gap-4 ml-6 relative z-10">
+<div class="flex items-center gap-3">
+<div class="w-2 h-2 rounded-full bg-secondary-fixed-dim absolute -left-[19px]"></div>
+<p class="font-body-lg text-body-lg text-on-background">Ratanada Hub</p>
+</div>
+<div class="flex items-center gap-3">
+<div class="w-2 h-2 rounded-full bg-secondary-fixed-dim absolute -left-[19px]"></div>
+<p class="font-body-lg text-body-lg text-on-background">Pal Road</p>
+</div>
+<div class="flex items-center gap-3">
+<div class="w-2 h-2 rounded-full bg-secondary-fixed-dim absolute -left-[19px]"></div>
+<p class="font-body-lg text-body-lg text-on-background">Basni Phase II</p>
+</div>
+</div>
+</div>
+<!-- VEHICLE SECTION -->
+<div class="bg-surface-container-lowest rounded-card p-5 shadow-sm card-transition border border-surface-container-high/50">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-2 text-on-surface-variant font-label-caps text-label-caps uppercase">
+<span class="material-symbols-outlined text-[16px]">local_shipping</span>
+<span>Vehicle</span>
+</div>
+<button class="text-primary font-label-sm text-label-sm hover:underline focus:outline-none">Edit</button>
+</div>
+<p class="font-body-lg text-body-lg text-on-background ml-6">Mini Truck / Tata Ace</p>
+</div>
+<!-- GOODS SECTION -->
+<div class="bg-surface-container-lowest rounded-card p-5 shadow-sm card-transition border border-surface-container-high/50">
+<div class="flex justify-between items-start mb-3">
+<div class="flex items-center gap-2 text-on-surface-variant font-label-caps text-label-caps uppercase">
+<span class="material-symbols-outlined text-[16px]">inventory_2</span>
+<span>Goods</span>
+</div>
+<button class="text-primary font-label-sm text-label-sm hover:underline focus:outline-none">Edit</button>
+</div>
+<div class="ml-6 flex flex-col gap-2">
+<p class="font-body-lg text-body-lg text-on-background">3 boxes of kitchenware</p>
+<div class="flex gap-4">
+<span class="bg-surface-container px-3 py-1 rounded-full font-data-mono text-data-mono text-on-surface-variant">450 kg</span>
+<span class="bg-surface-container px-3 py-1 rounded-full font-data-mono text-data-mono text-on-surface-variant">₹ 50,000</span>
+</div>
+</div>
+</div>
+<!-- TWO COLUMN ROW: INSURANCE & PAYMENT -->
+<div class="grid grid-cols-2 gap-4">
+<!-- INSURANCE SECTION -->
+<div class="bg-surface-container-lowest rounded-card p-5 shadow-sm card-transition border border-surface-container-high/50">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-1 text-on-surface-variant font-label-caps text-label-caps uppercase">
+<span class="material-symbols-outlined text-[16px]">verified_user</span>
+<span class="hidden sm:inline">Insurance</span>
+</div>
+<button class="text-primary font-label-sm text-label-sm hover:underline focus:outline-none">Edit</button>
+</div>
+<p class="font-body-lg text-body-lg text-primary font-medium">Selected</p>
+</div>
+<!-- PAYMENT SECTION -->
+<div class="bg-surface-container-lowest rounded-card p-5 shadow-sm card-transition border border-surface-container-high/50">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-1 text-on-surface-variant font-label-caps text-label-caps uppercase">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span class="hidden sm:inline">Payment</span>
+</div>
+<button class="text-primary font-label-sm text-label-sm hover:underline focus:outline-none">Edit</button>
+</div>
+<p class="font-body-lg text-body-lg text-on-background">Pay via UPI</p>
+</div>
+</div>
+<!-- FARE SECTION -->
+<div class="bg-surface-container-low rounded-card p-5 shadow-inner mt-2 border border-surface-container">
+<div class="flex justify-between items-center">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wide">Estimated Fare</span>
+<span class="font-headline-md text-headline-md text-primary font-bold">₹ 450.00</span>
+</div>
+<button class="flex items-center gap-1 text-on-surface-variant hover:text-primary focus:outline-none transition-colors">
+<span class="font-label-sm text-label-sm">Details</span>
+<span class="material-symbols-outlined text-[18px]">expand_more</span>
+</button>
+</div>
+</div>
+<!-- Spacer for fixed bottom bar -->
+<div class="h-8"></div>
+</main>
+<!-- Fixed Bottom Container -->
+<div class="fixed bottom-0 left-0 right-0 p-container-padding bg-surface/90 backdrop-blur-md border-t border-surface-container-high z-40">
+<div class="max-w-2xl mx-auto relative">
+<button class="w-full bg-primary text-on-primary font-headline-sm text-headline-sm py-4 rounded-full shadow-md hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 relative overflow-hidden" id="confirmBtn">
+<span class="z-10 relative" id="btnText">CONFIRM BOOKING</span>
+<!-- Spinner Overlay (Hidden by default) -->
+<div class="absolute inset-0 bg-primary flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300" id="spinnerOverlay">
+<span class="material-symbols-outlined animate-spin text-on-primary">progress_activity</span>
+<span class="ml-2 font-label-caps text-label-caps text-on-primary">PROCESSING...</span>
+</div>
+</button>
+</div>
+</div>
+<!-- Script for Processing Overlay Simulation -->
+<script>
+        document.getElementById('confirmBtn').addEventListener('click', function() {
+            const btnText = document.getElementById('btnText');
+            const spinner = document.getElementById('spinnerOverlay');
+            const btn = this;
+            
+            // Show processing state
+            spinner.classList.remove('opacity-0');
+            btnText.classList.add('opacity-0');
+            btn.classList.add('pointer-events-none');
+            
+            // Simulate processing time
+            setTimeout(() => {
+                spinner.classList.add('opacity-0');
+                btnText.classList.remove('opacity-0');
+                btnText.textContent = 'BOOKING CONFIRMED';
+                btn.classList.replace('bg-primary', 'bg-tertiary-container');
+                btn.classList.replace('text-on-primary', 'text-on-tertiary-container');
+                setTimeout(() => {
+                   // Reset for demo purposes
+                   btnText.textContent = 'CONFIRM BOOKING';
+                   btn.classList.replace('bg-tertiary-container', 'bg-primary');
+                   btn.classList.replace('text-on-tertiary-container', 'text-on-primary');
+                   btn.classList.remove('pointer-events-none');
+                }, 3000);
+            }, 2000);
+        });
+    </script>
+</body></html>

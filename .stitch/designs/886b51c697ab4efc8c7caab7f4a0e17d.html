@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Pick Up - Driver Search</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary-fixed": "#151a31",
+                        "inverse-on-surface": "#f3f0f2",
+                        "outline-variant": "#c7c5ce",
+                        "primary-fixed": "#dde1ff",
+                        "inverse-surface": "#313032",
+                        "on-surface": "#1b1b1d",
+                        "on-primary": "#ffffff",
+                        "surface-container": "#f0edef",
+                        "outline": "#77767e",
+                        "surface-container-lowest": "#ffffff",
+                        "on-background": "#1b1b1d",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-primary-fixed-variant": "#40465e",
+                        "tertiary-fixed": "#f3e0c5",
+                        "background": "#fcf8fb",
+                        "tertiary": "#000000",
+                        "error-container": "#ffdad6",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "primary-container": "#151a31",
+                        "on-surface-variant": "#46464d",
+                        "surface-container-highest": "#e5e1e4",
+                        "on-primary-container": "#7e829e",
+                        "on-tertiary-container": "#91826a",
+                        "on-secondary-fixed": "#0e1b33",
+                        "on-tertiary": "#ffffff",
+                        "tertiary-container": "#231a09",
+                        "on-secondary": "#ffffff",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "secondary": "#525e79",
+                        "surface-container-high": "#eae7e9",
+                        "inverse-primary": "#c0c5e3",
+                        "on-error": "#ffffff",
+                        "on-secondary-container": "#57637e",
+                        "surface-dim": "#dcd9db",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "surface-variant": "#e5e1e4",
+                        "surface-tint": "#585d77",
+                        "on-tertiary-fixed": "#231a09",
+                        "primary": "#000000",
+                        "surface-bright": "#fcf8fb",
+                        "on-error-container": "#93000a",
+                        "surface": "#fcf8fb",
+                        "error": "#ba1a1a",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "secondary-container": "#d4dfff",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "surface-container-low": "#f6f3f5"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "24px",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "row-height-md": "56px",
+                        "unit": "4px",
+                        "row-height-sm": "40px",
+                        "container-padding": "16px",
+                        "gutter": "12px"
+                    },
+                    "fontFamily": {
+                        "label-sm": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-md": ["Inter"],
+                        "body-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .pulse-animation {
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            80%, 100% { transform: scale(2.5); opacity: 0; }
+        }
+        .progress-bar-indeterminate {
+            width: 100%;
+            height: 4px;
+            background-color: #e5e1e4;
+            border-radius: 9999px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-bar-indeterminate::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 30%;
+            background-color: #151a31; /* primary-container approx */
+            border-radius: 9999px;
+            animation: indeterminate-progress 1.5s infinite linear;
+        }
+        @keyframes indeterminate-progress {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(330%); }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface antialiased h-screen w-full overflow-hidden flex flex-col font-body-md relative">
+<!-- Subdued Map Background -->
+<div class="absolute inset-0 z-0">
+<img class="w-full h-full object-cover opacity-60" data-alt="A clean, subtle top-down map view of Jodhpur, India, focusing on the Sardarpura area. The map uses a very light, desaturated grey and off-white color palette to create a minimalist 'calm-tech' aesthetic. The roads are fine, subtle lines. High-key soft lighting, serene mood." data-location="Jodhpur" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwoKdogXLDviOGhD1X2B7fNQUBDa5m4V5AF0mQKHmmuMqx-nerI2-PYdE18EypUlA_hmsQcX44QaZXk528XOtiHUaSOmxsSy5kRpL7ksLowlE0yzo0erVktsFV9SgDjM9mZKltrLp7PzQ6WgFCDowItZDm0MeLJtBW3Psa7-vl3Z7LttTmFPV68OnMYPj9Vng7fIBtDSvDNL4ZUs2qxee5Yyd8hXkigQMuYJK2rTAe_ySsHrvxo7dq"/>
+<!-- Pulsing Pin -->
+<div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
+<div class="absolute w-12 h-12 bg-primary-container rounded-full pulse-animation"></div>
+<div class="w-4 h-4 bg-primary-container rounded-full relative z-10 border-2 border-surface"></div>
+</div>
+</div>
+<!-- Top AppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-md flex items-center justify-between px-container-padding h-row-height-md">
+<button aria-label="Go back" class="p-2 -ml-2 rounded-full hover:bg-surface-container-low transition-colors duration-200 text-primary dark:text-inverse-primary">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary dark:text-inverse-primary absolute left-1/2 transform -translate-x-1/2">
+            Finding a Driver
+        </h1>
+<div class="w-10"></div> <!-- Spacer for centering -->
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 relative z-10 flex flex-col justify-end p-container-padding pb-8">
+<!-- Trip Summary Card -->
+<div class="bg-surface-container-low rounded-lg p-5 shadow-sm border border-surface-variant flex flex-col gap-4 mb-6 relative overflow-hidden backdrop-blur-sm">
+<!-- Searching Status -->
+<div class="flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">Status</span>
+<span class="font-label-sm text-label-sm text-primary-container bg-secondary-fixed rounded-full px-2 py-0.5">Booking Confirmed</span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Searching for nearby drivers...</h2>
+<div class="progress-bar-indeterminate mt-2"></div>
+</div>
+<div class="h-px w-full bg-outline-variant my-1"></div>
+<!-- Summary Details -->
+<div class="flex flex-col gap-3">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-on-surface-variant mt-0.5 text-[20px]" style="font-variation-settings: 'FILL' 1;">location_on</span>
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Pickup</span>
+<span class="font-body-md text-body-md text-on-surface">Sardarpura Warehouse</span>
+</div>
+</div>
+<div class="flex justify-between items-center bg-surface rounded-md p-3 border border-surface-variant">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant" style="font-variation-settings: 'FILL' 0;">local_shipping</span>
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Vehicle</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Tata Ace</span>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Est. Fare</span>
+<span class="font-headline-sm text-headline-sm text-on-surface">₹450</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Cancel Action -->
+<button class="w-full h-12 bg-surface-container-high hover:bg-surface-variant text-on-surface font-label-sm text-label-sm font-semibold rounded-full transition-colors flex items-center justify-center">
+            CANCEL BOOKING
+        </button>
+</main>
+<!-- BottomNavBar Suppressed as this is a transactional searching state -->
+</body></html>

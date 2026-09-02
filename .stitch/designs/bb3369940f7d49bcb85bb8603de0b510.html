@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>LogisticsPro - Search Unavailable</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                            "surface-tint": "#585d77",
+                            "primary-fixed-dim": "#c0c5e3",
+                            "inverse-on-surface": "#f3f0f2",
+                            "secondary-container": "#d4dfff",
+                            "on-tertiary-fixed": "#231a09",
+                            "on-primary-fixed-variant": "#40465e",
+                            "secondary": "#525e79",
+                            "surface-container-low": "#f6f3f5",
+                            "on-error": "#ffffff",
+                            "outline": "#77767e",
+                            "surface-container-highest": "#e5e1e4",
+                            "secondary-fixed-dim": "#bac6e6",
+                            "surface-dim": "#dcd9db",
+                            "tertiary-fixed-dim": "#d6c4aa",
+                            "on-surface": "#1b1b1d",
+                            "on-tertiary-fixed-variant": "#514531",
+                            "tertiary-fixed": "#f3e0c5",
+                            "primary-fixed": "#dde1ff",
+                            "on-secondary-fixed-variant": "#3b4760",
+                            "on-primary-container": "#7e829e",
+                            "on-primary-fixed": "#151a31",
+                            "error": "#ba1a1a",
+                            "on-secondary": "#ffffff",
+                            "tertiary-container": "#231a09",
+                            "outline-variant": "#c7c5ce",
+                            "on-error-container": "#93000a",
+                            "surface-container-high": "#eae7e9",
+                            "background": "#fcf8fb",
+                            "on-background": "#1b1b1d",
+                            "surface-bright": "#fcf8fb",
+                            "surface-variant": "#e5e1e4",
+                            "on-secondary-container": "#57637e",
+                            "surface-container-lowest": "#ffffff",
+                            "primary-container": "#151a31",
+                            "on-primary": "#ffffff",
+                            "inverse-surface": "#313032",
+                            "on-secondary-fixed": "#0e1b33",
+                            "primary": "#000000",
+                            "tertiary": "#000000",
+                            "on-surface-variant": "#46464d",
+                            "surface-container": "#f0edef",
+                            "inverse-primary": "#c0c5e3",
+                            "error-container": "#ffdad6",
+                            "secondary-fixed": "#d8e2ff",
+                            "surface": "#fcf8fb",
+                            "on-tertiary-container": "#91826a",
+                            "on-tertiary": "#ffffff"
+                    },
+                    "borderRadius": {
+                            "DEFAULT": "1rem",
+                            "lg": "2rem",
+                            "xl": "3rem",
+                            "full": "9999px"
+                    },
+                    "spacing": {
+                            "row-height-sm": "40px",
+                            "gutter": "12px",
+                            "unit": "4px",
+                            "container-padding": "16px",
+                            "row-height-md": "56px"
+                    },
+                    "fontFamily": {
+                            "headline-md": ["Inter"],
+                            "data-mono": ["Inter"],
+                            "body-md": ["Inter"],
+                            "body-lg": ["Inter"],
+                            "label-sm": ["Inter"],
+                            "headline-sm": ["Inter"],
+                            "label-caps": ["Inter"]
+                    },
+                    "fontSize": {
+                            "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                            "data-mono": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+                            "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                            "body-lg": ["15px", {"lineHeight": "22px", "fontWeight": "400"}],
+                            "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                            "headline-sm": ["16px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                            "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+        .pt-safe { padding-top: env(safe-area-inset-top); }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md antialiased min-h-screen flex flex-col pt-safe pb-safe relative">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface-bright shadow-sm h-row-height-md flex justify-between items-center px-container-padding transition-colors">
+<div class="flex items-center gap-gutter">
+<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-variant flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined" data-weight="fill" style="font-variation-settings: 'FILL' 1;">account_circle</span>
+</div>
+</div>
+<div class="font-headline-md text-headline-md font-bold text-primary truncate">
+            LogisticsPro
+        </div>
+<button class="w-8 h-8 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high rounded-full active:scale-95 transition-transform duration-150">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+</header>
+<!-- Main Content Area - Full screen map background -->
+<main class="flex-grow relative mt-row-height-md mb-[80px]">
+<!-- Map Background -->
+<div class="absolute inset-0 z-0 bg-surface-container-low" data-alt="A stylized, light-mode digital map interface viewed from directly above. The map uses a minimalist color palette featuring soft whites, light grays, and subtle pastel blues. The streets are clean lines without heavy labels, creating a calm, modern corporate aesthetic. Gentle tonal layering suggests urban density without clutter." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAfpNo905RuXlNsiEfQ9TLR-0MgGlKwTY-vTVyoVztttVFc3a7RwjKyoG0fpMdGBHAnQn2f3k_AzSdKzeMMHdgQkG604kFPTd5QctZ0hfj2K7GoGI_hKMBRn9kdaodYqqPumrglEq852UHsQQyEuDxOChjMRU9WOxBXQFkgEqb8cFwKlVmsDOQm2jeR78h9wvI4QgaEynLd6J7JTwWCLsWaMp5nW0pkkEyGKyjLGZiVhm3BF8CLzZJL')">
+<!-- Overlay to soften the map -->
+<div class="absolute inset-0 bg-surface/40 backdrop-blur-[2px]"></div>
+</div>
+<!-- Interactive Address Fields Container -->
+<div class="relative z-10 w-full max-w-md mx-auto px-container-padding pt-6">
+<div class="bg-surface-container-lowest rounded-lg shadow-sm p-4 flex flex-col gap-unit relative">
+<!-- Pick Up Field -->
+<div class="flex items-center gap-gutter bg-surface-variant rounded-md p-3 focus-within:ring-2 focus-within:ring-primary/20 transition-all cursor-pointer" onclick="document.getElementById('errorOverlay').classList.remove('hidden'); document.getElementById('errorOverlay').classList.add('flex');">
+<span class="material-symbols-outlined text-primary" data-weight="fill" style="font-variation-settings: 'FILL' 1;">trip_origin</span>
+<div class="flex-grow">
+<input class="w-full bg-transparent border-none p-0 font-body-lg text-body-lg text-on-surface placeholder-on-surface-variant focus:ring-0" placeholder="Current Location" readonly="" type="text"/>
+</div>
+</div>
+<!-- Connecting Line -->
+<div class="absolute left-[34px] top-[48px] bottom-[48px] w-0.5 bg-outline-variant/30"></div>
+<!-- Drop Off Field -->
+<div class="flex items-center gap-gutter bg-surface-variant rounded-md p-3 focus-within:ring-2 focus-within:ring-primary/20 transition-all cursor-pointer" onclick="document.getElementById('errorOverlay').classList.remove('hidden'); document.getElementById('errorOverlay').classList.add('flex');">
+<span class="material-symbols-outlined text-primary" data-weight="fill" style="font-variation-settings: 'FILL' 1;">location_on</span>
+<div class="flex-grow">
+<input class="w-full bg-transparent border-none p-0 font-body-lg text-body-lg text-on-surface placeholder-on-surface-variant focus:ring-0" placeholder="Where to?" readonly="" type="text"/>
+</div>
+</div>
+</div>
+</div>
+<!-- Error Overlay Modal -->
+<div class="hidden absolute inset-0 z-20 bg-surface/60 backdrop-blur-sm items-end justify-center pb-container-padding px-container-padding transition-opacity duration-300" id="errorOverlay">
+<!-- Bottom Sheet Modal -->
+<div class="w-full max-w-md bg-surface-container-lowest rounded-xl shadow-lg p-6 flex flex-col gap-6 animate-[slideUp_0.3s_ease-out]">
+<div class="flex flex-col items-center text-center gap-4">
+<div class="w-16 h-16 bg-error-container rounded-full flex items-center justify-center text-on-error-container">
+<span class="material-symbols-outlined text-[32px]">wifi_off</span>
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-2">Search temporarily unavailable</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">We're having trouble connecting to the network. Please check your connection and try again.</p>
+</div>
+</div>
+<div class="flex flex-col gap-3 w-full">
+<button class="w-full py-3 px-6 bg-primary text-on-primary rounded-full font-headline-sm text-headline-sm active:scale-95 transition-transform shadow-sm flex justify-center items-center gap-2" onclick="this.closest('#errorOverlay').classList.add('hidden'); this.closest('#errorOverlay').classList.remove('flex');">
+<span class="material-symbols-outlined">refresh</span>
+                        Retry Connection
+                    </button>
+<button class="w-full py-3 px-6 bg-secondary-container text-on-secondary-container rounded-full font-headline-sm text-headline-sm active:scale-95 transition-transform flex justify-center items-center">
+                        Enter address manually
+                    </button>
+</div>
+<div class="w-12 h-1 bg-outline-variant/50 rounded-full mx-auto mt-2"></div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 rounded-t-lg bg-surface-container-lowest shadow-[0_-2px_10px_rgba(0,0,0,0.05)] flex justify-around items-center h-row-height-md pb-safe md:hidden">
+<!-- Home (Active) -->
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 active:scale-90 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined" data-weight="fill" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="font-label-sm text-label-sm mt-1">Home</span>
+</a>
+<!-- Trips -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:bg-surface-container-high rounded-lg active:scale-90 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined">local_shipping</span>
+<span class="font-label-sm text-label-sm mt-1">Trips</span>
+</a>
+<!-- Wallet -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:bg-surface-container-high rounded-lg active:scale-90 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined">account_balance_wallet</span>
+<span class="font-label-sm text-label-sm mt-1">Wallet</span>
+</a>
+<!-- Account -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:bg-surface-container-high rounded-lg active:scale-90 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-label-sm text-label-sm mt-1">Account</span>
+</a>
+</nav>
+<style>
+        @keyframes slideUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</body></html>

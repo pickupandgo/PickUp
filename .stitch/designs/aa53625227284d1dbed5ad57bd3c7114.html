@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Multi-Drop Progress - Pick Up</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed": "#d8e2ff",
+                    "on-primary-fixed-variant": "#40465e",
+                    "tertiary-fixed": "#f3e0c5",
+                    "on-secondary-fixed": "#0e1b33",
+                    "outline-variant": "#c7c5ce",
+                    "surface-container": "#f0edef",
+                    "on-tertiary-fixed": "#231a09",
+                    "on-surface-variant": "#46464d",
+                    "surface-variant": "#e5e1e4",
+                    "on-tertiary-fixed-variant": "#514531",
+                    "primary-fixed-dim": "#c0c5e3",
+                    "on-tertiary": "#ffffff",
+                    "surface-dim": "#dcd9db",
+                    "on-error-container": "#93000a",
+                    "surface-container-highest": "#e5e1e4",
+                    "surface": "#fcf8fb",
+                    "inverse-primary": "#c0c5e3",
+                    "on-error": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "on-primary-container": "#7e829e",
+                    "tertiary-fixed-dim": "#d6c4aa",
+                    "surface-bright": "#fcf8fb",
+                    "surface-container-high": "#eae7e9",
+                    "primary-container": "#151a31",
+                    "surface-tint": "#585d77",
+                    "outline": "#77767e",
+                    "on-surface": "#1b1b1d",
+                    "secondary": "#525e79",
+                    "on-primary": "#ffffff",
+                    "background": "#fcf8fb",
+                    "tertiary-container": "#231a09",
+                    "secondary-container": "#d4dfff",
+                    "inverse-on-surface": "#f3f0f2",
+                    "on-secondary": "#ffffff",
+                    "surface-container-low": "#f6f3f5",
+                    "tertiary": "#000000",
+                    "on-tertiary-container": "#91826a",
+                    "on-background": "#1b1b1d",
+                    "primary": "#000000",
+                    "surface-container-lowest": "#ffffff",
+                    "primary-fixed": "#dde1ff",
+                    "on-secondary-fixed-variant": "#3b4760",
+                    "on-secondary-container": "#57637e",
+                    "on-primary-fixed": "#151a31",
+                    "inverse-surface": "#313032",
+                    "error": "#ba1a1a",
+                    "secondary-fixed-dim": "#bac6e6"
+            },
+            "borderRadius": {
+                    "DEFAULT": "1rem",
+                    "lg": "2rem",
+                    "xl": "3rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "unit": "4px",
+                    "row-height-sm": "40px",
+                    "gutter": "12px",
+                    "container-padding": "16px",
+                    "row-height-md": "56px"
+            },
+            "fontFamily": {
+                    "label-sm": ["Inter"],
+                    "data-mono": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "headline-sm": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "body-md": ["Inter"],
+                    "label-caps": ["Inter"]
+            },
+            "fontSize": {
+                    "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "data-mono": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+                    "body-lg": ["15px", {"lineHeight": "22px", "fontWeight": "400"}],
+                    "headline-sm": ["16px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col pb-24 relative overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky z-40 bg-surface flex justify-between items-center px-container-padding h-row-height-md">
+<button class="text-primary hover:bg-surface-container-high transition-colors active:scale-95 flex items-center justify-center p-2 rounded-full">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md text-primary font-bold tracking-tight">Route</h1>
+<button class="text-primary hover:bg-surface-container-high transition-colors active:scale-95 flex items-center justify-center p-2 rounded-full">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-grow flex flex-col gap-unit px-container-padding pt-unit">
+<!-- Live Status Banner -->
+<div class="w-full bg-surface-container-low rounded-lg p-4 mb-4 flex items-center justify-between border-b border-surface-variant">
+<div class="flex items-center gap-3">
+<div class="relative flex h-3 w-3">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+</div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Trip Status: Live</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Last updated 30s ago</p>
+</div>
+</div>
+<div class="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full font-label-caps text-label-caps">
+                En Route
+            </div>
+</div>
+<!-- Vertical Timeline Journey -->
+<div class="relative w-full py-2">
+<!-- Continuous Line connecting nodes -->
+<div class="absolute left-[23px] top-6 bottom-6 w-[2px] bg-surface-variant z-0 rounded-full"></div>
+<!-- Stop 1: Pickup (Completed) -->
+<div class="relative z-10 flex gap-4 mb-6 opacity-60">
+<div class="flex flex-col items-center pt-1 w-12 shrink-0">
+<div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant" data-icon="check" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</div>
+<div class="flex-grow pt-1 pb-4">
+<div class="font-label-sm text-label-sm text-on-surface-variant mb-1">Pickup</div>
+<div class="font-body-lg text-body-lg font-semibold text-on-surface line-through decoration-outline-variant">Central Distribution Hub</div>
+<div class="font-body-md text-body-md text-on-surface-variant mt-1">Completed at 09:30 AM</div>
+</div>
+</div>
+<!-- Stop 2: Drop 1 (Completed) -->
+<div class="relative z-10 flex gap-4 mb-6 opacity-60">
+<div class="flex flex-col items-center pt-1 w-12 shrink-0">
+<div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant" data-icon="check" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</div>
+<div class="flex-grow pt-1 pb-4 border-b border-surface-variant/50">
+<div class="font-label-sm text-label-sm text-on-surface-variant mb-1">Drop 1 of 5</div>
+<div class="font-body-lg text-body-lg font-semibold text-on-surface line-through decoration-outline-variant">City Mall Entrance A</div>
+<div class="font-body-md text-body-md text-on-surface-variant mt-1">Completed at 10:15 AM</div>
+</div>
+</div>
+<!-- Stop 3: Drop 2 (Current Active) -->
+<div class="relative z-10 flex gap-4 mb-6 bg-surface-container-low rounded-lg p-3 -ml-3 w-[calc(100%+24px)] shadow-sm">
+<!-- Highlight line overlay for active state -->
+<div class="absolute left-[35px] top-6 bottom-6 w-[2px] bg-primary z-0 rounded-full"></div>
+<div class="flex flex-col items-center pt-1 w-12 shrink-0 z-10">
+<div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ring-4 ring-primary-fixed shadow-sm">
+<div class="w-3 h-3 bg-on-primary rounded-full"></div>
+</div>
+</div>
+<div class="flex-grow pt-1">
+<div class="flex justify-between items-center mb-1">
+<div class="font-label-caps text-label-caps text-primary tracking-wider uppercase">Current Drop 2 of 5</div>
+<div class="bg-primary-container text-on-primary-container px-2 py-0.5 rounded-full font-label-sm text-label-sm">
+                            ETA: 12 mins
+                        </div>
+</div>
+<div class="font-headline-md text-headline-md text-on-surface mb-1">Sardarpura Warehouse</div>
+<div class="font-body-md text-body-md text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="near_me">near_me</span>
+                        In Transit
+                    </div>
+</div>
+</div>
+<!-- Stop 4: Drop 3 (Upcoming) -->
+<div class="relative z-10 flex gap-4 mb-6">
+<div class="flex flex-col items-center pt-1 w-12 shrink-0">
+<div class="w-8 h-8 rounded-full bg-surface border-2 border-outline-variant flex items-center justify-center">
+</div>
+</div>
+<div class="flex-grow pt-1 pb-4 border-b border-surface-variant/50">
+<div class="font-label-sm text-label-sm text-on-surface-variant mb-1">Drop 3 of 5</div>
+<div class="font-body-lg text-body-lg font-medium text-on-surface">Pal Road Business Center</div>
+<div class="font-body-md text-body-md text-on-surface-variant mt-1">Pending</div>
+</div>
+</div>
+<!-- Stop 5: Final Drop (Upcoming) -->
+<div class="relative z-10 flex gap-4 mb-2">
+<div class="flex flex-col items-center pt-1 w-12 shrink-0">
+<div class="w-8 h-8 rounded-full bg-surface border-2 border-outline-variant flex items-center justify-center">
+</div>
+</div>
+<div class="flex-grow pt-1 pb-2">
+<div class="font-label-sm text-label-sm text-on-surface-variant mb-1">Final Drop</div>
+<div class="font-body-lg text-body-lg font-medium text-on-surface">West End Logistics Hub</div>
+<div class="font-body-md text-body-md text-on-surface-variant mt-1">Pending</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 rounded-t-lg shadow-sm bg-surface-container-low dark:bg-surface-container flex justify-around items-center py-2 px-gutter">
+<!-- Active Tab: Route -->
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 hover:text-primary transition-all active:scale-90 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="local_shipping" data-weight="fill" style="font-variation-settings: 'FILL' 1;">local_shipping</span>
+<span class="font-label-sm text-label-sm">Route</span>
+</a>
+<!-- Inactive Tabs -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-all active:scale-90 transition-transform duration-200 px-4 py-1" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="assignment">assignment</span>
+<span class="font-label-sm text-label-sm">Tasks</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-all active:scale-90 transition-transform duration-200 px-4 py-1" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="chat">chat</span>
+<span class="font-label-sm text-label-sm">Messages</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-all active:scale-90 transition-transform duration-200 px-4 py-1" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="person">person</span>
+<span class="font-label-sm text-label-sm">Profile</span>
+</a>
+</nav>
+</body></html>

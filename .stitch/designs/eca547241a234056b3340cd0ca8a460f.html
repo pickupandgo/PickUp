@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Pick Up - Customer Home</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">tailwind.config = {darkMode: "class", theme: {extend: {colors: {"inverse-surface": "#313032", "secondary-fixed": "#d8e2ff", "primary-fixed": "#dde1ff", "on-secondary": "#ffffff", "on-surface-variant": "#46464d", "surface-container-lowest": "#ffffff", "status-green": "#2D6A4F", "surface-container": "#f0edef", "surface-container-highest": "#e5e1e4", "surface-container-low": "#f6f3f5", "on-primary-fixed-variant": "#40465e", "tertiary-container": "#231a09", "on-tertiary-container": "#91826a", "error-container": "#ffdad6", "tertiary-fixed": "#f3e0c5", "surface-dim": "#dcd9db", "primary-container": "#151a31", "surface-tint": "#585d77", tertiary: "#000000", "outline-variant": "#c7c5ce", "on-secondary-container": "#57637e", "secondary-fixed-dim": "#bac6e6", secondary: "#525e79", "surface-variant": "#e5e1e4", "outline-hairline": "#E2E8F0", "surface-bright": "#fcf8fb", "on-secondary-fixed-variant": "#3b4760", "on-tertiary-fixed": "#231a09", "status-red": "#BA1A1A", primary: "#000000", "primary-fixed-dim": "#c0c5e3", "on-background": "#1b1b1d", "on-primary-fixed": "#151a31", "secondary-container": "#d4dfff", background: "#fcf8fb", outline: "#77767e", "inverse-primary": "#c0c5e3", error: "#ba1a1a", "on-error-container": "#93000a", "surface-container-high": "#eae7e9", "on-primary": "#ffffff", "tertiary-fixed-dim": "#d6c4aa", "on-error": "#ffffff", "on-surface": "#1b1b1d", "on-tertiary": "#ffffff", "on-tertiary-fixed-variant": "#514531", surface: "#fcf8fb", "on-secondary-fixed": "#0e1b33", "inverse-on-surface": "#f3f0f2", "on-primary-container": "#7e829e"}, borderRadius: {DEFAULT: "1rem", lg: "2rem", xl: "3rem", full: "9999px"}, spacing: {"row-height-standard": "56px", "stack-gap-sm": "8px", unit: "4px", "stack-gap-md": "16px", "gutter-sm": "12px", "margin-mobile": "16px"}, fontFamily: {"label-sm": ["Inter"], "headline-sm": ["Inter"], "headline-md": ["Inter"], "label-caps": ["Inter"], "body-lg": ["Inter"], "data-mono": ["Inter"], "body-md": ["Inter"], headline: ["Inter"], display: ["Inter"], body: ["Inter"], label: ["Inter"]}, fontSize: {"label-sm": ["12px", {lineHeight: "16px", letterSpacing: "normal", fontWeight: "500"}], "headline-sm": ["16px", {lineHeight: "24px", letterSpacing: "-0.01em", fontWeight: "600"}], "headline-md": ["20px", {lineHeight: "28px", letterSpacing: "-0.02em", fontWeight: "600"}], "label-caps": ["11px", {lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "600"}], "body-lg": ["15px", {lineHeight: "22px", letterSpacing: "normal", fontWeight: "400"}], "data-mono": ["14px", {lineHeight: "20px", letterSpacing: "-0.01em", fontWeight: "500"}], "body-md": ["14px", {lineHeight: "20px", letterSpacing: "normal", fontWeight: "400"}]}}}};</script>
+<style>
+    body { font-family: 'Inter', sans-serif; background-color: #f7f9fc; }
+    .ghost-shadow { box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.04); }
+</style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface min-h-screen pb-[80px]">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-margin-mobile py-2 bg-surface border-b border-outline-hairline docked full-width top-0 z-40 sticky">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center overflow-hidden">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]" data-icon="person">person</span>
+</div>
+<h1 class="text-headline-sm font-headline-sm font-semibold text-on-surface">Pick Up</h1>
+</div>
+<button class="relative w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="notifications">notifications</span>
+<span class="absolute top-2.5 right-2.5 w-2 h-2 bg-status-red rounded-full border border-surface"></span>
+</button>
+</header>
+<main class="flex flex-col">
+<!-- Map View Area -->
+<div class="relative w-full h-[280px] bg-[#E8EAE6] overflow-hidden" style="border-radius: 24px; margin: 16px; width: calc(100% - 32px);">
+<!-- Faux Map Background -->
+<div class="absolute inset-0 opacity-50" style="background-image: radial-gradient(circle at 50% 50%, #ffffff 0%, transparent 100%), repeating-linear-gradient(45deg, #d8dadd 0, #d8dadd 1px, transparent 1px, transparent 10px);"></div>
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="text-on-surface-variant/40 font-body-md text-sm rotate-12 select-none">Sardarpura</div>
+<div class="absolute top-1/4 right-1/4 text-on-surface-variant/40 font-body-md text-sm -rotate-12 select-none">Ratanada</div>
+</div>
+<!-- Active Trip Overlay -->
+<div class="absolute top-4 left-4 right-4 z-10">
+<section class="bg-surface/95 backdrop-blur-sm rounded-lg border border-outline-hairline p-3 ghost-shadow flex items-center justify-between" style="border-radius: 24px;">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 bg-surface-container-low rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-[18px]" data-icon="local_shipping">local_shipping</span>
+</div>
+<div>
+<div class="flex items-center gap-2 mb-0.5">
+<span class="w-2 h-2 rounded-full bg-status-green animate-pulse"></span>
+<span class="text-[10px] font-label-caps text-on-surface-variant uppercase tracking-wider">En route to Drop 2</span>
+</div>
+<p class="text-label-sm font-label-sm text-on-surface">Ramesh • RJ 19 XX 1234</p>
+</div>
+</div>
+<button class="w-8 h-8 flex items-center justify-center text-primary hover:bg-surface-container-low rounded-full transition-colors">
+<span class="material-symbols-outlined text-[20px]" data-icon="chevron_right">chevron_right</span>
+</button>
+</section>
+</div>
+<!-- Map Marker -->
+<div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
+<div class="bg-primary text-on-primary text-[10px] font-label-caps px-2 py-1 rounded shadow-sm mb-1 whitespace-nowrap">12 mins</div>
+<div class="w-6 h-6 bg-primary rounded-full border-2 border-surface shadow-md flex items-center justify-center">
+<div class="w-2 h-2 bg-surface rounded-full"></div>
+</div>
+</div>
+<!-- Current Location FAB -->
+<button class="absolute bottom-6 right-4 w-10 h-10 bg-surface rounded-full shadow-md flex items-center justify-center text-on-surface-variant border border-outline-hairline hover:bg-surface-container-low transition-colors z-10">
+<span class="material-symbols-outlined text-[20px]" data-icon="my_location">my_location</span>
+</button>
+</div>
+<!-- Booking Control Panel -->
+<div class="-mt-4 relative z-20 px-margin-mobile">
+<section class="bg-surface rounded-lg border border-outline-hairline p-4 ghost-shadow" style="border-radius: 24px;">
+<div class="relative flex flex-col gap-0 mb-4">
+<!-- Timeline connector -->
+<div class="absolute left-[11px] top-6 bottom-6 w-0.5 bg-outline-hairline"></div>
+<!-- Pickup Field -->
+<div class="flex items-center gap-3 py-2">
+<div class="w-6 h-6 flex items-center justify-center bg-surface relative z-10">
+<div class="w-2 h-2 bg-primary rounded-full"></div>
+</div>
+<div class="flex-1 flex justify-between items-center border-b border-outline-hairline pb-2">
+<div>
+<p class="text-label-sm font-label-sm text-on-surface-variant mb-0.5">Pickup</p>
+<p class="text-body-md font-body-md text-on-surface">Current Location</p>
+</div>
+<button class="text-primary text-label-sm font-label-sm hover:underline">Change</button>
+</div>
+</div>
+<!-- Drop Field -->
+<div class="flex items-center gap-3 py-2">
+<div class="w-6 h-6 flex items-center justify-center bg-surface relative z-10">
+<span class="material-symbols-outlined text-status-red text-[16px]" data-icon="location_on" data-weight="fill">location_on</span>
+</div>
+<div class="flex-1">
+<div class="relative cursor-pointer">
+<div class="block w-full py-2 text-on-surface-variant text-body-md font-body-md flex items-center justify-between">
+<span>Enter drop location</span>
+<span class="w-6 h-6 bg-surface-container-low rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-[14px]" data-icon="arrow_forward">arrow_forward</span>
+</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Add Drop -->
+<div class="flex items-center gap-3 mt-1 ml-9">
+<button class="text-on-surface-variant text-label-sm font-label-sm flex items-center gap-1 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]" data-icon="add">add</span> Add another drop
+                </button>
+</div>
+</div>
+<button class="w-full bg-primary text-on-primary text-body-md font-body-md font-medium py-3 rounded-full hover:opacity-90 transition-opacity">Start Booking</button>
+</section>
+</div>
+<div class="px-margin-mobile py-stack-gap-md flex flex-col gap-stack-gap-md">
+<!-- Saved/Recent Addresses -->
+<section class="bg-surface rounded-lg border border-outline-hairline overflow-hidden" style="border-radius: 24px;">
+<div class="px-4 py-3 border-b border-outline-hairline bg-surface-container-lowest">
+<h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wide">Recent Locations</h3>
+</div>
+<div class="flex flex-col">
+<!-- Location 1 -->
+<div class="flex items-center gap-3 px-4 py-3 border-b border-outline-hairline hover:bg-surface-container-low cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]" data-icon="history">history</span>
+<div class="flex-1">
+<p class="text-body-md font-body-md text-on-surface">Sardarpura Warehouse</p>
+<p class="text-label-sm font-label-sm text-on-surface-variant">Jodhpur, Rajasthan</p>
+</div>
+</div>
+<!-- Location 2 -->
+<div class="flex items-center gap-3 px-4 py-3 border-b border-outline-hairline hover:bg-surface-container-low cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]" data-icon="history">history</span>
+<div class="flex-1">
+<p class="text-body-md font-body-md text-on-surface">Ratanada Hub</p>
+<p class="text-label-sm font-label-sm text-on-surface-variant">Jodhpur, Rajasthan</p>
+</div>
+</div>
+<!-- Location 3 -->
+<div class="flex items-center gap-3 px-4 py-3 hover:bg-surface-container-low cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]" data-icon="history">history</span>
+<div class="flex-1">
+<p class="text-body-md font-body-md text-on-surface">Paota Godown</p>
+<p class="text-label-sm font-label-sm text-on-surface-variant">Jodhpur, Rajasthan</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Quick Access -->
+<div class="grid grid-cols-2 gap-stack-gap-md">
+<!-- Trip History -->
+<button class="bg-surface rounded-lg border border-outline-hairline p-4 flex flex-col items-start gap-2 hover:bg-surface-container-low transition-colors text-left" style="border-radius: 24px;">
+<div class="w-8 h-8 bg-surface-container-high rounded-full flex items-center justify-center mb-1">
+<span class="material-symbols-outlined text-on-surface text-[18px]" data-icon="list_alt">list_alt</span>
+</div>
+<span class="text-body-md font-body-md font-medium text-on-surface">Trip History</span>
+<span class="text-label-sm font-label-sm text-on-surface-variant">View past deliveries</span>
+</button>
+<!-- Manage Addresses -->
+<button class="bg-surface rounded-lg border border-outline-hairline p-4 flex flex-col items-start gap-2 hover:bg-surface-container-low transition-colors text-left" style="border-radius: 24px;">
+<div class="w-8 h-8 bg-surface-container-high rounded-full flex items-center justify-center mb-1">
+<span class="material-symbols-outlined text-on-surface text-[18px]" data-icon="bookmarks">bookmarks</span>
+</div>
+<span class="text-body-md font-body-md font-medium text-on-surface">Manage Addresses</span>
+<span class="text-label-sm font-label-sm text-on-surface-variant">Saved locations</span>
+</button>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center bg-surface border-t border-outline-hairline px-2 py-2 pb-safe">
+<!-- Home (Active) -->
+<button class="flex flex-col items-center justify-center text-primary bg-secondary-container rounded-full px-4 py-1 scale-95 transition-transform duration-150">
+<span class="material-symbols-outlined mb-1" data-icon="home" data-weight="fill" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="text-label-caps font-label-caps">Home</span>
+</button>
+<!-- Trips -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:text-primary transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="route">route</span>
+<span class="text-label-caps font-label-caps">Trips</span>
+</button>
+<!-- Wallet -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:text-primary transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="account_balance_wallet">account_balance_wallet</span>
+<span class="text-label-caps font-label-caps">Wallet</span>
+</button>
+<!-- Account -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-1 hover:text-primary transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="person">person</span>
+<span class="text-label-caps font-label-caps">Account</span>
+</button>
+</nav>
+</body></html>

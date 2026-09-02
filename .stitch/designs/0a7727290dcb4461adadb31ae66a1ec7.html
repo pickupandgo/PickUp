@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Trip History - Pick Up</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-container": "#57637e",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary": "#525e79",
+                        "background": "#fcf8fb",
+                        "surface-variant": "#e5e1e4",
+                        "primary": "#000000",
+                        "surface-dim": "#dcd9db",
+                        "surface-tint": "#585d77",
+                        "tertiary": "#000000",
+                        "surface-container-high": "#eae7e9",
+                        "on-surface": "#1b1b1d",
+                        "on-tertiary-container": "#91826a",
+                        "surface-container-highest": "#e5e1e4",
+                        "tertiary-container": "#231a09",
+                        "on-tertiary": "#ffffff",
+                        "on-tertiary-fixed": "#231a09",
+                        "error-container": "#ffdad6",
+                        "on-primary-fixed": "#151a31",
+                        "on-primary": "#ffffff",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "outline-variant": "#c7c5ce",
+                        "secondary-container": "#d4dfff",
+                        "inverse-primary": "#c0c5e3",
+                        "on-error-container": "#93000a",
+                        "surface-bright": "#fcf8fb",
+                        "surface-container": "#f0edef",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed": "#0e1b33",
+                        "on-surface-variant": "#46464d",
+                        "on-primary-container": "#7e829e",
+                        "surface": "#fcf8fb",
+                        "on-primary-fixed-variant": "#40465e",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "tertiary-fixed": "#f3e0c5",
+                        "on-error": "#ffffff",
+                        "on-background": "#1b1b1d",
+                        "outline": "#77767e",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "inverse-on-surface": "#f3f0f2",
+                        "primary-container": "#151a31",
+                        "inverse-surface": "#313032",
+                        "secondary-fixed": "#d8e2ff",
+                        "surface-container-low": "#f6f3f5",
+                        "primary-fixed": "#dde1ff",
+                        "error": "#ba1a1a"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "container-padding": "16px",
+                        "gutter": "12px",
+                        "unit": "4px",
+                        "row-height-sm": "40px",
+                        "row-height-md": "56px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "headline-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background antialiased min-h-screen flex flex-col font-body-md text-body-md overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="w-full sticky top-0 z-50 bg-surface dark:bg-surface-dim bg-surface-container-low dark:bg-surface-container-highest flat no shadows flex items-center justify-between px-container-padding h-row-height-md">
+<button class="text-primary dark:text-primary-fixed hover:bg-surface-container-high transition-colors active:scale-95 transition-transform p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<h1 class="font-headline-md text-headline-md text-on-surface">Trip History</h1>
+<button class="text-primary dark:text-primary-fixed hover:bg-surface-container-high transition-colors active:scale-95 transition-transform p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="filter_list">filter_list</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-grow px-container-padding py-6 space-y-6 pb-24 max-w-2xl mx-auto w-full">
+<!-- Tabs -->
+<div class="flex space-x-2 bg-surface-container-low p-1 rounded-full">
+<button class="flex-1 py-2 px-4 rounded-full bg-primary text-on-primary font-label-sm text-label-sm transition-all shadow-sm">Recent</button>
+<button class="flex-1 py-2 px-4 rounded-full text-on-surface-variant font-label-sm text-label-sm hover:bg-surface-variant transition-all">Scheduled</button>
+</div>
+<!-- Trip List (Main View) -->
+<div class="space-y-4" id="trip-list-container">
+<!-- Trip Card 1: Completed -->
+<div class="bg-surface-container-low rounded-[24px] p-4 flex flex-col gap-4 shadow-sm active:scale-[0.98] transition-transform cursor-pointer relative overflow-hidden">
+<div class="flex justify-between items-start">
+<div class="flex flex-col gap-1">
+<span class="inline-flex items-center gap-1 bg-[#E6F4EA] text-[#137333] px-2 py-0.5 rounded-full font-label-caps text-label-caps w-max">
+<span class="w-1.5 h-1.5 rounded-full bg-[#137333]"></span>
+                            COMPLETED
+                        </span>
+<span class="text-on-surface-variant font-label-sm text-label-sm">Oct 24, 2023, 10:30 AM</span>
+</div>
+<div class="text-right">
+<span class="font-data-mono text-data-mono text-on-surface">₹450.00</span>
+<span class="block text-on-surface-variant font-label-sm text-label-sm">Paid via UPI</span>
+</div>
+</div>
+<div class="flex gap-4">
+<div class="flex flex-col items-center py-1">
+<span class="w-2 h-2 rounded-full bg-primary outline outline-2 outline-offset-2 outline-primary"></span>
+<div class="w-0.5 h-8 bg-outline-variant my-1"></div>
+<span class="w-2 h-2 rounded-full bg-secondary outline outline-2 outline-offset-2 outline-secondary"></span>
+</div>
+<div class="flex flex-col justify-between py-0.5">
+<div class="font-body-md text-body-md text-on-surface">Sardarpura Warehouse</div>
+<div class="font-body-md text-body-md text-on-surface">Basni Phase II</div>
+</div>
+</div>
+<div class="border-t border-outline-variant/30 pt-3 flex justify-between items-center">
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined text-sm" data-icon="local_shipping">local_shipping</span>
+<span class="font-label-sm text-label-sm">Tata Ace | RJ 19 XX 1234</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+<!-- Trip Card 2: Cancelled -->
+<div class="bg-surface-container-low rounded-[24px] p-4 flex flex-col gap-4 shadow-sm active:scale-[0.98] transition-transform cursor-pointer relative overflow-hidden">
+<div class="flex justify-between items-start">
+<div class="flex flex-col gap-1">
+<span class="inline-flex items-center gap-1 bg-error-container text-on-error-container px-2 py-0.5 rounded-full font-label-caps text-label-caps w-max">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+                            CANCELLED
+                        </span>
+<span class="text-on-surface-variant font-label-sm text-label-sm">Oct 23, 2023, 02:15 PM</span>
+</div>
+<div class="text-right">
+<span class="font-data-mono text-data-mono text-on-surface-variant line-through">₹320.00</span>
+<span class="block text-error font-label-sm text-label-sm">Driver No-show</span>
+</div>
+</div>
+<div class="flex gap-4 opacity-70">
+<div class="flex flex-col items-center py-1">
+<span class="w-2 h-2 rounded-full bg-outline"></span>
+<div class="w-0.5 h-8 bg-outline-variant my-1"></div>
+<span class="w-2 h-2 rounded-full bg-outline"></span>
+</div>
+<div class="flex flex-col justify-between py-0.5">
+<div class="font-body-md text-body-md text-on-surface">Polo Ground</div>
+<div class="font-body-md text-body-md text-on-surface">City Mall</div>
+</div>
+</div>
+<div class="border-t border-outline-variant/30 pt-3 flex justify-between items-center">
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined text-sm" data-icon="local_shipping">local_shipping</span>
+<span class="font-label-sm text-label-sm">Bolero Pickup</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+<!-- Skeleton Loader State (Hidden by default) -->
+<div class="hidden space-y-4" id="skeleton-state">
+<div class="bg-surface-container-low rounded-[24px] p-4 flex flex-col gap-4 animate-pulse">
+<div class="flex justify-between items-start">
+<div class="flex flex-col gap-2 w-1/3">
+<div class="h-4 bg-surface-variant rounded-full w-20"></div>
+<div class="h-3 bg-surface-variant rounded-full w-full"></div>
+</div>
+<div class="flex flex-col gap-2 items-end w-1/4">
+<div class="h-4 bg-surface-variant rounded-full w-16"></div>
+<div class="h-3 bg-surface-variant rounded-full w-12"></div>
+</div>
+</div>
+<div class="flex gap-4">
+<div class="w-2 h-12 bg-surface-variant rounded-full"></div>
+<div class="flex flex-col justify-between flex-grow gap-2">
+<div class="h-4 bg-surface-variant rounded-full w-3/4"></div>
+<div class="h-4 bg-surface-variant rounded-full w-1/2"></div>
+</div>
+</div>
+<div class="border-t border-outline-variant/30 pt-3">
+<div class="h-4 bg-surface-variant rounded-full w-1/3"></div>
+</div>
+</div>
+</div>
+<!-- Empty State (Hidden by default) -->
+<div class="hidden flex flex-col items-center justify-center py-12 text-center" id="empty-state">
+<div class="w-24 h-24 mb-4 bg-surface-variant rounded-full flex items-center justify-center text-outline">
+<span class="material-symbols-outlined text-4xl" data-icon="history">history</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2">No trips yet</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-6">Your trip history will appear here once you start booking.</p>
+<button class="bg-primary text-on-primary font-label-caps text-label-caps px-6 py-3 rounded-full active:scale-95 transition-transform uppercase tracking-wider">Start Booking</button>
+</div>
+<!-- Error State (Hidden by default) -->
+<div class="hidden flex flex-col items-center justify-center py-12 text-center" id="error-state">
+<div class="w-24 h-24 mb-4 bg-error-container rounded-full flex items-center justify-center text-error">
+<span class="material-symbols-outlined text-4xl" data-icon="error_outline">error_outline</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-2">Failed to load history</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-6">There was an issue fetching your trips. Please try again.</p>
+<button class="bg-secondary-container text-on-secondary-container font-label-caps text-label-caps px-6 py-3 rounded-full active:scale-95 transition-transform uppercase tracking-wider">Retry</button>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 rounded-t-lg bg-surface dark:bg-surface-dim bg-surface-container-low dark:bg-surface-container-highest shadow-sm shadow-sm flex justify-around items-center h-row-height-md px-container-padding pb-safe md:hidden">
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-variant transition-all active:scale-90 transition-transform p-2 rounded-xl" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="font-label-caps text-label-caps mt-1">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 hover:bg-surface-variant transition-all active:scale-90 transition-transform p-2 rounded-xl" href="#">
+<span class="material-symbols-outlined" data-icon="local_shipping" style="font-variation-settings: 'FILL' 1;">local_shipping</span>
+<span class="font-label-caps text-label-caps text-primary mt-1">Trips</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-variant transition-all active:scale-90 transition-transform p-2 rounded-xl" href="#">
+<span class="material-symbols-outlined" data-icon="account_balance_wallet">account_balance_wallet</span>
+<span class="font-label-caps text-label-caps mt-1">Wallet</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-variant transition-all active:scale-90 transition-transform p-2 rounded-xl" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-label-caps text-label-caps mt-1">Account</span>
+</a>
+</nav>
+</body></html>

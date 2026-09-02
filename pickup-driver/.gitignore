@@ -1,0 +1,15 @@
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# local env — holds the backend URL and Maps key
+.env
+.env*.local
+!.env.example
+
+*.tsbuildinfo
+/ios
+/android
+.DS_Store

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Customer Trip Completed</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "error-container": "#ffdad6",
+                        "surface-tint": "#585d77",
+                        "surface-bright": "#fcf8fb",
+                        "background": "#fcf8fb",
+                        "outline-variant": "#c7c5ce",
+                        "secondary-container": "#d4dfff",
+                        "primary-container": "#151a31",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-high": "#eae7e9",
+                        "inverse-on-surface": "#f3f0f2",
+                        "primary-fixed": "#dde1ff",
+                        "primary": "#000000",
+                        "surface": "#fcf8fb",
+                        "surface-container": "#f0edef",
+                        "inverse-primary": "#c0c5e3",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "surface-variant": "#e5e1e4",
+                        "on-primary-container": "#7e829e",
+                        "tertiary-fixed": "#f3e0c5",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary-container": "#57637e",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "on-primary": "#ffffff",
+                        "outline": "#77767e",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "on-primary-fixed": "#151a31",
+                        "surface-container-highest": "#e5e1e4",
+                        "on-error-container": "#93000a",
+                        "on-surface-variant": "#46464d",
+                        "on-error": "#ffffff",
+                        "tertiary": "#000000",
+                        "tertiary-container": "#231a09",
+                        "error": "#ba1a1a",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-secondary-fixed": "#0e1b33",
+                        "surface-container-low": "#f6f3f5",
+                        "on-tertiary-container": "#91826a",
+                        "on-primary-fixed-variant": "#40465e",
+                        "on-secondary": "#ffffff",
+                        "inverse-surface": "#313032",
+                        "on-surface": "#1b1b1d",
+                        "on-background": "#1b1b1d",
+                        "secondary": "#525e79",
+                        "on-tertiary-fixed": "#231a09",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "surface-dim": "#dcd9db",
+                        "success-container": "#d4edda",
+                        "on-success-container": "#155724",
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "1.5rem",
+                        "xl": "2rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "row-height-md": "56px",
+                        "unit": "4px",
+                        "gutter": "12px",
+                        "container-padding": "16px",
+                        "row-height-sm": "40px"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body-md antialiased pb-[80px]"> <!-- Added pb for standard spacing if nav were present, though nav is suppressed here per logic -->
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky bg-surface dark:bg-surface-dim z-40 transition-shadow" id="top-app-bar">
+<div class="flex items-center justify-between px-container-padding h-row-height-md w-full max-w-3xl mx-auto">
+<button aria-label="Go back" class="text-primary dark:text-primary-fixed hover:bg-surface-variant/50 dark:hover:bg-surface-container-high transition-colors active:scale-95 duration-150 p-2 rounded-full -ml-2">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed flex-1 text-center">Trip Completed</h1>
+<button aria-label="More options" class="text-primary dark:text-primary-fixed hover:bg-surface-variant/50 dark:hover:bg-surface-container-high transition-colors active:scale-95 duration-150 p-2 rounded-full -mr-2">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+<div class="h-px w-full bg-surface-container-low dark:bg-surface-container"></div>
+</header>
+<main class="flex-1 w-full max-w-3xl mx-auto px-container-padding py-gutter flex flex-col gap-6">
+<!-- Success Banner -->
+<div class="bg-success-container text-on-success-container rounded-lg p-4 flex items-center gap-3">
+<span class="material-symbols-outlined" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="font-headline-sm text-headline-sm">✓ TRIP COMPLETED</span>
+</div>
+<!-- High Fidelity Card -->
+<section class="bg-surface-container-lowest rounded-xl shadow-sm border border-surface-container p-6 flex flex-col gap-6">
+<!-- Timeline -->
+<div class="relative pl-6 border-l-2 border-surface-container flex flex-col gap-6">
+<!-- Pickup -->
+<div class="relative">
+<div class="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-primary ring-4 ring-surface-container-lowest"></div>
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider mb-1">Pickup</p>
+<p class="font-body-lg text-body-lg text-on-surface font-medium">Sardarpura Warehouse</p>
+</div>
+</div>
+<!-- Drop 1 -->
+<div class="relative">
+<div class="absolute -left-[29px] top-1 w-3 h-3 rounded-full bg-surface-container ring-4 ring-surface-container-lowest border border-outline"></div>
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider mb-1">Drop 1</p>
+<p class="font-body-md text-body-md text-on-surface">Ratanada Hub</p>
+</div>
+</div>
+<!-- Drop 2 -->
+<div class="relative">
+<div class="absolute -left-[29px] top-1 w-3 h-3 rounded-full bg-surface-container ring-4 ring-surface-container-lowest border border-outline"></div>
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider mb-1">Drop 2</p>
+<p class="font-body-md text-body-md text-on-surface">Pal Road Business Center</p>
+</div>
+</div>
+<!-- Final Drop -->
+<div class="relative">
+<div class="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-primary ring-4 ring-surface-container-lowest"></div>
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider mb-1">Final Drop</p>
+<p class="font-body-lg text-body-lg text-on-surface font-medium">Basni Phase II</p>
+</div>
+</div>
+</div>
+<div class="h-px w-full bg-surface-container"></div>
+<!-- Details Grid -->
+<div class="grid grid-cols-2 gap-y-4 gap-x-2">
+<div>
+<p class="font-label-sm text-label-sm text-on-surface-variant mb-1">Vehicle</p>
+<p class="font-data-mono text-data-mono text-on-surface">Tata Ace | RJ 19 XX 1234</p>
+</div>
+<div>
+<p class="font-label-sm text-label-sm text-on-surface-variant mb-1">Completion Time</p>
+<p class="font-data-mono text-data-mono text-on-surface">Oct 24, 2023 • 11:30 AM</p>
+</div>
+<div class="col-span-2">
+<p class="font-label-sm text-label-sm text-on-surface-variant mb-1">Payment Status</p>
+<div class="flex items-center gap-2">
+<span class="inline-block w-2 h-2 rounded-full bg-success-container"></span>
+<p class="font-data-mono text-data-mono text-on-surface">Paid • ₹450.00</p>
+</div>
+</div>
+</div>
+<!-- Receipt Info -->
+<div class="bg-surface-variant rounded-lg p-3 flex items-center justify-center gap-2 mt-2">
+<span class="material-symbols-outlined text-on-surface-variant text-sm" data-icon="receipt_long">receipt_long</span>
+<p class="font-body-md text-body-md text-on-surface-variant">Digital receipt is now available.</p>
+</div>
+</section>
+<!-- Actions -->
+<section class="flex flex-col gap-3 mt-4">
+<button class="w-full h-12 bg-primary text-on-primary rounded-full font-headline-sm text-headline-sm flex items-center justify-center gap-2 active:scale-95 transition-transform">
+<span class="material-symbols-outlined" data-icon="star" data-weight="fill" style="font-variation-settings: 'FILL' 1;">star</span>
+                RATE DRIVER
+            </button>
+<button class="w-full h-12 bg-secondary-container text-on-secondary-container rounded-full font-headline-sm text-headline-sm flex items-center justify-center gap-2 active:scale-95 transition-transform">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+                VIEW RECEIPT
+            </button>
+<button class="w-full h-12 text-primary font-headline-sm text-headline-sm flex items-center justify-center active:scale-95 transition-transform mt-2">
+                BACK TO HOME
+            </button>
+</section>
+</main>
+<script>
+        // Simple scroll shadow effect for TopAppBar
+        window.addEventListener('scroll', () => {
+            const header = document.getElementById('top-app-bar');
+            if (window.scrollY > 10) {
+                header.classList.add('shadow-sm');
+            } else {
+                header.classList.remove('shadow-sm');
+            }
+        });
+    </script>
+</body></html>

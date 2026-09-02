@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Customer Pickup OTP Verification</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-container": "#d4dfff",
+                        "on-surface-variant": "#46464d",
+                        "surface-dim": "#dcd9db",
+                        "error-container": "#ffdad6",
+                        "surface-container-high": "#eae7e9",
+                        "surface-container-low": "#f6f3f5",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-highest": "#e5e1e4",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "outline": "#77767e",
+                        "primary-fixed": "#dde1ff",
+                        "surface": "#fcf8fb",
+                        "on-primary-fixed-variant": "#40465e",
+                        "primary-container": "#151a31",
+                        "on-surface": "#1b1b1d",
+                        "inverse-primary": "#c0c5e3",
+                        "on-secondary": "#ffffff",
+                        "inverse-on-surface": "#f3f0f2",
+                        "inverse-surface": "#313032",
+                        "on-error-container": "#93000a",
+                        "on-error": "#ffffff",
+                        "on-primary-fixed": "#151a31",
+                        "surface-variant": "#e5e1e4",
+                        "on-primary-container": "#7e829e",
+                        "on-secondary-fixed": "#0e1b33",
+                        "background": "#fcf8fb",
+                        "tertiary-fixed": "#f3e0c5",
+                        "on-background": "#1b1b1d",
+                        "on-tertiary-fixed": "#231a09",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "tertiary-container": "#231a09",
+                        "tertiary": "#000000",
+                        "on-tertiary-container": "#91826a",
+                        "on-secondary-container": "#57637e",
+                        "on-primary": "#ffffff",
+                        "outline-variant": "#c7c5ce",
+                        "secondary-fixed": "#d8e2ff",
+                        "error": "#ba1a1a",
+                        "secondary": "#525e79",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "primary": "#000000",
+                        "surface-bright": "#fcf8fb",
+                        "surface-container": "#f0edef",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "surface-tint": "#585d77"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "row-height-sm": "40px",
+                        "container-padding": "16px",
+                        "gutter": "12px",
+                        "row-height-md": "56px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #fcf8fb; /* background */
+            color: #1b1b1d; /* on-background */
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        /* OTP Input Focus Styles */
+        .otp-input:focus {
+            outline: none;
+            border-color: #000000;
+            box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+        }
+
+        /* Subtle loading animation */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen antialiased">
+<!-- Top App Bar -->
+<header class="flex justify-between items-center w-full px-container-padding h-row-height-md bg-surface dark:bg-background z-10 sticky top-0">
+<button aria-label="Go back" class="p-2 -ml-2 rounded-full hover:bg-surface-container-low transition-colors text-on-surface">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-on-surface">Pickup Verification</h1>
+<div class="w-10"></div> <!-- Spacer for center alignment -->
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-grow flex flex-col px-container-padding py-6 overflow-y-auto space-y-6">
+<!-- Trip Context Card -->
+<section class="bg-surface-container-lowest rounded-lg p-5 shadow-sm border border-surface-variant flex flex-col space-y-4">
+<!-- Location -->
+<div class="flex items-start space-x-3">
+<div class="p-2 bg-surface-container-low rounded-full flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary text-xl" data-icon="location_on" data-weight="fill" style="font-variation-settings: 'FILL' 1;">location_on</span>
+</div>
+<div>
+<p class="font-label-sm text-label-sm text-on-surface-variant mb-1">Pickup Location</p>
+<p class="font-body-md text-body-md font-medium text-on-surface">Sardarpura Warehouse</p>
+</div>
+</div>
+<hr class="border-t border-surface-variant border-opacity-50"/>
+<!-- Driver Info -->
+<div class="flex items-center space-x-4">
+<!-- Using the provided image for driver profile -->
+<div class="w-12 h-12 rounded-full overflow-hidden shrink-0 border border-surface-variant">
+<img alt="Driver Ramesh Kumar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC5Miy2__jGbN42AlpHhkRAUwlWZHbHDy6-hizTRk1dgDxkPKRqvK_Riuf2CKO-3ctNLxSvoTSIYbIhGBRC_Q1VZ3Ic0Go6pVlPq-lof32oczDBRrC3u6_rzL3bQALlL5IfYM7ppqOVxXDxAGf2JRIFaOIFYrXHQo5ap74W5szEc2U4Zx3mB3CpJNlsAZCxvxDdxTt17hMkylLfmWMXAYyndvLdt2iLljm3n5dAcPIVe9njt9DYYXd-7EbEl3M9maSE8g"/>
+</div>
+<div class="flex-grow">
+<p class="font-headline-sm text-headline-sm text-on-surface">Ramesh Kumar</p>
+<p class="font-body-md text-body-md text-on-surface-variant flex items-center">
+                        Tata Ace <span class="mx-1.5 text-xs text-outline">•</span> RJ 19 XX 1234
+                    </p>
+</div>
+<div class="shrink-0 flex items-center">
+<div class="bg-surface-container-low px-2 py-1 rounded flex items-center space-x-1">
+<span class="material-symbols-outlined text-sm text-on-surface-variant" data-icon="star" data-weight="fill" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">4.8</span>
+</div>
+</div>
+</div>
+</section>
+<!-- OTP Section Container -->
+<section class="flex flex-col items-center justify-center space-y-6 pt-4 flex-grow">
+<div class="text-center max-w-sm">
+<h2 class="font-headline-sm text-headline-sm text-on-surface mb-2">Share your OTP</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                    Please share this 4-digit code with your driver or enter it below to verify and start your trip.
+                </p>
+</div>
+<!-- Interactive OTP Display/Input area -->
+<div class="w-full max-w-xs mx-auto" id="otp-container">
+<!-- State 1: Normal / Input -->
+<div class="flex flex-col items-center space-y-4" id="state-normal">
+<div class="flex justify-center space-x-4 w-full">
+<input class="otp-input w-14 h-16 text-center text-2xl font-semibold bg-surface-variant rounded-md text-on-surface border-2 border-transparent transition-all" maxlength="1" type="text" value="4"/>
+<input class="otp-input w-14 h-16 text-center text-2xl font-semibold bg-surface-variant rounded-md text-on-surface border-2 border-transparent transition-all" maxlength="1" type="text" value="9"/>
+<input autofocus="" class="otp-input w-14 h-16 text-center text-2xl font-semibold bg-surface-variant rounded-md text-on-surface border-2 border-transparent transition-all" maxlength="1" placeholder="-" type="text" value=""/>
+<input class="otp-input w-14 h-16 text-center text-2xl font-semibold bg-surface-variant rounded-md text-on-surface border-2 border-transparent transition-all" maxlength="1" placeholder="-" type="text" value=""/>
+</div>
+<!-- State 2: Error (hidden by default) -->
+<p class="font-label-sm text-label-sm text-error hidden" id="error-message">Incorrect OTP. Please try again.</p>
+</div>
+<!-- State 4: Success (hidden by default) -->
+<div class="hidden flex flex-col items-center justify-center space-y-4 py-4" id="state-success">
+<div class="w-16 h-16 bg-surface-container-low rounded-full flex items-center justify-center text-primary mb-2">
+<span class="material-symbols-outlined text-4xl" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<p class="font-headline-sm text-headline-sm text-on-surface">Verification Successful</p>
+<p class="font-body-md text-body-md text-on-surface-variant">Trip Started</p>
+</div>
+</div>
+<!-- Action Buttons Container -->
+<div class="w-full mt-auto pt-6 space-y-4" id="action-container">
+<!-- State 1 & 3: Primary Button (Normal / Loading) -->
+<button class="w-full h-14 bg-primary-container text-on-primary rounded-full font-headline-sm text-headline-sm flex items-center justify-center transition-all hover:opacity-90 active:scale-[0.98]" id="btn-verify">
+<span id="btn-text">VERIFY PICKUP OTP</span>
+<span class="material-symbols-outlined hidden loading-spinner ml-2" data-icon="progress_activity" id="btn-loader">progress_activity</span>
+</button>
+<!-- Secondary Action -->
+<div class="text-center">
+<button class="font-label-sm text-label-sm text-on-surface-variant hover:text-on-surface underline decoration-outline-variant underline-offset-4 transition-colors">
+                        Resend OTP
+                    </button>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation Shell omitted as per Semantic Shell Mandate (Transactional intent) -->
+<script>
+        // Simple script to toggle states for demonstration purposes
+        document.addEventListener('DOMContentLoaded', () => {
+            const btnVerify = document.getElementById('btn-verify');
+            const btnText = document.getElementById('btn-text');
+            const btnLoader = document.getElementById('btn-loader');
+            const stateNormal = document.getElementById('state-normal');
+            const stateSuccess = document.getElementById('state-success');
+            const actionContainer = document.getElementById('action-container');
+            const errorMsg = document.getElementById('error-message');
+            
+            // Auto-advance OTP inputs
+            const inputs = document.querySelectorAll('.otp-input');
+            inputs.forEach((input, index) => {
+                input.addEventListener('input', function() {
+                    if (this.value.length === 1 && index < inputs.length - 1) {
+                        inputs[index + 1].focus();
+                    }
+                });
+                
+                input.addEventListener('keydown', function(e) {
+                    if (e.key === 'Backspace' && this.value.length === 0 && index > 0) {
+                        inputs[index - 1].focus();
+                    }
+                });
+            });
+
+            // Simulate Verification Flow
+            let clickCount = 0;
+            
+            btnVerify.addEventListener('click', () => {
+                clickCount++;
+                
+                // Reset error
+                errorMsg.classList.add('hidden');
+                
+                // Show loading state
+                btnText.textContent = 'Verifying...';
+                btnLoader.classList.remove('hidden');
+                btnVerify.classList.add('opacity-80');
+                
+                setTimeout(() => {
+                    // Reset button state
+                    btnLoader.classList.add('hidden');
+                    btnVerify.classList.remove('opacity-80');
+                    
+                    if (clickCount === 1) {
+                        // Show Error State on first click
+                        btnText.textContent = 'VERIFY PICKUP OTP';
+                        errorMsg.classList.remove('hidden');
+                        inputs.forEach(input => {
+                            input.classList.add('border-error');
+                            input.classList.remove('border-transparent');
+                        });
+                    } else {
+                        // Show Success State on second click
+                        stateNormal.classList.add('hidden');
+                        actionContainer.classList.add('hidden');
+                        stateSuccess.classList.remove('hidden');
+                        stateSuccess.classList.add('flex');
+                    }
+                }, 1500);
+            });
+        });
+    </script>
+</body></html>

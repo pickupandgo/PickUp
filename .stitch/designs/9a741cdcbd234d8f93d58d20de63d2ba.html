@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Customer Notification Center</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "on-tertiary": "#ffffff",
+                        "surface-variant": "#e5e1e4",
+                        "on-primary-container": "#7e829e",
+                        "surface-tint": "#585d77",
+                        "primary-fixed": "#dde1ff",
+                        "on-primary": "#ffffff",
+                        "outline": "#77767e",
+                        "primary-container": "#151a31",
+                        "surface-dim": "#dcd9db",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "on-error": "#ffffff",
+                        "surface-container-high": "#eae7e9",
+                        "surface-container": "#f0edef",
+                        "on-background": "#1b1b1d",
+                        "on-secondary-fixed": "#0e1b33",
+                        "secondary": "#525e79",
+                        "on-primary-fixed-variant": "#40465e",
+                        "surface-bright": "#fcf8fb",
+                        "surface": "#fcf8fb",
+                        "error": "#ba1a1a",
+                        "tertiary": "#000000",
+                        "surface-container-highest": "#e5e1e4",
+                        "on-tertiary-container": "#91826a",
+                        "inverse-primary": "#c0c5e3",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "on-secondary": "#ffffff",
+                        "secondary-container": "#d4dfff",
+                        "background": "#fcf8fb",
+                        "on-secondary-container": "#57637e",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "on-error-container": "#93000a",
+                        "error-container": "#ffdad6",
+                        "on-surface-variant": "#46464d",
+                        "on-surface": "#1b1b1d",
+                        "tertiary-container": "#231a09",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "surface-container-low": "#f6f3f5",
+                        "outline-variant": "#c7c5ce",
+                        "primary": "#000000",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-surface": "#313032",
+                        "inverse-on-surface": "#f3f0f2",
+                        "on-primary-fixed": "#151a31",
+                        "tertiary-fixed": "#f3e0c5",
+                        "secondary-fixed": "#d8e2ff",
+                        "on-tertiary-fixed": "#231a09"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "container-padding": "16px",
+                        "gutter": "12px",
+                        "unit": "4px",
+                        "row-height-sm": "40px",
+                        "row-height-md": "56px"
+                    },
+                    "fontFamily": {
+                        "label-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "label-caps": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background antialiased selection:bg-secondary-container selection:text-on-secondary-container h-screen flex flex-col relative overflow-hidden">
+<!-- Top App Bar from JSON -->
+<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-md">
+<div class="flex justify-between items-center h-row-height-md px-container-padding w-full">
+<button class="text-primary dark:text-primary-fixed hover:bg-surface-variant/50 dark:hover:bg-surface-container-high/50 p-2 rounded-full transition-colors duration-200">
+<span class="material-symbols-outlined" data-icon="arrow_back" data-weight="regular">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md text-primary dark:text-primary-fixed font-bold tracking-tight">Precision Mobility</h1>
+<button class="text-primary dark:text-primary-fixed hover:bg-surface-variant/50 dark:hover:bg-surface-container-high/50 p-2 rounded-full transition-colors duration-200">
+<span class="material-symbols-outlined" data-icon="help" data-weight="regular">help</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-y-auto pt-[80px] pb-[100px] px-container-padding">
+<!-- Header & Tabs -->
+<div class="mb-6 sticky top-0 bg-background/90 backdrop-blur-sm z-40 py-2 pt-4">
+<h2 class="font-headline-md text-headline-md text-primary mb-4">Notifications</h2>
+<div class="flex space-x-2 overflow-x-auto hide-scrollbar pb-2">
+<button class="px-5 py-2 rounded-full bg-primary-container text-on-primary-fixed font-label-sm text-label-sm flex-shrink-0 transition-all shadow-sm">All</button>
+<button class="px-5 py-2 rounded-full bg-surface-container-highest text-on-surface-variant font-label-sm text-label-sm flex-shrink-0 transition-all hover:bg-surface-variant">Trips</button>
+<button class="px-5 py-2 rounded-full bg-surface-container-highest text-on-surface-variant font-label-sm text-label-sm flex-shrink-0 transition-all hover:bg-surface-variant">Account</button>
+</div>
+</div>
+<!-- Notification List -->
+<div class="space-y-6">
+<!-- Group: New -->
+<section>
+<h3 class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-3 ml-2">New</h3>
+<div class="space-y-3">
+<!-- Notification Item: Driver Arriving (Unread) -->
+<div class="bg-surface-container-low rounded-lg p-4 flex items-start gap-4 relative overflow-hidden group cursor-pointer hover:bg-surface-container transition-colors shadow-sm">
+<!-- Unread Indicator -->
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-primary-container rounded-l-lg"></div>
+<div class="h-10 w-10 rounded-full bg-primary-fixed flex items-center justify-center flex-shrink-0 text-on-primary-fixed">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">directions_car</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-1">
+<h4 class="font-body-md text-body-md font-semibold text-on-background truncate">Driver arriving soon</h4>
+<span class="font-label-sm text-label-sm text-primary-container font-semibold whitespace-nowrap ml-2">2m ago</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2">Your driver, Michael, is 2 minutes away in a Black Sedan (XYZ-123).</p>
+</div>
+<!-- Swipe Action Hint (Visual Only) -->
+<div class="absolute right-0 top-0 bottom-0 w-16 bg-error flex items-center justify-center translate-x-full group-active:translate-x-0 transition-transform duration-300 rounded-r-lg">
+<span class="material-symbols-outlined text-on-error">delete</span>
+</div>
+</div>
+<!-- Notification Item: Payment Status (Unread) -->
+<div class="bg-surface-container-low rounded-lg p-4 flex items-start gap-4 relative overflow-hidden group cursor-pointer hover:bg-surface-container transition-colors shadow-sm">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-primary-container rounded-l-lg"></div>
+<div class="h-10 w-10 rounded-full bg-secondary-fixed-dim flex items-center justify-center flex-shrink-0 text-on-secondary-fixed">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">credit_card</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-1">
+<h4 class="font-body-md text-body-md font-semibold text-on-background truncate">Payment successful</h4>
+<span class="font-label-sm text-label-sm text-primary-container font-semibold whitespace-nowrap ml-2">15m ago</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2">Receipt for your trip to Downtown Core has been emailed.</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Group: Earlier -->
+<section>
+<h3 class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-3 ml-2">Earlier</h3>
+<div class="space-y-3">
+<!-- Notification Item: Trip Completed (Read) -->
+<div class="bg-surface-container-low rounded-lg p-4 flex items-start gap-4 relative overflow-hidden group cursor-pointer hover:bg-surface-container transition-colors">
+<div class="h-10 w-10 rounded-full bg-surface-variant flex items-center justify-center flex-shrink-0 text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">check_circle</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-1">
+<h4 class="font-body-md text-body-md text-on-background truncate">Trip completed</h4>
+<span class="font-label-sm text-label-sm text-on-surface-variant whitespace-nowrap ml-2">3h ago</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2">How was your ride? Rate your trip to help us improve.</p>
+</div>
+</div>
+<!-- Notification Item: Account Alert (Read) -->
+<div class="bg-surface-container-low rounded-lg p-4 flex items-start gap-4 relative overflow-hidden group cursor-pointer hover:bg-surface-container transition-colors">
+<div class="h-10 w-10 rounded-full bg-surface-variant flex items-center justify-center flex-shrink-0 text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">manage_accounts</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-1">
+<h4 class="font-body-md text-body-md text-on-background truncate">New device login</h4>
+<span class="font-label-sm text-label-sm text-on-surface-variant whitespace-nowrap ml-2">Yesterday</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2">A new sign-in was detected on iOS Device. If this was you, no action is needed.</p>
+</div>
+</div>
+<!-- Notification Item: Cancellation (Read) -->
+<div class="bg-surface-container-low rounded-lg p-4 flex items-start gap-4 relative overflow-hidden group cursor-pointer hover:bg-surface-container transition-colors">
+<div class="h-10 w-10 rounded-full bg-surface-variant flex items-center justify-center flex-shrink-0 text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">cancel</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-1">
+<h4 class="font-body-md text-body-md text-on-background truncate">Booking cancelled</h4>
+<span class="font-label-sm text-label-sm text-on-surface-variant whitespace-nowrap ml-2">Oct 24</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2">Your advance booking for Oct 25 has been cancelled at your request.</p>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- Bottom Nav Bar from JSON - Suppressed as per instructions for sub-pages, but instruction dictates rendering the JSON components exactly. Wait, the instruction says "suppress the navigation to prioritize the content canvas" for task-focused pages, BUT this might be considered a top-level tab if it had one, but JSON doesn't list it. The JSON lists Home, Trips, Wallet, Account. "Notifications" is not in the JSON tab list, so it's a sub-page. I MUST SUPPRESS the BottomNavBar per the Semantic Shell Mandate: "Automatic Suppression: You MUST exclude the navigation shell if the page intent is... Task-Focused: Any sub-page featuring a 'Close' or 'Back' action". The TopAppBar has a back action. Therefore, DO NOT RENDER BottomNavBar. -->
+<style>
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</body></html>

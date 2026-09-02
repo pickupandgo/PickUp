@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Customer Live Tracking - Pick Up</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-container": "#d4dfff",
+                        "surface-container-highest": "#e5e1e4",
+                        "outline": "#77767e",
+                        "on-secondary-container": "#57637e",
+                        "on-secondary": "#ffffff",
+                        "surface-bright": "#fcf8fb",
+                        "primary-fixed": "#dde1ff",
+                        "primary-container": "#151a31",
+                        "surface-variant": "#e5e1e4",
+                        "on-surface": "#1b1b1d",
+                        "surface-container": "#f0edef",
+                        "on-error": "#ffffff",
+                        "on-secondary-fixed": "#0e1b33",
+                        "background": "#fcf8fb",
+                        "surface": "#fcf8fb",
+                        "tertiary": "#000000",
+                        "on-primary-container": "#7e829e",
+                        "on-background": "#1b1b1d",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed": "#f3e0c5",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "surface-tint": "#585d77",
+                        "error-container": "#ffdad6",
+                        "on-surface-variant": "#46464d",
+                        "on-error-container": "#93000a",
+                        "on-tertiary-container": "#91826a",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "error": "#ba1a1a",
+                        "tertiary-container": "#231a09",
+                        "inverse-primary": "#c0c5e3",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "secondary-fixed": "#d8e2ff",
+                        "surface-container-high": "#eae7e9",
+                        "surface-dim": "#dcd9db",
+                        "primary": "#000000",
+                        "on-secondary-fixed-variant": "#3b4760",
+                        "secondary": "#525e79",
+                        "on-primary": "#ffffff",
+                        "inverse-surface": "#313032",
+                        "inverse-on-surface": "#f3f0f2",
+                        "on-tertiary-fixed": "#231a09",
+                        "on-primary-fixed-variant": "#40465e",
+                        "surface-container-low": "#f6f3f5",
+                        "on-primary-fixed": "#151a31",
+                        "on-tertiary": "#ffffff",
+                        "outline-variant": "#c7c5ce",
+                        "on-tertiary-fixed-variant": "#514531"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "12px",
+                        "unit": "4px",
+                        "row-height-sm": "40px",
+                        "container-padding": "16px",
+                        "row-height-md": "56px"
+                    },
+                    "fontFamily": {
+                        "data-mono": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.filled {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        /* Map Background Pattern */
+        .bg-map-pattern {
+            background-color: #f3f0f2;
+            background-image: radial-gradient(#dcd9db 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        /* Pulse Animation */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+        .animate-pulse-ring::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            background-color: inherit;
+            border-radius: 50%;
+            z-index: -1;
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md antialiased overflow-hidden h-screen flex flex-col relative">
+<!-- Network Offline Banner (Simulated State) -->
+<div class="hidden absolute top-row-height-md left-0 w-full z-40 bg-error-container text-on-error-container px-container-padding py-2 text-center font-label-sm flex items-center justify-center gap-2" id="networkBanner">
+<span class="material-symbols-outlined text-[16px]">wifi_off</span>
+        Reconnecting... trying to find your driver
+    </div>
+<!-- TopAppBar (from JSON but adapted for Live Tracking) -->
+<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-md flex items-center justify-between px-container-padding h-row-height-md">
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:bg-surface-container-low transition-colors duration-200 p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary">Live Tracking</h1>
+</div>
+<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-full">
+<div class="w-2 h-2 rounded-full bg-error animate-pulse"></div>
+<span class="font-label-caps text-label-caps text-on-surface-variant">LIVE</span>
+</div>
+</header>
+<!-- Main Content Area (Map First) -->
+<main class="flex-1 relative mt-row-height-md bg-map-pattern">
+<!-- Simulated Map Elements -->
+<!-- Route Line -->
+<svg class="absolute inset-0 w-full h-full pointer-events-none" style="z-index: 1;">
+<path class="opacity-30" d="M 100 150 Q 150 300 200 450 T 350 600" fill="none" stroke="#151a31" stroke-dasharray="8 8" stroke-linecap="round" stroke-width="4"></path>
+<path d="M 100 150 Q 150 200 180 350" fill="none" stroke="#151a31" stroke-linecap="round" stroke-width="4"></path>
+</svg>
+<!-- Pickup Marker -->
+<div class="absolute top-[130px] left-[80px] z-10 flex flex-col items-center">
+<div class="w-8 h-8 bg-surface rounded-full flex items-center justify-center shadow-sm border-2 border-primary-container">
+<div class="w-3 h-3 bg-primary-container rounded-full"></div>
+</div>
+<span class="mt-1 font-label-sm text-label-sm text-on-surface-variant bg-surface/80 px-2 py-0.5 rounded-full backdrop-blur-sm">Pickup</span>
+</div>
+<!-- Driver Marker (Pulsing) -->
+<div class="absolute top-[330px] left-[160px] z-20 flex flex-col items-center">
+<div class="relative w-12 h-12 bg-primary-container rounded-full flex items-center justify-center shadow-md animate-pulse-ring text-on-primary">
+<span class="material-symbols-outlined">local_shipping</span>
+</div>
+<div class="mt-2 bg-surface shadow-sm rounded-full px-3 py-1 flex items-center gap-2 border border-surface-container-highest">
+<span class="font-label-sm text-label-sm text-on-surface">10s ago</span>
+</div>
+</div>
+<!-- Drop 1 Marker -->
+<div class="absolute top-[430px] left-[180px] z-10 flex flex-col items-center">
+<div class="w-8 h-8 bg-surface rounded-full flex items-center justify-center shadow-sm border-2 border-outline-variant text-on-surface-variant font-label-caps text-label-caps">
+                1
+            </div>
+</div>
+<!-- Drop 2 Marker -->
+<div class="absolute top-[580px] left-[330px] z-10 flex flex-col items-center">
+<div class="w-8 h-8 bg-surface rounded-full flex items-center justify-center shadow-sm border-2 border-outline-variant text-on-surface-variant font-label-caps text-label-caps">
+                2
+            </div>
+</div>
+<!-- Bottom Overlay Container -->
+<div class="absolute bottom-0 left-0 w-full z-30 pb-6 px-4 flex flex-col gap-4">
+<!-- Trip Status Card (Soft Floating) -->
+<div class="bg-surface rounded-[24px] p-5 shadow-[0_8px_32px_rgba(0,0,0,0.08)] border border-surface-container-highest flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface">Drop 1 of 3</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Arriving at Ratanada Hub in <span class="font-semibold text-primary">8 mins</span></p>
+</div>
+<div class="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full font-label-sm text-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">schedule</span>
+                        On time
+                    </div>
+</div>
+<!-- Progress Bar -->
+<div class="w-full bg-surface-container-high h-2 rounded-full overflow-hidden flex">
+<div class="bg-primary-container h-full w-1/3 rounded-full"></div>
+</div>
+<div class="border-t border-surface-container-highest pt-4 mt-2">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 bg-surface-container-high rounded-full overflow-hidden flex items-center justify-center relative">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of an Indian delivery driver wearing a collared shirt, well-lit, soft shadows, set against a neutral grey background. The mood is approachable and trustworthy. Minimalist modern corporate aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAYxDfKWkql2FzNNKIvWwllsFCfV1EJB7hgJVlqQnN2zZddz3ghiCKWVDPh6vT148pwJsJ0-t5hQSMLgWIHA3fI_whpumXXal41ET6rm3ikc97ewMjgK5AZOILyLBCP0RwitS2uFtAJopxWPD_mEAW3OhDHhUjFnO4YAMnjz8EFhTi-xIzHpBZ7mrAqYjbRfs4o0ee3MtFxJYBk6QexvPED286SMZgBwsNy4MFskQGuwA6B2Nj5kG4W"/>
+</div>
+<div>
+<h3 class="font-data-mono text-data-mono text-on-surface">Ramesh Kumar</h3>
+<div class="flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm mt-0.5">
+<span class="material-symbols-outlined filled text-[14px] text-tertiary-fixed-variant">star</span>
+                                     4.8
+                                     <span class="mx-1">•</span>
+                                     Tata Ace
+                                 </div>
+</div>
+</div>
+<div class="font-label-caps text-label-caps text-on-surface bg-surface-container-low px-2 py-1 rounded-md border border-surface-container-highest">
+                             RJ 19 XX 1234
+                         </div>
+</div>
+<!-- Actions -->
+<div class="flex gap-3 mt-4">
+<button class="flex-1 bg-surface-container-low text-on-surface hover:bg-surface-container-high transition-colors py-3 rounded-full font-label-sm text-label-sm flex items-center justify-center gap-2 border border-surface-container-highest">
+<span class="material-symbols-outlined text-[18px]">call</span>
+                            Call
+                        </button>
+<button class="flex-1 bg-surface-container-low text-on-surface hover:bg-surface-container-high transition-colors py-3 rounded-full font-label-sm text-label-sm flex items-center justify-center gap-2 border border-surface-container-highest">
+<span class="material-symbols-outlined text-[18px]">chat</span>
+                            Chat
+                        </button>
+<button class="w-12 h-12 bg-surface-container-low text-on-surface hover:bg-surface-container-high transition-colors rounded-full flex items-center justify-center border border-surface-container-highest flex-shrink-0">
+<span class="material-symbols-outlined">share</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Hidden here as per logic: task-focused screen) -->
+<!-- Navigation shell suppressed for linear/tracking focus -->
+</body></html>

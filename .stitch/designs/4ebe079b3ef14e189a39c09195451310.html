@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Pick Up - Driver Assigned</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed": "#d8e2ff",
+                    "inverse-surface": "#313032",
+                    "inverse-on-surface": "#f3f0f2",
+                    "surface-container": "#f0edef",
+                    "outline-variant": "#c7c5ce",
+                    "on-tertiary-fixed": "#231a09",
+                    "error": "#ba1a1a",
+                    "surface-bright": "#fcf8fb",
+                    "on-background": "#1b1b1d",
+                    "on-surface-variant": "#46464d",
+                    "on-secondary-container": "#57637e",
+                    "surface-tint": "#585d77",
+                    "on-primary-fixed": "#151a31",
+                    "primary-fixed-dim": "#c0c5e3",
+                    "primary-container": "#151a31",
+                    "on-tertiary-container": "#91826a",
+                    "primary": "#000000",
+                    "inverse-primary": "#c0c5e3",
+                    "on-error-container": "#93000a",
+                    "surface-container-low": "#f6f3f5",
+                    "on-secondary-fixed-variant": "#3b4760",
+                    "secondary-container": "#d4dfff",
+                    "on-surface": "#1b1b1d",
+                    "on-tertiary": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "on-secondary-fixed": "#0e1b33",
+                    "on-secondary": "#ffffff",
+                    "primary-fixed": "#dde1ff",
+                    "on-tertiary-fixed-variant": "#514531",
+                    "on-primary-container": "#7e829e",
+                    "surface-container-lowest": "#ffffff",
+                    "surface-variant": "#e5e1e4",
+                    "surface-dim": "#dcd9db",
+                    "tertiary": "#000000",
+                    "secondary-fixed-dim": "#bac6e6",
+                    "on-primary": "#ffffff",
+                    "on-primary-fixed-variant": "#40465e",
+                    "outline": "#77767e",
+                    "on-error": "#ffffff",
+                    "tertiary-container": "#231a09",
+                    "surface-container-high": "#eae7e9",
+                    "surface-container-highest": "#e5e1e4",
+                    "secondary": "#525e79",
+                    "surface": "#fcf8fb",
+                    "tertiary-fixed": "#f3e0c5",
+                    "background": "#fcf8fb",
+                    "tertiary-fixed-dim": "#d6c4aa"
+            },
+            "borderRadius": {
+                    "DEFAULT": "1rem",
+                    "lg": "2rem",
+                    "xl": "3rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "row-height-sm": "40px",
+                    "gutter": "12px",
+                    "row-height-md": "56px",
+                    "container-padding": "16px",
+                    "unit": "4px"
+            },
+            "fontFamily": {
+                    "data-mono": ["Inter"],
+                    "label-caps": ["Inter"],
+                    "label-sm": ["Inter"],
+                    "body-md": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "headline-sm": ["Inter"],
+                    "body-lg": ["Inter"]
+            },
+            "fontSize": {
+                    "data-mono": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+                    "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                    "headline-sm": ["16px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "body-lg": ["15px", {"lineHeight": "22px", "fontWeight": "400"}]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        .map-gradient {
+            background: linear-gradient(to bottom, transparent 0%, var(--surface-container-low) 90%);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface font-body-md antialiased min-h-screen pb-24 md:pb-0">
+<!-- Top App Bar -->
+<header class="bg-surface dark:bg-background w-full sticky top-0 flex items-center justify-between px-container-padding h-row-height-md max-w-7xl mx-auto z-50">
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:bg-surface-container-low transition-colors rounded-full p-2 active:scale-95 duration-150 flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed-dim">Trip Details</h1>
+</div>
+</header>
+<main class="max-w-7xl mx-auto w-full relative">
+<!-- Map Canvas Area (Visual Representation) -->
+<div class="w-full h-[353px] md:h-[442px] bg-surface-container relative flex items-center justify-center overflow-hidden">
+<!-- Placeholder for a map image -->
+<img class="absolute inset-0 w-full h-full object-cover opacity-60" data-alt="A modern, minimalist map interface in a calm-tech style, featuring soft light-mode colors (off-white, subtle grey lines). A distinct charcoal route line connects a pickup point to a driver icon. The map is focused on a city area, uncluttered and professional." data-location="Jodhpur, India" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA28cLUnVVRVaSHJOdRuzgZjKppEqFuT5so4q4W35xmGab0vLLcVZXOWINiIy68iUgn1VrfXRMfVXUkf0kBaQEefit23WUXhFbwvfRlPGkyqadWtqvDvsNDDazyD9MzN46EsEG-fyYTGM51950UdOMOp2wCwM9PKS7LLgNKbR-XThbtH7Ii7MtWc3NCD9LoRv5ajpMA35oFhTEquN7GaDHQVD7Bo_oSeu0wepcZoQgJXgsgiPjlEHqb"/>
+<!-- Map Overlay Gradient to blend with content below -->
+<div class="absolute inset-x-0 bottom-0 h-32 map-gradient z-10 pointer-events-none"></div>
+<!-- Mock Map Elements (Driver & Pickup) -->
+<div class="absolute top-1/3 left-1/4 z-20 flex flex-col items-center">
+<div class="bg-surface-container-lowest p-2 rounded-full shadow-sm animate-pulse">
+<span class="material-symbols-outlined text-primary" data-icon="local_shipping" data-weight="fill">local_shipping</span>
+</div>
+<div class="bg-primary text-on-primary font-label-caps text-label-caps px-2 py-1 rounded mt-1 shadow-sm">4 MIN</div>
+</div>
+<div class="absolute top-1/2 left-1/2 z-20 flex flex-col items-center">
+<div class="bg-primary p-1.5 rounded-full shadow-sm border-2 border-surface-container-lowest">
+<div class="w-2 h-2 bg-surface-container-lowest rounded-full"></div>
+</div>
+</div>
+<!-- Mock Route Line (SVG) -->
+<svg class="absolute inset-0 w-full h-full pointer-events-none z-10" preserveaspectratio="none" viewbox="0 0 100 100">
+<path class="text-primary opacity-30" d="M25,33 C40,40 45,50 50,50" fill="none" stroke="currentColor" stroke-dasharray="2,2" stroke-width="0.5"></path>
+</svg>
+</div>
+<!-- Content Area -->
+<div class="px-container-padding -mt-8 relative z-30 pb-8 space-y-4 max-w-lg mx-auto md:max-w-full md:grid md:grid-cols-2 md:gap-8 md:px-8 md:-mt-16 md:space-y-0">
+<!-- Left Column / Main Stack -->
+<div class="space-y-4">
+<!-- Status Banner -->
+<div class="bg-surface-container-lowest rounded-[24px] p-6 shadow-sm border border-surface-container-low">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-secondary-container text-sm" data-icon="schedule">schedule</span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Arriving in 4 mins</h2>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant">Driver is on the way to your pickup location.</p>
+</div>
+<!-- Driver Info Card -->
+<div class="bg-surface-container-lowest rounded-[24px] p-6 shadow-sm border border-surface-container-low space-y-6">
+<div class="flex justify-between items-start">
+<div class="flex gap-4 items-center">
+<div class="w-14 h-14 rounded-full overflow-hidden bg-surface-container border-2 border-surface flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="Professional portrait of an Indian male delivery driver, smiling subtly, wearing a clean uniform, modern light corporate aesthetic, plain neutral background, well-lit." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAkxoEdQOf30gW6pDewFHY2PByhn6TVKuXsi_CmFRhj5u6pTDQXutuhNshIaV6Z8D4n9PD2i1WO2CS8Vw78R4JL4VF6Zgm8TSP4wOIO-iKdZzA-XiP0zY_ZjaUYA43Tk8QqXaM6Sjb04XuD5_weeYTIdXgZgy119Gnutg9LTzoT8Y9eNPc-rYTmvE0mXsbk1g7N6oPptLsfil-yqnPwi1DnlmsdbIinA4C-IIgmd4ygZ7gA4lhMm7nZ"/>
+</div>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Ramesh Kumar</h3>
+<div class="flex items-center gap-1 mt-1 bg-surface-container-low px-2 py-0.5 rounded-full w-max">
+<span class="material-symbols-outlined text-on-tertiary-container text-[14px]" data-icon="star" data-weight="fill">star</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">4.8</span>
+</div>
+</div>
+</div>
+<div class="text-right">
+<p class="font-body-md text-body-md font-semibold text-on-surface">Tata Ace</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant">RJ 19 XX 1234</p>
+</div>
+</div>
+<!-- Communication Actions -->
+<div class="flex items-center justify-between pt-4 border-t border-surface-container-low">
+<div class="flex gap-3 w-full">
+<button class="flex-1 bg-primary text-on-primary font-body-md text-body-md rounded-full py-3 px-4 flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
+                                Track Driver
+                            </button>
+<button class="w-12 h-12 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center hover:opacity-80 transition-opacity">
+<span class="material-symbols-outlined" data-icon="call">call</span>
+</button>
+<button class="w-12 h-12 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center hover:opacity-80 transition-opacity">
+<span class="material-symbols-outlined" data-icon="chat_bubble">chat_bubble</span>
+</button>
+</div>
+</div>
+<p class="font-label-caps text-label-caps text-on-surface-variant text-center opacity-70">Calls are masked for your privacy</p>
+</div>
+</div>
+<!-- Right Column / Logistics -->
+<div class="space-y-4">
+<!-- Logistics Summary Card -->
+<div class="bg-surface-container-lowest rounded-[24px] p-6 shadow-sm border border-surface-container-low">
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-6">Logistics Details</h3>
+<div class="relative pl-6 space-y-6">
+<!-- Timeline Line -->
+<div class="absolute left-[11px] top-2 bottom-2 w-0.5 bg-surface-container-high z-0"></div>
+<!-- Pickup -->
+<div class="relative z-10">
+<div class="absolute -left-6 top-1 w-3 h-3 rounded-full bg-primary ring-4 ring-surface-container-lowest"></div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Pickup</p>
+<p class="font-body-lg text-body-lg text-on-surface">Sardarpura Warehouse</p>
+</div>
+<!-- Drops Summary -->
+<div class="relative z-10">
+<div class="absolute -left-6 top-1 w-3 h-3 rounded-full border-2 border-primary bg-surface-container-lowest ring-4 ring-surface-container-lowest"></div>
+<div class="flex items-center gap-2 mb-1">
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Drops</p>
+<span class="bg-secondary-container text-on-secondary-container font-label-caps px-2 py-0.5 rounded-full">3 Locations</span>
+</div>
+<ul class="font-body-md text-body-md text-on-surface-variant space-y-1">
+<li>1. Ratanada Hub</li>
+<li>2. Pal Road</li>
+<li>3. Basni Phase II</li>
+</ul>
+</div>
+</div>
+</div>
+<!-- Cancel Action -->
+<div class="flex justify-center mt-6">
+<button class="font-body-md text-body-md text-error hover:bg-error-container/50 px-4 py-2 rounded-full transition-colors">
+                        Cancel Booking
+                    </button>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Nav Bar (Suppressed on this specific focused journey screen based on prompt requirements, but structural container left empty for layout consistency if needed, though usually completely hidden on transactional screens) -->
+<div class="hidden md:hidden fixed bottom-0 w-full z-50">
+<!-- Rendered invisible or removed based on the 'Shell Visibility & Relevance (THE FILTER)' rule for transactional/active journey screens -->
+</div>
+</body></html>

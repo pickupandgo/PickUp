@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Trip Progress - Next Drop</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-container": "#57637e",
+                        "secondary": "#525e79",
+                        "inverse-on-surface": "#f3f0f2",
+                        "on-error-container": "#93000a",
+                        "error": "#ba1a1a",
+                        "secondary-container": "#d4dfff",
+                        "on-primary-fixed": "#151a31",
+                        "background": "#fcf8fb",
+                        "surface-container": "#f0edef",
+                        "tertiary-fixed-dim": "#d6c4aa",
+                        "on-secondary": "#ffffff",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "surface-dim": "#dcd9db",
+                        "inverse-surface": "#313032",
+                        "surface-container-highest": "#e5e1e4",
+                        "tertiary": "#000000",
+                        "surface-variant": "#e5e1e4",
+                        "surface": "#fcf8fb",
+                        "on-tertiary-container": "#91826a",
+                        "tertiary-fixed": "#f3e0c5",
+                        "on-primary-container": "#7e829e",
+                        "on-tertiary": "#ffffff",
+                        "primary-fixed-dim": "#c0c5e3",
+                        "on-surface-variant": "#46464d",
+                        "surface-tint": "#585d77",
+                        "error-container": "#ffdad6",
+                        "inverse-primary": "#c0c5e3",
+                        "secondary-fixed-dim": "#bac6e6",
+                        "outline": "#77767e",
+                        "on-tertiary-fixed": "#231a09",
+                        "on-primary": "#ffffff",
+                        "primary-fixed": "#dde1ff",
+                        "tertiary-container": "#231a09",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-container": "#151a31",
+                        "surface-container-low": "#f6f3f5",
+                        "secondary-fixed": "#d8e2ff",
+                        "surface-container-high": "#eae7e9",
+                        "on-secondary-fixed": "#0e1b33",
+                        "primary": "#000000",
+                        "on-background": "#1b1b1d",
+                        "on-error": "#ffffff",
+                        "surface-bright": "#fcf8fb",
+                        "outline-variant": "#c7c5ce",
+                        "on-surface": "#1b1b1d",
+                        "on-primary-fixed-variant": "#40465e",
+                        "on-secondary-fixed-variant": "#3b4760"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "container-padding": "16px",
+                        "row-height-sm": "40px",
+                        "unit": "4px",
+                        "row-height-md": "56px",
+                        "gutter": "12px"
+                    },
+                    "fontFamily": {
+                        "label-sm": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "data-mono": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "headline-sm": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface min-h-screen pb-24 font-body-md antialiased flex flex-col items-center">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-md transition-colors duration-200 flat no shadows flex justify-between items-center h-row-height-md px-container-padding">
+<button class="p-2 -ml-2 text-primary hover:bg-surface-variant/50 rounded-full transition-colors duration-200">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold text-primary">Trip Progress</h1>
+<button class="p-2 -mr-2 text-primary hover:bg-surface-variant/50 rounded-full transition-colors duration-200">
+<span class="material-symbols-outlined">help</span>
+</button>
+</header>
+<!-- Main Content -->
+<main class="w-full max-w-md pt-20 px-container-padding flex flex-col gap-6">
+<!-- Status Banner -->
+<div class="flex items-center justify-center bg-secondary-container rounded-full py-2 px-4 shadow-sm">
+<span class="material-symbols-outlined text-on-secondary-container mr-2 text-sm" style="font-variation-settings: 'FILL' 1;">local_shipping</span>
+<span class="font-label-caps text-label-caps text-on-secondary-container uppercase tracking-wider">On the way to Drop 3</span>
+</div>
+<!-- Next Drop Card -->
+<div class="bg-surface-container-low rounded-lg p-6 shadow-[0_4px_24px_rgba(0,0,0,0.03)] border border-surface-variant">
+<div class="flex justify-between items-start mb-6">
+<div>
+<h2 class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider mb-1">Drop 3 of 3</h2>
+<p class="font-headline-sm text-headline-sm text-on-surface">Basni Phase II, Jodhpur</p>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Receiver: Vikram Singh</p>
+</div>
+<div class="bg-primary-container text-on-primary text-primary-fixed rounded-md px-3 py-1 flex flex-col items-center justify-center">
+<span class="font-data-mono text-data-mono font-bold text-white">12</span>
+<span class="font-label-sm text-label-sm text-white/80">MINS</span>
+</div>
+</div>
+<div class="w-full h-px bg-outline-variant/30 mb-6"></div>
+<div class="flex items-center gap-4 mb-6">
+<div class="w-12 h-12 rounded-full bg-surface-variant flex items-center justify-center relative overflow-hidden">
+<img class="w-full h-full object-cover absolute inset-0" data-alt="A close up professional headshot of an Indian male driver in his 40s wearing a clean uniform shirt. The lighting is soft and natural, suggesting daytime. The background is a blurred vehicle interior. The mood is reliable and friendly, fitting a premium logistics app interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBnEnETuos5mXxpcZlzMV9jDI2jlBukCmFjbTM3Upum9pmDvkOeuDYmcmxAVS3fiqSl9fBh2eONkfv0vOg0sihtR7wuCx5rmwOncebo5qA8mkbP0yueGwDMtV6SA1b5rh0fc_OX9Vm52qdebVUcePKNf7bv6o_XEP2wrC2pgI1evIGbw0g89COHKhIqQtTrnvuCE0MIHqCju27qG4rc1r8HSwtHoQy0qva25oT_45hiKdDeLN5nKJnj"/>
+</div>
+<div class="flex-1">
+<p class="font-label-sm text-label-sm text-on-surface-variant mb-1">In Transit</p>
+<p class="font-body-md text-body-md text-on-surface font-medium">Ramesh is driving to your location</p>
+</div>
+</div>
+<div class="flex flex-col gap-3">
+<button class="w-full bg-primary text-on-primary rounded-full h-row-height-md flex items-center justify-center font-headline-sm text-headline-sm hover:opacity-90 transition-opacity">
+                    Track Driver
+                </button>
+<div class="flex gap-3">
+<button class="flex-1 bg-secondary-container text-on-secondary-container rounded-full h-10 flex items-center justify-center gap-2 font-label-sm text-label-sm hover:bg-secondary-fixed transition-colors">
+<span class="material-symbols-outlined text-lg">call</span>
+                        Call
+                    </button>
+<button class="flex-1 bg-secondary-container text-on-secondary-container rounded-full h-10 flex items-center justify-center gap-2 font-label-sm text-label-sm hover:bg-secondary-fixed transition-colors">
+<span class="material-symbols-outlined text-lg">chat</span>
+                        Chat
+                    </button>
+</div>
+</div>
+</div>
+<!-- Route Context Timeline -->
+<div class="bg-surface-container-low rounded-lg p-6 shadow-[0_4px_24px_rgba(0,0,0,0.03)] border border-surface-variant">
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-6">Journey Details</h3>
+<div class="relative pl-6 border-l-2 border-surface-variant ml-3 space-y-6">
+<!-- Drop 2 -->
+<div class="relative">
+<div class="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-surface-variant border-2 border-surface flex items-center justify-center">
+<div class="w-2 h-2 rounded-full bg-outline"></div>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant">Drop 2</p>
+<p class="font-label-sm text-label-sm text-outline mt-1">Completed at 10:45 AM</p>
+</div>
+<!-- Drop 3 -->
+<div class="relative">
+<div class="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-primary border-2 border-surface shadow-[0_0_0_2px_rgba(0,0,0,0.1)]"></div>
+<p class="font-body-md text-body-md text-on-surface font-semibold">Drop 3</p>
+<p class="font-label-sm text-label-sm text-primary mt-1">Next Stop</p>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Suppressed due to linear/focused journey context) -->
+<!-- The user is in an active trip progress state, which acts as a focused transaction screen. Hiding bottom nav to prioritize track driver canvas. -->
+</body></html>

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Delivery Proof - Pick Up App</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-tertiary-container": "#91826a",
+                    "surface-container-highest": "#e5e1e4",
+                    "on-error": "#ffffff",
+                    "secondary": "#525e79",
+                    "secondary-fixed-dim": "#bac6e6",
+                    "tertiary": "#000000",
+                    "surface-container": "#f0edef",
+                    "surface-variant": "#e5e1e4",
+                    "surface-container-lowest": "#ffffff",
+                    "on-secondary": "#ffffff",
+                    "surface-bright": "#fcf8fb",
+                    "primary-container": "#151a31",
+                    "surface-container-low": "#f6f3f5",
+                    "on-surface": "#1b1b1d",
+                    "on-secondary-container": "#57637e",
+                    "background": "#fcf8fb",
+                    "on-secondary-fixed": "#0e1b33",
+                    "primary": "#000000",
+                    "tertiary-fixed-dim": "#d6c4aa",
+                    "tertiary-container": "#231a09",
+                    "error-container": "#ffdad6",
+                    "on-tertiary-fixed": "#231a09",
+                    "secondary-container": "#d4dfff",
+                    "on-surface-variant": "#46464d",
+                    "on-error-container": "#93000a",
+                    "error": "#ba1a1a",
+                    "on-tertiary": "#ffffff",
+                    "inverse-primary": "#c0c5e3",
+                    "surface-dim": "#dcd9db",
+                    "surface-container-high": "#eae7e9",
+                    "on-background": "#1b1b1d",
+                    "outline": "#77767e",
+                    "on-secondary-fixed-variant": "#3b4760",
+                    "surface": "#fcf8fb",
+                    "surface-tint": "#585d77",
+                    "on-primary-fixed-variant": "#40465e",
+                    "secondary-fixed": "#d8e2ff",
+                    "on-primary-container": "#7e829e",
+                    "tertiary-fixed": "#f3e0c5",
+                    "inverse-on-surface": "#f3f0f2",
+                    "on-tertiary-fixed-variant": "#514531",
+                    "primary-fixed-dim": "#c0c5e3",
+                    "primary-fixed": "#dde1ff",
+                    "on-primary": "#ffffff",
+                    "outline-variant": "#c7c5ce",
+                    "inverse-surface": "#313032",
+                    "on-primary-fixed": "#151a31"
+            },
+            "borderRadius": {
+                    "DEFAULT": "1rem",
+                    "lg": "2rem",
+                    "xl": "3rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "gutter": "12px",
+                    "row-height-sm": "40px",
+                    "row-height-md": "56px",
+                    "unit": "4px",
+                    "container-padding": "16px"
+            },
+            "fontFamily": {
+                    "headline-sm": [
+                            "Inter"
+                    ],
+                    "body-md": [
+                            "Inter"
+                    ],
+                    "headline-md": [
+                            "Inter"
+                    ],
+                    "body-lg": [
+                            "Inter"
+                    ],
+                    "data-mono": [
+                            "Inter"
+                    ],
+                    "label-sm": [
+                            "Inter"
+                    ],
+                    "label-caps": [
+                            "Inter"
+                    ]
+            },
+            "fontSize": {
+                    "headline-sm": [
+                            "16px",
+                            {
+                                    "lineHeight": "24px",
+                                    "letterSpacing": "-0.01em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "body-md": [
+                            "14px",
+                            {
+                                    "lineHeight": "20px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "headline-md": [
+                            "20px",
+                            {
+                                    "lineHeight": "28px",
+                                    "letterSpacing": "-0.02em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "body-lg": [
+                            "15px",
+                            {
+                                    "lineHeight": "22px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "data-mono": [
+                            "14px",
+                            {
+                                    "lineHeight": "20px",
+                                    "letterSpacing": "-0.01em",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "label-sm": [
+                            "12px",
+                            {
+                                    "lineHeight": "16px",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "label-caps": [
+                            "11px",
+                            {
+                                    "lineHeight": "16px",
+                                    "letterSpacing": "0.05em",
+                                    "fontWeight": "600"
+                            }
+                    ]
+            }
+        }
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            -webkit-tap-highlight-color: transparent;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface antialiased min-h-screen flex flex-col font-body-md relative overflow-x-hidden pb-[96px]">
+<!-- TopAppBar -->
+<header class="w-full top-0 bg-surface dark:bg-surface-dim flat no shadows z-40 sticky">
+<div class="flex justify-between items-center px-container-padding h-row-height-md w-full bg-surface dark:bg-surface-dim">
+<button class="text-on-surface-variant dark:text-outline hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors active:scale-95 duration-200 p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md text-primary dark:text-inverse-primary text-center flex-1">Delivery Proof</h1>
+<button class="text-on-surface-variant dark:text-outline hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors active:scale-95 duration-200 p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 px-container-padding py-6 flex flex-col gap-6 max-w-2xl mx-auto w-full">
+<!-- Header Info -->
+<div class="flex flex-col gap-2 items-center text-center">
+<span class="font-label-caps text-label-caps text-on-surface-variant tracking-wider uppercase">DROP 2 OF 3</span>
+<h2 class="font-headline-md text-headline-md text-primary">Pal Road Business Center</h2>
+</div>
+<!-- Status Pill -->
+<div class="flex justify-center">
+<div class="inline-flex items-center gap-2 bg-surface-container-low px-4 py-2 rounded-full">
+<span class="material-symbols-outlined fill text-primary" data-icon="check_circle">check_circle</span>
+<span class="font-data-mono text-data-mono text-on-surface">Handover Successful</span>
+</div>
+</div>
+<!-- Details Grid -->
+<div class="grid grid-cols-2 gap-4 mt-2">
+<div class="bg-surface-container-lowest p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-surface-container-high flex flex-col gap-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">schedule</span> Time
+                </span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Oct 24, 2023 • 10:45 AM</span>
+</div>
+<div class="bg-surface-container-lowest p-4 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-surface-container-high flex flex-col gap-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">location_on</span> Location
+                </span>
+<span class="font-body-md text-body-md text-on-surface font-medium">Verified via GPS</span>
+</div>
+</div>
+<!-- Photo Evidence -->
+<div class="mt-4 flex flex-col gap-3">
+<div class="relative w-full aspect-square md:aspect-[4/3] rounded-[24px] overflow-hidden shadow-sm bg-surface-container group">
+<img alt="Delivery Proof Photo" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="A clear, well-lit, high-resolution photograph of a standard brown cardboard delivery package resting squarely on a clean, modern concrete front porch doorstep. The lighting suggests mid-morning with soft, natural daylight. The composition is straight-on, capturing the package clearly to serve as definitive delivery proof. The overall aesthetic is professional, crisp, and aligned with a modern logistics app interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBHCrsAGBa2RJvy125Yx40g0peCmy48zBXiNKkXV61g_uaKx86SOuwDIi-sE0rzz_Z1nH3xyEd1zOHZRczTr-GL8RsYCmV0f-jflQjmQTjW4KS_p6PwUPxkqKCQPwvtKPHM1GkFDWPzcNKjMqofocqkW_10tgqYLg39rZkI7sCaFCFH6o67OmaHtDGpe_nhuJ-s34GGYbQD-DhBvq0jHf1JxvGrd49y9-o1F2pfdqoab2HZTXXSAgwn"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none"></div>
+<div class="absolute bottom-4 left-4 right-4 flex items-center gap-2 text-white/90 font-label-sm text-label-sm drop-shadow-md">
+<span class="material-symbols-outlined text-[16px]">photo_camera</span>
+                    Photo captured by driver
+                </div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full rounded-t-lg bg-surface-container-lowest dark:bg-surface-container-highest shadow-sm z-50 md:hidden">
+<div class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 px-gutter pb-4 bg-surface-container-lowest dark:bg-surface-container-highest">
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-secondary-fixed-variant hover:bg-surface-container dark:hover:bg-surface-variant transition-all active:scale-90 duration-150 p-2 rounded-lg group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors mb-1" data-icon="local_shipping">local_shipping</span>
+<span class="font-label-sm text-label-sm group-hover:text-primary transition-colors">Deliveries</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary rounded-full px-4 py-1 hover:bg-surface-container dark:hover:bg-surface-variant transition-all active:scale-90 duration-150" href="#">
+<span class="material-symbols-outlined fill mb-1" data-icon="history">history</span>
+<span class="font-label-sm text-label-sm">History</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-secondary-fixed-variant hover:bg-surface-container dark:hover:bg-surface-variant transition-all active:scale-90 duration-150 p-2 rounded-lg group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors mb-1" data-icon="support_agent">support_agent</span>
+<span class="font-label-sm text-label-sm group-hover:text-primary transition-colors">Support</span>
+</a>
+</div>
+</nav>
+</body></html>

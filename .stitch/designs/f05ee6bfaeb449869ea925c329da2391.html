@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Delivery Verification</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-low": "#f6f3f5",
+                    "error": "#ba1a1a",
+                    "on-tertiary-fixed-variant": "#514531",
+                    "surface-tint": "#585d77",
+                    "tertiary-fixed": "#f3e0c5",
+                    "on-primary-container": "#7e829e",
+                    "on-error": "#ffffff",
+                    "secondary-fixed": "#d8e2ff",
+                    "surface-dim": "#dcd9db",
+                    "surface": "#fcf8fb",
+                    "on-error-container": "#93000a",
+                    "inverse-on-surface": "#f3f0f2",
+                    "on-tertiary-fixed": "#231a09",
+                    "on-tertiary-container": "#91826a",
+                    "on-secondary-fixed-variant": "#3b4760",
+                    "surface-container-highest": "#e5e1e4",
+                    "background": "#fcf8fb",
+                    "surface-container-high": "#eae7e9",
+                    "on-secondary-container": "#57637e",
+                    "secondary-fixed-dim": "#bac6e6",
+                    "surface-container": "#f0edef",
+                    "tertiary-container": "#231a09",
+                    "primary": "#000000",
+                    "tertiary-fixed-dim": "#d6c4aa",
+                    "on-surface-variant": "#46464d",
+                    "on-secondary-fixed": "#0e1b33",
+                    "on-surface": "#1b1b1d",
+                    "tertiary": "#000000",
+                    "primary-fixed": "#dde1ff",
+                    "surface-variant": "#e5e1e4",
+                    "surface-bright": "#fcf8fb",
+                    "inverse-primary": "#c0c5e3",
+                    "on-primary-fixed": "#151a31",
+                    "error-container": "#ffdad6",
+                    "on-secondary": "#ffffff",
+                    "outline": "#77767e",
+                    "on-primary-fixed-variant": "#40465e",
+                    "on-background": "#1b1b1d",
+                    "surface-container-lowest": "#ffffff",
+                    "inverse-surface": "#313032",
+                    "on-tertiary": "#ffffff",
+                    "primary-fixed-dim": "#c0c5e3",
+                    "secondary": "#525e79",
+                    "outline-variant": "#c7c5ce",
+                    "secondary-container": "#d4dfff",
+                    "on-primary": "#ffffff",
+                    "primary-container": "#151a31"
+            },
+            "borderRadius": {
+                    "DEFAULT": "1rem",
+                    "lg": "2rem",
+                    "xl": "3rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "container-padding": "16px",
+                    "row-height-sm": "40px",
+                    "row-height-md": "56px",
+                    "unit": "4px",
+                    "gutter": "12px"
+            },
+            "fontFamily": {
+                    "body-md": [
+                            "Inter"
+                    ],
+                    "headline-md": [
+                            "Inter"
+                    ],
+                    "headline-sm": [
+                            "Inter"
+                    ],
+                    "label-sm": [
+                            "Inter"
+                    ],
+                    "data-mono": [
+                            "Inter"
+                    ],
+                    "body-lg": [
+                            "Inter"
+                    ],
+                    "label-caps": [
+                            "Inter"
+                    ]
+            },
+            "fontSize": {
+                    "body-md": [
+                            "14px",
+                            {
+                                    "lineHeight": "20px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "headline-md": [
+                            "20px",
+                            {
+                                    "lineHeight": "28px",
+                                    "letterSpacing": "-0.02em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "headline-sm": [
+                            "16px",
+                            {
+                                    "lineHeight": "24px",
+                                    "letterSpacing": "-0.01em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "label-sm": [
+                            "12px",
+                            {
+                                    "lineHeight": "16px",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "data-mono": [
+                            "14px",
+                            {
+                                    "lineHeight": "20px",
+                                    "letterSpacing": "-0.01em",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "body-lg": [
+                            "15px",
+                            {
+                                    "lineHeight": "22px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "label-caps": [
+                            "11px",
+                            {
+                                    "lineHeight": "16px",
+                                    "letterSpacing": "0.05em",
+                                    "fontWeight": "600"
+                            }
+                    ]
+            }
+    },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background min-h-screen flex flex-col text-on-background">
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky bg-surface dark:bg-surface flex items-center justify-between px-container-padding h-row-height-md max-w-7xl mx-auto z-10">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined text-primary dark:text-primary-fixed-dim" style="font-variation-settings: 'FILL' 0;">arrow_back</span>
+</button>
+<h1 class="font-headline-sm text-headline-sm-mobile md:text-headline-sm text-primary dark:text-primary-fixed-dim font-bold">Delivery Verification</h1>
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined text-primary dark:text-primary-fixed-dim" style="font-variation-settings: 'FILL' 0;">more_vert</span>
+</button>
+</header>
+<main class="flex-grow flex flex-col px-container-padding pt-6 max-w-lg mx-auto w-full">
+<!-- Drop Context Card -->
+<section class="bg-surface-container-low rounded-lg p-6 mb-8 border border-outline-variant/30 relative overflow-hidden">
+<div class="absolute top-0 right-0 p-4 opacity-5">
+<span class="material-symbols-outlined text-6xl" style="font-variation-settings: 'FILL' 1;">package_2</span>
+</div>
+<div class="flex items-center gap-2 mb-4">
+<span class="bg-primary text-on-primary font-label-caps text-label-caps px-2 py-1 rounded-full uppercase tracking-wider">Drop 2 of 3</span>
+</div>
+<div class="mb-4">
+<h2 class="font-headline-md text-headline-md text-on-surface mb-1">Pal Road Business Center</h2>
+<p class="font-body-md text-body-md text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 0;">person</span>
+                    Aravind Sharma
+                </p>
+</div>
+</section>
+<!-- OTP Section -->
+<section class="flex flex-col items-center mb-10">
+<h3 class="font-headline-md text-headline-md text-on-surface mb-2">Delivery OTP</h3>
+<p class="font-body-md text-body-md text-on-surface-variant text-center max-w-[280px] mb-8">
+                Please share this 4-digit code with the driver to confirm your delivery handover.
+            </p>
+<div class="flex gap-4 mb-2" id="otp-container">
+<input class="w-14 h-16 text-center font-headline-md text-[24px] bg-surface-variant rounded-[16px] border-2 border-transparent focus:border-primary focus:bg-surface outline-none transition-all duration-200" maxlength="1" type="text" value="4"/>
+<input class="w-14 h-16 text-center font-headline-md text-[24px] bg-surface-variant rounded-[16px] border-2 border-transparent focus:border-primary focus:bg-surface outline-none transition-all duration-200" maxlength="1" type="text" value="8"/>
+<input autofocus="" class="w-14 h-16 text-center font-headline-md text-[24px] bg-surface-variant rounded-[16px] border-2 border-transparent focus:border-primary focus:bg-surface outline-none transition-all duration-200 focus:border-primary focus:ring-0" maxlength="1" type="text"/>
+<input class="w-14 h-16 text-center font-headline-md text-[24px] bg-surface-variant rounded-[16px] border-2 border-transparent focus:border-primary focus:bg-surface outline-none transition-all duration-200" maxlength="1" type="text"/>
+</div>
+<!-- Error State Example (Hidden by default for this static view) -->
+<p class="font-label-sm text-label-sm text-error mt-2 hidden" id="otp-error">Incorrect OTP. Please try again.</p>
+</section>
+<!-- Spacer -->
+<div class="flex-grow"></div>
+<!-- Actions -->
+<section class="mt-auto pb-8">
+<button class="w-full bg-primary text-on-primary font-headline-sm text-headline-sm h-14 rounded-full flex items-center justify-center gap-2 mb-4 hover:bg-inverse-surface transition-colors active:scale-[0.98] duration-200">
+                VERIFY DELIVERY OTP
+            </button>
+<div class="text-center">
+<button class="font-body-md text-body-md text-secondary hover:text-primary transition-colors underline decoration-secondary/30 underline-offset-4">
+                    Resend OTP
+                </button>
+</div>
+</section>
+</main>
+<script>
+        // Simple interaction script for OTP inputs
+        const inputs = document.querySelectorAll('#otp-container input');
+        
+        inputs.forEach((input, index) => {
+            input.addEventListener('input', (e) => {
+                if (e.target.value.length === 1 && index < inputs.length - 1) {
+                    inputs[index + 1].focus();
+                }
+            });
+            
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && e.target.value === '' && index > 0) {
+                    inputs[index - 1].focus();
+                }
+            });
+        });
+    </script>
+</body></html>
