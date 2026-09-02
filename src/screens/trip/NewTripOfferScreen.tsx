@@ -1,14 +1,18 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { mockTripOffer } from '../../data/mockData';
 import { TripOfferSheet } from '../../components/organisms/TripOfferSheet';
 import { StatusPill } from '../../components/atoms/StatusPill';
 import { DriverMap, MapOverlay, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
 import type { HomeScreenProps } from '../../types/navigation';
+import {
+  acceptRideRequest,
+  rejectRideRequest,
+  getTripIdForRide,
+} from '../../services/engine/dispatch';
 
 export interface NewTripOfferScreenProps {
   readonly navigation: HomeScreenProps<'TripOffer'>['navigation'];
@@ -18,44 +22,60 @@ export interface NewTripOfferScreenProps {
 
 export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
   navigation,
+  route,
   testID,
 }) => {
+  const { offer, driverId } = route.params;
   const { currentLocation } = useDriverLocation();
   const [offerState, setOfferState] = useState<'pending' | 'accepted' | 'expired'>('pending');
+  const [submitting, setSubmitting] = useState(false);
 
   const offerRouteData: RouteData = {
     polylinePoints: [], // Populated in later routing phase
     stops: [
       {
-        id: mockTripOffer.pickupStop.id,
+        id: offer.pickupStop.id,
         type: 'pickup' as StopType,
         coordinate: {
-          latitude: mockTripOffer.pickupStop.latitude,
-          longitude: mockTripOffer.pickupStop.longitude,
-        }
+          latitude: offer.pickupStop.latitude,
+          longitude: offer.pickupStop.longitude,
+        },
       },
-      ...mockTripOffer.dropStops.map((drop, index) => ({
+      ...offer.dropStops.map((drop, index) => ({
         id: drop.id,
         type: 'drop' as StopType,
         coordinate: {
           latitude: drop.latitude,
           longitude: drop.longitude,
         },
-        label: mockTripOffer.dropStops.length > 1 ? String(index + 1) : undefined
-      }))
-    ]
+        label: offer.dropStops.length > 1 ? String(index + 1) : undefined,
+      })),
+    ],
   };
 
-  const handleAccept = useCallback(() => {
+  const handleAccept = useCallback(async () => {
+    if (submitting) return;
+    setSubmitting(true);
     setOfferState('accepted');
-    setTimeout(() => {
-      navigation.navigate('ActiveTrip', { tripId: mockTripOffer.id });
-    }, 2500); 
-  }, [navigation]);
+    try {
+      await acceptRideRequest(offer.id, driverId);
+      const tripId = await getTripIdForRide(offer.id).catch(() => null);
+      navigation.navigate('ActiveTrip', { tripId: tripId ?? offer.id });
+    } catch (e) {
+      setSubmitting(false);
+      setOfferState('pending');
+      Alert.alert(
+        'Request unavailable',
+        'This trip was cancelled or taken by someone else.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }],
+      );
+    }
+  }, [submitting, offer.id, driverId, navigation]);
 
   const handleDecline = useCallback(() => {
+    rejectRideRequest(offer.id, driverId).catch(() => {});
     navigation.goBack();
-  }, [navigation]);
+  }, [offer.id, driverId, navigation]);
 
   const handleExpired = useCallback(() => {
     setOfferState('expired');
@@ -64,39 +84,38 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
     }, 2000);
   }, [navigation]);
 
+  const pickupAddress = offer.pickupStop.address;
+  const dropAddress = offer.dropStops[0]?.address ?? '';
+
   return (
     <View style={styles.flex1} testID={testID}>
       {/* Scrollable Content */}
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <SafeAreaView edges={['top']} style={styles.header}>
           <Text style={styles.headerTitle}>TRIP OFFER</Text>
-          <Text style={styles.headerId}>ID: {mockTripOffer.id.split('-')[0].toUpperCase()}-AX</Text>
+          <Text style={styles.headerId}>ID: {offer.id.slice(0, 8).toUpperCase()}</Text>
         </SafeAreaView>
 
         {/* Embedded Map Card */}
         <View style={styles.mapCard}>
-          <DriverMap 
-            currentLocation={currentLocation || undefined} 
-            routeData={offerRouteData} 
+          <DriverMap
+            currentLocation={currentLocation || undefined}
+            routeData={offerRouteData}
             showControls={false}
             followDriver={true}
           />
-          
+
           {/* Overlays for Pending State (Top) */}
           {(offerState === 'pending' || offerState === 'expired') && (
             <MapOverlay position="top" style={styles.topPillsContainer}>
-              <StatusPill 
-                label="NEW REQUEST" 
-                variant="default" 
-                iconName="circle" 
+              <StatusPill
+                label="NEW REQUEST"
+                variant="default"
+                iconName="circle"
                 style={styles.newRequestPill}
               />
               {offerState === 'expired' && (
-                <StatusPill 
-                  label="EXPIRED" 
-                  variant="danger_outline" 
-                  iconName="timer" 
-                />
+                <StatusPill label="EXPIRED" variant="danger_outline" iconName="timer" />
               )}
             </MapOverlay>
           )}
@@ -104,7 +123,7 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
           {/* Metrics Overlay (Inside Map at Bottom) */}
           <MapOverlay position="bottom" style={styles.metricsOverlay}>
             <View style={styles.metricsCard}>
-              <Text style={styles.metricValue}>45 min • 12.4 mi</Text>
+              <Text style={styles.metricValue}>{offer.totalDistanceKm} km</Text>
             </View>
           </MapOverlay>
         </View>
@@ -120,12 +139,11 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
             <View style={styles.stopContent}>
               <Text style={styles.stopLabel}>PICKUP</Text>
               <Text style={styles.stopAddress} numberOfLines={1}>
-                {mockTripOffer.pickupStop.address}
+                {pickupAddress}
               </Text>
-              <Text style={styles.stopNotes}>{mockTripOffer.pickupStop.notes}</Text>
             </View>
           </View>
-          
+
           {/* Dropoff */}
           <View style={styles.stopRow}>
             <View style={styles.iconTimeline}>
@@ -134,9 +152,8 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
             <View style={styles.stopContent}>
               <Text style={styles.stopLabel}>DROPOFF</Text>
               <Text style={styles.stopAddress} numberOfLines={1}>
-                {mockTripOffer.dropStops[0]?.address}
+                {dropAddress}
               </Text>
-              <Text style={styles.stopNotes}>Requires signature</Text>
             </View>
           </View>
         </View>
@@ -144,14 +161,14 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
         {/* Guaranteed Earnings Card */}
         <View style={styles.guaranteedCard}>
           <View>
-            <Text style={styles.guaranteedLabel}>GUARANTEED EARNINGS</Text>
+            <Text style={styles.guaranteedLabel}>ESTIMATED EARNINGS</Text>
             <Text style={styles.guaranteedValue}>
-              {mockTripOffer.currency}{mockTripOffer.estimatedEarning.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {offer.currency}
+              {offer.estimatedEarning.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
           </View>
           <View style={styles.demandBadge}>
-            <Text style={styles.demandBadgeTop}>High</Text>
-            <Text style={styles.demandBadgeBottom}>Demand</Text>
+            <Text style={styles.demandBadgeTop}>{offer.vehicleType}</Text>
           </View>
         </View>
       </ScrollView>
@@ -159,10 +176,7 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
       {/* Bottom Area: Trip Offer Sheet for Pending */}
       {(offerState === 'pending' || offerState === 'expired') && (
         <TripOfferSheet
-          offer={{
-            ...mockTripOffer,
-            expiresAt: Date.now() + 13000,
-          }}
+          offer={offer}
           onAccept={handleAccept}
           onDecline={handleDecline}
           onExpired={handleExpired}

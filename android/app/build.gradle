@@ -3,6 +3,9 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply plugin: "com.google.gms.google-services"
 
+// Loads the project's `.env` file and exposes values via `project.env`.
+apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
+
 def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) {
@@ -10,7 +13,9 @@ if (localPropertiesFile.exists()) {
         localProperties.load(reader)
     }
 }
-def mapsApiKey = localProperties.getProperty('MAPS_API_KEY', "DUMMY_API_KEY")
+
+// Prefer the Google Maps key from `.env`; fall back to local.properties, then a dummy.
+def mapsApiKey = project.env.get("GOOGLE_MAPS_API_KEY") ?: localProperties.getProperty('MAPS_API_KEY', "DUMMY_API_KEY")
 
 /**
  * This is the configuration block to customize your React Native Android app.

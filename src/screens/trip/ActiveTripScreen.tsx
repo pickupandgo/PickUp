@@ -24,7 +24,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   testID,
 }) => {
   const { currentLocation, error: locationError } = useDriverLocation();
-  const trip = useActiveTrip();
+  const trip = useActiveTrip(navRoute.params?.tripId);
   const { route: routingData } = useTripRoute();
   
   useArrivalDetection((event) => {
@@ -68,8 +68,9 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   const displayDistance = routingData?.totalDistanceMeters ? (routingData.totalDistanceMeters / 1000).toFixed(1) : 4.2; // mock fallback
 
   const handleNavigateToStop = useCallback(() => {
-    if (currentStop) {
-      navigation.navigate('ActiveTrip', { tripId: trip?.id || '' }); 
+    if (trip && currentStop) {
+      // Drop phase: go to the drop confirmation flow.
+      navigation.navigate('DropOTP', { tripId: trip.id, stopId: currentStop.id });
     }
   }, [navigation, currentStop, trip]);
 

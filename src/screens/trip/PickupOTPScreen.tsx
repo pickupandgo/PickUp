@@ -7,7 +7,11 @@ import { otpVerificationLabels } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { OTPInput } from '../../components/atoms/OTPInput';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
+import { TripController } from '../../services/trip/TripController';
 import type { HomeScreenProps } from '../../types/navigation';
+
+/** Engine ride OTP length. */
+const OTP_LENGTH = 4;
 
 /**
  * PickupOTPScreen
@@ -33,18 +37,21 @@ export const PickupOTPScreen: React.FC<PickupOTPScreenProps> = ({
   const handleVerify = useCallback(async () => {
     setIsLoading(true);
     setHasError(false);
-    // Mock verification — will be replaced with API call
-    await new Promise<void>((r) => setTimeout(() => r(), 800));
-    if (otp === '123456') {
+    try {
+      // Verifies the sender OTP against the engine and moves the trip to in-transit.
+      await TripController.getInstance().verifyPickupOTP(tripId, otp);
       setVerified(true);
       setTimeout(() => {
-        navigation.goBack();
+        // Pickup done — go to the active trip (now in the drop phase),
+        // popping the arrived/OTP screens so we don't loop back to them.
+        navigation.navigate('ActiveTrip', { tripId });
       }, 1500);
-    } else {
+    } catch (e) {
       setHasError(true);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
-  }, [otp, navigation]);
+  }, [otp, tripId, navigation]);
 
   const handleComplete = useCallback(async (value: string) => {
     setOtp(value);
@@ -79,6 +86,7 @@ export const PickupOTPScreen: React.FC<PickupOTPScreenProps> = ({
           <Text style={styles.subtitle}>{otpVerificationLabels.pickupOtpSubtitle}</Text>
 
           <OTPInput
+            length={OTP_LENGTH}
             value={otp}
             onChange={setOtp}
             onComplete={handleComplete}
@@ -94,7 +102,7 @@ export const PickupOTPScreen: React.FC<PickupOTPScreenProps> = ({
         <PrimaryButton
           label={otpVerificationLabels.verifyLabel}
           onPress={handleVerify}
-          disabled={otp.length < 6}
+          disabled={otp.length < OTP_LENGTH}
           loading={isLoading}
           style={styles.verifyButton}
         />

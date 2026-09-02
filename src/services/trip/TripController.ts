@@ -49,6 +49,23 @@ export class TripController {
     this.setTrip(updatedTrip);
   }
 
+  /** Driver reached / started the drop (engine: IN_TRANSIT -> DROP_PROGRESS). */
+  async startDrop(tripId: string) {
+    const updatedTrip = await TripService.getInstance().updateState(tripId, 'arrived_drop');
+    this.setTrip(updatedTrip);
+  }
+
+  /** Finish the trip (engine drives drop-progress -> delivered -> completed). */
+  async completeTrip(tripId: string) {
+    const updatedTrip = await TripService.getInstance().updateState(tripId, 'completed');
+    this.setTrip(updatedTrip);
+  }
+
+  /** Clear the current trip (e.g. after returning home post-completion). */
+  clearTrip() {
+    this.setTrip(null);
+  }
+
   async loadInitialTrip() {
     try {
       const trip = await TripService.getInstance().getActiveTrip();
@@ -57,6 +74,18 @@ export class TripController {
       }
     } catch (e) {
       console.warn('Failed to load initial active trip', e);
+    }
+  }
+
+  /** Load a specific trip by id (the one the driver just accepted). */
+  async loadTrip(tripId: string) {
+    try {
+      const trip = await TripService.getInstance().getTripById(tripId);
+      if (trip) {
+        this.setTrip(trip);
+      }
+    } catch (e) {
+      console.warn('Failed to load trip', tripId, e);
     }
   }
 

@@ -5,12 +5,13 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
+import type { TripOffer } from './trip';
 
 // ─── Auth Stack ────────────────────────────────────────────────────
 
 export type AuthStackParamList = {
   UnifiedAuth: undefined;
-  OTPVerification: { readonly phone: string; readonly intendedRole?: 'customer' | 'driver'; readonly authMode?: 'signup' | 'login' };
+  OTPVerification: { readonly phone: string; readonly intendedRole?: 'driver'; readonly authMode?: 'signup' | 'login' };
   VehicleSelection: { readonly language: string };
   LanguageSelection: undefined;
 };
@@ -32,7 +33,7 @@ export type HomeStackParamList = {
   CancellationProcessing: { readonly tripId: string; readonly reason: string };
   CancellationResult: { readonly tripId: string; readonly success: boolean };
   ActiveTripChat: { readonly tripId: string };
-  TripOffer: { readonly offerId: string };
+  TripOffer: { readonly offer: TripOffer; readonly driverId: string };
 };
 
 // ─── Trips Stack ───────────────────────────────────────────────────
@@ -90,7 +91,6 @@ export type RootStackParamList = {
   Auth: NavigatorScreenParams<AuthStackParamList>;
   Onboarding: NavigatorScreenParams<AuthStackParamList>;
   Main: NavigatorScreenParams<MainTabParamList>;
-  CustomerMain: undefined;
 };
 
 // ─── Screen Props Helpers ──────────────────────────────────────────

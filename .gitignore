@@ -41,6 +41,12 @@ node_modules/
 npm-debug.log
 yarn-error.log
 
+# Environment config (holds secrets/keys). Keep the template tracked.
+.env
+.env.local
+.env.*.local
+!.env.example
+
 # fastlane
 #
 # It is recommended to not store the screenshots in the git repo. Instead, use fastlane to re-generate the
@@ -77,3 +83,6 @@ yarn-error.log
 *.txt
 *.xml
 *.log
+
+# Reference copy of the backend engine (separate project, has its own repo)
+Drive_with_engine/

@@ -4,15 +4,12 @@ import type { RootStackParamList } from '../types/navigation';
 import { AuthStack } from './stacks/AuthStack';
 import { MainTabNavigator } from './MainTabNavigator';
 import { AuthService } from '../services/auth/AuthService';
-import { CustomerNavigator } from '../customer/navigation/CustomerNavigator';
-import { resolveDevRole } from '../utils/devRoleResolver';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const RootNavigator: React.FC = () => {
   const [initializing, setInitializing] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeRole, setActiveRole] = useState<'customer' | 'driver'>('driver');
   const [onboardingComplete, setOnboardingComplete] = useState(false);
 
   useEffect(() => {
@@ -26,31 +23,18 @@ export const RootNavigator: React.FC = () => {
           console.log(`[OTP DEBUG] Firebase UID: ${user.uid.substring(0,4)}***`);
           setIsAuthenticated(true);
           
-          // --- DEVELOPMENT ONLY ROLE RESOLUTION ---
-          console.log(`[OTP DEBUG] resolving dev role...`);
-          const role = await resolveDevRole(user.uid);
-          console.log(`[OTP DEBUG] role resolver result: ${role}`);
-          setActiveRole(role);
-          
-          if (role === 'driver') {
-            // Load driver/profile state
-            try {
-              const profile = await authService.getProfile();
-              setOnboardingComplete(profile.profileCompletionPercent === 100);
-              console.log(`[OTP DEBUG] RootNavigator auth state: Driver, onboardingComplete: ${profile.profileCompletionPercent === 100}`);
-            } catch (e) {
-              // Profile not found or error, default to incomplete
-              setOnboardingComplete(false);
-              console.log(`[OTP DEBUG] RootNavigator auth state: Driver, onboardingComplete: false (profile error)`);
-            }
-          } else {
-            // For customer, onboarding logic doesn't apply the same way right now
-            setOnboardingComplete(true);
-            console.log(`[OTP DEBUG] RootNavigator auth state: Customer, onboardingComplete: true`);
+          // Load driver/profile state
+          try {
+            const profile = await authService.getProfile();
+            setOnboardingComplete(profile.profileCompletionPercent === 100);
+            console.log(`[OTP DEBUG] RootNavigator auth state: Driver, onboardingComplete: ${profile.profileCompletionPercent === 100}`);
+          } catch (e) {
+            // Profile not found or error, default to incomplete
+            setOnboardingComplete(false);
+            console.log(`[OTP DEBUG] RootNavigator auth state: Driver, onboardingComplete: false (profile error)`);
           }
         } else {
           setIsAuthenticated(false);
-          setActiveRole('driver');
           setOnboardingComplete(false);
         }
         
@@ -84,8 +68,6 @@ export const RootNavigator: React.FC = () => {
             );
           }}
         </Stack.Screen>
-      ) : activeRole === 'customer' ? (
-        <Stack.Screen name="CustomerMain" component={CustomerNavigator} />
       ) : onboardingComplete ? (
         <Stack.Screen name="Main" component={MainTabNavigator} />
       ) : (

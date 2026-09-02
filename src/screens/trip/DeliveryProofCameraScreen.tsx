@@ -1,7 +1,6 @@
 import React, { useCallback } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, typography, spacing, borderRadius } from '../../theme';
+import { View, StyleSheet } from 'react-native';
+import { launchCamera } from 'react-native-image-picker';
 import { deliveryProofLabels } from '../../data/mockData';
 import { CameraOverlay } from '../../components/organisms/CameraOverlay';
 import type { HomeScreenProps } from '../../types/navigation';
@@ -25,19 +24,34 @@ export const DeliveryProofCameraScreen: React.FC<DeliveryProofCameraScreenProps>
 }) => {
   const { tripId, stopId } = route.params;
 
-  const handleCapture = useCallback(() => {
-    // In production: capture image from camera, get URI
-    // For now: navigate to preview with a mock URI
-    navigation.navigate('DeliveryProofPreview', {
-      tripId,
-      stopId,
-      photoUri: 'mock://delivery-proof-photo.jpg',
-    });
-  }, [navigation, tripId, stopId]);
+  const handleCapture = useCallback(async () => {
+    try {
+      const result = await launchCamera({
+        mediaType: 'photo',
+        quality: 0.7,
+        saveToPhotos: false,
+        cameraType: 'back',
+      });
 
-  const handleClose = useCallback(() => {
-    navigation.goBack();
-  }, [navigation]);
+      if (result.didCancel) {
+        return; // Driver backed out of the camera; stay on this screen.
+      }
+
+      const uri = result.assets?.[0]?.uri;
+      navigation.navigate('DeliveryProofPreview', {
+        tripId,
+        stopId,
+        photoUri: uri ?? 'mock://delivery-proof-photo.jpg',
+      });
+    } catch (e) {
+      // If the camera can't be opened, don't block the flow.
+      navigation.navigate('DeliveryProofPreview', {
+        tripId,
+        stopId,
+        photoUri: 'mock://delivery-proof-photo.jpg',
+      });
+    }
+  }, [navigation, tripId, stopId]);
 
   return (
     <View style={styles.container} testID={testID}>

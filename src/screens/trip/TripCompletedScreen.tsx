@@ -7,6 +7,7 @@ import { mockActiveTrip, tripCompletedLabels } from '../../data/mockData';
 import { JourneyRecap } from '../../components/organisms/JourneyRecap';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { SecondaryButton } from '../../components/atoms/SecondaryButton';
+import { TripController } from '../../services/trip/TripController';
 import type { HomeScreenProps } from '../../types/navigation';
 
 /**
@@ -24,10 +25,11 @@ export const TripCompletedScreen: React.FC<TripCompletedScreenProps> = ({
   route,
   testID,
 }) => {
-  const trip = mockActiveTrip;
+  const trip = TripController.getInstance().getTrip() ?? mockActiveTrip;
 
   const handleBackToHome = useCallback(() => {
-    // Navigate back to root of HomeStack
+    // Clear the finished trip and return to the root of HomeStack.
+    TripController.getInstance().clearTrip();
     navigation.popToTop();
   }, [navigation]);
 

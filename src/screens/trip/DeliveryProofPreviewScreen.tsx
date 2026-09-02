@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
@@ -7,6 +7,7 @@ import { deliveryProofLabels } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { SecondaryButton } from '../../components/atoms/SecondaryButton';
+import { TripController } from '../../services/trip/TripController';
 import type { HomeScreenProps } from '../../types/navigation';
 
 /**
@@ -30,11 +31,14 @@ export const DeliveryProofPreviewScreen: React.FC<DeliveryProofPreviewScreenProp
 
   const handleConfirm = useCallback(async () => {
     setIsUploading(true);
-    // Mock upload delay
-    await new Promise<void>((r) => setTimeout(() => r(), 1500));
+    try {
+      // Finalize the trip on the engine (drop-progress -> delivered -> completed).
+      await TripController.getInstance().completeTrip(tripId);
+    } catch (e) {
+      console.warn('[DeliveryProofPreview] Failed to complete trip on engine', e);
+    }
     setUploaded(true);
     setIsUploading(false);
-    // Navigate to next stop or trip completed
     setTimeout(() => {
       navigation.navigate('TripCompleted', { tripId });
     }, 1200);
@@ -66,13 +70,16 @@ export const DeliveryProofPreviewScreen: React.FC<DeliveryProofPreviewScreenProp
         showBackButton
       />
       <View style={styles.container}>
-        {/* Photo preview placeholder */}
+        {/* Photo preview */}
         <View style={styles.previewContainer}>
-          <View style={styles.previewPlaceholder}>
-            <Icon name="image" style={styles.previewIcon} />
-            <Text style={styles.previewText}>Photo Preview</Text>
-            <Text style={styles.previewUri}>{photoUri}</Text>
-          </View>
+          {photoUri && photoUri.startsWith('mock://') ? (
+            <View style={styles.previewPlaceholder}>
+              <Icon name="image" style={styles.previewIcon} />
+              <Text style={styles.previewText}>Photo Preview</Text>
+            </View>
+          ) : (
+            <Image source={{ uri: photoUri }} style={styles.previewImage} resizeMode="cover" />
+          )}
         </View>
 
         {/* Actions */}
@@ -113,6 +120,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
+  },
+  previewImage: {
+    flex: 1,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.surfaceContainerLow,
   },
   previewIcon: {
     fontSize: 64,

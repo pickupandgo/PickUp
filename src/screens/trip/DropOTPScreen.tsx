@@ -7,11 +7,15 @@ import { otpVerificationLabels } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { OTPInput } from '../../components/atoms/OTPInput';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
+import { TripController } from '../../services/trip/TripController';
 import type { HomeScreenProps } from '../../types/navigation';
+
+/** Receiver code length. The engine has no drop OTP, so it is not validated server-side. */
+const OTP_LENGTH = 4;
 
 /**
  * DropOTPScreen
- * Receiver OTP verification before confirming delivery at a drop stop.
+ * Receiver code entry before confirming delivery at a drop stop.
  */
 export interface DropOTPScreenProps {
   readonly navigation: HomeScreenProps<'DropOTP'>['navigation'];
@@ -33,18 +37,19 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
   const handleVerify = useCallback(async () => {
     setIsLoading(true);
     setHasError(false);
-    await new Promise<void>((r) => setTimeout(() => r(), 800));
-    if (otp === '123456') {
+    try {
+      // The engine has no receiver OTP; mark the drop as started, then proceed.
+      await TripController.getInstance().startDrop(tripId).catch(() => {});
       setVerified(true);
       setTimeout(() => {
-        // Navigate to delivery proof after successful OTP
         navigation.navigate('DeliveryProofCamera', { tripId, stopId });
       }, 1200);
-    } else {
+    } catch (e) {
       setHasError(true);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
-  }, [otp, navigation, tripId, stopId]);
+  }, [navigation, tripId, stopId]);
 
   const handleComplete = useCallback(async (value: string) => {
     setOtp(value);
@@ -79,6 +84,7 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
           <Text style={styles.subtitle}>{otpVerificationLabels.dropOtpSubtitle}</Text>
 
           <OTPInput
+            length={OTP_LENGTH}
             value={otp}
             onChange={setOtp}
             onComplete={handleComplete}
@@ -94,7 +100,7 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
         <PrimaryButton
           label={otpVerificationLabels.verifyLabel}
           onPress={handleVerify}
-          disabled={otp.length < 6}
+          disabled={otp.length < OTP_LENGTH}
           loading={isLoading}
           style={styles.verifyButton}
         />

@@ -8,13 +8,13 @@ import Icon from '../../components/atoms/Icon';
 import { GoLiveSheet } from '../../components/organisms/GoLiveSheet';
 import { GoOfflineSheet } from '../../components/organisms/GoOfflineSheet';
 import { AppHeader } from '../../components/molecules/AppHeader';
+import { useFocusEffect } from '@react-navigation/native';
 import { useDriverLocation, LocationService } from '../../location';
 import type { HomeScreenProps } from '../../types/navigation';
 import { useAuth } from '../../hooks/useAuth';
+import { useDriverDispatch } from '../../hooks/useDriverDispatch';
 import { useWallet } from '../../hooks/useWallet';
 import { useEarnings } from '../../hooks/useEarnings';
-import { env } from '../../config/env';
-import { mockTripOffer } from '../../data/mockData';
 import { DriverMap, MapOverlay } from '../../map';
 
 
@@ -84,13 +84,28 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({
     navigation.getParent()?.navigate('WalletTab', { screen: 'Recharge' });
   }, [navigation]);
 
-  const handleTriggerTripOffer = useCallback(() => {
-    navigation.navigate('TripOffer', { offerId: mockTripOffer.id });
-  }, [navigation]);
-
   const handleDetails = useCallback(() => {
     navigation.getParent()?.navigate('EarningsTab', { screen: 'EarningsHome' });
   }, [navigation]);
+
+  // Advertise availability + poll the engine for incoming ride requests while online.
+  const { resume: resumeDispatch } = useDriverDispatch({
+    enabled: driverMode === 'searching',
+    getLocation: () =>
+      currentLocation
+        ? { latitude: currentLocation.latitude, longitude: currentLocation.longitude }
+        : null,
+    onOffer: (offer, driverId) => {
+      navigation.navigate('TripOffer', { offer, driverId });
+    },
+  });
+
+  // Resume polling when returning to Home after declining/expiring an offer.
+  useFocusEffect(
+    useCallback(() => {
+      resumeDispatch();
+    }, [resumeDispatch]),
+  );
 
   const isLive = driverMode === 'searching';
 
@@ -146,21 +161,6 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({
               )}
             </MapOverlay>
           </View>
-
-          {env.IS_MOCK_MODE && (
-            <Pressable 
-              onPress={handleTriggerTripOffer} 
-              style={[styles.vehicleCard, { backgroundColor: '#ffebee' }]}
-            >
-              <View style={[styles.vehicleIconContainer, { backgroundColor: '#ffcdd2' }]}>
-                <Icon name="bug_report" style={[styles.vehicleIcon, { color: '#c62828' }]} />
-              </View>
-              <View style={styles.vehicleDetails}>
-                <Text style={[styles.vehicleLabel, { color: '#c62828' }]}>DEVELOPMENT ONLY</Text>
-                <Text style={styles.vehicleName}>DEV: Trigger Trip Offer</Text>
-              </View>
-            </Pressable>
-          )}
 
           <View style={styles.vehicleCard}>
             <View style={styles.vehicleIconContainer}>

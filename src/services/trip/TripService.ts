@@ -1,4 +1,4 @@
-import { ApiClient } from '../api/ApiClient';
+import * as engine from '../engine/dispatch';
 import { env } from '../../config/env';
 import type { ActiveTrip, HistoricalTrip, TripOffer } from '../../types/trip';
 import { mockActiveTrip, mockHistoricalTrip } from '../../data/mockData';
@@ -15,6 +15,7 @@ export interface ITripService {
   updateState(tripId: string, state: ActiveTrip['status'], payload?: UpdateStatePayload): Promise<ActiveTrip>;
   getHistory(): Promise<HistoricalTrip[]>;
   getActiveTrip(): Promise<ActiveTrip | null>;
+  getTripById(tripId: string): Promise<ActiveTrip | null>;
 }
 
 function delay(ms: number): Promise<void> {
@@ -50,33 +51,86 @@ export class MockTripService implements ITripService {
     await delay(500);
     return mockActiveTrip;
   }
+
+  async getTripById(_tripId: string): Promise<ActiveTrip | null> {
+    await delay(500);
+    return mockActiveTrip;
+  }
 }
 
+/**
+ * Real trip service backed by the Pickup-Go Core Engine.
+ *
+ * Offers are surfaced by the polling layer (useDriverDispatch), so getOffer()
+ * is a no-op here. Accept/decline and the post-accept lifecycle map onto the
+ * engine's /rides and /trips endpoints.
+ */
 export class ApiTripService implements ITripService {
-  private client = ApiClient.getInstance();
-
   async getOffer(): Promise<TripOffer | null> {
-    return this.client.get<TripOffer | null>('/trip/offer');
+    // Incoming offers are delivered via the dispatch polling layer.
+    return null;
   }
 
-  async acceptTrip(tripId: string): Promise<ActiveTrip> {
-    return this.client.post<ActiveTrip>(`/trip/${tripId}/accept`);
+  async acceptTrip(rideId: string): Promise<ActiveTrip> {
+    const driverId = engine.getCurrentDriverId();
+    if (!driverId) throw new Error('Driver is not authenticated');
+    await engine.acceptRideRequest(rideId, driverId);
+    const trip = await engine.getActiveTripForDriver(driverId);
+    if (!trip) throw new Error('Trip not found after accepting');
+    return engine.engineTripToActiveTrip(trip);
   }
 
-  async declineTrip(tripId: string): Promise<void> {
-    await this.client.post(`/trip/${tripId}/decline`);
+  async declineTrip(rideId: string): Promise<void> {
+    const driverId = engine.getCurrentDriverId();
+    if (driverId) {
+      await engine.rejectRideRequest(rideId, driverId).catch(() => {});
+    }
   }
 
-  async updateState(tripId: string, state: ActiveTrip['status'], payload?: UpdateStatePayload): Promise<ActiveTrip> {
-    return this.client.post<ActiveTrip>(`/trip/${tripId}/status`, { state, ...payload });
+  async updateState(
+    tripId: string,
+    state: ActiveTrip['status'],
+    payload?: UpdateStatePayload,
+  ): Promise<ActiveTrip> {
+    const driverId = engine.getCurrentDriverId();
+    if (!driverId) throw new Error('Driver is not authenticated');
+
+    const targetByState: Partial<Record<ActiveTrip['status'], string>> = {
+      arrived_pickup: 'DRIVER_ARRIVED',
+      pickup_verified: 'PICKUP_VERIFIED',
+      in_transit: 'IN_TRANSIT',
+      arrived_drop: 'DROP_PROGRESS',
+      drop_verified: 'DELIVERED',
+      completed: 'COMPLETED',
+    };
+
+    const target = targetByState[state];
+    let trip: engine.EngineTrip;
+    if (target) {
+      trip = await engine.advanceTripTo(tripId, driverId, target, payload?.otp);
+    } else {
+      const current = await engine.getTripById(tripId);
+      if (!current) throw new Error('Trip not found');
+      trip = current;
+    }
+    return engine.engineTripToActiveTrip(trip);
   }
 
   async getHistory(): Promise<HistoricalTrip[]> {
-    return this.client.get<HistoricalTrip[]>('/trip/history');
+    // The engine has no driver trip-history endpoint yet.
+    return [];
   }
 
   async getActiveTrip(): Promise<ActiveTrip | null> {
-    return this.client.get<ActiveTrip | null>('/trip/active');
+    const driverId = engine.getCurrentDriverId();
+    if (!driverId) return null;
+    const trip = await engine.getActiveTripForDriver(driverId);
+    return trip ? engine.engineTripToActiveTrip(trip) : null;
+  }
+
+  async getTripById(tripId: string): Promise<ActiveTrip | null> {
+    const trip = await engine.getTripById(tripId);
+    return trip ? engine.engineTripToActiveTrip(trip) : null;
   }
 }
 
