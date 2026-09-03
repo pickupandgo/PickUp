@@ -1,97 +1,149 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# PickUp Driver
 
-# Getting Started
+The **driver-side** mobile app for the PickUp ride‑hailing & delivery platform, built with [React Native](https://reactnative.dev). Drivers use it to go online, receive and accept trip offers, navigate to pickups and drops, verify pickups/drops with OTP, capture delivery proof, chat with customers, and track their earnings and wallet.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+> The app runs in **mock mode** out of the box — no backend required. Point it at a real Core Engine by setting `API_BASE_URL` in `.env`.
 
-## Step 1: Start Metro
+---
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## Features
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+- **Authentication** — Phone + OTP login (Firebase Auth), language selection, and vehicle selection during onboarding.
+- **Driver Home** — Online/offline toggle, live map, and a notification center.
+- **Trip lifecycle** — New trip offers, navigate to pickup, arrival, pickup OTP, active trip, multi-stop journeys, drop OTP, delivery-proof camera capture, and trip completion.
+- **In‑trip chat** — Real-time messaging with the customer during an active trip.
+- **Cancellation flow** — Reason selection, processing, and result screens.
+- **Earnings** — Earnings history and per-trip earnings breakdowns.
+- **Wallet** — Balance, recharge flow, and full transaction history.
+- **Trip history** — Past trips with detailed views.
+- **Account & compliance** — Profile, KYC documents, vehicle documents/status, subscription management, settings, and account-restricted handling.
+- **Maps & routing** — Google Maps rendering, geocoding, directions, and driver/trip matching + dispatch services.
 
-```sh
-# Using npm
-npm start
+## Tech Stack
 
-# OR using Yarn
-yarn start
+| Area | Technology |
+|------|-----------|
+| Framework | React Native `0.87`, React `19` |
+| Language | TypeScript |
+| Navigation | React Navigation (native-stack + bottom-tabs) |
+| Maps | `react-native-maps` + Google Maps Platform |
+| Auth | Firebase Auth (`@react-native-firebase`) |
+| Animation / gestures | Reanimated 4, Gesture Handler, `@gorhom/bottom-sheet` |
+| Config | `react-native-config` (build-time `.env`) |
+| Storage | AsyncStorage |
+| Testing | Jest + React Test Renderer |
+| Linting / format | ESLint + Prettier |
+
+## Project Structure
+
+```
+Driver/
+├── App.tsx                 # App entry component
+├── index.js                # React Native registration
+├── android/ · ios/         # Native projects
+├── src/
+│   ├── components/          # Reusable UI components
+│   ├── config/              # Environment config (env.ts)
+│   ├── data/                # Mock data / seed data
+│   ├── hooks/               # Custom React hooks
+│   ├── location/            # Location handling
+│   ├── map/                 # Map components & helpers
+│   ├── navigation/          # RootNavigator, MainTabNavigator, stacks
+│   ├── screens/             # Feature screens
+│   │   ├── auth/            #   login, OTP, language & vehicle selection
+│   │   ├── home/            #   driver home, notifications
+│   │   ├── trip/            #   offer → pickup → active → drop → completed, chat, cancel
+│   │   ├── trips/           #   trip history
+│   │   ├── earnings/        #   earnings history & details
+│   │   ├── wallet/          #   wallet, recharge, transactions
+│   │   ├── account/         #   profile, KYC, vehicle docs, subscription, settings
+│   │   └── shared/          #   placeholder / shared screens
+│   ├── services/            # Domain services
+│   │   ├── api/             #   ApiClient, ApiError
+│   │   ├── engine/          #   dispatch, matching, directions, geocoding
+│   │   ├── auth/ chat/ earnings/ kyc/ routing/ subscription/
+│   │   ├── tracking/ trip/ wallet/
+│   ├── types/ · utils/      # Shared types & utilities
+│   └── theme.ts             # Design tokens / theme
+└── __tests__/ · __mocks__/  # Tests and mocks
 ```
 
-## Step 2: Build and run your app
+## Prerequisites
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+- **Node.js** `>= 22.11.0`
+- **React Native environment** set up per the official [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide
+- **Android**: Android Studio + SDK, a running emulator or a connected device
+- **iOS** (macOS only): Xcode + CocoaPods (via Ruby Bundler)
 
-### Android
+## Getting Started
+
+### 1. Install dependencies
 
 ```sh
-# Using npm
+npm install
+```
+
+For iOS, install the native pods (first clone and after any native dependency change):
+
+```sh
+bundle install          # first time only, installs CocoaPods
+bundle exec pod install # run from the ios/ setup as needed
+```
+
+### 2. Configure the environment
+
+Copy the example env file and fill in your values:
+
+```sh
+cp .env.example .env
+```
+
+| Variable | Description |
+|----------|-------------|
+| `API_BASE_URL` | Core engine REST API base URL (no trailing slash). **Leave empty to run in mock mode.** |
+| `WS_ENDPOINT` | WebSocket endpoint for real-time features. |
+| `GOOGLE_MAPS_API_KEY` | Google Maps Platform key (Places API New, Geocoding, Directions, Android Maps SDK). |
+
+> ⚠️ These values are inlined at **build time** (via `react-native-config`), not read at runtime. A **native rebuild is required** after changing any of them. Never commit your real `.env`.
+
+### 3. Start Metro
+
+```sh
+npm start
+```
+
+### 4. Build and run
+
+In a separate terminal:
+
+```sh
+# Android
 npm run android
 
-# OR using Yarn
-yarn android
-```
-
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
+# iOS (macOS only)
 npm run ios
-
-# OR using Yarn
-yarn ios
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+## Available Scripts
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+| Script | Description |
+|--------|-------------|
+| `npm start` | Start the Metro bundler |
+| `npm run android` | Build & run on Android emulator/device |
+| `npm run ios` | Build & run on iOS simulator/device |
+| `npm run lint` | Run ESLint |
+| `npm test` | Run the Jest test suite |
 
-## Step 3: Modify your app
+## Mock Mode
 
-Now that you have successfully run the app, let's make changes!
+When `API_BASE_URL` is empty, the app runs fully against mock adapters and seed data (`src/data/`) — useful for UI development and demos without a live backend. As soon as a backend URL is provided, the domain services switch to real API/WebSocket calls automatically (`src/config/env.ts`).
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+## Troubleshooting
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+- Clear the Metro cache: `npm start -- --reset-cache`
+- Rebuild native after `.env` changes (values are compiled in, not read at runtime).
+- General React Native issues: see the [Troubleshooting guide](https://reactnative.dev/docs/troubleshooting).
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+## License
 
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+Private — © PickUp. All rights reserved.
