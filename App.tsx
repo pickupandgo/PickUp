@@ -1,10 +1,12 @@
-import React from 'react';
-import { View, Text, StyleSheet, Pressable, FlatList } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, FlatList, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { BookingProvider } from './src/state/BookingContext';
+import { getIsLoggedIn } from './src/state/session';
+import { colors } from './src/theme';
 
 import ActiveTripChatScreen from './src/screens/support/ActiveTripChatScreen';
 import ActiveTripTrackingScreen from './src/screens/tracking/ActiveTripTrackingScreen';
@@ -133,12 +135,40 @@ function GalleryScreen({ navigation }: any) {
 }
 
 export default function App() {
+  // While we read the persisted login flag, `initialRoute` stays undefined and
+  // we show a splash. Once known, the navigator mounts with the right entry
+  // screen: HomeScreen if logged in, LoginScreen otherwise.
+  const [initialRoute, setInitialRoute] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    getIsLoggedIn().then((loggedIn) => {
+      if (mounted) {
+        setInitialRoute(loggedIn ? 'HomeScreen' : 'LoginScreen');
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (initialRoute === null) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style="dark" />
+        <View style={styles.splash}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </SafeAreaProvider>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
       <BookingProvider>
       <NavigationContainer>
-        <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="LoginScreen">
+        <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={initialRoute}>
           <Stack.Screen name="Gallery" component={GalleryScreen} />
         <Stack.Screen name="ActiveTripChatScreen" component={ActiveTripChatScreen} />
         <Stack.Screen name="ActiveTripTrackingScreen" component={ActiveTripTrackingScreen} />
@@ -232,6 +262,7 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  splash: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   galleryContainer: { flex: 1, backgroundColor: '#fff' },
   header: { fontSize: 24, fontWeight: 'bold', padding: 20, borderBottomWidth: 1, borderColor: '#eee' },
   item: { padding: 16, borderBottomWidth: 1, borderColor: '#f0f0f0' },

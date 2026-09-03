@@ -17,6 +17,7 @@ import Button from '../../components/atoms/Button';
 import Divider from '../../components/atoms/Divider';
 import DraggableBottomSheet from '../../components/organisms/DraggableBottomSheet';
 import { Feather } from '@expo/vector-icons';
+import { setLoggedIn } from '../../state/session';
 
 export interface HomeScreenProps {
   readonly onSearchPress?: () => void;
@@ -38,6 +39,12 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
   const { draft, setPickup, customerId, trip, setTrip } = useBooking();
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string>();
+
+  // Reaching Home means the user finished login/onboarding — persist the
+  // session so the app reopens on Home until they explicitly log out.
+  useEffect(() => {
+    void setLoggedIn();
+  }, []);
 
   /** Resolves the device position into the pickup point. */
   const locatePickup = useCallback(async () => {

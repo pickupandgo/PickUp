@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
+import { clearSession } from '../../state/session';
 
 const { height: screenHeight } = Dimensions.get('window');
 
@@ -91,6 +92,8 @@ const LogoutConfirmationScreen: React.FC<LogoutConfirmationScreenProps & { navig
                 <Pressable
                   style={styles.logoutButton}
                   onPress={() => {
+                    // Clear the persisted session so the app reopens on Login.
+                    void clearSession();
                     onLogoutConfirm?.();
                     navigation?.reset({ index: 0, routes: [{ name: 'LoginScreen' }] });
                   }}
