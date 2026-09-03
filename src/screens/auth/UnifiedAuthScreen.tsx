@@ -1,132 +1,141 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Platform, KeyboardAvoidingView, ScrollView, Alert } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Platform,
+  KeyboardAvoidingView,
+  TextInput,
+  Pressable,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius } from '../../theme';
-import { authData } from '../../data/mockData';
-
-import DriverSignupForm from '../../components/auth/DriverSignupForm';
-import DriverLoginForm from '../../components/auth/DriverLoginForm';
-
-export type AuthMode = 'signup' | 'login';
 
 export interface UnifiedAuthScreenProps {
   readonly navigation: any;
   readonly onSendOtp: (phone: string) => Promise<void>;
-  readonly onLoginWithEmail: (email: string, password: string) => Promise<boolean>;
+  /** Retained for backward compatibility with the auth stack; unused in the phone-only flow. */
+  readonly onLoginWithEmail?: (email: string, password: string) => Promise<boolean>;
   readonly isLoading?: boolean;
   readonly testID?: string;
 }
 
+/**
+ * Driver Login — phone number only.
+ *
+ * Enter a 10-digit mobile number, tap GET OTP: this requests an OTP via the
+ * auth service and moves to the OTP verification screen.
+ */
 export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
   navigation,
   onSendOtp,
-  onLoginWithEmail,
   isLoading = false,
   testID,
 }) => {
-  const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [phone, setPhone] = useState('');
+  const [hasError, setHasError] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = async (formData: any) => {
-    if (isSubmitting || isLoading) return;
+  const digits = phone.replace(/\D/g, '');
+  const isValid = digits.length === 10;
+  const busy = isLoading || isSubmitting;
+
+  const handleGetOtp = useCallback(async () => {
+    if (busy) return;
+    if (!isValid) {
+      setHasError(true);
+      return;
+    }
+    setHasError(false);
     setIsSubmitting(true);
-    
+    const phoneToUse = `+91${digits}`;
     try {
-      console.log(`[UnifiedAuthScreen] Form Submitted! Mode: ${authMode}`);
-      
-      if (formData.isPhone === false) {
-        // Handle Email/Password login
-        const email = formData.email || formData.emailOrPhone || formData.driverIdOrPhone;
-        const password = formData.password;
-        if (!email || !password) {
-          throw new Error('Email and password are required');
-        }
-        await onLoginWithEmail(email, password);
-        // Successful login will automatically navigate based on RootNavigator's onAuthStateChanged listener
-      } else {
-        // Handle Phone OTP
-        let rawPhone = formData.phone || formData.emailOrPhone || formData.driverIdOrPhone;
-        
-        // Basic formatting for Indian numbers if they didn't add a country code
-        let phoneToUse = rawPhone ? rawPhone.replace(/\D/g, '') : '5551234567';
-        if (phoneToUse.length === 10) {
-          phoneToUse = '+91' + phoneToUse;
-        } else if (!rawPhone?.startsWith('+')) {
-          phoneToUse = '+' + phoneToUse;
-        } else {
-          phoneToUse = rawPhone;
-        }
-        
-        await onSendOtp(phoneToUse);
-        navigation.navigate('OTPVerification', { phone: phoneToUse, intendedRole: 'driver', authMode });
-      }
+      await onSendOtp(phoneToUse);
+      navigation.navigate('OTPVerification', {
+        phone: phoneToUse,
+        intendedRole: 'driver',
+        authMode: 'login',
+      });
     } catch (e: any) {
-      console.log('[UnifiedAuthScreen] handleSubmit caught error:', e);
-      Alert.alert('Error', e.message || 'Failed to authenticate. Please try again.');
+      Alert.alert('Error', e?.message || 'Failed to send OTP. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const renderForm = () => {
-    if (authMode === 'signup') {
-      return (
-        <View style={styles.formContent}>
-          <Text style={styles.title}>Apply to Drive</Text>
-          <Text style={styles.subtitle}>Join our network of professional logistics partners.</Text>
-          
-          <View style={styles.card}>
-            <DriverSignupForm 
-              onSwitchToLogin={() => setAuthMode('login')} 
-              onSubmit={handleSubmit} 
-              isLoading={isLoading || isSubmitting} 
-            />
-          </View>
-        </View>
-      );
-    } else {
-      return (
-        <View style={styles.formContent}>
-          <Text style={styles.subtitle}>Welcome back. Please log in.</Text>
-          
-          <View style={styles.card}>
-            <DriverLoginForm 
-              onSubmit={handleSubmit} 
-              isLoading={isLoading || isSubmitting} 
-            />
-          </View>
-        </View>
-      );
-    }
-  };
+  }, [busy, isValid, digits, onSendOtp, navigation]);
 
   return (
-    <SafeAreaView style={styles.safeArea} testID={testID}>
+    <SafeAreaView style={styles.safeArea} testID={testID} edges={['top', 'bottom']}>
+      {/* Top app bar */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>{authData.appName}</Text>
+        <View style={styles.headerSide} />
+        <Text style={styles.headerTitle}>Pick Up</Text>
+        <View style={styles.headerSide} />
       </View>
 
       <KeyboardAvoidingView
-        style={styles.keyboardContainer}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.formArea}>
-            {renderForm()}
+        <View style={styles.content}>
+          {/* Hero / welcome */}
+          <View style={styles.hero}>
+            <Text style={styles.title}>Driver Login</Text>
+            <Text style={styles.subtitle}>
+              Enter your mobile number to securely access your logistics dashboard.
+            </Text>
           </View>
 
-          {authMode === 'login' && (
-            <View style={styles.footerArea}>
-              <Text style={styles.termsText}>
-                By continuing, you agree to Pick Up's <Text style={styles.termsLink}>Terms of Service.</Text>
-              </Text>
+          {/* Phone input */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Mobile Number</Text>
+            <View style={[styles.inputRow, hasError && styles.inputRowError]}>
+              <View style={styles.prefixBox}>
+                <Text style={styles.prefixText}>+91</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                value={phone}
+                onChangeText={(t) => {
+                  setPhone(t);
+                  if (hasError) setHasError(false);
+                }}
+                keyboardType="phone-pad"
+                placeholder="98765 43210"
+                placeholderTextColor={colors.outlineVariant}
+                maxLength={11}
+                autoComplete="tel"
+                editable={!busy}
+                onSubmitEditing={handleGetOtp}
+              />
             </View>
-          )}
-        </ScrollView>
+            {hasError && (
+              <Text style={styles.errorText}>Invalid mobile number</Text>
+            )}
+          </View>
+
+          {/* Primary action */}
+          <Pressable
+            style={[styles.button, (!isValid || busy) && styles.buttonDisabled]}
+            onPress={handleGetOtp}
+            disabled={busy}
+            accessibilityRole="button"
+          >
+            {busy ? (
+              <View style={styles.buttonBusy}>
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+                <Text style={styles.buttonText}>Authenticating...</Text>
+              </View>
+            ) : (
+              <Text style={styles.buttonText}>GET OTP</Text>
+            )}
+          </Pressable>
+
+          <Text style={styles.terms}>
+            By continuing, you agree to Pick Up's <Text style={styles.termsLink}>Terms of Service</Text>.
+          </Text>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -137,69 +146,117 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surface,
   },
+  flex: {
+    flex: 1,
+  },
   header: {
-    paddingVertical: spacing.md,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 56,
+    paddingHorizontal: spacing.containerPadding,
     borderBottomWidth: 1,
     borderBottomColor: colors.outlineVariant,
-    backgroundColor: colors.surfaceContainerLowest,
+    backgroundColor: colors.surface,
+  },
+  headerSide: {
+    width: 24,
   },
   headerTitle: {
     ...typography.headlineMd,
-    color: colors.primary,
     fontWeight: '700',
+    color: colors.primary,
   },
-  keyboardContainer: {
+  content: {
     flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
     paddingHorizontal: spacing.containerPadding,
+    paddingTop: spacing.xl,
   },
-  formArea: {
-    flex: 1,
-    marginTop: spacing.lg,
-    marginBottom: spacing.xl,
-  },
-  formContent: {
-    gap: spacing.lg,
-    alignItems: 'center',
-  },
-  card: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.outlineVariant,
-    width: '100%',
-    gap: spacing.lg,
+  hero: {
+    marginBottom: spacing.xxl,
+    marginTop: spacing.xs,
   },
   title: {
-    ...typography.headlineLg,
+    ...typography.headlineMd,
     color: colors.onSurface,
-    textAlign: 'center',
-    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   subtitle: {
     ...typography.bodyMd,
     color: colors.onSurfaceVariant,
-    textAlign: 'center',
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.xs,
   },
-  footerArea: {
-    paddingBottom: spacing.xxl,
+  field: {
+    marginBottom: spacing.lg,
+  },
+  label: {
+    ...typography.labelSm,
+    color: colors.onSurfaceVariant,
+    marginBottom: spacing.unit,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surfaceContainerLowest,
+    overflow: 'hidden',
+  },
+  inputRowError: {
+    borderColor: colors.error,
+  },
+  prefixBox: {
+    justifyContent: 'center',
+    paddingHorizontal: spacing.gutter,
+    backgroundColor: colors.surfaceContainerLow,
+    borderRightWidth: 1,
+    borderRightColor: colors.outlineVariant,
+  },
+  prefixText: {
+    ...typography.dataMono,
+    color: colors.onSurfaceVariant,
+  },
+  input: {
+    flex: 1,
+    paddingHorizontal: spacing.gutter,
+    paddingVertical: spacing.sm,
+    ...typography.dataMono,
+    color: colors.onSurface,
+  },
+  errorText: {
+    ...typography.labelSm,
+    color: colors.error,
+    marginTop: spacing.xs,
+  },
+  button: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.gutter,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.unit,
   },
-  termsText: {
-    ...typography.bodyMd,
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  buttonBusy: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  buttonText: {
+    ...typography.headlineSm,
+    color: colors.onPrimary,
+  },
+  terms: {
+    ...typography.labelSm,
     color: colors.onSurfaceVariant,
     textAlign: 'center',
-    paddingHorizontal: spacing.xl,
+    marginTop: spacing.xl,
   },
   termsLink: {
-    textDecorationLine: 'underline',
     color: colors.primary,
+    textDecorationLine: 'underline',
   },
 });
 

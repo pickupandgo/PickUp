@@ -57,6 +57,10 @@ export interface EarningsSummary {
   readonly platformCommission: number;
   readonly otherDeductions: number;
   readonly netEarnings: number;
+  /** Optional payment-mode split + online duration (shown on the earnings screen). */
+  readonly cashEarnings?: number;
+  readonly onlineEarnings?: number;
+  readonly onlineHours?: number;
 }
 
 export interface TripEarnings {

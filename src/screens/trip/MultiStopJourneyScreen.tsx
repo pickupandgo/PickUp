@@ -1,13 +1,12 @@
 import React, { useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { mockActiveTrip } from '../../data/mockData';
-import { AppHeader } from '../../components/molecules/AppHeader';
 import { MultiStopTimeline } from '../../components/organisms/MultiStopTimeline';
-import { SecondaryButton } from '../../components/atoms/SecondaryButton';
-import { DriverMap, MapOverlay, RouteData, StopType } from '../../map';
+import { PrimaryButton } from '../../components/atoms/PrimaryButton';
+import { DriverMap, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
 import { useActiveTrip } from '../../hooks/useActiveTrip';
 import { useTripRoute } from '../../hooks/useTripRoute';
@@ -19,6 +18,19 @@ export interface MultiStopJourneyScreenProps {
   readonly testID?: string;
 }
 
+/** Turn a raw address into a compact label, dropping a leading house/door number. */
+function compactAddress(address?: string): string {
+  if (!address) return 'Destination';
+  const parts = address
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  // Drop a leading pure-number token like "222" so the area name shows first.
+  if (parts.length > 1 && /^\d+$/.test(parts[0])) parts.shift();
+  const label = parts.slice(0, 2).join(', ');
+  return label || address;
+}
+
 export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
   navigation,
   route: navRoute,
@@ -28,17 +40,19 @@ export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
   const trip = useActiveTrip() || mockActiveTrip;
   const { route: routingData } = useTripRoute();
 
-  const handleNavigateToStop = useCallback((stopId: string) => {
-    const stopIndex = trip.stops.findIndex((s) => s.id === stopId);
-    const stop = trip.stops[stopIndex];
-    if (!stop) return;
-
-    if (stop.type === 'pickup') {
-      navigation.navigate('ArrivedAtPickup', { tripId: trip.id, stopId });
-    } else if (stop.requiresOtp) {
-      navigation.navigate('DropOTP', { tripId: trip.id, stopId });
-    }
-  }, [navigation, trip]);
+  const handleNavigateToStop = useCallback(
+    (stopId: string) => {
+      const stopIndex = trip.stops.findIndex((s) => s.id === stopId);
+      const stop = trip.stops[stopIndex];
+      if (!stop) return;
+      if (stop.type === 'pickup') {
+        navigation.navigate('ArrivedAtPickup', { tripId: trip.id, stopId });
+      } else {
+        navigation.navigate('DropOTP', { tripId: trip.id, stopId });
+      }
+    },
+    [navigation, trip],
+  );
 
   const routeData = useMemo<RouteData | undefined>(() => {
     if (!trip) return undefined;
@@ -48,63 +62,66 @@ export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
       stops: trip.stops.map((stop, index) => ({
         id: stop.id,
         type: stop.type as StopType,
-        coordinate: {
-          latitude: stop.latitude,
-          longitude: stop.longitude,
-        },
+        coordinate: { latitude: stop.latitude, longitude: stop.longitude },
         isCurrent: index === trip.currentStopIndex,
         completed: stop.status === 'completed',
-        label: stop.type === 'drop' && trip.stops.length > 2 ? String(index) : undefined
-      }))
+        label: stop.type === 'drop' && trip.stops.length > 2 ? String(index) : undefined,
+      })),
     };
   }, [trip, routingData]);
 
   const currentStopIndex = trip.currentStopIndex;
-  const totalDrops = trip.stops.filter(s => s.type === 'drop').length;
-  // Calculate which drop this is. If index 0 is pickup, then index 1 is Drop 1.
-  const currentDropNumber = currentStopIndex; 
-  const isPickup = trip.stops[currentStopIndex]?.type === 'pickup';
-  
-  const topIndicatorLabel = isPickup ? 'PICKUP' : `DROP ${currentDropNumber} OF ${totalDrops}`;
-  const topIndicatorName = trip.stops[currentStopIndex]?.address?.split(',')[0] || 'Destination';
+  const totalDrops = trip.stops.filter((s) => s.type === 'drop').length;
+  const currentDropNumber = currentStopIndex;
+  const currentStop = trip.stops[currentStopIndex];
+  const isPickup = currentStop?.type === 'pickup';
 
-  const displayEta = routingData?.eta 
+  const topIndicatorLabel = isPickup ? 'PICKUP' : `DROP ${currentDropNumber} OF ${totalDrops}`;
+  const topIndicatorName = compactAddress(currentStop?.address);
+
+  const displayEta = routingData?.eta
     ? Math.max(0, Math.ceil((routingData.eta.getTime() - Date.now()) / 60000))
-    : trip.stops[currentStopIndex]?.etaMinutes || 0;
-  
-  const displayDistance = routingData?.totalDistanceMeters ? (routingData.totalDistanceMeters / 1000).toFixed(1) : 2.4; // mock fallback
+    : currentStop?.etaMinutes || 0;
+
+  const displayDistance = routingData?.totalDistanceMeters
+    ? (routingData.totalDistanceMeters / 1000).toFixed(1)
+    : currentStop?.distanceKm ?? trip.totalDistanceKm;
 
   return (
-    <View style={styles.safeArea} testID={testID}>
-      {/* Absolute back button overlay on map */}
-      <SafeAreaView edges={['top']} style={styles.backButtonContainer}>
-        <Icon 
-          name="arrow_back" 
-          style={styles.backButtonIcon} 
-        />
-        <View style={styles.backButtonTouch} onTouchEnd={() => navigation.goBack()} />
-      </SafeAreaView>
-
-      <View style={styles.mapContainer}>
+    <View style={styles.root} testID={testID}>
+      {/* Full-screen map */}
+      <View style={StyleSheet.absoluteFill}>
         <DriverMap
           currentLocation={currentLocation || undefined}
           routeData={routeData}
+          followDriver
           showControls={false}
+          style={StyleSheet.absoluteFill}
         />
-        
-        <SafeAreaView edges={['top']} style={styles.mapOverlays}>
-          <MapOverlay position="top" style={styles.topIndicatorContainer}>
-            <View style={styles.topIndicatorCard}>
-              <Text style={styles.topIndicatorLabel}>{topIndicatorLabel}</Text>
-              <Text style={styles.topIndicatorName}>{topIndicatorName}</Text>
-            </View>
-          </MapOverlay>
-        </SafeAreaView>
       </View>
 
-      <View style={styles.bottomPanel}>
+      {/* Top overlay: back + compact status pill */}
+      <SafeAreaView edges={['top']} style={styles.topOverlay} pointerEvents="box-none">
+        <View style={styles.topRow} pointerEvents="box-none">
+          <Pressable style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Icon name="arrow_back" size={22} color={colors.onSurface} />
+          </Pressable>
+          <View style={styles.pill}>
+            <Text style={styles.pillLabel}>{topIndicatorLabel}</Text>
+            <Text style={styles.pillName} numberOfLines={1}>
+              {topIndicatorName}
+            </Text>
+          </View>
+          <View style={styles.backBtn} />
+        </View>
+      </SafeAreaView>
+
+      {/* Bottom panel */}
+      <SafeAreaView edges={['bottom']} style={styles.bottomPanel}>
         <View style={styles.summaryRow}>
-          <Text style={styles.distanceText}>{displayDistance} km</Text>
+          <Text style={styles.distanceText}>
+            {displayDistance != null ? `${displayDistance} km` : '—'}
+          </Text>
           <Text style={styles.etaText}> • {displayEta} min</Text>
         </View>
 
@@ -113,7 +130,7 @@ export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
             {isPickup ? 'Arriving at Pickup' : `Arriving at Drop ${currentDropNumber}`}
           </Text>
           <View style={styles.onTimeBadge}>
-            <Icon name="schedule" style={styles.onTimeIcon} />
+            <Icon name="schedule" size={14} color={colors.onSecondaryContainer} />
             <Text style={styles.onTimeText}>On Time</Text>
           </View>
         </View>
@@ -124,82 +141,80 @@ export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
           <MultiStopTimeline stops={trip.stops} currentStopIndex={trip.currentStopIndex} />
         </View>
 
-        <SecondaryButton
-          label="TRIP DETAILS"
-          onPress={() => {}} // No-op for now as it's not specified
-          style={styles.detailsButton}
+        <PrimaryButton
+          label={isPickup ? 'ARRIVED AT PICKUP' : `CONFIRM DROP ${currentDropNumber}`}
+          onPress={() => {
+            if (currentStop) handleNavigateToStop(currentStop.id);
+          }}
         />
-      </View>
+      </SafeAreaView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
+  root: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.background,
   },
-  backButtonContainer: {
+  // Top overlay
+  topOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
+    right: 0,
     zIndex: 10,
-    padding: spacing.md,
   },
-    backButtonTouch: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 60,
-    height: 60,
-    zIndex: 11,
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.containerPadding,
+    paddingTop: spacing.xs,
+    gap: spacing.sm,
   },
-  backButtonIcon: {
-    fontSize: 24,
-    color: colors.onSurface,
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.surface,
-    padding: spacing.xs,
-    borderRadius: borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
     ...shadows.sm,
   },
-  mapContainer: {
-    flex: 1,
-    position: 'relative',
-  },
-  mapOverlays: {
-    flex: 1,
-    pointerEvents: 'box-none',
-  },
-  topIndicatorContainer: {
+  pill: {
+    maxWidth: '68%',
     alignItems: 'center',
-    paddingTop: spacing.lg,
-  },
-  topIndicatorCard: {
     backgroundColor: colors.surface,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.gutter,
+    paddingVertical: 6,
     borderRadius: borderRadius.lg,
-    alignItems: 'center',
     ...shadows.md,
   },
-  topIndicatorLabel: {
-    ...typography.labelSm,
+  pillLabel: {
+    ...typography.labelCaps,
     color: colors.onSurfaceVariant,
-    fontWeight: '700',
   },
-  topIndicatorName: {
-    ...typography.headlineMd,
+  pillName: {
+    ...typography.headlineSm,
     color: colors.onSurface,
-    fontWeight: 'bold',
   },
+  // Bottom panel
   bottomPanel: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
     backgroundColor: colors.surfaceContainerLowest,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    padding: spacing.lg,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderColor: colors.outlineVariant,
+    paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
     ...shadows.lg,
-    marginTop: -20,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -227,19 +242,15 @@ const styles = StyleSheet.create({
   onTimeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#e8eaf6',
+    backgroundColor: colors.secondaryContainer,
     paddingHorizontal: spacing.xs,
     paddingVertical: 4,
     borderRadius: borderRadius.sm,
     gap: 4,
   },
-  onTimeIcon: {
-    fontSize: 14,
-    color: '#3f51b5',
-  },
   onTimeText: {
     ...typography.labelSm,
-    color: '#3f51b5',
+    color: colors.onSecondaryContainer,
     fontWeight: '600',
   },
   divider: {
@@ -250,9 +261,6 @@ const styles = StyleSheet.create({
   timelineContainer: {
     paddingHorizontal: spacing.xs,
     marginBottom: spacing.lg,
-  },
-  detailsButton: {
-    backgroundColor: colors.surface,
   },
 });
 

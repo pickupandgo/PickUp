@@ -1,11 +1,11 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Pressable,  FlatList } from 'react-native';
-import Icon from '../../components/atoms/Icon';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Icon from '../../components/atoms/Icon';
 import { colors, typography, spacing, borderRadius } from '../../theme';
-import { languages } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
+import { useI18n, type Locale } from '../../i18n';
 import type { AccountScreenProps } from '../../types/navigation';
 
 export interface SettingsLanguageScreenProps {
@@ -13,58 +13,63 @@ export interface SettingsLanguageScreenProps {
   readonly testID?: string;
 }
 
-export const SettingsLanguageScreen: React.FC<SettingsLanguageScreenProps> = ({
-  navigation,
-  testID,
-}) => {
-  const [selected, setSelected] = useState('en');
+export const SettingsLanguageScreen: React.FC<SettingsLanguageScreenProps> = ({ navigation, testID }) => {
+  const { t, locale, setLocale } = useI18n();
+  const [selected, setSelected] = useState<Locale>(locale);
 
-  const handleSave = useCallback(() => {
-    // Mock: save language preference via service layer in production
+  const options: { id: Locale; label: string; initial: string }[] = [
+    { id: 'en', label: t('language.english'), initial: 'E' },
+    { id: 'hi', label: t('language.hindi'), initial: 'H' },
+  ];
+
+  const handleConfirm = useCallback(() => {
+    setLocale(selected);
     navigation.goBack();
-  }, [navigation]);
+  }, [selected, setLocale, navigation]);
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title="Language"
+        title={t('language.title')}
         onBackPress={() => navigation.goBack()}
         showBackButton
+        showDivider
       />
+      <View style={styles.container}>
+        <Text style={styles.subtitle}>{t('language.subtitle')}</Text>
 
-      <FlatList
-        data={languages}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => {
-          const isSelected = selected === item.id;
-          return (
-            <Pressable
-              style={[styles.row, isSelected && styles.rowSelected]}
-              onPress={() => setSelected(item.id)}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: isSelected }}
-            >
-              <View style={styles.labelGroup}>
-                <Text style={styles.label}>{item.label}</Text>
-                <Text style={styles.nativeLabel}>{item.initial}</Text>
-              </View>
-              {isSelected ? (
-                <Icon name="check_circle" style={styles.checkIcon} />
-              ) : (
-                <View style={styles.unselectedCircle} />
-              )}
-            </Pressable>
-          );
-        }}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-      />
+        <View style={styles.list}>
+          {options.map((item) => {
+            const isSelected = item.id === selected;
+            return (
+              <Pressable
+                key={item.id}
+                style={[styles.row, isSelected ? styles.rowSelected : styles.rowUnselected]}
+                onPress={() => setSelected(item.id)}
+                accessibilityRole="radio"
+                accessibilityLabel={item.label}
+                accessibilityState={{ selected: isSelected }}
+              >
+                <View style={[styles.initialCircle, isSelected && styles.initialCircleSelected]}>
+                  <Text style={[styles.initialText, isSelected && styles.initialTextSelected]}>
+                    {item.initial}
+                  </Text>
+                </View>
+                <Text style={styles.rowName}>{item.label}</Text>
+                <Icon
+                  name={isSelected ? 'check_circle' : 'radio_button_unchecked'}
+                  size={24}
+                  color={isSelected ? colors.primary : colors.outline}
+                />
+              </Pressable>
+            );
+          })}
+        </View>
 
-      <PrimaryButton
-        label="SAVE"
-        onPress={handleSave}
-        style={styles.saveButton}
-      />
+        <View style={styles.footer}>
+          <PrimaryButton label={t('language.confirm')} onPress={handleConfirm} />
+        </View>
+      </View>
     </SafeAreaView>
   );
 };
@@ -74,51 +79,67 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surface,
   },
-  listContent: {
+  container: {
+    flex: 1,
     paddingHorizontal: spacing.containerPadding,
-    paddingBottom: spacing.lg,
+  },
+  subtitle: {
+    ...typography.bodyMd,
+    color: colors.onSurfaceVariant,
+    marginTop: spacing.xl,
+    marginBottom: spacing.xl,
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  list: {
+    flex: 1,
+    gap: spacing.gutter,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.containerPadding,
-    paddingHorizontal: spacing.gutter,
-    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.containerPadding,
+    borderRadius: borderRadius.lg,
+  },
+  rowUnselected: {
+    backgroundColor: colors.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   rowSelected: {
-    backgroundColor: colors.primaryContainer,
+    backgroundColor: colors.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: colors.primary,
   },
-  labelGroup: {
+  rowName: {
     flex: 1,
-    gap: 2,
-  },
-  label: {
     ...typography.bodyMd,
     fontWeight: '500',
     color: colors.onSurface,
   },
-  nativeLabel: {
-    ...typography.labelSm,
+  initialCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceVariant,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.gutter,
+  },
+  initialCircleSelected: {
+    backgroundColor: colors.primary,
+  },
+  initialText: {
+    ...typography.bodyMd,
+    fontWeight: '600',
     color: colors.onSurfaceVariant,
   },
-  checkIcon: {
-    fontSize: 24,
-    color: colors.primary,
+  initialTextSelected: {
+    color: colors.onPrimary,
   },
-  unselectedCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: colors.outline,
-  },
-  separator: {
-    height: 1,
-    backgroundColor: colors.outlineVariant,
-  },
-  saveButton: {
-    marginHorizontal: spacing.containerPadding,
-    marginBottom: spacing.lg,
+  footer: {
+    paddingBottom: spacing.lg,
   },
 });
 

@@ -370,6 +370,9 @@ export const mockEarningsSummary: EarningsSummary = {
   platformCommission: 270,
   otherDeductions: 80,
   netEarnings: 1850,
+  cashEarnings: 740,
+  onlineEarnings: 1110,
+  onlineHours: 6.2,
 };
 
 export const mockHistoricalTrip: HistoricalTrip = {

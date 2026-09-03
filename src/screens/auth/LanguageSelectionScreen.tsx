@@ -6,6 +6,7 @@ import { languages } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import Icon from '../../components/atoms/Icon';
+import { useI18n, type Locale } from '../../i18n';
 import type { AuthScreenProps } from '../../types/navigation';
 
 export interface LanguageSelectionScreenProps {
@@ -17,9 +18,13 @@ export const LanguageSelectionScreen: React.FC<LanguageSelectionScreenProps> = (
   navigation,
   testID,
 }) => {
+  const { t, setLocale } = useI18n();
   const [selectedLanguage, setSelectedLanguage] = useState('en');
 
   const handleContinue = () => {
+    if (selectedLanguage === 'en' || selectedLanguage === 'hi') {
+      setLocale(selectedLanguage as Locale);
+    }
     navigation.navigate('VehicleSelection', { language: selectedLanguage });
   };
 
@@ -36,9 +41,7 @@ export const LanguageSelectionScreen: React.FC<LanguageSelectionScreenProps> = (
         showDivider
       />
       <View style={styles.container}>
-        <Text style={styles.subtitle}>
-          Select your preferred language for the Pick Up Driver app.
-        </Text>
+        <Text style={styles.subtitle}>{t('language.subtitle')}</Text>
         <FlatList
           data={languages as unknown as { readonly id: string; readonly label: string; readonly initial: string; readonly selected: boolean }[]}
           keyExtractor={(item) => item.id}
@@ -70,7 +73,7 @@ export const LanguageSelectionScreen: React.FC<LanguageSelectionScreenProps> = (
           ItemSeparatorComponent={() => <View style={{ height: spacing.gutter }} />}
         />
         <PrimaryButton
-          label="Confirm"
+          label={t('language.confirm')}
           onPress={handleContinue}
           style={styles.continueButton}
         />

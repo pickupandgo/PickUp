@@ -4,6 +4,7 @@ import type { RootStackParamList } from '../types/navigation';
 import { AuthStack } from './stacks/AuthStack';
 import { MainTabNavigator } from './MainTabNavigator';
 import { AuthService } from '../services/auth/AuthService';
+import { isOnboardingComplete, markOnboardingComplete, clearOnboardingComplete } from '../state/onboarding';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -18,26 +19,32 @@ export const RootNavigator: React.FC = () => {
     // observeAuthState handles Firebase auth state changes
     if (authService.observeAuthState) {
       const unsubscribe = authService.observeAuthState(async (user) => {
-        console.log(`[OTP DEBUG] auth state changed: user exists? ${!!user}`);
         if (user) {
-          console.log(`[OTP DEBUG] Firebase UID: ${user.uid.substring(0,4)}***`);
           setIsAuthenticated(true);
-          
-          // Load driver/profile state
-          try {
-            const profile = await authService.getProfile();
-            setOnboardingComplete(profile.profileCompletionPercent === 100);
-            console.log(`[OTP DEBUG] RootNavigator auth state: Driver, onboardingComplete: ${profile.profileCompletionPercent === 100}`);
-          } catch (e) {
-            // Profile not found or error, default to incomplete
-            setOnboardingComplete(false);
-            console.log(`[OTP DEBUG] RootNavigator auth state: Driver, onboardingComplete: false (profile error)`);
+
+          // Prefer the persisted onboarding flag so a logged-in, onboarded
+          // driver lands on Home across restarts. Fall back to the profile's
+          // completion percent (and persist it if complete).
+          let complete = await isOnboardingComplete();
+          if (!complete) {
+            try {
+              const profile = await authService.getProfile();
+              complete = profile.profileCompletionPercent === 100;
+            } catch {
+              complete = false;
+            }
+            if (complete) {
+              await markOnboardingComplete();
+            }
           }
+          setOnboardingComplete(complete);
         } else {
+          // Signed out: clear the flag so a future login re-runs onboarding.
           setIsAuthenticated(false);
           setOnboardingComplete(false);
+          await clearOnboardingComplete();
         }
-        
+
         if (initializing) {
           setInitializing(false);
         }
@@ -63,7 +70,10 @@ export const RootNavigator: React.FC = () => {
             return (
               <AuthStack 
                 initialRouteName="UnifiedAuth"
-                onAuthComplete={() => setOnboardingComplete(true)} 
+                onAuthComplete={() => {
+                  void markOnboardingComplete();
+                  setOnboardingComplete(true);
+                }} 
               />
             );
           }}
@@ -77,7 +87,10 @@ export const RootNavigator: React.FC = () => {
             return (
               <AuthStack 
                 initialRouteName="LanguageSelection"
-                onAuthComplete={() => setOnboardingComplete(true)} 
+                onAuthComplete={() => {
+                  void markOnboardingComplete();
+                  setOnboardingComplete(true);
+                }} 
               />
             );
           }}

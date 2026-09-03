@@ -22,6 +22,7 @@ export type HomeStackParamList = {
   DriverHome: undefined;
   NotificationCenter: undefined;
   ActiveTrip: { readonly tripId: string };
+  Navigation: { readonly tripId: string };
   MultiStopJourney: { readonly tripId: string };
   ArrivedAtPickup: { readonly tripId: string; readonly stopId: string };
   PickupOTP: { readonly tripId: string; readonly stopId: string };

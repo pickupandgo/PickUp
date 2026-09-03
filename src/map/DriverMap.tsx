@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
 import { DriverMarker } from './DriverMarker';
@@ -24,6 +24,15 @@ export interface DriverMapProps {
 const DEFAULT_LATITUDE_DELTA = 0.02;
 const DEFAULT_LONGITUDE_DELTA = 0.02;
 
+// Last-resort center so the map never opens on the whole-world (0,0) view when
+// neither the driver location nor a trip stop is available yet.
+const FALLBACK_REGION = {
+  latitude: 26.2389,
+  longitude: 73.0243,
+  latitudeDelta: 0.05,
+  longitudeDelta: 0.05,
+};
+
 export const DriverMap: React.FC<DriverMapProps> = ({
   currentLocation,
   heading,
@@ -36,20 +45,32 @@ export const DriverMap: React.FC<DriverMapProps> = ({
   testID,
 }) => {
   const mapRef = useRef<MapView>(null);
-  const isMapReady = useRef(false);
+  const [mapReady, setMapReady] = useState(false);
   const hasInitialZoomed = useRef(false);
 
-  // Initial region or fallback
-  const initialRegion = currentLocation ? {
-    latitude: currentLocation.latitude,
-    longitude: currentLocation.longitude,
-    latitudeDelta: DEFAULT_LATITUDE_DELTA,
-    longitudeDelta: DEFAULT_LONGITUDE_DELTA,
-  } : undefined;
+  // Prefer the driver's location; fall back to the trip's current stop (from the
+  // engine) so the map opens on a relevant area instead of the whole world.
+  const fallbackStop =
+    routeData?.stops?.find((s) => s.isCurrent) ?? routeData?.stops?.[0];
+  const initialRegion = currentLocation
+    ? {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        latitudeDelta: DEFAULT_LATITUDE_DELTA,
+        longitudeDelta: DEFAULT_LONGITUDE_DELTA,
+      }
+    : fallbackStop
+      ? {
+          latitude: fallbackStop.coordinate.latitude,
+          longitude: fallbackStop.coordinate.longitude,
+          latitudeDelta: DEFAULT_LATITUDE_DELTA,
+          longitudeDelta: DEFAULT_LONGITUDE_DELTA,
+        }
+      : FALLBACK_REGION;
 
   // Handle initial center and follow mode
   useEffect(() => {
-    if (currentLocation && isMapReady.current && mapRef.current) {
+    if (currentLocation && mapReady && mapRef.current) {
       if (!hasInitialZoomed.current) {
         mapRef.current.animateToRegion({
           latitude: currentLocation.latitude,
@@ -66,11 +87,24 @@ export const DriverMap: React.FC<DriverMapProps> = ({
         }, { duration: 1000 });
       }
     }
-  }, [currentLocation, heading, followDriver]);
+  }, [currentLocation, heading, followDriver, mapReady]);
+
+  // Before we have a driver fix, center on the trip's current stop so the map
+  // opens on the relevant area rather than the whole world.
+  useEffect(() => {
+    if (!currentLocation && fallbackStop && mapReady && mapRef.current && !hasInitialZoomed.current) {
+      mapRef.current.animateToRegion({
+        latitude: fallbackStop.coordinate.latitude,
+        longitude: fallbackStop.coordinate.longitude,
+        latitudeDelta: DEFAULT_LATITUDE_DELTA,
+        longitudeDelta: DEFAULT_LONGITUDE_DELTA,
+      }, 600);
+    }
+  }, [currentLocation, fallbackStop?.coordinate.latitude, fallbackStop?.coordinate.longitude, mapReady]);
 
   // Fit route bounds if provided
   useEffect(() => {
-    if (routeData?.bounds && isMapReady.current && mapRef.current) {
+    if (routeData?.bounds && mapReady && mapRef.current) {
       hasInitialZoomed.current = true; // Prioritize route bounds over initial current location zoom
       mapRef.current.fitToCoordinates([
         routeData.bounds.northeast,
@@ -80,7 +114,7 @@ export const DriverMap: React.FC<DriverMapProps> = ({
         animated: true,
       });
     }
-  }, [routeData?.bounds]);
+  }, [routeData?.bounds, mapReady]);
 
   const handleRecenter = () => {
     if (currentLocation && mapRef.current) {
@@ -94,7 +128,7 @@ export const DriverMap: React.FC<DriverMapProps> = ({
   };
 
   const handleMapReady = () => {
-    isMapReady.current = true;
+    setMapReady(true);
     onMapReady?.();
   };
 
@@ -111,7 +145,8 @@ export const DriverMap: React.FC<DriverMapProps> = ({
         showsMyLocationButton={true}
         showsCompass={false}
         mapType="standard"
-        customMapStyle={mapStyle} // We can provide a dark mode / standard JSON style here later
+        userInterfaceStyle="light"
+        customMapStyle={mapStyle}
       >
         {/* Route Polyline */}
         {routeData?.polylinePoints && (

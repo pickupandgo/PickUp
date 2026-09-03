@@ -73,11 +73,6 @@ export const ArrivedAtPickupScreen: React.FC<ArrivedAtPickupScreenProps> = ({
           </View>
         </View>
 
-        <View style={styles.summaryRow}>
-          <Text style={styles.distanceText}>0 km</Text>
-          <Text style={styles.etaText}> • 0 min</Text>
-        </View>
-
         <View style={styles.instructionRow}>
           <Text style={styles.instructionText}>Sender loading goods...</Text>
         </View>

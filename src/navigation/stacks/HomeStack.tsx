@@ -9,6 +9,7 @@ import { NotificationCenterScreen } from '../../screens/home/NotificationCenterS
 // Trip flow screens
 import { NewTripOfferScreen } from '../../screens/trip/NewTripOfferScreen';
 import { ActiveTripScreen } from '../../screens/trip/ActiveTripScreen';
+import { NavigationScreen } from '../../screens/trip/NavigationScreen';
 import { MultiStopJourneyScreen } from '../../screens/trip/MultiStopJourneyScreen';
 import { ArrivedAtPickupScreen } from '../../screens/trip/ArrivedAtPickupScreen';
 import { PickupOTPScreen } from '../../screens/trip/PickupOTPScreen';
@@ -38,6 +39,7 @@ export const HomeStack: React.FC = () => {
       {/* Active Trip Flow */}
       <Stack.Screen name="TripOffer" component={NewTripOfferScreen} />
       <Stack.Screen name="ActiveTrip" component={ActiveTripScreen} />
+      <Stack.Screen name="Navigation" component={NavigationScreen} />
       <Stack.Screen name="MultiStopJourney" component={MultiStopJourneyScreen} />
 
       {/* Pickup Verification */}

@@ -59,6 +59,21 @@ export function useDriverLocation() {
     };
   }, []);
 
+  // Seed one immediate fix once permission is granted so maps can center on the
+  // driver (and trip routing can compute) even before continuous tracking runs.
+  useEffect(() => {
+    if (permissionState === 'granted' && !currentLocation) {
+      LocationService.getCurrentLocation()
+        .then((loc) => {
+          setCurrentLocation(loc);
+          setError(null);
+        })
+        .catch(() => {
+          /* provider off / no fix yet — surfaced via error/toast elsewhere */
+        });
+    }
+  }, [permissionState, currentLocation]);
+
   const requestPermission = useCallback(async () => {
     if (Platform.OS === 'android') {
       try {

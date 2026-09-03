@@ -1,15 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { mockEarningsSummary, mockHistoricalTrip, earningsLabels } from '../../data/mockData';
+import { colors, typography, spacing, borderRadius } from '../../theme';
+import { mockEarningsSummary } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
-import { TabChip } from '../../components/atoms/TabChip';
-import { MetricCard } from '../../components/molecules/MetricCard';
-import { EarningsBreakdown } from '../../components/organisms/EarningsBreakdown';
-import type { EarningsSummary } from '../../types/wallet';
-import type { HistoricalTrip } from '../../types/trip';
+import { useEarnings } from '../../hooks/useEarnings';
+import { useI18n } from '../../i18n';
 import type { EarningsScreenProps } from '../../types/navigation';
 
 type PeriodTab = 'today' | 'weekly' | 'monthly';
@@ -19,98 +16,140 @@ export interface EarningsHistoryScreenProps {
   readonly testID?: string;
 }
 
-export const EarningsHistoryScreen: React.FC<EarningsHistoryScreenProps> = ({
-  navigation,
-  testID,
-}) => {
+interface HistoryEntry {
+  readonly id: string;
+  readonly time: string;
+  readonly amount: number;
+}
+
+const HISTORY: readonly HistoryEntry[] = [
+  { id: 'LOG-8492', time: 'Today, 2:45 PM', amount: 142.5 },
+  { id: 'LOG-8491', time: 'Today, 1:15 PM', amount: 110 },
+  { id: 'LOG-8488', time: 'Today, 11:30 AM', amount: 95 },
+];
+
+export const EarningsHistoryScreen: React.FC<EarningsHistoryScreenProps> = ({ navigation, testID }) => {
+  const { t } = useI18n();
+  const { summary: liveSummary, fetchSummary } = useEarnings();
   const [activeTab, setActiveTab] = useState<PeriodTab>('today');
 
-  // Mock: same data for all periods — in production, fetched per period
-  const summary: EarningsSummary = { ...mockEarningsSummary, period: activeTab };
-  const trips: HistoricalTrip[] = [mockHistoricalTrip];
+  const summary = liveSummary ?? mockEarningsSummary;
+  const currency = summary.currency ?? '₹';
 
-  const handleTripPress = useCallback((tripId: string) => {
-    navigation.navigate('TripEarningsDetail', { tripId });
-  }, [navigation]);
+  const money = useCallback(
+    (n: number) =>
+      `${currency}${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    [currency],
+  );
 
-  const renderTripItem = useCallback(({ item }: { item: HistoricalTrip }) => (
-    <Pressable
-      style={styles.tripCard}
-      onPress={() => handleTripPress(item.id)}
-      accessibilityRole="button"
-    >
-      <View style={styles.tripHeader}>
-        <Text style={styles.tripId}>Trip #{item.id}</Text>
-        <Text style={styles.tripAmount}>
-          {item.earnings.currency}{item.earnings.netEarning}
-        </Text>
-      </View>
-      <View style={styles.tripMeta}>
-        <Text style={styles.tripDate}>{item.date} • {item.time}</Text>
-        <Text style={styles.tripStops}>{item.stops.length} stops</Text>
-      </View>
-      <View style={styles.tripRoute}>
-        <Icon name="route" style={styles.routeIcon} />
-        <Text style={styles.routeText} numberOfLines={1}>
-          {item.stops[0]?.address} → {item.stops[item.stops.length - 1]?.address}
-        </Text>
-      </View>
-    </Pressable>
-  ), [handleTripPress]);
+  const cash = summary.cashEarnings ?? mockEarningsSummary.cashEarnings ?? 0;
+  const online = summary.onlineEarnings ?? mockEarningsSummary.onlineEarnings ?? 0;
+  const hours = summary.onlineHours ?? mockEarningsSummary.onlineHours ?? 0;
 
-  const renderEmpty = useCallback(() => (
-    <View style={styles.emptyContainer}>
-      <Icon name="payments" style={styles.emptyIcon} />
-      <Text style={styles.emptyTitle}>No Earnings Yet</Text>
-      <Text style={styles.emptySubtitle}>Complete trips to start earning.</Text>
-    </View>
-  ), []);
+  const handleTab = useCallback(
+    (tab: PeriodTab) => {
+      setActiveTab(tab);
+      fetchSummary(tab === 'today' ? 'day' : tab === 'weekly' ? 'week' : 'month');
+    },
+    [fetchSummary],
+  );
+
+  const handleTripPress = useCallback(
+    (tripId: string) => navigation.navigate('TripEarningsDetail', { tripId }),
+    [navigation],
+  );
+
+  const tabs: { key: PeriodTab; label: string }[] = useMemo(
+    () => [
+      { key: 'today', label: t('earnings.today') },
+      { key: 'weekly', label: t('earnings.weekly') },
+      { key: 'monthly', label: t('earnings.monthly') },
+    ],
+    [t],
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
-      <AppHeader title={earningsLabels.earningsTitle} showBackButton={false} />
+      <AppHeader title={t('earnings.title')} showBackButton={false} />
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Period tabs */}
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Tabs */}
         <View style={styles.tabRow}>
-          <TabChip label={earningsLabels.todayTab} selected={activeTab === 'today'} onPress={() => setActiveTab('today')} />
-          <TabChip label={earningsLabels.weeklyTab} selected={activeTab === 'weekly'} onPress={() => setActiveTab('weekly')} />
-          <TabChip label={earningsLabels.monthlyTab} selected={activeTab === 'monthly'} onPress={() => setActiveTab('monthly')} />
+          {tabs.map((tab) => {
+            const selected = activeTab === tab.key;
+            return (
+              <Pressable
+                key={tab.key}
+                style={[styles.chip, selected ? styles.chipSelected : styles.chipUnselected]}
+                onPress={() => handleTab(tab.key)}
+              >
+                <Text style={[styles.chipText, selected ? styles.chipTextSelected : styles.chipTextUnselected]}>
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
 
-        {/* Summary metrics */}
-        <View style={styles.metricsRow}>
-          <MetricCard
-            label="Total Earnings"
-            value={`${summary.currency}${summary.totalEarnings}`}
-            iconName="account_balance_wallet"
-            style={styles.metricCard}
-          />
-          <MetricCard
-            label="Total Trips"
-            value={`${summary.totalTrips}`}
-            iconName="local_shipping"
-            style={styles.metricCard}
-          />
-        </View>
-
-        {/* Earnings breakdown */}
-        <EarningsBreakdown summary={summary} />
-
-        {/* Trip history */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{earningsLabels.tripHistoryTitle}</Text>
-        </View>
-
-        {trips.length > 0 ? (
-          trips.map((trip) => (
-            <View key={trip.id}>
-              {renderTripItem({ item: trip })}
+        {/* Summary card */}
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryLabel}>{t('earnings.total')}</Text>
+          <Text style={styles.summaryValue}>{money(summary.totalEarnings)}</Text>
+          <View style={styles.summaryGrid}>
+            <View style={styles.summaryCol}>
+              <Text style={styles.gridLabel}>{t('earnings.trips')}</Text>
+              <Text style={styles.gridValue}>{summary.totalTrips}</Text>
             </View>
-          ))
-        ) : (
-          renderEmpty()
-        )}
+            <View style={styles.summaryCol}>
+              <Text style={styles.gridLabel}>{t('earnings.online')}</Text>
+              <Text style={styles.gridValue}>{t('earnings.hrs', { value: hours })}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Breakdown */}
+        <Text style={styles.sectionTitle}>{t('earnings.breakdown')}</Text>
+        <View style={styles.card}>
+          <View style={styles.breakRow}>
+            <Text style={styles.breakLabel}>{t('earnings.cash')}</Text>
+            <Text style={styles.breakValue}>{money(cash)}</Text>
+          </View>
+          <View style={styles.breakRow}>
+            <Text style={styles.breakLabel}>{t('earnings.onlineEarnings')}</Text>
+            <Text style={styles.breakValue}>{money(online)}</Text>
+          </View>
+          <View style={styles.breakRow}>
+            <Text style={[styles.breakLabel, styles.errorText]}>{t('earnings.commission')}</Text>
+            <Text style={[styles.breakValue, styles.errorText]}>-{money(summary.platformCommission)}</Text>
+          </View>
+          <View style={[styles.breakRow, styles.netRow]}>
+            <Text style={styles.netLabel}>{t('earnings.net')}</Text>
+            <Text style={styles.netValue}>{money(summary.netEarnings)}</Text>
+          </View>
+        </View>
+
+        {/* History */}
+        <Text style={styles.sectionTitle}>{t('earnings.history')}</Text>
+        <View style={styles.card}>
+          {HISTORY.map((entry, i) => (
+            <Pressable
+              key={entry.id}
+              style={[styles.historyRow, i < HISTORY.length - 1 && styles.historyRowBorder]}
+              onPress={() => handleTripPress(entry.id)}
+            >
+              <View style={styles.historyLeft}>
+                <View style={styles.historyIcon}>
+                  <Icon name="local_taxi" size={20} color={colors.onSurfaceVariant} />
+                </View>
+                <View>
+                  <Text style={styles.historyId}>Trip ID: {entry.id}</Text>
+                  <Text style={styles.historyTime}>{entry.time}</Text>
+                </View>
+              </View>
+              <Text style={styles.historyAmount}>{money(entry.amount)}</Text>
+            </Pressable>
+          ))}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -119,11 +158,11 @@ export const EarningsHistoryScreen: React.FC<EarningsHistoryScreenProps> = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.background,
   },
   scrollContent: {
     paddingHorizontal: spacing.containerPadding,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.xxl,
     gap: spacing.containerPadding,
   },
   tabRow: {
@@ -131,86 +170,146 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     marginTop: spacing.xs,
   },
-  metricsRow: {
-    flexDirection: 'row',
-    gap: spacing.gutter,
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
   },
-  metricCard: {
+  chipSelected: {
+    backgroundColor: colors.primary,
+  },
+  chipUnselected: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+  },
+  chipText: {
+    ...typography.labelSm,
+  },
+  chipTextSelected: {
+    color: colors.onPrimary,
+  },
+  chipTextUnselected: {
+    color: colors.onSurfaceVariant,
+  },
+  summaryCard: {
+    backgroundColor: colors.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+    borderRadius: borderRadius.xl,
+    padding: spacing.md,
+  },
+  summaryLabel: {
+    ...typography.labelCaps,
+    color: colors.onSurfaceVariant,
+    marginBottom: spacing.xs,
+  },
+  summaryValue: {
+    fontFamily: typography.headlineMd.fontFamily,
+    fontSize: 30,
+    lineHeight: 36,
+    fontWeight: '700',
+    color: colors.primary,
+    marginBottom: spacing.containerPadding,
+  },
+  summaryGrid: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: colors.outlineVariant,
+    paddingTop: spacing.containerPadding,
+  },
+  summaryCol: {
     flex: 1,
   },
-  sectionHeader: {
-    marginTop: spacing.xs,
+  gridLabel: {
+    ...typography.labelCaps,
+    color: colors.onSurfaceVariant,
+  },
+  gridValue: {
+    ...typography.headlineMd,
+    color: colors.primary,
+    marginTop: 4,
   },
   sectionTitle: {
     ...typography.headlineSm,
-    color: colors.onSurface,
+    color: colors.primary,
+    marginBottom: -spacing.xs,
+    marginLeft: spacing.unit,
   },
-  tripCard: {
+  card: {
     backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+    borderRadius: borderRadius.xl,
     padding: spacing.containerPadding,
-    gap: spacing.gutter,
-    ...shadows.sm,
   },
-  tripHeader: {
+  breakRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 6,
   },
-  tripId: {
+  breakLabel: {
     ...typography.bodyMd,
-    fontWeight: '600',
-    color: colors.onSurface,
+    color: colors.onSurfaceVariant,
   },
-  tripAmount: {
+  breakValue: {
+    ...typography.dataMono,
+    color: colors.primary,
+  },
+  errorText: {
+    color: colors.error,
+  },
+  netRow: {
+    borderTopWidth: 1,
+    borderTopColor: colors.outlineVariant,
+    marginTop: spacing.xs,
+    paddingTop: spacing.sm,
+  },
+  netLabel: {
     ...typography.headlineSm,
     color: colors.primary,
   },
-  tripMeta: {
+  netValue: {
+    ...typography.headlineSm,
+    color: colors.primary,
+  },
+  historyRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: spacing.gutter,
   },
-  tripDate: {
-    ...typography.labelSm,
-    color: colors.onSurfaceVariant,
+  historyRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.outlineVariant,
   },
-  tripStops: {
-    ...typography.labelSm,
-    color: colors.onSurfaceVariant,
-  },
-  tripRoute: {
+  historyLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
-  routeIcon: {
-    fontSize: 16,
-    color: colors.outline,
-  },
-  routeText: {
-    ...typography.labelSm,
-    color: colors.outline,
-    flex: 1,
-  },
-  emptyContainer: {
+  historyIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceContainer,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.lg * 2,
-    gap: spacing.xs,
   },
-  emptyIcon: {
-    fontSize: 48,
-    color: colors.outline,
+  historyId: {
+    ...typography.bodyMd,
+    fontWeight: '500',
+    color: colors.primary,
   },
-  emptyTitle: {
-    ...typography.headlineSm,
+  historyTime: {
+    ...typography.labelSm,
     color: colors.onSurfaceVariant,
   },
-  emptySubtitle: {
-    ...typography.bodyMd,
-    color: colors.outline,
-    textAlign: 'center',
+  historyAmount: {
+    ...typography.dataMono,
+    fontWeight: '500',
+    color: colors.primary,
   },
 });
 

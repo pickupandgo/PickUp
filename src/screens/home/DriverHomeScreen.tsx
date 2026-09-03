@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Animated, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Animated, Easing, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { EarningsCard } from '../../components/molecules/EarningsCard';
@@ -7,16 +7,15 @@ import { WalletCard } from '../../components/molecules/WalletCard';
 import Icon from '../../components/atoms/Icon';
 import { GoLiveSheet } from '../../components/organisms/GoLiveSheet';
 import { GoOfflineSheet } from '../../components/organisms/GoOfflineSheet';
-import { AppHeader } from '../../components/molecules/AppHeader';
 import { useFocusEffect } from '@react-navigation/native';
 import { useDriverLocation, LocationService } from '../../location';
 import type { HomeScreenProps } from '../../types/navigation';
-import { useAuth } from '../../hooks/useAuth';
+import type { ActiveTrip, TripStop } from '../../types/trip';
 import { useDriverDispatch } from '../../hooks/useDriverDispatch';
 import { useWallet } from '../../hooks/useWallet';
 import { useEarnings } from '../../hooks/useEarnings';
-import { DriverMap, MapOverlay } from '../../map';
-
+import { useActiveTrip } from '../../hooks/useActiveTrip';
+import { useI18n } from '../../i18n';
 
 export type DriverMode = 'offline' | 'searching' | 'active_trip';
 
@@ -25,21 +24,186 @@ export interface DriverHomeScreenProps {
   readonly testID?: string;
 }
 
-export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({
-  navigation,
-  testID,
-}) => {
-  const { startTracking, stopTracking, requestPermission, currentLocation, error: locationError } = useDriverLocation();
-  const { driver } = useAuth();
+// ─── Animated helpers ──────────────────────────────────────────────
+
+/** Green "live" dot with an expanding pulse ring (matches the Stitch pulse-dot). */
+const LiveDot: React.FC = () => {
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 2000,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim]);
+
+  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 2.5] });
+  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] });
+
+  return (
+    <View style={styles.liveDotWrap}>
+      <Animated.View style={[styles.liveDotRing, { transform: [{ scale }], opacity }]} />
+      <View style={styles.liveDotCore} />
+    </View>
+  );
+};
+
+/** Explore icon inside a softly "pinging" circle for the searching state. */
+const SearchingPulse: React.FC = () => {
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 1600,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim]);
+
+  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 2] });
+  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0] });
+
+  return (
+    <View style={styles.searchPulseWrap}>
+      <Animated.View style={[styles.searchPulseRing, { transform: [{ scale }], opacity }]} />
+      <View style={styles.searchPulseInner}>
+        <Icon name="explore" size={26} color={colors.primary} />
+      </View>
+    </View>
+  );
+};
+
+// ─── Active trip timeline ──────────────────────────────────────────
+
+interface TimelineRowProps {
+  readonly stop: TripStop;
+  readonly subLabel: string;
+  readonly isLast: boolean;
+}
+
+const TimelineRow: React.FC<TimelineRowProps> = ({ stop, subLabel, isLast }) => {
+  const isCompleted = stop.status === 'completed';
+  const isCurrent = stop.status === 'current';
+
+  return (
+    <View style={[styles.tlRow, !isLast && styles.tlRowSpacing]}>
+      <View style={styles.tlDotCol}>
+        {isCurrent ? (
+          <View style={styles.tlDotCurrentRing}>
+            <View style={styles.tlDotCurrent} />
+          </View>
+        ) : isCompleted ? (
+          <View style={styles.tlDotDone} />
+        ) : (
+          <View style={styles.tlDotPending} />
+        )}
+      </View>
+      <View style={styles.tlTextCol}>
+        <Text style={[styles.tlSubLabel, isCurrent && styles.tlSubLabelCurrent]}>{subLabel}</Text>
+        <Text
+          style={[
+            styles.tlName,
+            isCurrent && styles.tlNameCurrent,
+            isCompleted && styles.tlNameDone,
+          ]}
+          numberOfLines={1}
+        >
+          {stop.label}
+        </Text>
+      </View>
+    </View>
+  );
+};
+
+const ActiveTripHero: React.FC<{ trip: ActiveTrip; onOpen: () => void }> = ({ trip, onOpen }) => {
+  const { t } = useI18n();
+  const stops = trip.stops;
+  const currentStop = stops[trip.currentStopIndex] ?? stops.find((s) => s.status === 'current') ?? stops[0];
+  const totalDrops = stops.filter((s) => s.type !== 'pickup').length;
+
+  const distanceKm = currentStop?.distanceKm ?? trip.totalDistanceKm;
+  const etaMinutes = currentStop?.etaMinutes;
+
+  let dropCounter = 0;
+
+  return (
+    <View style={styles.heroCard}>
+      <View style={styles.heroHeader}>
+        <View style={styles.heroHeaderLeft}>
+          <View style={styles.heroBadge}>
+            <Text style={styles.heroBadgeText}>{t('home.activeTrip')}</Text>
+          </View>
+          <Text style={styles.heroTitle} numberOfLines={1}>
+            {currentStop?.label ?? 'Current Stop'}
+          </Text>
+          <Text style={styles.heroSubtitle}>
+            {distanceKm != null ? `${distanceKm} km` : ''}
+            {etaMinutes != null ? `${distanceKm != null ? ' · ' : ''}${etaMinutes} min away` : ''}
+          </Text>
+        </View>
+        <View style={styles.earningBox}>
+          <Text style={styles.earningAmount}>
+            {trip.currency}
+            {trip.estimatedEarning}
+          </Text>
+          <Text style={styles.earningLabel}>{t('home.estEarning')}</Text>
+        </View>
+      </View>
+
+      <View style={styles.timeline}>
+        <View style={styles.timelineLine} />
+        {stops.map((stop, index) => {
+          const isPickup = stop.type === 'pickup';
+          if (!isPickup) dropCounter += 1;
+          const subLabel = isPickup
+            ? 'Pickup'
+            : stop.status === 'current'
+              ? `Drop ${dropCounter} of ${totalDrops}`
+              : `Drop ${dropCounter}`;
+          return (
+            <TimelineRow
+              key={stop.id}
+              stop={stop}
+              subLabel={subLabel}
+              isLast={index === stops.length - 1}
+            />
+          );
+        })}
+      </View>
+
+      <Pressable style={styles.openTripBtn} onPress={onOpen} accessibilityRole="button">
+        <Text style={styles.openTripText}>{t('home.openTrip')}</Text>
+        <Icon name="arrow_forward" size={16} color={colors.onPrimary} />
+      </Pressable>
+    </View>
+  );
+};
+
+// ─── Screen ────────────────────────────────────────────────────────
+
+export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, testID }) => {
+  const { startTracking, stopTracking, requestPermission, currentLocation } = useDriverLocation();
+  const { t } = useI18n();
   const { balance } = useWallet();
   const { summary } = useEarnings();
-  const [driverMode, setDriverMode] = useState<DriverMode>('offline');
+  const activeTrip = useActiveTrip();
+  const [driverMode, setDriverMode] = useState<Exclude<DriverMode, 'active_trip'>>('offline');
   const [sheetMode, setSheetMode] = useState<'none' | 'go_live' | 'go_offline'>('none');
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // Ask for location permissions on app launch/mount
     requestPermission().catch(console.error);
   }, [requestPermission]);
 
@@ -47,34 +211,37 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({
     setSheetMode(value ? 'go_live' : 'go_offline');
   }, []);
 
-  const confirmToggleLive = useCallback((value: boolean) => {
-    setSheetMode('none');
-    Animated.timing(fadeAnim, {
-      toValue: 0.5,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(async () => {
-      try {
-        if (value) {
-          await requestPermission();
-          await LocationService.startForegroundService();
-          await startTracking();
-        } else {
-          await stopTracking();
-          await LocationService.stopForegroundService();
+  const confirmToggleLive = useCallback(
+    (value: boolean) => {
+      setSheetMode('none');
+      Animated.timing(fadeAnim, {
+        toValue: 0.5,
+        duration: 200,
+        useNativeDriver: true,
+      }).start(async () => {
+        try {
+          if (value) {
+            await requestPermission();
+            await LocationService.startForegroundService();
+            await startTracking();
+          } else {
+            await stopTracking();
+            await LocationService.stopForegroundService();
+          }
+          setDriverMode(value ? 'searching' : 'offline');
+        } catch (err) {
+          console.error('Failed to toggle tracking:', err);
+        } finally {
+          Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+          }).start();
         }
-        setDriverMode(value ? 'searching' : 'offline');
-      } catch (err) {
-        console.error('Failed to toggle tracking:', err);
-      } finally {
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }).start();
-      }
-    });
-  }, [fadeAnim, startTracking, stopTracking, requestPermission]);
+      });
+    },
+    [fadeAnim, startTracking, stopTracking, requestPermission],
+  );
 
   const handleNotifications = useCallback(() => {
     navigation.navigate('NotificationCenter');
@@ -88,9 +255,19 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({
     navigation.getParent()?.navigate('EarningsTab', { screen: 'EarningsHome' });
   }, [navigation]);
 
-  // Advertise availability + poll the engine for incoming ride requests while online.
+  const handleOpenTrip = useCallback(() => {
+    if (activeTrip) {
+      navigation.navigate('ActiveTrip', { tripId: activeTrip.id });
+    }
+  }, [navigation, activeTrip]);
+
+  const isLive = driverMode === 'searching';
+  // Effective view: offline > active trip (only while live) > searching.
+  const mode: DriverMode = !isLive ? 'offline' : activeTrip ? 'active_trip' : 'searching';
+
+  // Advertise availability + poll for offers only while live and not already on a trip.
   const { resume: resumeDispatch } = useDriverDispatch({
-    enabled: driverMode === 'searching',
+    enabled: mode === 'searching',
     getLocation: () =>
       currentLocation
         ? { latitude: currentLocation.latitude, longitude: currentLocation.longitude }
@@ -100,91 +277,115 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({
     },
   });
 
-  // Resume polling when returning to Home after declining/expiring an offer.
   useFocusEffect(
     useCallback(() => {
       resumeDispatch();
     }, [resumeDispatch]),
   );
 
-  const isLive = driverMode === 'searching';
+  const pillLabel =
+    mode === 'active_trip' ? t('home.online') : mode === 'searching' ? t('home.live') : t('home.offline');
+  const canToggle = mode !== 'active_trip';
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <View style={styles.headerAvatar}>
-            <Icon name="person" style={styles.avatarIcon} />
+            <Icon name="person" size={22} color={colors.onSurfaceVariant} />
           </View>
-          <Text style={styles.headerTitle}>Driver Hub</Text>
+          <Text style={styles.headerTitle}>{t('home.driverHub')}</Text>
         </View>
         <View style={styles.headerRight}>
-          <Pressable onPress={() => handleToggleLive(!isLive)} style={[styles.livePill, isLive && styles.livePillActive]}>
-            {isLive && <View style={[styles.liveDot, styles.liveDotActive]} />}
-            <Text style={[styles.livePillText, isLive && styles.livePillTextActive]}>
-              {isLive ? 'ONLINE' : 'OFFLINE'}
-            </Text>
-            {!isLive && <View style={styles.liveDot} />}
+          <Pressable
+            onPress={canToggle ? () => handleToggleLive(!isLive) : undefined}
+            disabled={!canToggle}
+            style={[
+              styles.pill,
+              mode === 'offline' && styles.pillOffline,
+              mode !== 'offline' && styles.pillOnlineOuter,
+            ]}
+          >
+            {mode === 'offline' ? (
+              <View style={styles.pillInnerOffline}>
+                <Text style={styles.pillTextOffline}>OFFLINE</Text>
+                <View style={styles.dotStatic} />
+              </View>
+            ) : mode === 'active_trip' ? (
+              <View style={styles.pillInnerOnline}>
+                <LiveDot />
+                <Text style={styles.pillTextOnline}>{pillLabel}</Text>
+              </View>
+            ) : (
+              <View style={styles.pillInnerOnline}>
+                <Text style={styles.pillTextOnline}>{pillLabel}</Text>
+                <LiveDot />
+              </View>
+            )}
           </Pressable>
           <Pressable onPress={handleNotifications} style={styles.headerBell}>
-            <Icon name="notifications" style={styles.bellIcon} />
+            <Icon name="notifications" size={24} color={colors.onSurfaceVariant} />
             <View style={styles.redDot} />
           </Pressable>
         </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Animated.View style={{ opacity: fadeAnim, gap: spacing.containerPadding }}>
-          {/* Embedded Map Card */}
-          <View style={styles.mapCard}>
-            <DriverMap
-              currentLocation={currentLocation || undefined}
-              showControls={false}
-              followDriver={true}
-            />
-            
-            <MapOverlay position="top" style={styles.mapOverlayTop}>
-              {locationError && (
-                <View style={styles.gpsWarning}>
-                  <Icon name="gps_off" style={styles.gpsWarningIcon} />
-                  <Text style={styles.gpsWarningText}>GPS Signal Weak</Text>
+        <Animated.View style={{ opacity: fadeAnim, gap: spacing.lg }}>
+          {/* State-specific hero */}
+          {mode === 'active_trip' && activeTrip ? (
+            <ActiveTripHero trip={activeTrip} onOpen={handleOpenTrip} />
+          ) : mode === 'searching' ? (
+            <>
+              <View style={styles.availabilityBanner}>
+                <Icon name="radar" size={16} color={colors.primary} />
+                <Text style={styles.bannerText}>{t('home.availableNearby')}</Text>
+              </View>
+              <View style={styles.searchingCard}>
+                <SearchingPulse />
+                <View style={styles.searchingTextWrap}>
+                  <Text style={styles.searchingTitle}>{t('home.findingTitle')}</Text>
+                  <Text style={styles.searchingSubtitle}>{t('home.findingSubtitle')}</Text>
                 </View>
-              )}
-              {isLive ? (
-                <View style={styles.searchingContainer}>
-                  <Text style={styles.searchingTitle}>Searching for Trips</Text>
-                </View>
-              ) : (
-                <View style={styles.offlineContainer}>
-                  <Text style={styles.offlineTitle}>You're Offline</Text>
-                </View>
-              )}
-            </MapOverlay>
-          </View>
+              </View>
+            </>
+          ) : (
+            <View style={styles.offlineCard}>
+              <Icon name="cloud_off" size={40} color={colors.onSurfaceVariant} style={styles.offlineIcon} />
+              <View style={styles.searchingTextWrap}>
+                <Text style={styles.offlineTitle}>{t('home.offlineTitle')}</Text>
+                <Text style={styles.searchingSubtitle}>{t('home.offlineSubtitle')}</Text>
+              </View>
+            </View>
+          )}
 
+          {/* Vehicle */}
           <View style={styles.vehicleCard}>
             <View style={styles.vehicleIconContainer}>
-              <Icon name="local_shipping" style={styles.vehicleIcon} />
+              <Icon name="local_shipping" size={20} color={colors.onSurfaceVariant} />
             </View>
             <View style={styles.vehicleDetails}>
-              <Text style={styles.vehicleLabel}>CURRENT VEHICLE</Text>
+              <Text style={styles.vehicleLabel}>{t('home.currentVehicle')}</Text>
               <Text style={styles.vehicleName}>Tata Ace | RJ 19 XX 1234</Text>
             </View>
             <View style={styles.approvedPill}>
-              <Text style={styles.approvedText}>APPROVED</Text>
+              <Icon name="check_circle" size={12} color={colors.primary} />
+              <Text style={styles.approvedText}>{t('home.approved')}</Text>
             </View>
           </View>
 
+          {/* Earnings + Wallet */}
           <View style={styles.dashboardRow}>
             <EarningsCard
-              label="TODAY"
+              label={t('home.today')}
               amount={summary?.netEarnings || 0}
               currency={summary?.currency || '₹'}
               tripCount={summary?.totalTrips || 0}
               onDetailsPress={handleDetails}
             />
             <WalletCard
-              label="WALLET"
+              label={t('home.walletLabel')}
               balance={balance?.balance || 0}
               currency={balance?.currency || '₹'}
               minimumBalance={balance?.minimumBalance || 0}
@@ -192,18 +393,19 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({
             />
           </View>
 
-          <View style={styles.protocolCard}>
-            <View style={styles.protocolAccent} />
-            <View style={styles.protocolContent}>
-              <View style={styles.protocolHeader}>
-                <Icon name="photo_camera" style={styles.protocolIcon} />
-                <Text style={styles.protocolTitle}>Delivery Protocol</Text>
+          {/* Delivery protocol — hidden while offline (matches Stitch offline state) */}
+          {mode !== 'offline' && (
+            <View style={styles.protocolCard}>
+              <View style={styles.protocolAccent} />
+              <View style={styles.protocolContent}>
+                <View style={styles.protocolHeader}>
+                  <Icon name="photo_camera" size={18} color={colors.primary} />
+                  <Text style={styles.protocolTitle}>{t('home.deliveryProtocol')}</Text>
+                </View>
+                <Text style={styles.protocolDescription}>{t('home.deliveryProtocolDesc')}</Text>
               </View>
-              <Text style={styles.protocolDescription}>
-                Delivery photo required at each drop location. Ensure clear visibility of package.
-              </Text>
             </View>
-          </View>
+          )}
         </Animated.View>
       </ScrollView>
 
@@ -239,14 +441,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.containerPadding,
-    paddingVertical: spacing.gutter,
-    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    height: 64,
+    backgroundColor: colors.surfaceContainerLowest,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.outlineVariant,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   headerRight: {
     flexDirection: 'row',
@@ -254,185 +458,375 @@ const styles = StyleSheet.create({
     gap: spacing.gutter,
   },
   headerAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceContainer,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceContainerHigh,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  avatarIcon: {
-    fontSize: 24,
-    color: colors.onSurfaceVariant,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
   },
   headerTitle: {
     ...typography.headlineSm,
-    color: colors.onSurface,
+    color: colors.primary,
   },
-  livePill: {
+  // Availability pill
+  pill: {
+    borderRadius: borderRadius.full,
+    padding: 4,
+    borderWidth: 1,
+  },
+  pillOffline: {
+    backgroundColor: colors.surfaceContainer,
+    borderColor: colors.outlineVariant,
+    paddingRight: spacing.sm,
+  },
+  pillOnlineOuter: {
+    backgroundColor: 'rgba(34,197,94,0.10)',
+    borderColor: 'rgba(34,197,94,0.25)',
+    paddingRight: spacing.sm,
+  },
+  pillInnerOffline: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceContainerLow,
-    paddingHorizontal: spacing.gutter,
-    paddingVertical: 6,
+    gap: spacing.xs,
+    backgroundColor: colors.surfaceContainerHigh,
     borderRadius: borderRadius.full,
-    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
   },
-  livePillActive: {
-    backgroundColor: colors.success,
+  pillInnerOnline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surfaceContainerLowest,
+    borderRadius: borderRadius.full,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+    ...shadows.sm,
   },
-  liveDot: {
+  pillTextOffline: {
+    ...typography.labelCaps,
+    color: colors.onSurfaceVariant,
+  },
+  pillTextOnline: {
+    ...typography.labelCaps,
+    color: colors.primary,
+  },
+  dotStatic: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.outline,
+    backgroundColor: colors.outlineVariant,
   },
-  liveDotActive: {
-    backgroundColor: colors.onPrimary,
-  },
-  livePillText: {
-    ...typography.labelSm,
-    color: colors.onSurfaceVariant,
-    textTransform: 'uppercase',
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  livePillTextActive: {
-    color: colors.onPrimary,
-  },
-  headerBell: {
-    width: 40,
-    height: 40,
-    alignItems: 'flex-end',
+  liveDotWrap: {
+    width: 8,
+    height: 8,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  bellIcon: {
-    fontSize: 24,
-    color: colors.onSurfaceVariant,
+  liveDotRing: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22c55e',
+  },
+  liveDotCore: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22c55e',
+  },
+  headerBell: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   redDot: {
     position: 'absolute',
-    top: 8,
+    top: 4,
     right: 2,
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: colors.error,
     borderWidth: 1,
-    borderColor: colors.surface,
+    borderColor: colors.surfaceContainerLowest,
   },
   scrollContent: {
-    paddingHorizontal: spacing.containerPadding,
+    paddingHorizontal: spacing.md,
     paddingBottom: spacing.xxl,
-    paddingTop: spacing.xs,
+    paddingTop: spacing.lg,
   },
+  // Offline card
+  offlineCard: {
+    backgroundColor: colors.surfaceContainerLow,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+  },
+  offlineIcon: {
+    opacity: 0.4,
+  },
+  offlineTitle: {
+    ...typography.headlineSm,
+    color: colors.onSurface,
+    textAlign: 'center',
+  },
+  // Searching state
   availabilityBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceContainer,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(3,7,29,0.05)',
     paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.gutter,
-    borderRadius: borderRadius.full,
+    borderRadius: borderRadius.lg,
     gap: spacing.xs,
-    alignSelf: 'center',
-  },
-  bannerIcon: {
-    fontSize: 16,
-    color: colors.onSurface,
+    borderWidth: 1,
+    borderColor: 'rgba(3,7,29,0.10)',
   },
   bannerText: {
     ...typography.labelSm,
-    color: colors.onSurface,
-  },
-  tripSearchCard: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: borderRadius.md,
-    padding: spacing.containerPadding,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.containerPadding,
-    ...shadows.sm,
-  },
-  tripSearchIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tripSearchIcon: {
-    fontSize: 24,
     color: colors.primary,
+    fontWeight: '500',
   },
-  tripSearchTextContainer: {
-    flex: 1,
-    gap: 4,
+  searchingCard: {
+    backgroundColor: colors.surfaceContainerLowest,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.gutter,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+    ...shadows.md,
   },
-  tripSearchTitle: {
+  searchingTextWrap: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  searchingTitle: {
     ...typography.headlineSm,
-    color: colors.onSurface,
+    color: colors.primary,
+    textAlign: 'center',
   },
-  tripSearchSubtitle: {
+  searchingSubtitle: {
     ...typography.bodyMd,
     color: colors.onSurfaceVariant,
     textAlign: 'center',
   },
-  mapCard: {
-    height: 260,
-    borderRadius: borderRadius.md,
-    overflow: 'hidden',
+  searchPulseWrap: {
+    width: 64,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchPulseRing: {
+    position: 'absolute',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(3,7,29,0.08)',
+  },
+  searchPulseInner: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(3,7,29,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Active trip hero
+  heroCard: {
+    backgroundColor: colors.surfaceContainerLowest,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.outlineVariant,
-    marginBottom: spacing.xs,
-    backgroundColor: colors.surfaceContainerLow,
+    ...shadows.md,
   },
-  mapOverlayTop: { width: '100%', paddingHorizontal: spacing.gutter, paddingTop: spacing.xs, alignItems: 'flex-start' },
-  gpsWarning: {
+  heroHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  heroHeaderLeft: {
+    flex: 1,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(3,7,29,0.05)',
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    marginBottom: spacing.xs,
+    borderWidth: 1,
+    borderColor: 'rgba(3,7,29,0.10)',
+  },
+  heroBadgeText: {
+    ...typography.labelCaps,
+    fontSize: 10,
+    color: colors.primary,
+  },
+  heroTitle: {
+    ...typography.displaySm,
+    color: colors.primary,
+  },
+  heroSubtitle: {
+    ...typography.bodyLg,
+    color: colors.onSurfaceVariant,
+    marginTop: 2,
+  },
+  earningBox: {
+    backgroundColor: colors.surfaceContainerLow,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.gutter,
+    paddingVertical: spacing.xs,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+  },
+  earningAmount: {
+    ...typography.headlineSm,
+    color: colors.primary,
+  },
+  earningLabel: {
+    ...typography.labelCaps,
+    fontSize: 10,
+    color: colors.onSurfaceVariant,
+  },
+  // Timeline
+  timeline: {
+    position: 'relative',
+    paddingLeft: spacing.xs,
+    marginBottom: spacing.lg,
+  },
+  timelineLine: {
+    position: 'absolute',
+    left: 13,
+    top: 6,
+    bottom: 6,
+    width: 2,
+    backgroundColor: colors.surfaceVariant,
+  },
+  tlRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.gutter,
+    position: 'relative',
+    zIndex: 1,
+  },
+  tlRowSpacing: {
+    marginBottom: spacing.gutter,
+  },
+  tlDotCol: {
+    width: 18,
+    alignItems: 'center',
+    paddingTop: 2,
+  },
+  tlDotDone: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.primary,
+    borderWidth: 3,
+    borderColor: colors.surfaceContainerLowest,
+  },
+  tlDotCurrentRing: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(3,7,29,0.20)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tlDotCurrent: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.primary,
+  },
+  tlDotPending: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: colors.outline,
+    backgroundColor: colors.surfaceContainerLowest,
+  },
+  tlTextCol: {
+    flex: 1,
+  },
+  tlSubLabel: {
+    ...typography.labelSm,
+    color: colors.onSurfaceVariant,
+  },
+  tlSubLabelCurrent: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  tlName: {
+    ...typography.bodyMd,
+    color: colors.onSurface,
+  },
+  tlNameCurrent: {
+    ...typography.headlineSm,
+    color: colors.onSurface,
+  },
+  tlNameDone: {
+    textDecorationLine: 'line-through',
+    opacity: 0.6,
+  },
+  openTripBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ffcdd2',
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.sm,
     gap: spacing.xs,
-    marginBottom: spacing.gutter,
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.sm,
   },
-  gpsWarningIcon: { fontSize: 16, color: colors.error },
-  gpsWarningText: { ...typography.labelSm, color: colors.error },
-  metricsOverlay: {
-    bottom: spacing.gutter,
-    alignSelf: 'center',
-    width: '90%',
+  openTripText: {
+    ...typography.labelSm,
+    color: colors.onPrimary,
+    fontWeight: '600',
+    letterSpacing: 1,
   },
+  // Vehicle
   vehicleCard: {
     backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.xl,
     padding: spacing.containerPadding,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.gutter,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
     ...shadows.sm,
   },
   vehicleIconContainer: {
     width: 40,
     height: 40,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.surfaceContainerLow,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.surfaceContainer,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  vehicleIcon: {
-    fontSize: 20,
-    color: colors.primary,
   },
   vehicleDetails: {
     flex: 1,
     gap: 2,
   },
   vehicleLabel: {
-    ...typography.labelCaps,
+    ...typography.labelSm,
     color: colors.onSurfaceVariant,
+    textTransform: 'uppercase',
   },
   vehicleName: {
     ...typography.bodyMd,
@@ -440,23 +834,29 @@ const styles = StyleSheet.create({
     color: colors.onSurface,
   },
   approvedPill: {
-    backgroundColor: '#e6f4ea',
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 4,
-    borderRadius: borderRadius.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: 'rgba(3,7,29,0.05)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(3,7,29,0.10)',
   },
   approvedText: {
     ...typography.labelCaps,
     fontSize: 10,
-    color: '#137333',
+    color: colors.primary,
   },
   dashboardRow: {
     flexDirection: 'row',
-    gap: spacing.gutter,
+    gap: spacing.containerPadding,
   },
+  // Protocol
   protocolCard: {
     backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.lg,
     flexDirection: 'row',
     overflow: 'hidden',
     ...shadows.sm,
@@ -475,40 +875,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
-  protocolIcon: {
-    fontSize: 18,
-    color: colors.primary,
-  },
   protocolTitle: {
-    ...typography.headlineSm,
+    ...typography.labelSm,
+    fontWeight: '600',
     color: colors.onSurface,
   },
   protocolDescription: {
     ...typography.bodyMd,
     color: colors.onSurfaceVariant,
     lineHeight: 20,
-  },
-  searchingContainer: {
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginTop: spacing.xs,
-  },
-  searchingTitle: {
-    ...typography.labelSm,
-    color: colors.surface,
-  },
-  offlineContainer: {
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginTop: spacing.xs,
-  },
-  offlineTitle: {
-    ...typography.labelSm,
-    color: colors.surface,
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
@@ -523,5 +898,3 @@ const styles = StyleSheet.create({
 });
 
 export default DriverHomeScreen;
-
-

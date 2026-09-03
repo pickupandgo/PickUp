@@ -9,6 +9,7 @@ import { TripsStack } from './stacks/TripsStack';
 import { EarningsStack } from './stacks/EarningsStack';
 import { WalletStack } from './stacks/WalletStack';
 import { AccountStack } from './stacks/AccountStack';
+import { useI18n } from '../i18n';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -20,15 +21,16 @@ const TAB_ICONS: Record<keyof MainTabParamList, string> = {
   AccountTab: 'person',
 };
 
-const TAB_LABELS: Record<keyof MainTabParamList, string> = {
-  HomeTab: 'Home',
-  TripsTab: 'Trips',
-  EarningsTab: 'Earnings',
-  WalletTab: 'Wallet',
-  AccountTab: 'Account',
+const TAB_LABEL_KEYS: Record<keyof MainTabParamList, string> = {
+  HomeTab: 'tab.home',
+  TripsTab: 'tab.trips',
+  EarningsTab: 'tab.earnings',
+  WalletTab: 'tab.wallet',
+  AccountTab: 'tab.account',
 };
 
 export const MainTabNavigator: React.FC = () => {
+  const { t } = useI18n();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -40,7 +42,7 @@ export const MainTabNavigator: React.FC = () => {
             style={styles.tabIcon}
           />
         ),
-        tabBarLabel: TAB_LABELS[route.name],
+        tabBarLabel: t(TAB_LABEL_KEYS[route.name]),
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.outline,
         tabBarLabelStyle: styles.tabLabel,
