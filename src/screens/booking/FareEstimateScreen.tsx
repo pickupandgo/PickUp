@@ -125,7 +125,11 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
           ) : (
             <View style={styles.totalAmountRow}>
               <Text style={styles.currencySymbol}>₹</Text>
-              <Text style={styles.totalAmount}>{estimate ? estimate.fare : '—'}</Text>
+              <Text style={styles.totalAmount}>
+                {estimate 
+                  ? estimate.breakdown.base + estimate.breakdown.distance + estimate.breakdown.weightSurcharge 
+                  : '—'}
+              </Text>
             </View>
           )}
           {estimate && (
@@ -304,19 +308,19 @@ const styles = StyleSheet.create({
   currencySymbol: {
     fontSize: typography.headlineMd.fontSize,
     fontWeight: typography.headlineMd.fontWeight,
-    color: colors.onPrimaryFixed,
+    color: colors.onPrimary,
     marginTop: 10,
   },
   totalAmount: {
     fontSize: 48,
     fontWeight: '600',
-    color: colors.onPrimaryFixed,
+    color: colors.onPrimary,
     lineHeight: 56,
     letterSpacing: -1,
   },
   totalMeta: {
     fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurfaceVariant,
+    color: colors.primaryFixedDim,
     fontFamily: typography.bodyMd.fontFamily,
     marginTop: spacing.xs,
   },

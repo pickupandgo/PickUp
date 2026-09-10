@@ -13,7 +13,6 @@ import ActiveTripTrackingScreen from './src/screens/tracking/ActiveTripTrackingS
 import AddressSearchScreen from './src/screens/booking/AddressSearchScreen';
 import AssignmentFailedScreen from './src/screens/support/AssignmentFailedScreen';
 import BookingConfirmedScreen from './src/screens/booking/BookingConfirmedScreen';
-import BookingReviewScreen from './src/screens/booking/BookingReviewScreen';
 import CallDriverScreen from './src/screens/support/CallDriverScreen';
 import CancellationChargeConfirmationScreen from './src/screens/support/CancellationChargeConfirmationScreen';
 import CancellationConfirmationScreen from './src/screens/support/CancellationConfirmationScreen';
@@ -85,7 +84,7 @@ import TripCompletedScreen from './src/screens/support/TripCompletedScreen';
 import TripCompletedSummaryScreen from './src/screens/support/TripCompletedSummaryScreen';
 import TripHistoryScreen from './src/screens/profile/TripHistoryScreen';
 import ValidateBookingScreen from './src/screens/booking/ValidateBookingScreen';
-import VehicleSelectionScreen from './src/screens/booking/VehicleSelectionScreen';
+import VehicleSelectionScreen from './src/screens/booking/SelectVehicleScreen';
 import WrittenReviewScreen from './src/screens/support/WrittenReviewScreen';
 
 const Stack = createNativeStackNavigator();
@@ -175,7 +174,7 @@ export default function App() {
         <Stack.Screen name="AddressSearchScreen" component={AddressSearchScreen} />
         <Stack.Screen name="AssignmentFailedScreen" component={AssignmentFailedScreen} />
         <Stack.Screen name="BookingConfirmedScreen" component={BookingConfirmedScreen} />
-        <Stack.Screen name="BookingReviewScreen" component={BookingReviewScreen} />
+        <Stack.Screen name="BookingReviewScreen" component={ReviewBookingScreen} />
         <Stack.Screen name="CallDriverScreen" component={CallDriverScreen} />
         <Stack.Screen name="CancellationChargeConfirmationScreen" component={CancellationChargeConfirmationScreen} />
         <Stack.Screen name="CancellationConfirmationScreen" component={CancellationConfirmationScreen} />

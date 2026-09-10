@@ -1,7 +1,23 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { FareEstimate, GeoPoint, NearbyDriver, Ride, Trip } from '../api/types';
 import type { ResolvedPlace } from '../api/geocoding';
-import { getCustomerId } from './identity';
+
+/** Stable per-install customer id used as the engine's anonymous identity. */
+const CUSTOMER_ID_KEY = 'pickup.customerId';
+const _hex = (n: number) => Array.from({ length: n }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+let _cachedId: string | undefined;
+const getCustomerId = async (): Promise<string> => {
+  if (_cachedId) return _cachedId;
+  try {
+    const stored = await AsyncStorage.getItem(CUSTOMER_ID_KEY);
+    if (stored) { _cachedId = stored; return stored; }
+  } catch { /* storage unavailable */ }
+  const id = `C-${_hex(8)}-${_hex(4)}-${_hex(12)}`;
+  _cachedId = id;
+  try { await AsyncStorage.setItem(CUSTOMER_ID_KEY, id); } catch { /* non-fatal */ }
+  return id;
+};
 
 /**
  * Shared booking state.
@@ -25,6 +41,9 @@ export interface BookingDraft {
   readonly goodsDescription?: string;
   readonly declaredValue?: string;
   readonly insured?: boolean;
+  readonly senderName?: string;
+  readonly senderPhone?: string;
+  readonly pickupInstructions?: string;
   readonly receiverName?: string;
   readonly receiverPhone?: string;
   readonly fareEstimate?: FareEstimate;
@@ -54,6 +73,7 @@ interface BookingContextValue {
     readonly declaredValue?: string;
   }) => void;
   readonly setInsured: (insured: boolean) => void;
+  readonly setSender: (sender: { readonly name?: string; readonly phone?: string; readonly instructions?: string }) => void;
   readonly setReceiver: (receiver: { readonly name: string; readonly phone: string }) => void;
   readonly setFareEstimate: (estimate: FareEstimate | undefined) => void;
   readonly resetDraft: () => void;
@@ -145,6 +165,15 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
     setDraft((d) => ({ ...d, insured }));
   }, []);
 
+  const setSender = useCallback((sender: { name?: string; phone?: string; instructions?: string }) => {
+    setDraft((d) => ({
+      ...d,
+      senderName: sender.name,
+      senderPhone: sender.phone,
+      pickupInstructions: sender.instructions,
+    }));
+  }, []);
+
   const setReceiver = useCallback((receiver: { name: string; phone: string }) => {
     setDraft((d) => ({ ...d, receiverName: receiver.name, receiverPhone: receiver.phone }));
   }, []);
@@ -178,6 +207,7 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
       setVehicleType,
       setGoods,
       setInsured,
+      setSender,
       setReceiver,
       setFareEstimate,
       resetDraft,
@@ -202,6 +232,7 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
       setVehicleType,
       setGoods,
       setInsured,
+      setSender,
       setReceiver,
       setFareEstimate,
       resetDraft,

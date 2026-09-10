@@ -1,7 +1,6 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Image, type ImageSourcePropType } from 'react-native';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import StatusBadge from '../atoms/StatusBadge';
 
 export interface VehicleOptionCardProps {
   readonly name: string;
@@ -9,7 +8,8 @@ export interface VehicleOptionCardProps {
   readonly capacity: string;
   readonly estimatedPrice: string;
   readonly eta: string;
-  readonly icon: React.ReactNode;
+  readonly image?: ImageSourcePropType;
+  readonly icon?: React.ReactNode;
   readonly selected?: boolean;
   readonly onPress?: () => void;
 }
@@ -20,6 +20,7 @@ const VehicleOptionCard: React.FC<VehicleOptionCardProps> = ({
   capacity,
   estimatedPrice,
   eta,
+  image,
   icon,
   selected = false,
   onPress,
@@ -36,7 +37,13 @@ const VehicleOptionCard: React.FC<VehicleOptionCardProps> = ({
       accessibilityLabel={`${name}, ${estimatedPrice}, ETA ${eta}`}
       accessibilityState={{ selected }}
     >
-      <View style={styles.iconContainer}>{icon}</View>
+      <View style={styles.imageContainer}>
+        {image ? (
+          <Image source={image} style={styles.image} resizeMode="contain" />
+        ) : (
+          icon
+        )}
+      </View>
       <View style={styles.textContainer}>
         <View style={styles.topRow}>
           <Text style={styles.name}>{name}</Text>
@@ -61,10 +68,10 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.outlineHairline,
+    borderColor: colors.outlineVariant,
     backgroundColor: colors.surface,
     gap: spacing.md,
-    ...shadows.ghost,
+    ...shadows.sm,
   },
   selected: {
     borderColor: colors.primary,
@@ -74,13 +81,15 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.92,
   },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.surfaceContainerHigh,
+  imageContainer: {
+    width: 64,
+    height: 64,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
   },
   textContainer: {
     flex: 1,
@@ -102,7 +111,7 @@ const styles = StyleSheet.create({
     fontSize: typography.headlineSm.fontSize,
     lineHeight: typography.headlineSm.lineHeight,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.onSurface,
     fontFamily: typography.headlineSm.fontFamily,
   },
   description: {

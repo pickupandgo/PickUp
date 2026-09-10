@@ -213,6 +213,15 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
               <View style={[styles.progressBarFill, { width: progressPercent }]} />
             </View>
 
+            {/* PICKUP OTP — shown while driver hasn't verified pickup yet */}
+            {current?.otp &&
+              (status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED') && (
+                <View style={styles.otpRow}>
+                  <Text style={styles.otpLabel}>PICKUP OTP</Text>
+                  <Text style={styles.otpValue}>{current.otp}</Text>
+                </View>
+              )}
+
             <View style={styles.driverDetailsContainer}>
               <View style={styles.driverDetailsHeader}>
                 <View style={styles.driverInfoLeft}>
@@ -516,6 +525,30 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: colors.primaryContainer,
     borderRadius: borderRadius.full,
+  },
+  otpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.primaryContainer,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  otpLabel: {
+    fontSize: typography.labelCaps.fontSize,
+    fontWeight: typography.labelCaps.fontWeight,
+    color: colors.onPrimaryContainer,
+    fontFamily: typography.labelCaps.fontFamily,
+    letterSpacing: typography.labelCaps.letterSpacing,
+  },
+  otpValue: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.onPrimaryContainer,
+    fontFamily: typography.dataMono.fontFamily,
+    letterSpacing: 4,
   },
   
   driverDetailsContainer: {

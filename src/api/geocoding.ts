@@ -37,6 +37,9 @@ export interface PlaceSuggestion {
 export interface ResolvedPlace extends GeoPoint {
   readonly address: string;
   readonly placeId?: string;
+  readonly receiverName?: string;
+  readonly receiverPhone?: string;
+  readonly instructions?: string;
 }
 
 const assertKey = (): void => {

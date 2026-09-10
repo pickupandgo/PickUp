@@ -134,7 +134,7 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
           style={styles.continueButton}
           onPress={() => {
             onContinue?.();
-            navigation?.navigate('ReceiverDetailsScreen');
+            navigation?.navigate('FareEstimateScreen');
           }}
           accessibilityRole="button"
           accessibilityLabel="Continue"

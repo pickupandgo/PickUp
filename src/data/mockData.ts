@@ -61,6 +61,9 @@ export interface VehicleType {
   readonly estimatedPrice: string;
   readonly eta: string;
   readonly icon: string;
+  readonly image: any;
+  readonly baseFare: number;
+  readonly perKmCharge: number;
 }
 
 export const mockVehicleTypes: readonly VehicleType[] = [
@@ -72,6 +75,9 @@ export const mockVehicleTypes: readonly VehicleType[] = [
     estimatedPrice: 'Est. ₹50',
     eta: '15 min',
     icon: 'truck',
+    image: require('../../assets/vehicles/bike.png'),
+    baseFare: 50,
+    perKmCharge: 10,
   },
   {
     id: '3-wheeler',
@@ -81,6 +87,9 @@ export const mockVehicleTypes: readonly VehicleType[] = [
     estimatedPrice: 'Est. ₹150',
     eta: '20 min',
     icon: 'truck',
+    image: require('../../assets/vehicles/three_wheeler.png'),
+    baseFare: 100,
+    perKmCharge: 18,
   },
   {
     id: 'mini-truck',
@@ -90,6 +99,9 @@ export const mockVehicleTypes: readonly VehicleType[] = [
     estimatedPrice: 'Est. ₹250',
     eta: '30 min',
     icon: 'truck',
+    image: require('../../assets/vehicles/mini_truck.png'),
+    baseFare: 150,
+    perKmCharge: 25,
   },
   {
     id: 'pickup',
@@ -99,6 +111,9 @@ export const mockVehicleTypes: readonly VehicleType[] = [
     estimatedPrice: 'Est. ₹400',
     eta: '45 min',
     icon: 'truck',
+    image: require('../../assets/vehicles/pickup.png'),
+    baseFare: 200,
+    perKmCharge: 30,
   },
   {
     id: 'jcb',
@@ -108,6 +123,9 @@ export const mockVehicleTypes: readonly VehicleType[] = [
     estimatedPrice: 'Get Quote',
     eta: '',
     icon: 'settings',
+    image: require('../../assets/vehicles/jcb.png'),
+    baseFare: 0,
+    perKmCharge: 0,
   },
   {
     id: 'crane',
@@ -117,6 +135,9 @@ export const mockVehicleTypes: readonly VehicleType[] = [
     estimatedPrice: 'Get Quote',
     eta: '',
     icon: 'settings',
+    image: require('../../assets/vehicles/crane.png'),
+    baseFare: 0,
+    perKmCharge: 0,
   },
 ];
 

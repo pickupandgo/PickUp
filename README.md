@@ -182,6 +182,11 @@ Additional helpers in `scripts/`:
 - `smoke-engine.ps1` — hits every engine endpoint end-to-end
 - `check-maps-key.ps1` — verifies the Google Maps key has the right APIs enabled
 - `driver-sim.ps1` — headless driver for matching tests
+- `cancel-all-trips.ps1` — cancels every active trip on the engine (useful for resetting test state)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/cancel-all-trips.ps1
+```
 
 ## Project structure
 
