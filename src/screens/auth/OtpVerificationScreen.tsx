@@ -87,7 +87,7 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
 
   const handleVerify = () => {
     onVerify?.(otp.join(''));
-    navigation?.navigate('PermissionScreen');
+    navigation?.navigate('CreateProfileScreen');
   };
 
   const formatTimer = (seconds: number) => {
