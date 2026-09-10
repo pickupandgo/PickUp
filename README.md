@@ -9,6 +9,10 @@ Branches:
 - `UIwithEngine` — UI integrated with the real engine (**you are here**). Live
   maps, real fare/driver/trip APIs, GPS pickup, live tracking.
 
+## Recent Updates
+- Overhauled `SelectVehicleScreen` and `ReviewBookingScreen` to align with the new cleaner design system (map removed from vehicle selection, simplified card layouts, expandable address views).
+- Removed legacy permission and consent screens from the onboarding flow.
+
 The driver app (`pickup-driver/`) is a separate Expo project used only for
 internal testing until the production driver UI is ready. It lives inside this
 repo so `git clone` gives you both apps at once. It has its own `package.json`,

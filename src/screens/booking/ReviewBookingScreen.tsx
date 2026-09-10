@@ -110,26 +110,6 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
           </View>
         </Card>
 
-        {/* GST Card (UI Only) */}
-        <Card variant="outlined" padding="none" style={styles.gstCard}>
-          <View style={styles.gstTop}>
-            <View style={styles.gstIconContainer}>
-              <Feather name="file-text" size={20} color={colors.outline} />
-            </View>
-            <View style={styles.gstTextContainer}>
-              <Text style={styles.gstTitle}>Have a GST Number?</Text>
-              <Text style={styles.gstSubtitle}>Update in easy steps</Text>
-            </View>
-            <Pressable style={styles.gstButton}>
-              <Text style={styles.gstButtonText}>Add GSTIN</Text>
-            </Pressable>
-          </View>
-          <View style={styles.gstBottom}>
-            <Text style={styles.gstBottomText}>
-              Get invoices with GSTIN to claim <Text style={styles.gstBottomBold}>Input Tax Credit</Text>
-            </Text>
-          </View>
-        </Card>
 
         {/* Offers and Discounts */}
         <Text style={styles.sectionTitle}>Offers and Discounts</Text>
@@ -143,21 +123,6 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
           </View>
         </Card>
 
-        {/* Coins / Rewards (UI Only) */}
-        <Card variant="outlined" padding="none" style={styles.coinsCard}>
-          <View style={styles.coinsTop}>
-            <View style={styles.coinsIconWrapper}>
-              <Text style={styles.coinsEmoji}>🪙</Text>
-            </View>
-            <Text style={styles.coinsTitle}>Minimum 25 coins required</Text>
-            <Text style={styles.useCoinsText}>Use Coins</Text>
-          </View>
-          <View style={styles.coinsBottom}>
-            <Text style={styles.coinsEarnText}>
-              You'll get <Text style={styles.coinsEarnBold}>🪙 6 coins</Text> on this order
-            </Text>
-          </View>
-        </Card>
 
         {/* Declared Value & Insurance */}
         <Card variant="outlined" padding="none" style={styles.extraServicesCard}>
@@ -308,62 +273,6 @@ const styles = StyleSheet.create({
     color: colors.onSurface,
   },
 
-  // GST Card
-  gstCard: {
-    overflow: 'hidden',
-  },
-  gstTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  gstIconContainer: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#F3F4F6',
-    borderRadius: borderRadius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  gstTextContainer: {
-    flex: 1,
-  },
-  gstTitle: {
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '700',
-    color: colors.onSurface,
-  },
-  gstSubtitle: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurfaceVariant,
-  },
-  gstButton: {
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: borderRadius.sm,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  gstButtonText: {
-    color: colors.primary,
-    fontWeight: '600',
-    fontSize: typography.labelSm.fontSize,
-  },
-  gstBottom: {
-    backgroundColor: '#F3F4F6',
-    padding: spacing.sm,
-    alignItems: 'center',
-  },
-  gstBottomText: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurfaceVariant,
-  },
-  gstBottomBold: {
-    fontWeight: '700',
-    color: colors.onSurface,
-  },
-
   // Offers
   sectionTitle: {
     fontSize: typography.headlineSm.fontSize,
@@ -392,55 +301,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: typography.bodyLg.fontSize,
     fontWeight: '600',
-    color: colors.onSurface,
-  },
-
-  // Coins
-  coinsCard: {
-    overflow: 'hidden',
-    borderColor: '#E0B0FF', // Purple-ish border as seen in reference
-    borderWidth: 1,
-  },
-  coinsTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-  },
-  coinsIconWrapper: {
-    width: 32,
-    height: 32,
-    backgroundColor: '#FFF3E0',
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  coinsEmoji: {
-    fontSize: 16,
-  },
-  coinsTitle: {
-    flex: 1,
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '600',
-    color: colors.onSurface,
-  },
-  useCoinsText: {
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '600',
-    color: colors.outline, // Disabled look
-  },
-  coinsBottom: {
-    borderTopWidth: 1,
-    borderTopColor: colors.outlineHairline,
-    padding: spacing.sm,
-    alignItems: 'center',
-  },
-  coinsEarnText: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurfaceVariant,
-  },
-  coinsEarnBold: {
-    fontWeight: '700',
     color: colors.onSurface,
   },
 
