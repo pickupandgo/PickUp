@@ -111,7 +111,7 @@ const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { nav
             onPress={() => {
               clearActiveRide();
               if (onHome) onHome();
-              else navigation?.navigate('HomeScreen');
+              else navigation?.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
             }}
             variant="primary"
             fullWidth

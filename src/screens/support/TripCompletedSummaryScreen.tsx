@@ -160,7 +160,7 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
             onPress={() => {
               clearActiveRide();
               if (onBackToHome) onBackToHome();
-              else navigation?.navigate('HomeScreen');
+              else navigation?.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
             }}
           >
             <Text style={styles.homeButtonText}>BACK TO HOME</Text>

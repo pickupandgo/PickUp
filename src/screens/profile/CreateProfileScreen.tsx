@@ -12,6 +12,7 @@ import { Feather } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import { mockUser } from '../../data/mockData';
 import Button from '../../components/atoms/Button';
+import { useSession } from '../../state/SessionContext';
 
 export interface CreateProfileScreenProps {
   readonly onSave?: () => void;
@@ -21,10 +22,16 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { navigation?: an
   onSave,
   navigation,
 }) => {
+  const { login } = useSession();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [age, setAge] = useState('');
   const [address, setAddress] = useState('');
+
+  const handleSave = async () => {
+    onSave?.();
+    await login();
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -129,7 +136,7 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { navigation?: an
       <View style={styles.footer}>
         <Button
           label="SAVE & CONTINUE"
-          onPress={() => navigation?.navigate('HomeScreen')}
+          onPress={handleSave}
           variant="primary"
           fullWidth
         />

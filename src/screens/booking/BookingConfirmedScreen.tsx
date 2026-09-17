@@ -58,7 +58,16 @@ const BookingConfirmedScreen: React.FC<BookingConfirmedScreenProps & { navigatio
   // Auto-navigate to FindingDriverScreen after 3 seconds
   useEffect(() => {
     const timer = setTimeout(() => {
-      navigation?.navigate('FindingDriverScreen');
+      navigation?.reset({
+        index: 1,
+        routes: [
+          { name: 'MainTabs' },
+          {
+            name: 'ActiveTripStack',
+            state: { routes: [{ name: 'FindingDriverScreen' }] },
+          },
+        ],
+      });
     }, 3000);
     return () => clearTimeout(timer);
   }, [navigation]);

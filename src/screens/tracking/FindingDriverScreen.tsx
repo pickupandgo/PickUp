@@ -107,7 +107,7 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
 
   useEffect(() => {
     // Pulse animation for the map pin
-    Animated.loop(
+    const pulseLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 1,
@@ -116,17 +116,24 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
           useNativeDriver: true,
         }),
       ])
-    ).start();
+    );
+    pulseLoop.start();
 
     // Indeterminate progress bar animation
-    Animated.loop(
+    const progressLoop = Animated.loop(
       Animated.timing(progressAnim, {
         toValue: 1,
         duration: 1500,
         easing: Easing.linear,
         useNativeDriver: false, // width/transform interpolation
       })
-    ).start();
+    );
+    progressLoop.start();
+    
+    return () => {
+      pulseLoop.stop();
+      progressLoop.stop();
+    };
   }, [pulseAnim, progressAnim]);
 
   const pulseScale = pulseAnim.interpolate({

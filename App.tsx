@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, FlatList, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { BookingProvider } from './src/state/BookingContext';
-import { getIsLoggedIn } from './src/state/session';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { BookingProvider, useBooking } from './src/state/BookingContext';
+import { SessionProvider, useSession } from './src/state/SessionContext';
 import { colors } from './src/theme';
 
 import ActiveTripChatScreen from './src/screens/support/ActiveTripChatScreen';
@@ -84,14 +85,10 @@ import TripHistoryScreen from './src/screens/profile/TripHistoryScreen';
 import ValidateBookingScreen from './src/screens/booking/ValidateBookingScreen';
 import VehicleSelectionScreen from './src/screens/booking/SelectVehicleScreen';
 import WrittenReviewScreen from './src/screens/support/WrittenReviewScreen';
+import { Feather } from '@expo/vector-icons';
 
 const Stack = createNativeStackNavigator();
-
-/**
- * Wrappers for screens that require props beyond `navigation`.
- * Declared at module scope (not inline in `component={...}`) so React Navigation
- * keeps a stable component identity and forwards `navigation`/`route` through.
- */
+const Tab = createBottomTabNavigator();
 
 function EmptyStateRoute(props: any) {
   return (
@@ -100,7 +97,7 @@ function EmptyStateRoute(props: any) {
       description="Your completed and cancelled trips will show up here."
       buttonText="Start Booking"
       {...props}
-      onButtonPress={() => props.navigation?.navigate('AddressSearchScreen')}
+      onButtonPress={() => props.navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' })}
     />
   );
 }
@@ -128,127 +125,193 @@ function GalleryScreen({ navigation }: any) {
   );
 }
 
-export default function App() {
-  // While we read the persisted login flag, `initialRoute` stays undefined and
-  // we show a splash. Once known, the navigator mounts with the right entry
-  // screen: HomeScreen if logged in, LoginScreen otherwise.
-  const [initialRoute, setInitialRoute] = useState<string | null>(null);
+function AuthNavigator() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="LoginScreen" component={LoginScreen} />
+      <Stack.Screen name="OtpVerificationScreen" component={OtpVerificationScreen} />
+      <Stack.Screen name="CreateProfileScreen" component={CreateProfileScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function MainTabNavigator() {
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.onSurfaceVariant,
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopWidth: 1,
+          borderTopColor: colors.outlineHairline,
+        },
+      }}
+    >
+      <Tab.Screen 
+        name="HomeScreen" 
+        component={HomeScreen} 
+        options={{
+          tabBarLabel: 'Home',
+          tabBarIcon: ({ color, size }) => <Feather name="home" size={size} color={color} />
+        }}
+      />
+      <Tab.Screen 
+        name="TripHistoryScreen" 
+        component={TripHistoryScreen} 
+        options={{
+          tabBarLabel: 'Trips',
+          tabBarIcon: ({ color, size }) => <Feather name="clock" size={size} color={color} />
+        }}
+      />
+      <Tab.Screen 
+        name="ProfileScreen" 
+        component={ProfileScreen} 
+        options={{
+          tabBarLabel: 'Profile',
+          tabBarIcon: ({ color, size }) => <Feather name="user" size={size} color={color} />
+        }}
+      />
+    </Tab.Navigator>
+  );
+}
+
+function BookingStackNavigator() {
+  const { resetDraft } = useBooking();
 
   useEffect(() => {
-    let mounted = true;
-    getIsLoggedIn().then((loggedIn) => {
-      if (mounted) {
-        setInitialRoute(loggedIn ? 'HomeScreen' : 'LoginScreen');
-      }
-    });
     return () => {
-      mounted = false;
+      resetDraft();
     };
-  }, []);
+  }, [resetDraft]);
 
-  if (initialRoute === null) {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="SelectLocationScreen" component={SelectLocationScreen} />
+      <Stack.Screen name="AddressSearchScreen" component={AddressSearchScreen} />
+      <Stack.Screen name="SelectDropLocationScreen" component={SelectDropLocationScreen} />
+      <Stack.Screen name="SelectVehicleScreen" component={SelectVehicleScreen} />
+      <Stack.Screen name="FareEstimateScreen" component={FareEstimateScreen} />
+      <Stack.Screen name="ReviewBookingScreen" component={ReviewBookingScreen} />
+      <Stack.Screen name="BookingReviewScreen" component={ReviewBookingScreen} />
+      <Stack.Screen name="DeclaredValueSelectionScreen" component={DeclaredValueSelectionScreen} />
+      <Stack.Screen name="GoodsDetailsScreen" component={GoodsDetailsScreen} />
+      <Stack.Screen name="GoodsInsuranceScreen" component={GoodsInsuranceScreen} />
+      <Stack.Screen name="ValidateBookingScreen" component={ValidateBookingScreen} />
+      
+      {/* Payment Screens */}
+      <Stack.Screen name="PaymentMethodScreen" component={PaymentMethodScreen} />
+      <Stack.Screen name="PaymentMethodSelectedScreen" component={PaymentMethodSelectedScreen} />
+      <Stack.Screen name="PaymentSelectionScreen" component={PaymentSelectionScreen} />
+      <Stack.Screen name="PaymentConfirmationScreen" component={PaymentConfirmationScreen} />
+      <Stack.Screen name="PaymentProcessingScreen" component={PaymentProcessingScreen} />
+      <Stack.Screen name="PaymentSuccessfulScreen" component={PaymentSuccessfulScreen} />
+      <Stack.Screen name="PaymentFailedScreen" component={PaymentFailedScreen} />
+      <Stack.Screen name="CashPaymentStatusScreen" component={CashPaymentStatusScreen} />
+      <Stack.Screen name="DigitalReceiptScreen" component={DigitalReceiptScreen} />
+      
+      <Stack.Screen name="BookingConfirmedScreen" component={BookingConfirmedScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function ActiveTripStackNavigator() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="FindingDriverScreen" component={FindingDriverScreen} />
+      <Stack.Screen name="DriverFoundScreen" component={DriverFoundScreen} />
+      <Stack.Screen name="DriverAssignedScreen" component={DriverAssignedScreen} />
+      <Stack.Screen name="DriverAssignedExpandedScreen" component={DriverAssignedExpandedScreen} />
+      <Stack.Screen name="CustomerLiveTrackingScreen" component={CustomerLiveTrackingScreen} />
+      <Stack.Screen name="ActiveTripTrackingScreen" component={ActiveTripTrackingScreen} />
+      <Stack.Screen name="ActiveTripChatScreen" component={ActiveTripChatScreen} />
+      <Stack.Screen name="CallDriverScreen" component={CallDriverScreen} />
+      
+      {/* Logistics/Trip states */}
+      <Stack.Screen name="PickupVerifiedSuccessScreen" component={PickupVerifiedSuccessScreen} />
+      <Stack.Screen name="PickupOtpVerificationScreen" component={PickupOtpVerificationScreen} />
+      <Stack.Screen name="MultiDropOverviewScreen" component={MultiDropOverviewScreen} />
+      <Stack.Screen name="MultiDropProgressScreen" component={MultiDropProgressScreen} />
+      <Stack.Screen name="CurrentDropDetailsScreen" component={CurrentDropDetailsScreen} />
+      <Stack.Screen name="DropOtpVerificationScreen" component={DropOtpVerificationScreen} />
+      <Stack.Screen name="DropCompletedStateScreen" component={DropCompletedStateScreen} />
+      <Stack.Screen name="NextDropScreen" component={NextDropScreen} />
+      <Stack.Screen name="ReceiverDetailsScreen" component={ReceiverDetailsScreen} />
+      <Stack.Screen name="FinalDeliverySummaryScreen" component={FinalDeliverySummaryScreen} />
+      
+      {/* Support / Completion */}
+      <Stack.Screen name="TripCompletedScreen" component={TripCompletedScreen} />
+      <Stack.Screen name="TripCompletedSummaryScreen" component={TripCompletedSummaryScreen} />
+      <Stack.Screen name="DriverRatingScreen" component={DriverRatingScreen} />
+      <Stack.Screen name="WrittenReviewScreen" component={WrittenReviewScreen} />
+      <Stack.Screen name="ShareTrackingSheetScreen" component={ShareTrackingSheetScreen} />
+      <Stack.Screen name="CancellationReasonScreen" component={CancellationReasonScreen} />
+      <Stack.Screen name="CancellationChargeConfirmationScreen" component={CancellationChargeConfirmationScreen} />
+      <Stack.Screen name="CancellationConfirmationScreen" component={CancellationConfirmationScreen} />
+      <Stack.Screen name="CancellationResultScreen" component={CancellationResultScreen} />
+      <Stack.Screen name="TripCancelledStatusScreen" component={TripCancelledStatusScreen} />
+      <Stack.Screen name="AssignmentFailedScreen" component={AssignmentFailedScreen} />
+      <Stack.Screen name="NoDriversAvailableScreen" component={NoDriversAvailableScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function MainNavigator() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="MainTabs" component={MainTabNavigator} />
+      <Stack.Screen name="BookingStack" component={BookingStackNavigator} />
+      <Stack.Screen name="ActiveTripStack" component={ActiveTripStackNavigator} />
+      
+      {/* Global Modals/Screens in Main */}
+      <Stack.Screen name="CustomerSettingsScreen" component={CustomerSettingsScreen} />
+      <Stack.Screen name="ChangeProfilePhotoScreen" component={ChangeProfilePhotoScreen} options={{ presentation: 'transparentModal', animation: 'fade' }} />
+      <Stack.Screen name="EditProfileScreen" component={EditProfileScreen} />
+      <Stack.Screen name="SavedAddressesScreen" component={SavedAddressesScreen} />
+      <Stack.Screen name="HistoricalTripDetailScreen" component={HistoricalTripDetailScreen} />
+      <Stack.Screen name="NotificationCenterScreen" component={NotificationCenterScreen} />
+      <Stack.Screen name="LogoutConfirmationScreen" component={LogoutConfirmationScreen} />
+      <Stack.Screen name="ErrorScreen" component={ErrorRoute} />
+      <Stack.Screen name="NetworkErrorScreen" component={NetworkErrorScreen} />
+      <Stack.Screen name="ReconnectingScreen" component={ReconnectingScreen} />
+      <Stack.Screen name="SearchUnavailableScreen" component={SearchUnavailableScreen} />
+      <Stack.Screen name="RouteUnavailableScreen" component={RouteUnavailableScreen} />
+      <Stack.Screen name="EmptyStateScreen" component={EmptyStateRoute} />
+      <Stack.Screen name="LoadingSkeletonScreen" component={LoadingSkeletonScreen} />
+      <Stack.Screen name="MapLoadingScreen" component={MapLoadingScreen} />
+      <Stack.Screen name="Gallery" component={GalleryScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function RootNavigator() {
+  const { isLoggedIn } = useSession();
+
+  if (isLoggedIn === null) {
     return (
-      <SafeAreaProvider>
-        <StatusBar style="dark" />
-        <View style={styles.splash}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      </SafeAreaProvider>
+      <View style={styles.splash}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
     );
   }
 
   return (
+    <NavigationContainer>
+      {isLoggedIn ? <MainNavigator /> : <AuthNavigator />}
+    </NavigationContainer>
+  );
+}
+
+export default function App() {
+  return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
-      <BookingProvider>
-      <NavigationContainer>
-        <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={initialRoute}>
-          <Stack.Screen name="Gallery" component={GalleryScreen} />
-        <Stack.Screen name="ActiveTripChatScreen" component={ActiveTripChatScreen} />
-        <Stack.Screen name="ActiveTripTrackingScreen" component={ActiveTripTrackingScreen} />
-        <Stack.Screen name="AddressSearchScreen" component={AddressSearchScreen} />
-        <Stack.Screen name="AssignmentFailedScreen" component={AssignmentFailedScreen} />
-        <Stack.Screen name="BookingConfirmedScreen" component={BookingConfirmedScreen} />
-        <Stack.Screen name="BookingReviewScreen" component={ReviewBookingScreen} />
-        <Stack.Screen name="CallDriverScreen" component={CallDriverScreen} />
-        <Stack.Screen name="CancellationChargeConfirmationScreen" component={CancellationChargeConfirmationScreen} />
-        <Stack.Screen name="CancellationConfirmationScreen" component={CancellationConfirmationScreen} />
-        <Stack.Screen name="CancellationReasonScreen" component={CancellationReasonScreen} />
-        <Stack.Screen name="CancellationResultScreen" component={CancellationResultScreen} />
-        <Stack.Screen name="CashPaymentStatusScreen" component={CashPaymentStatusScreen} />
-        {/* Bottom-sheet screen: presented over the previous screen so its scrim reads as an overlay. */}
-        <Stack.Screen
-          name="ChangeProfilePhotoScreen"
-          component={ChangeProfilePhotoScreen}
-          options={{ presentation: 'transparentModal', animation: 'fade' }}
-        />
-        <Stack.Screen name="CreateProfileScreen" component={CreateProfileScreen} />
-        <Stack.Screen name="CurrentDropDetailsScreen" component={CurrentDropDetailsScreen} />
-        <Stack.Screen name="CustomerLiveTrackingScreen" component={CustomerLiveTrackingScreen} />
-        <Stack.Screen name="CustomerSettingsScreen" component={CustomerSettingsScreen} />
-        <Stack.Screen name="DeclaredValueSelectionScreen" component={DeclaredValueSelectionScreen} />
-        <Stack.Screen name="DigitalReceiptScreen" component={DigitalReceiptScreen} />
-        <Stack.Screen name="DriverAssignedExpandedScreen" component={DriverAssignedExpandedScreen} />
-        <Stack.Screen name="DriverAssignedScreen" component={DriverAssignedScreen} />
-        <Stack.Screen name="DriverFoundScreen" component={DriverFoundScreen} />
-        <Stack.Screen name="DriverRatingScreen" component={DriverRatingScreen} />
-        <Stack.Screen name="DropCompletedStateScreen" component={DropCompletedStateScreen} />
-        <Stack.Screen name="DropOtpVerificationScreen" component={DropOtpVerificationScreen} />
-        <Stack.Screen name="EditProfileScreen" component={EditProfileScreen} />
-        <Stack.Screen name="EmptyStateScreen" component={EmptyStateRoute} />
-        <Stack.Screen name="ErrorScreen" component={ErrorRoute} />
-        <Stack.Screen name="FareEstimateScreen" component={FareEstimateScreen} />
-        <Stack.Screen name="FinalDeliverySummaryScreen" component={FinalDeliverySummaryScreen} />
-        <Stack.Screen name="FindingDriverScreen" component={FindingDriverScreen} />
-        <Stack.Screen name="GoodsDetailsScreen" component={GoodsDetailsScreen} />
-        <Stack.Screen name="GoodsInsuranceScreen" component={GoodsInsuranceScreen} />
-        <Stack.Screen name="HistoricalTripDetailScreen" component={HistoricalTripDetailScreen} />
-        <Stack.Screen name="HomeScreen" component={HomeScreen} />
-        <Stack.Screen name="LiveTrackingExceptionsScreen" component={LiveTrackingExceptionsScreen} />
-        <Stack.Screen name="LiveTrackingScreen" component={LiveTrackingScreen} />
-        <Stack.Screen name="LoadingSkeletonScreen" component={LoadingSkeletonScreen} />
-        <Stack.Screen name="LoginScreen" component={LoginScreen} />
-        <Stack.Screen name="LogoutConfirmationScreen" component={LogoutConfirmationScreen} />
-        <Stack.Screen name="MapLoadingScreen" component={MapLoadingScreen} />
-        <Stack.Screen name="MultiDropOverviewScreen" component={MultiDropOverviewScreen} />
-        <Stack.Screen name="MultiDropProgressScreen" component={MultiDropProgressScreen} />
-        <Stack.Screen name="NetworkErrorScreen" component={NetworkErrorScreen} />
-        <Stack.Screen name="NextDropScreen" component={NextDropScreen} />
-        <Stack.Screen name="NoDriversAvailableScreen" component={NoDriversAvailableScreen} />
-        <Stack.Screen name="NotificationCenterScreen" component={NotificationCenterScreen} />
-        <Stack.Screen name="OtpVerificationScreen" component={OtpVerificationScreen} />
-        <Stack.Screen name="PaymentConfirmationScreen" component={PaymentConfirmationScreen} />
-        <Stack.Screen name="PaymentFailedScreen" component={PaymentFailedScreen} />
-        <Stack.Screen name="PaymentMethodScreen" component={PaymentMethodScreen} />
-        <Stack.Screen name="PaymentMethodSelectedScreen" component={PaymentMethodSelectedScreen} />
-        <Stack.Screen name="PaymentPendingScreen" component={PaymentPendingScreen} />
-        <Stack.Screen name="PaymentProcessingScreen" component={PaymentProcessingScreen} />
-        <Stack.Screen name="PaymentSelectionScreen" component={PaymentSelectionScreen} />
-        <Stack.Screen name="PaymentSuccessfulScreen" component={PaymentSuccessfulScreen} />
-        <Stack.Screen name="PickupOtpVerificationScreen" component={PickupOtpVerificationScreen} />
-        <Stack.Screen name="PickupVerifiedSuccessScreen" component={PickupVerifiedSuccessScreen} />
-        <Stack.Screen name="ProfileScreen" component={ProfileScreen} />
-        <Stack.Screen name="ReceiverDetailsScreen" component={ReceiverDetailsScreen} />
-        <Stack.Screen name="ReconnectingScreen" component={ReconnectingScreen} />
-        <Stack.Screen name="ReviewBookingScreen" component={ReviewBookingScreen} />
-        <Stack.Screen name="RouteUnavailableScreen" component={RouteUnavailableScreen} />
-        <Stack.Screen name="SavedAddressesScreen" component={SavedAddressesScreen} />
-        <Stack.Screen name="SearchingDriverScreen" component={SearchingDriverScreen} />
-        <Stack.Screen name="SearchUnavailableScreen" component={SearchUnavailableScreen} />
-        <Stack.Screen name="SelectDropLocationScreen" component={SelectDropLocationScreen} />
-        <Stack.Screen name="SelectLocationScreen" component={SelectLocationScreen} />
-        <Stack.Screen name="SelectVehicleScreen" component={SelectVehicleScreen} />
-        <Stack.Screen name="ShareTrackingSheetScreen" component={ShareTrackingSheetScreen} />
-        <Stack.Screen name="TripCancelledStatusScreen" component={TripCancelledStatusScreen} />
-        <Stack.Screen name="TripCompletedScreen" component={TripCompletedScreen} />
-        <Stack.Screen name="TripCompletedSummaryScreen" component={TripCompletedSummaryScreen} />
-        <Stack.Screen name="TripHistoryScreen" component={TripHistoryScreen} />
-        <Stack.Screen name="ValidateBookingScreen" component={ValidateBookingScreen} />
-        <Stack.Screen name="VehicleSelectionScreen" component={VehicleSelectionScreen} />
-        <Stack.Screen name="WrittenReviewScreen" component={WrittenReviewScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
-      </BookingProvider>
+      <SessionProvider>
+        <BookingProvider>
+          <RootNavigator />
+        </BookingProvider>
+      </SessionProvider>
     </SafeAreaProvider>
   );
 }

@@ -378,28 +378,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
         </ScrollView>
       </DraggableBottomSheet>
 
-      {/* Bottom Tabs Component */}
-      <View style={styles.bottomTabBar}>
-        {/* Already on Home — no self-navigation */}
-        <Pressable style={styles.tabItem} accessibilityState={{ selected: true }}>
-          <View style={[styles.tabIconWrapper, styles.tabActiveWrapper]}>
-            <Feather name="home" size={20} color={colors.primary} />
-          </View>
-          <Text style={[styles.tabLabel, styles.tabLabelActive]}>Home</Text>
-        </Pressable>
-        <Pressable style={styles.tabItem} onPress={() => navigation?.navigate('TripHistoryScreen')}>
-          <View style={styles.tabIconWrapper}>
-            <Feather name="navigation" size={20} color={colors.onSurfaceVariant} />
-          </View>
-          <Text style={styles.tabLabel}>Trips</Text>
-        </Pressable>
-        <Pressable style={styles.tabItem} onPress={() => navigation?.navigate('ProfileScreen')}>
-          <View style={styles.tabIconWrapper}>
-            <Feather name="user" size={20} color={colors.onSurfaceVariant} />
-          </View>
-          <Text style={styles.tabLabel}>Account</Text>
-        </Pressable>
-      </View>
+
     </SafeAreaView>
   );
 };
