@@ -135,3 +135,8 @@ export const cancelTrip = async (
   );
   return res.trip;
 };
+
+export const getDriverHistory = async (driverId: string): Promise<Trip[]> => {
+  const res = await request<Envelope & { trips: Trip[] }>(`/trips/history/driver/${driverId}`);
+  return res.trips;
+};

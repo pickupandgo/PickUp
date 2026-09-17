@@ -13,6 +13,8 @@ export interface ITripService {
   acceptTrip(tripId: string): Promise<ActiveTrip>;
   declineTrip(tripId: string): Promise<void>;
   updateState(tripId: string, state: ActiveTrip['status'], payload?: UpdateStatePayload): Promise<ActiveTrip>;
+  verifyDropOTP(tripId: string, stopId: string, otp: string): Promise<ActiveTrip>;
+  confirmDropDelivery(tripId: string, stopId: string, photoUri: string): Promise<{ activeTrip: ActiveTrip, rawResponse: engine.EngineTripResponse }>;
   getHistory(): Promise<HistoricalTrip[]>;
   getActiveTrip(): Promise<ActiveTrip | null>;
   getTripById(tripId: string): Promise<ActiveTrip | null>;
@@ -40,6 +42,19 @@ export class MockTripService implements ITripService {
   async updateState(_tripId: string, state: ActiveTrip['status'], _payload?: UpdateStatePayload): Promise<ActiveTrip> {
     await delay(800);
     return { ...mockActiveTrip, status: state };
+  }
+
+  async verifyDropOTP(_tripId: string, _stopId: string, _otp: string): Promise<ActiveTrip> {
+    await delay(800);
+    return { ...mockActiveTrip, status: 'arrived_drop' };
+  }
+
+  async confirmDropDelivery(_tripId: string, _stopId: string, _photoUri: string): Promise<{ activeTrip: ActiveTrip, rawResponse: engine.EngineTripResponse }> {
+    await delay(800);
+    return {
+      activeTrip: { ...mockActiveTrip, status: 'drop_verified' },
+      rawResponse: {} as engine.EngineTripResponse,
+    };
   }
 
   async getHistory(): Promise<HistoricalTrip[]> {
@@ -114,6 +129,28 @@ export class ApiTripService implements ITripService {
       trip = current;
     }
     return engine.engineTripToActiveTrip(trip);
+  }
+
+  async verifyDropOTP(tripId: string, stopId: string, otp: string): Promise<ActiveTrip> {
+    const driverId = engine.getCurrentDriverId();
+    if (!driverId) throw new Error('Driver is not authenticated');
+    
+    let trip = await engine.getTripById(tripId);
+    if (trip?.status === 'IN_TRANSIT') {
+      trip = await engine.startDrop(tripId, driverId);
+    }
+    
+    const updatedTrip = await engine.verifyDropOtp(tripId, driverId, stopId, otp);
+    return engine.engineTripToActiveTrip(updatedTrip);
+  }
+
+  async confirmDropDelivery(tripId: string, stopId: string, photoUri: string): Promise<{ activeTrip: ActiveTrip, rawResponse: engine.EngineTripResponse }> {
+    const driverId = engine.getCurrentDriverId();
+    if (!driverId) throw new Error('Driver is not authenticated');
+    
+    const rawResponse = await engine.confirmStopDelivery(tripId, driverId, stopId, photoUri);
+    const activeTrip = engine.engineTripToActiveTrip(rawResponse.trip);
+    return { activeTrip, rawResponse };
   }
 
   async getHistory(): Promise<HistoricalTrip[]> {

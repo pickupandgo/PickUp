@@ -143,6 +143,10 @@ When `API_BASE_URL` is empty, the app runs fully against mock adapters and seed 
 - Clear the Metro cache: `npm start -- --reset-cache`
 - Rebuild native after `.env` changes (values are compiled in, not read at runtime).
 - General React Native issues: see the [Troubleshooting guide](https://reactnative.dev/docs/troubleshooting).
+- **Reset engine state** (cancel all active trips on the engine — useful when a trip gets stuck in testing):
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File ..\PICKUP_UI-UIwithEngine\PICKUP_UI-UIwithEngine\scripts\cancel-all-trips.ps1
+  ```
 
 ## License
 

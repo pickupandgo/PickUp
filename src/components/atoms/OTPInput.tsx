@@ -26,12 +26,17 @@ export const OTPInput: React.FC<OTPInputProps> = ({
   testID,
 }) => {
   const inputRefs = useRef<Array<TextInputRef | null>>([]);
+  const onCompleteRef = useRef(onComplete);
 
   useEffect(() => {
-    if (value.length === length && onComplete) {
-      onComplete(value);
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  useEffect(() => {
+    if (value.length === length && onCompleteRef.current) {
+      onCompleteRef.current(value);
     }
-  }, [value, length, onComplete]);
+  }, [value, length]);
 
   const handleChange = (text: string, index: number) => {
     const sanitized = text.replace(/[^0-9]/g, '');

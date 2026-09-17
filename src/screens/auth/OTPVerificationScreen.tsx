@@ -29,6 +29,7 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
 }) => {
   const [otp, setOtp] = useState('');
   const [hasError, setHasError] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [resendTimer, setResendTimer] = useState<number>(authData.resendTimerSeconds);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { phone } = route.params;
@@ -50,22 +51,23 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
   }, []);
 
   const handleOtpComplete = useCallback(async (value: string) => {
+    if (isVerifying) return;
+    
     console.log(`[OTP DEBUG] OTP value entered (length: ${value.length})`);
     setHasError(false);
+    setIsVerifying(true);
     console.log(`[OTP DEBUG] verification started`);
-    const success = await onVerifyOtp(value);
-    console.log(`[OTP DEBUG] useAuth verification returned: ${success}`);
-    if (!success) {
-      setHasError(true);
-      // Fallback alert if onVerifyOtp caught something
-      setTimeout(() => {
-         // We check error prop in render, but an alert is more noticeable
-         if (error) {
-           Alert.alert("Verification Failed", error);
-         }
-      }, 100);
+    
+    try {
+      const success = await onVerifyOtp(value);
+      console.log(`[OTP DEBUG] useAuth verification returned: ${success}`);
+      if (!success) {
+        setHasError(true);
+      }
+    } finally {
+      setIsVerifying(false);
     }
-  }, [onVerifyOtp, error]);
+  }, [onVerifyOtp, isVerifying]);
 
   const handleVerify = useCallback(async () => {
     console.log(`[OTP DEBUG] VERIFY pressed`);
@@ -116,8 +118,8 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
             style={styles.otpInput}
           />
 
-          {hasError ? (
-            <Text style={styles.errorText}>Invalid OTP. Please try again.</Text>
+          {hasError || error ? (
+            <Text style={styles.errorText}>{error || 'Invalid OTP. Please try again.'}</Text>
           ) : null}
 
           {/* Resend */}
@@ -142,7 +144,7 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
           label="VERIFY"
           onPress={handleVerify}
           disabled={otp.length < 6}
-          loading={isLoading}
+          loading={isLoading || isVerifying}
           style={styles.verifyButton}
         />
       </KeyboardAvoidingView>

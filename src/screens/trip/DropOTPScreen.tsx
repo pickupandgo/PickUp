@@ -9,8 +9,9 @@ import { OTPInput } from '../../components/atoms/OTPInput';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { TripController } from '../../services/trip/TripController';
 import type { HomeScreenProps } from '../../types/navigation';
+import { Alert } from 'react-native';
 
-/** Receiver code length. The engine has no drop OTP, so it is not validated server-side. */
+/** Receiver code length. */
 const OTP_LENGTH = 4;
 
 /**
@@ -38,18 +39,28 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
     setIsLoading(true);
     setHasError(false);
     try {
-      // The engine has no receiver OTP; mark the drop as started, then proceed.
-      await TripController.getInstance().startDrop(tripId).catch(() => {});
+      await TripController.getInstance().verifyDropOTP(tripId, stopId, otp);
       setVerified(true);
       setTimeout(() => {
         navigation.navigate('DeliveryProofCamera', { tripId, stopId });
       }, 1200);
-    } catch (e) {
-      setHasError(true);
+    } catch (e: any) {
+      const errorStr = String(e.message || e);
+      Alert.alert('Debug Error', errorStr);
+      console.warn('[DropOTPScreen] Verification failed:', errorStr);
+      const errorMessage = errorStr.toLowerCase();
+      if (errorMessage.includes('already verified')) {
+        setVerified(true);
+        setTimeout(() => {
+          navigation.navigate('DeliveryProofCamera', { tripId, stopId });
+        }, 1200);
+      } else {
+        setHasError(true);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [navigation, tripId, stopId]);
+  }, [navigation, tripId, stopId, otp]);
 
   const handleComplete = useCallback(async (value: string) => {
     setOtp(value);

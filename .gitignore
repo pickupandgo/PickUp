@@ -86,3 +86,12 @@ yarn-error.log
 
 # Reference copy of the backend engine (separate project, has its own repo)
 Drive_with_engine/
+
+# Build logs — generated on every Gradle run, never commit
+android/build_apk*.log
+
+# Android build artifacts
+android/app/build/
+android/app/.cxx/
+android/build/
+android/.gradle/

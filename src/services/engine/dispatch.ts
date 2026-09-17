@@ -106,6 +106,13 @@ export const getTripIdForRide = async (rideId: string): Promise<string | null> =
 
 // ─── Trips (post-accept lifecycle) ───────────────────────────────────────────
 
+export interface EngineStop {
+  id: string;
+  sequence: number;
+  location: EngineLocation;
+  status: string;
+}
+
 /** A trip as returned by the engine's /trips endpoints. */
 export interface EngineTrip {
   id: string;
@@ -114,6 +121,8 @@ export interface EngineTrip {
   driverId: string;
   pickup: EngineLocation;
   drop: EngineLocation;
+  stops?: EngineStop[];
+  currentStopIndex?: number;
   status: string;
   weight?: number;
   fare?: number;
@@ -156,6 +165,30 @@ const postTripAction = async (
   return res.trip;
 };
 
+export interface EngineTripResponse {
+  success: boolean;
+  tripStatus: string;
+  currentStopIndex?: number;
+  completedStops?: number;
+  remainingStops?: number;
+  currentStop?: any;
+  trip: EngineTrip;
+}
+
+export const postTripActionRaw = async <T>(
+  tripId: string,
+  action: string,
+  driverId: string,
+  extra: Record<string, unknown> = {},
+): Promise<T> => {
+  const res = await client.post<T>(
+    `/trips/${enc(tripId)}/${action}`,
+    { driverId, ...extra },
+    { withAuth: false, retryable: false },
+  );
+  return res;
+};
+
 export const arriveAtPickup = (tripId: string, driverId: string) =>
   postTripAction(tripId, 'arrive', driverId);
 export const verifyPickupOtp = (tripId: string, driverId: string, otp: string) =>
@@ -163,9 +196,13 @@ export const verifyPickupOtp = (tripId: string, driverId: string, otp: string) =
 export const startTrip = (tripId: string, driverId: string) =>
   postTripAction(tripId, 'start', driverId);
 export const startDrop = (tripId: string, driverId: string) =>
-  postTripAction(tripId, 'drop/start', driverId);
+  postTripAction(tripId, 'stop/arrive', driverId);
+export const verifyDropOtp = (tripId: string, driverId: string, stopId: string, otp: string) =>
+  postTripAction(tripId, 'stop/verify-otp', driverId, { stopId, otp });
 export const confirmDrop = (tripId: string, driverId: string) =>
   postTripAction(tripId, 'drop/confirm', driverId);
+export const confirmStopDelivery = (tripId: string, driverId: string, stopId: string, photoUri: string) =>
+  postTripActionRaw<EngineTripResponse>(tripId, 'stop/confirm-delivery', driverId, { stopId, photo: { uri: photoUri } });
 export const completeTrip = (tripId: string, driverId: string) =>
   postTripAction(tripId, 'complete', driverId);
 
@@ -196,7 +233,16 @@ export const advanceTripTo = async (
 
   const targetIdx = ENGINE_STATUS_ORDER.indexOf(targetStatus as never);
   let guard = 0;
+  let previousIdx = -1;
   while (ENGINE_STATUS_ORDER.indexOf(trip.status as never) < targetIdx && guard++ < 8) {
+    const currentIdx = ENGINE_STATUS_ORDER.indexOf(trip.status as never);
+    if (currentIdx <= previousIdx) {
+      // The state machine moved backwards (e.g. multi-stop trip going from DROP_PROGRESS to IN_TRANSIT)
+      // or failed to advance. We must break to avoid infinite auto-completion of stops.
+      break;
+    }
+    previousIdx = currentIdx;
+
     switch (trip.status) {
       case 'DRIVER_ASSIGNED':
         trip = await arriveAtPickup(tripId, driverId);
@@ -241,8 +287,11 @@ export const engineTripToActiveTrip = (t: EngineTrip): ActiveTrip => {
   const pickupDone = ['PICKUP_VERIFIED', 'IN_TRANSIT', 'DROP_PROGRESS', 'DELIVERED', 'COMPLETED'].includes(
     t.status,
   );
-  const dropDone = ['DELIVERED', 'COMPLETED'].includes(t.status);
-  const currentStopIndex = pickupDone ? 1 : 0;
+  
+  const currentStopIndex = t.currentStopIndex !== undefined 
+    ? (pickupDone ? t.currentStopIndex + 1 : 0)
+    : (pickupDone ? 1 : 0);
+
   const distanceKm = haversineKm(
     t.pickup.latitude,
     t.pickup.longitude,
@@ -250,39 +299,57 @@ export const engineTripToActiveTrip = (t: EngineTrip): ActiveTrip => {
     t.drop.longitude,
   );
 
+  const pickupStop = {
+    id: `${t.id}-pickup`,
+    type: 'pickup' as const,
+    label: 'Pickup',
+    address: formatAddress(t.pickup),
+    latitude: t.pickup.latitude,
+    longitude: t.pickup.longitude,
+    status: pickupDone ? 'completed' : 'pending' as any,
+  };
+
+  let mappedStops: any[] = [pickupStop];
+
+  if (t.stops && t.stops.length > 0) {
+    mappedStops = [
+      pickupStop,
+      ...t.stops.map((s) => ({
+        id: s.id,
+        type: 'drop' as const,
+        label: `Drop-off ${s.sequence}`,
+        address: formatAddress(s.location),
+        latitude: s.location.latitude,
+        longitude: s.location.longitude,
+        status: ['DELIVERED', 'COMPLETED'].includes(s.status) ? 'completed' 
+                : (currentStopIndex === s.sequence ? 'current' : 'pending')
+      }))
+    ];
+  } else {
+    const dropDone = ['DELIVERED', 'COMPLETED'].includes(t.status);
+    mappedStops.push({
+      id: `${t.id}-drop`,
+      type: 'drop' as const,
+      label: 'Drop-off',
+      address: formatAddress(t.drop),
+      latitude: t.drop.latitude,
+      longitude: t.drop.longitude,
+      status: dropDone ? 'completed' : currentStopIndex === 1 ? 'current' : 'pending',
+    });
+  }
+
   return {
     id: t.id,
-    status: ENGINE_TO_APP_TRIP_STATUS[t.status] ?? 'in_transit',
-    stops: [
-      {
-        id: `${t.id}-pickup`,
-        type: 'pickup',
-        label: 'Pickup',
-        address: formatAddress(t.pickup),
-        latitude: t.pickup.latitude,
-        longitude: t.pickup.longitude,
-        status: pickupDone ? 'completed' : 'current',
-        requiresOtp: true,
-      },
-      {
-        id: `${t.id}-drop`,
-        type: 'drop',
-        label: 'Drop-off',
-        address: formatAddress(t.drop),
-        latitude: t.drop.latitude,
-        longitude: t.drop.longitude,
-        status: dropDone ? 'completed' : currentStopIndex === 1 ? 'current' : 'pending',
-        requiresPhoto: true,
-      },
-    ],
+    status: (ENGINE_TO_APP_TRIP_STATUS[t.status] ?? 'in_transit') as any,
+    stops: mappedStops,
     currentStopIndex,
     estimatedEarning: t.fare ?? 0,
     currency: '₹',
     totalDistanceKm: Math.round(distanceKm * 10) / 10,
     loadType: 'other',
-    goodsType: '',
-    vehicleId: '',
-    vehicleRegistration: '',
+    goodsType: 'other',
+    vehicleId: 'unknown',
+    vehicleRegistration: 'unknown',
     startedAt: t.startedAt ? new Date(t.startedAt).getTime() : undefined,
     completedAt: t.completedAt ? new Date(t.completedAt).getTime() : undefined,
   };
@@ -306,7 +373,7 @@ const formatAddress = (loc: EngineLocation): string =>
   loc.address?.trim() || `${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}`;
 
 /** Map an engine ride request into the app's rich TripOffer shape. */
-export const rideRequestToOffer = (r: EngineRideRequest): TripOffer => {
+export const rideRequestToOffer = (r: EngineRideRequest & { stops?: EngineStop[] }): TripOffer => {
   const distanceKm = haversineKm(
     r.pickup.latitude,
     r.pickup.longitude,
@@ -314,6 +381,29 @@ export const rideRequestToOffer = (r: EngineRideRequest): TripOffer => {
     r.drop.longitude,
   );
   const createdMs = new Date(r.createdAt).getTime();
+  
+  let dropStops: any[] = [];
+  if (r.stops && r.stops.length > 0) {
+    dropStops = r.stops.map(s => ({
+      id: s.id,
+      type: 'drop',
+      label: `Drop-off ${s.sequence}`,
+      address: formatAddress(s.location),
+      latitude: s.location.latitude,
+      longitude: s.location.longitude,
+      status: 'pending'
+    }));
+  } else {
+    dropStops = [{
+      id: `${r.rideId}-drop`,
+      type: 'drop',
+      label: 'Drop-off',
+      address: formatAddress(r.drop),
+      latitude: r.drop.latitude,
+      longitude: r.drop.longitude,
+      status: 'pending',
+    }];
+  }
 
   return {
     id: r.rideId,
@@ -328,17 +418,7 @@ export const rideRequestToOffer = (r: EngineRideRequest): TripOffer => {
       longitude: r.pickup.longitude,
       status: 'current',
     },
-    dropStops: [
-      {
-        id: `${r.rideId}-drop`,
-        type: 'drop',
-        label: 'Drop-off',
-        address: formatAddress(r.drop),
-        latitude: r.drop.latitude,
-        longitude: r.drop.longitude,
-        status: 'pending',
-      },
-    ],
+    dropStops,
     totalDistanceKm: Math.round(distanceKm * 10) / 10,
     loadType: 'other',
     vehicleType: r.vehicleType ?? 'Mini Truck',

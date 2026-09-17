@@ -31,18 +31,27 @@ export const DeliveryProofPreviewScreen: React.FC<DeliveryProofPreviewScreenProp
 
   const handleConfirm = useCallback(async () => {
     setIsUploading(true);
+    let finalStatus = 'completed';
     try {
-      // Finalize the trip on the engine (drop-progress -> delivered -> completed).
-      await TripController.getInstance().completeTrip(tripId);
+      await TripController.getInstance().confirmDropDelivery(tripId, stopId || '', photoUri);
+      const trip = TripController.getInstance().getTrip();
+      if (trip) {
+        finalStatus = trip.status;
+      }
     } catch (e) {
-      console.warn('[DeliveryProofPreview] Failed to complete trip on engine', e);
+      console.warn('[DeliveryProofPreview] Failed to confirm drop on engine', e);
     }
     setUploaded(true);
     setIsUploading(false);
     setTimeout(() => {
-      navigation.navigate('TripCompleted', { tripId });
+      if (finalStatus === 'completed' || finalStatus === 'COMPLETED') {
+        navigation.navigate('TripCompleted', { tripId });
+      } else {
+        // More stops remaining, go back to the active trip root screen
+        navigation.navigate('ActiveTrip', { tripId });
+      }
     }, 1200);
-  }, [navigation, tripId]);
+  }, [navigation, tripId, stopId, photoUri]);
 
   const handleRetake = useCallback(() => {
     navigation.goBack();
