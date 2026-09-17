@@ -135,3 +135,10 @@ export const cancelTrip = async (
   );
   return res.trip;
 };
+
+export const getCustomerHistory = async (customerId: string, signal?: AbortSignal): Promise<Trip[]> => {
+  const res = await request<Envelope & { trips: Trip[] }>(`/trips/history/customer/${customerId}`, {
+    signal,
+  });
+  return res.trips;
+};

@@ -61,6 +61,8 @@ export interface Ride {
   readonly otp?: string;
   readonly pickup?: GeoPoint;
   readonly drop?: GeoPoint;
+  readonly drops?: readonly GeoPoint[];
+  readonly stopOtps?: readonly string[];
   readonly vehicleType?: string;
 }
 
@@ -69,7 +71,8 @@ export interface CreateRideInput {
   /** The engine has no server-side matching: the client names the driver. */
   readonly driverId: string;
   readonly pickup: GeoPoint;
-  readonly drop: GeoPoint;
+  readonly drop?: GeoPoint;
+  readonly drops?: readonly GeoPoint[];
   readonly vehicleType?: string;
   readonly weight?: number;
   readonly fare?: number;
@@ -87,6 +90,26 @@ export type TripStatus =
   | 'COMPLETED'
   | 'CANCELLED';
 
+export type StopStatus = 'PENDING' | 'IN_TRANSIT' | 'ARRIVED' | 'DELIVERED';
+
+export interface StopReceiver {
+  readonly name?: string;
+  readonly phone?: string;
+}
+
+export interface TripStop {
+  readonly id: string;
+  readonly sequence: number;
+  readonly location: GeoPoint;
+  readonly receiver?: StopReceiver;
+  readonly status: StopStatus;
+  readonly otpVerified?: boolean;
+  readonly distanceFromPreviousStopKm?: number;
+  readonly fareFromPreviousStop?: number;
+  readonly arrivedAt?: string;
+  readonly deliveredAt?: string;
+}
+
 export interface Trip {
   readonly id: string;
   readonly rideId: string;
@@ -94,6 +117,9 @@ export interface Trip {
   readonly driverId: string;
   readonly pickup: GeoPoint;
   readonly drop: GeoPoint;
+  readonly stops: readonly TripStop[];
+  readonly currentStopIndex: number;
+  readonly currentStop?: TripStop | null;
   readonly status: TripStatus;
   readonly weight?: number;
   readonly fare?: number;

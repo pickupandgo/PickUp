@@ -11,7 +11,7 @@ import { Feather, MaterialIcons } from '@expo/vector-icons';
 import Button from '../../components/atoms/Button';
 import { useBooking } from '../../state/BookingContext';
 import { useTripStatus } from '../../hooks/useTripStatus';
-import { getDriver } from '../../api/engine';
+import { getDriver, getRide } from '../../api/engine';
 import type { GeoPoint } from '../../api/types';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
 import { useRoute } from '../../hooks/useRoute';
@@ -28,7 +28,23 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
   onTripDetails,
   navigation,
 }) => {
-  const { assignedDriver, trip, setTrip } = useBooking();
+  const { assignedDriver, trip, setTrip, ride, setRide } = useBooking();
+
+  // If the user killed the app and restarted, `ride` might be undefined, but `trip` exists.
+  // We fetch `ride` to restore access to the OTPs since the `trip` object strips them.
+  useEffect(() => {
+    if (trip?.rideId && !ride) {
+      let active = true;
+      getRide(trip.rideId)
+        .then((fetchedRide) => {
+          if (active) setRide(fetchedRide);
+        })
+        .catch(() => {});
+      return () => {
+        active = false;
+      };
+    }
+  }, [trip?.rideId, ride, setRide]);
 
   // Poll the trip so we react the moment the driver arrives, verifies pickup,
   // or finishes the trip. Without this the screen would stay on "Driver Assigned"
@@ -103,7 +119,17 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
         description: current.pickup.address,
       });
     }
-    if (current?.drop) {
+    if (current?.stops && current.stops.length > 0) {
+      current.stops.forEach((stop, index) => {
+        built.push({
+          id: `drop-${index}`,
+          kind: 'drop',
+          coordinate: stop.location,
+          title: `Drop ${index + 1}`,
+          description: stop.location.address,
+        });
+      });
+    } else if (current?.drop) {
       built.push({
         id: 'drop',
         kind: 'drop',
@@ -183,10 +209,10 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
         </View>
 
         {/* The engine gives the OTP to the customer to read out to the driver. */}
-        {trip?.otp && (
+        {(trip?.otp ?? ride?.otp) && (
           <View style={styles.otpRow}>
             <Text style={styles.otpLabel}>PICKUP OTP</Text>
-            <Text style={styles.otpValue}>{trip.otp}</Text>
+            <Text style={styles.otpValue}>{trip?.otp ?? ride?.otp}</Text>
           </View>
         )}
 

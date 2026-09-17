@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import Button from '../../components/atoms/Button';
+import { useBooking } from '../../state/BookingContext';
 
 export interface TripCancelledStatusScreenProps {
   readonly tripId?: string;
@@ -37,6 +38,8 @@ const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { nav
   onBack,
   navigation,
 }) => {
+  const { clearActiveRide } = useBooking();
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* App Bar */}
@@ -105,7 +108,11 @@ const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { nav
         <View style={styles.actionsContainer}>
           <Button
             label="Back to Home"
-            onPress={() => (onHome ? onHome() : navigation?.navigate('HomeScreen'))}
+            onPress={() => {
+              clearActiveRide();
+              if (onHome) onHome();
+              else navigation?.navigate('HomeScreen');
+            }}
             variant="primary"
             fullWidth
             size="lg"

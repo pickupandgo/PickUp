@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { Feather } from '@expo/vector-icons';
 import { mockActiveTrip } from '../../data/mockData';
+import { useBooking } from '../../state/BookingContext';
 
 export interface TripCompletedSummaryScreenProps {
   readonly onBack?: () => void;
@@ -27,6 +28,7 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
   onBackToHome,
   navigation,
 }) => {
+  const { clearActiveRide } = useBooking();
   const stops = mockActiveTrip.stops;
 
   return (
@@ -155,7 +157,11 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
           
           <Pressable
             style={styles.homeButton}
-            onPress={() => (onBackToHome ? onBackToHome() : navigation?.navigate('HomeScreen'))}
+            onPress={() => {
+              clearActiveRide();
+              if (onBackToHome) onBackToHome();
+              else navigation?.navigate('HomeScreen');
+            }}
           >
             <Text style={styles.homeButtonText}>BACK TO HOME</Text>
           </Pressable>

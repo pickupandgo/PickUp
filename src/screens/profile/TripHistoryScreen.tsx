@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { Feather } from '@expo/vector-icons';
-import { mockTripHistory, TripHistoryItem } from '../../data/mockData';
+import { getCustomerHistory } from '../../api/engine';
+import { useBooking } from '../../state/BookingContext';
+import type { Trip } from '../../api/types';
 
 export interface TripHistoryScreenProps {
   readonly onBack?: () => void;
-  readonly onTripSelect?: (trip: TripHistoryItem) => void;
+  readonly onTripSelect?: (trip: any) => void;
 }
 
 const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }> = ({
@@ -22,13 +24,32 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
   navigation,
 }) => {
   const [activeTab, setActiveTab] = useState<'Recent' | 'Scheduled'>('Recent');
+  const { customerId } = useBooking();
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!customerId) return;
+    const fetchTrips = async () => {
+      setLoading(true);
+      try {
+        const data = await getCustomerHistory(customerId);
+        setTrips(data);
+      } catch (err) {
+        console.error('Failed to load history', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTrips();
+  }, [customerId]);
 
   // No scheduled mock data exists in this prototype, so that tab renders an empty list.
-  const visibleTrips: readonly TripHistoryItem[] = activeTab === 'Recent' ? mockTripHistory : [];
+  const visibleTrips = activeTab === 'Recent' ? trips : [];
 
-  const renderTripCard = (trip: TripHistoryItem) => {
-    const isCompleted = trip.status === 'completed';
-    const isCancelled = trip.status === 'cancelled';
+  const renderTripCard = (trip: Trip) => {
+    const isCompleted = trip.status === 'COMPLETED';
+    const isCancelled = trip.status === 'CANCELLED';
 
     return (
       <Pressable
@@ -37,7 +58,7 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
         onPress={() => {
           onTripSelect?.(trip);
           navigation?.navigate(
-            trip.status === 'cancelled' ? 'TripCancelledStatusScreen' : 'HistoricalTripDetailScreen'
+            isCancelled ? 'TripCancelledStatusScreen' : 'HistoricalTripDetailScreen'
           );
         }}
       >
@@ -67,12 +88,12 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
                 {trip.status.toUpperCase()}
               </Text>
             </View>
-            <Text style={styles.dateText}>{trip.date}</Text>
+            <Text style={styles.dateText}>{new Date(trip.createdAt).toLocaleDateString()}</Text>
           </View>
 
           <View style={styles.cardHeaderRight}>
             <Text style={[styles.amountText, isCancelled && styles.amountTextCancelled]}>
-              {trip.amount}
+              ?{trip.fare ?? 0}
             </Text>
             <Text
               style={[
@@ -80,7 +101,7 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
                 isCancelled && styles.paymentTextCancelled,
               ]}
             >
-              {isCancelled ? trip.cancelReason : trip.paymentMethod}
+              {isCancelled ? 'Cancelled by User' : 'CASH'}
             </Text>
           </View>
         </View>
@@ -92,15 +113,15 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
             <View style={[styles.timelineDot, isCompleted ? styles.timelineDotActiveDrop : styles.timelineDotInactive]} />
           </View>
           <View style={styles.routeLocations}>
-            <Text style={styles.locationText}>{trip.from}</Text>
-            <Text style={styles.locationText}>{trip.to}</Text>
+            <Text style={styles.locationText}>{trip.pickup?.address}</Text>
+            <Text style={styles.locationText}>{trip.stops?.[trip.stops.length - 1]?.location?.address || 'No Drop Location'}</Text>
           </View>
         </View>
 
         <View style={styles.cardFooter}>
           <View style={styles.vehicleInfo}>
             <Feather name="truck" size={14} color={colors.onSurfaceVariant} />
-            <Text style={styles.vehicleText}>{trip.vehicleType}</Text>
+            <Text style={styles.vehicleText}>{trip.weight} kg</Text>
           </View>
           <Feather name="chevron-right" size={20} color={colors.onSurfaceVariant} />
         </View>

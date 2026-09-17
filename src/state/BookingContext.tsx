@@ -112,7 +112,10 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
   }, []);
 
   const addDrop = useCallback((place: ResolvedPlace) => {
-    setDraft((d) => ({ ...d, drops: [...d.drops, place] }));
+    setDraft((d) => {
+      if (d.drops.length >= 5) return d;
+      return { ...d, drops: [...d.drops, place] };
+    });
   }, []);
 
   const setPendingDrop = useCallback((pendingDrop: ResolvedPlace | undefined) => {
@@ -122,7 +125,7 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
   const commitPendingDrop = useCallback((): ResolvedPlace | undefined => {
     let committed: ResolvedPlace | undefined;
     setDraft((d) => {
-      if (!d.pendingDrop) return d;
+      if (!d.pendingDrop || d.drops.length >= 5) return d;
       committed = d.pendingDrop;
       return {
         ...d,
@@ -188,6 +191,7 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
     setRide(undefined);
     setTrip(undefined);
     setAssignedDriver(undefined);
+    setDraft(EMPTY_DRAFT);
   }, []);
 
   const primaryDrop = draft.drops[0];
@@ -197,7 +201,7 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
       customerId,
       draft,
       primaryDrop,
-      canEstimate: Boolean(draft.pickup && primaryDrop),
+      canEstimate: Boolean(draft.pickup && draft.drops.length > 0),
       setPickup,
       setPendingDrop,
       commitPendingDrop,

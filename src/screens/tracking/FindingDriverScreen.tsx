@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { Feather } from '@expo/vector-icons';
-import { useBooking } from '../../state/BookingContext';
+import { useBooking, toGeoPoint } from '../../state/BookingContext';
 import { findDriverAndCreateRide, NoDriversAvailableError } from '../../api/matching';
 import { getRideTrip } from '../../api/engine';
 import { toApiError } from '../../api/http';
@@ -56,7 +56,8 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
             customerId,
             pickup,
             drop: primaryDrop,
-            vehicleType: draft.vehicleType,
+              drops: draft.drops.map(toGeoPoint),
+              vehicleType: draft.vehicleType,
             weight: draft.weightKg,
             fare: draft.fareEstimate?.fare,
           },

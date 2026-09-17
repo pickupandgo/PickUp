@@ -7,7 +7,7 @@
 # The script scans all known customer IDs for active trips and cancels them.
 
 param(
-  [string]$BaseUrl = "https://pickup-go-core-engine.onrender.com",
+  [string]$BaseUrl = "https://pickup-backend-engine-v2.onrender.com",
   [string]$CancelReason = "Admin force cancel"
 )
 
@@ -70,6 +70,6 @@ if ($failed -gt 0) {
 }
 if ($found -eq 0) {
     Write-Host "[INFO] Engine par koi active trip nahi thi." -ForegroundColor Yellow
-    Write-Host "[INFO] Engine in-memory hai — Render restart par sab wipe hota hai." -ForegroundColor Yellow
+    Write-Host "[INFO] Engine in-memory hai - Render restart par sab wipe hota hai." -ForegroundColor Yellow
 }
 Write-Host ""

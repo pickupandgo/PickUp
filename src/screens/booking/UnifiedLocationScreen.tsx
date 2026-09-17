@@ -312,7 +312,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
             fullWidth
             disabled={isResolving || !isFormValid}
           />
-          {activeType === 'drop' && !editTarget && (
+          {activeType === 'drop' && !editTarget && draft.drops.length < 4 && (
             <Pressable
               style={styles.addDropButton}
               onPress={handleAddAnother}
@@ -374,10 +374,18 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
               </Pressable>
             </View>
           ))}
-          
-        </View>
-        <Button
-          label="Done Editing"
+            {draft.drops.length < 5 && (
+              <Pressable
+                style={styles.addDropButton}
+                onPress={() => setEditTarget({ type: 'drop', index: draft.drops.length })}
+              >
+                <Feather name="plus" size={20} color={colors.primary} />
+                <Text style={styles.addDropText}>Add Drop</Text>
+              </Pressable>
+            )}
+          </View>
+<Button
+label="Done Editing"
           onPress={() => navigation?.goBack()}
           variant="primary"
           fullWidth

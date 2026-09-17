@@ -12,7 +12,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import { Feather } from '@expo/vector-icons';
 import { useBooking } from '../../state/BookingContext';
 import { useTripStatus } from '../../hooks/useTripStatus';
-import { getDriver } from '../../api/engine';
+import { getDriver, getRide } from '../../api/engine';
 import type { GeoPoint } from '../../api/types';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
 import { useRoute } from '../../hooks/useRoute';
@@ -29,7 +29,23 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
   onChat,
   navigation,
 }) => {
-  const { trip, setTrip, assignedDriver } = useBooking();
+  const { trip, setTrip, assignedDriver, ride, setRide } = useBooking();
+
+  // If the user killed the app and restarted, `ride` might be undefined, but `trip` exists.
+  // We fetch `ride` to restore access to the OTPs since the `trip` object strips them.
+  useEffect(() => {
+    if (trip?.rideId && !ride) {
+      let active = true;
+      getRide(trip.rideId)
+        .then((fetchedRide) => {
+          if (active) setRide(fetchedRide);
+        })
+        .catch(() => {});
+      return () => {
+        active = false;
+      };
+    }
+  }, [trip?.rideId, ride, setRide]);
 
   // No push channel, so the trip and the driver's position are both polled.
   const { trip: polled } = useTripStatus(trip?.id);
@@ -91,7 +107,13 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
     if (current?.pickup) {
       built.push({ id: 'pickup', kind: 'pickup', coordinate: current.pickup, title: 'Pickup' });
     }
-    if (current?.drop) {
+    if (current?.stops && current.stops.length > 0) {
+      current.stops.forEach((stop, index) => {
+        if (stop.status !== 'DELIVERED') {
+          built.push({ id: `drop-${index}`, kind: 'drop', coordinate: stop.location, title: `Drop ${index + 1}` });
+        }
+      });
+    } else if (current?.drop) {
       built.push({ id: 'drop', kind: 'drop', coordinate: current.drop, title: 'Drop' });
     }
     if (driverPoint) {
@@ -104,7 +126,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
       });
     }
     return built;
-  }, [current?.pickup, current?.drop, driverPoint, assignedDriver]);
+  }, [current?.pickup, current?.drop, current?.stops, driverPoint, assignedDriver]);
 
   // Route always starts from the driver so the polyline shrinks as they close
   // the distance. Destination flips from pickup to drop once the trip is under
@@ -137,9 +159,15 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
     }
   })();
 
+  let currentDropAddress = current?.drop?.address ?? '—';
+  if (current?.stops && current.stops.length > 0) {
+    const activeDrop = current.stops.find(s => ['PENDING', 'IN_TRANSIT', 'ARRIVED'].includes(s.status)) || current.stops[current.stops.length - 1];
+    currentDropAddress = activeDrop?.location?.address ?? currentDropAddress;
+  }
+
   const tripSubtitle = preTransit
     ? `Pickup: ${current?.pickup?.address ?? '—'}`
-    : `Drop: ${current?.drop?.address ?? '—'}`;
+    : `Drop: ${currentDropAddress}`;
 
   // Bar advances as the engine reports progress.
   const progressPercent: `${number}%` =
@@ -214,11 +242,24 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
             </View>
 
             {/* PICKUP OTP — shown while driver hasn't verified pickup yet */}
-            {current?.otp &&
+            {(current?.otp ?? ride?.otp) &&
               (status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED') && (
                 <View style={styles.otpRow}>
                   <Text style={styles.otpLabel}>PICKUP OTP</Text>
-                  <Text style={styles.otpValue}>{current.otp}</Text>
+                  <Text style={styles.otpValue}>{current?.otp ?? ride?.otp}</Text>
+                </View>
+              )}
+
+            {/* DELIVERY OTP — shown while driver is heading to or arrived at a drop */}
+            {ride?.stopOtps &&
+              (status === 'IN_TRANSIT' || status === 'DROP_PROGRESS') &&
+              current?.currentStop &&
+              !current.currentStop.otpVerified && (
+                <View style={styles.otpRow}>
+                  <Text style={styles.otpLabel}>DELIVERY OTP</Text>
+                  <Text style={styles.otpValue}>
+                    {ride.stopOtps[current.currentStopIndex ?? 0]}
+                  </Text>
                 </View>
               )}
 
