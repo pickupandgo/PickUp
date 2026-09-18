@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import Button from '../../components/atoms/Button';
+import { useBooking } from '../../state/BookingContext';
 
 export interface PaymentConfirmationScreenProps {
   readonly amount?: string;
@@ -23,16 +24,26 @@ export interface PaymentConfirmationScreenProps {
 }
 
 const PaymentConfirmationScreen: React.FC<PaymentConfirmationScreenProps & { navigation?: any }> = ({
-  amount = '₹450',
   paymentMethod = 'UPI (Secure)',
-  tripId = '#TRP-8472-X',
-  date = 'Oct 24, 2023 • 14:30',
-  distance = '12.4 km',
   onDone,
   onBack,
   onMoreOptions,
   navigation,
 }) => {
+  const { ride, trip, draft } = useBooking();
+  
+  const currentFare = trip?.fare || ride?.fare || draft.fareEstimate?.fare;
+  const amount = currentFare ? `₹${currentFare}` : '--';
+  
+  const tripId = `#TRP-${(trip?.id || ride?.id || '8472-X').substring(0, 6).toUpperCase()}`;
+  
+  const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + 
+    ' • ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+    
+  const distance = draft.fareEstimate?.distanceKm 
+    ? `${draft.fareEstimate.distanceKm.toFixed(1)} km` 
+    : '12.4 km';
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top App Bar */}

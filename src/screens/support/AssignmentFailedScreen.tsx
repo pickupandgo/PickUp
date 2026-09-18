@@ -6,8 +6,10 @@ import {
   Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { CommonActions } from '@react-navigation/native';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import { Feather } from '@expo/vector-icons';
+import { useBooking } from '../../state/BookingContext';
 
 export interface AssignmentFailedScreenProps {
   readonly onClose?: () => void;
@@ -21,6 +23,7 @@ const AssignmentFailedScreen: React.FC<AssignmentFailedScreenProps & { navigatio
   onCancel,
   navigation,
 }) => {
+  const { clearActiveRide } = useBooking();
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Header */}
@@ -54,14 +57,37 @@ const AssignmentFailedScreen: React.FC<AssignmentFailedScreenProps & { navigatio
       <View style={styles.actionArea}>
         <Pressable
           style={styles.primaryButton}
-          onPress={() => (onRetry ? onRetry() : navigation?.navigate('FindingDriverScreen'))}
+          onPress={() => {
+            if (onRetry) {
+              onRetry();
+            } else {
+              navigation?.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'FindingDriverScreen' }],
+                })
+              );
+            }
+          }}
           accessibilityRole="button"
         >
           <Text style={styles.primaryButtonText}>Retry Booking</Text>
         </Pressable>
         <Pressable
           style={styles.secondaryButton}
-          onPress={() => (onCancel ? onCancel() : navigation?.navigate('HomeScreen'))}
+          onPress={() => {
+            if (onCancel) {
+              onCancel();
+            } else {
+              clearActiveRide();
+              navigation?.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'MainTabs', params: { screen: 'HomeScreen' } }],
+                })
+              );
+            }
+          }}
           accessibilityRole="button"
         >
           <Text style={styles.secondaryButtonText}>Cancel</Text>

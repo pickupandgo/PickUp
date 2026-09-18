@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { Feather } from '@expo/vector-icons';
+import { useBooking } from '../../state/BookingContext';
 
 export interface PaymentPendingScreenProps {
   readonly amount?: string;
@@ -19,12 +20,14 @@ export interface PaymentPendingScreenProps {
 }
 
 const PaymentPendingScreen: React.FC<PaymentPendingScreenProps & { navigation?: any }> = ({
-  amount = '₹ 340',
   onClose,
   onCheckStatus,
   onCancelPayment,
   navigation,
 }) => {
+  const { draft } = useBooking();
+  const amount = draft.fareEstimate ? `₹ ${draft.fareEstimate.fare.toFixed(2)}` : '--';
+
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {

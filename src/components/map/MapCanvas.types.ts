@@ -34,7 +34,7 @@ export interface MapCanvasProps {
   /** Show the OS "my location" dot. */
   readonly showsUserLocation?: boolean;
   /** Fired when the user finishes panning, for drag-to-pick flows. */
-  readonly onRegionChangeComplete?: (point: GeoPoint) => void;
+  readonly onRegionChangeComplete?: (point: GeoPoint, details?: { isGesture?: boolean }) => void;
   readonly scrollEnabled?: boolean;
   /**
    * Override the initial camera zoom. Larger deltas show more area, so a

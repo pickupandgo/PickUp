@@ -6,10 +6,13 @@ import {
   Pressable,
   ScrollView,
 } from 'react-native';
+import { CommonActions } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import Button from '../../components/atoms/Button';
+
+import { useBooking } from '../../state/BookingContext';
 
 export interface DigitalReceiptScreenProps {
   readonly tripId?: string;
@@ -43,6 +46,15 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
   onBack,
   navigation,
 }) => {
+  const { ride, trip, draft } = useBooking();
+  const currentFare = trip?.fare || ride?.fare || draft.fareEstimate?.fare;
+  
+  const actualTotal = currentFare ? `₹${currentFare}` : '--';
+  const actualBase = currentFare ? `₹${(currentFare * 0.8).toFixed(2)}` : '--'; // Simplified breakup
+  const actualTaxes = currentFare ? `₹${(currentFare * 0.2).toFixed(2)}` : '--';
+
+  const actualTripId = trip?.id || ride?.id ? `#TRP-${(trip?.id || ride?.id)?.substring(0, 6).toUpperCase()}` : tripId;
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top App Bar */}
@@ -81,7 +93,7 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
             <Text style={styles.sectionTitle}>TRIP DETAILS</Text>
             <View style={styles.row}>
               <Text style={styles.detailLabel}>Trip ID</Text>
-              <Text style={styles.monoValue}>{tripId}</Text>
+              <Text style={styles.monoValue}>{actualTripId}</Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.detailLabel}>Date & Time</Text>
@@ -149,19 +161,15 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
             <Text style={styles.sectionTitle}>FARE SUMMARY</Text>
             <View style={styles.row}>
               <Text style={styles.detailLabel}>Base Fare</Text>
-              <Text style={styles.monoValue}>{baseFare}</Text>
+              <Text style={styles.monoValue}>{actualBase}</Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.detailLabel}>Insurance (Goods)</Text>
-              <Text style={styles.monoValue}>{insurance}</Text>
-            </View>
-            <View style={styles.row}>
-              <Text style={styles.detailLabel}>Surcharges (Waiting/Multi-drop)</Text>
-              <Text style={styles.monoValue}>{surcharges}</Text>
+              <Text style={styles.detailLabel}>Taxes & Fees</Text>
+              <Text style={styles.monoValue}>{actualTaxes}</Text>
             </View>
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total Amount</Text>
-              <Text style={styles.totalValue}>{totalAmount}</Text>
+              <Text style={styles.totalValue}>{actualTotal}</Text>
             </View>
           </View>
 
@@ -200,7 +208,18 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
           />
           <Button
             label="BACK TO HOME"
-            onPress={() => (onHome ? onHome() : navigation?.navigate('HomeScreen'))}
+            onPress={() => {
+              if (onHome) {
+                onHome();
+              } else {
+                navigation?.dispatch(
+                  CommonActions.reset({
+                    index: 0,
+                    routes: [{ name: 'MainTabs', params: { screen: 'HomeScreen' } }],
+                  })
+                );
+              }
+            }}
             variant="secondary"
             fullWidth
             size="lg"

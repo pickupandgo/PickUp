@@ -19,18 +19,23 @@ export interface PaymentMethodScreenProps {
 }
 
 const PAYMENT_METHODS = [
+  { id: 'upi', label: 'Pay via UPI', icon: 'account-balance' as const },
   { id: 'cod', label: 'Cash on Delivery (COD)', icon: 'payments' as const },
   { id: 'pickup', label: 'Cash at Pickup', icon: 'local-atm' as const },
-  { id: 'upi', label: 'Pay via UPI', icon: 'account-balance' as const },
 ];
 
+import { useBooking } from '../../state/BookingContext';
+
 const PaymentMethodScreen: React.FC<PaymentMethodScreenProps & { navigation?: any }> = ({
-  amount = '₹ 450.00',
   onContinue,
   onBack,
   onHelp,
   navigation,
 }) => {
+  const { draft } = useBooking();
+  const estimate = draft.fareEstimate;
+  const amount = estimate ? `₹ ${estimate.fare}` : '--';
+
   const [selectedMethod, setSelectedMethod] = useState<string>('upi');
 
   const CASH_METHOD_IDS = ['cod', 'pickup'];
@@ -87,16 +92,11 @@ const PaymentMethodScreen: React.FC<PaymentMethodScreenProps & { navigation?: an
                 ]}
                 onPress={() => setSelectedMethod(method.id)}
               >
-                <View
-                  style={[
-                    styles.optionIconBox,
-                    isSelected && styles.optionIconBoxSelected,
-                  ]}
-                >
+                <View style={styles.optionIconBox}>
                   <MaterialIcons
                     name={method.icon}
                     size={24}
-                    color={isSelected ? colors.onPrimary : colors.onSurfaceVariant}
+                    color={isSelected ? colors.primary : colors.onSurfaceVariant}
                   />
                 </View>
                 <View style={styles.optionTextContainer}>
@@ -126,6 +126,7 @@ const PaymentMethodScreen: React.FC<PaymentMethodScreenProps & { navigation?: an
           variant="primary"
           fullWidth
           size="lg"
+          disabled={!estimate}
         />
       </View>
     </SafeAreaView>
@@ -232,9 +233,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,
-  },
-  optionIconBoxSelected: {
-    backgroundColor: colors.primary,
   },
   optionTextContainer: {
     flex: 1,

@@ -6,9 +6,11 @@ import {
   Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { CommonActions } from '@react-navigation/native';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { Feather } from '@expo/vector-icons';
 import Button from '../../components/atoms/Button';
+import { useBooking } from '../../state/BookingContext';
 
 export interface NoDriversAvailableScreenProps {
   readonly onRetry?: () => void;
@@ -22,6 +24,7 @@ const NoDriversAvailableScreen: React.FC<NoDriversAvailableScreenProps & { navig
   onMenu,
   navigation,
 }) => {
+  const { clearActiveRide } = useBooking();
   return (
     <View style={styles.container}>
       {/* Dimmed Map Background Mock */}
@@ -62,17 +65,36 @@ const NoDriversAvailableScreen: React.FC<NoDriversAvailableScreenProps & { navig
             <View style={styles.actionsContainer}>
               <Button
                 label="Retry Search"
-                onPress={() =>
-                  onRetry ? onRetry() : navigation?.navigate('AssignmentFailedScreen')
-                }
+                onPress={() => {
+                  if (onRetry) {
+                    onRetry();
+                  } else {
+                    navigation?.dispatch(
+                      CommonActions.reset({
+                        index: 0,
+                        routes: [{ name: 'FindingDriverScreen' }],
+                      })
+                    );
+                  }
+                }}
                 variant="primary"
                 fullWidth
               />
               <Button
                 label="Return to Home"
-                onPress={() =>
-                  onReturnHome ? onReturnHome() : navigation?.navigate('HomeScreen')
-                }
+                onPress={() => {
+                  if (onReturnHome) {
+                    onReturnHome();
+                  } else {
+                    clearActiveRide();
+                    navigation?.dispatch(
+                      CommonActions.reset({
+                        index: 0,
+                        routes: [{ name: 'MainTabs', params: { screen: 'HomeScreen' } }],
+                      })
+                    );
+                  }
+                }}
                 variant="secondary"
                 fullWidth
               />

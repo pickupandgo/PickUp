@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -24,12 +25,9 @@ export interface PaymentMethodSelectedScreenProps {
   readonly onBack?: () => void;
 }
 
+import { useBooking } from '../../state/BookingContext';
+
 const PaymentMethodSelectedScreen: React.FC<PaymentMethodSelectedScreenProps & { navigation?: any }> = ({
-  tripTitle = 'Ride to Downtown',
-  tripDate = 'Today, 2:30 PM',
-  baseFare = '₹ 300',
-  taxes = '₹ 40',
-  total = '₹ 340',
   methodName = 'UPI Payment',
   methodDetail = 'user@upi',
   onChangeMethod,
@@ -37,6 +35,17 @@ const PaymentMethodSelectedScreen: React.FC<PaymentMethodSelectedScreenProps & {
   onBack,
   navigation,
 }) => {
+  const { draft } = useBooking();
+  const estimate = draft.fareEstimate;
+  
+  const baseFare = estimate ? `₹ ${estimate.baseFare}` : '--';
+  const taxes = estimate ? `₹ ${(estimate.fare - estimate.baseFare).toFixed(2)}` : '--';
+  const total = estimate ? `₹ ${estimate.fare}` : '--';
+  const tripTitle = draft.drops.length > 0 && draft.drops[draft.drops.length - 1].address
+    ? `Ride to ${draft.drops[draft.drops.length - 1].address?.split(',')[0]}`
+    : 'Ride to Downtown';
+  const tripDate = 'Today'; // Mocked or extracted from actual time if available
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top App Bar */}
@@ -78,6 +87,15 @@ const PaymentMethodSelectedScreen: React.FC<PaymentMethodSelectedScreenProps & {
               <Text style={styles.totalValue}>{total}</Text>
             </View>
           </View>
+        </View>
+
+        {/* QR Code Section */}
+        <View style={styles.qrSection}>
+          <Image 
+            source={require('../../../assets/images/upi_qr.png')} 
+            style={styles.qrImage}
+            resizeMode="contain"
+          />
         </View>
 
         {/* Selected Payment Method Card */}
@@ -122,6 +140,7 @@ const PaymentMethodSelectedScreen: React.FC<PaymentMethodSelectedScreenProps & {
           variant="primary"
           fullWidth
           size="lg"
+          disabled={!estimate}
         />
       </View>
     </SafeAreaView>
@@ -243,6 +262,15 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: colors.primary,
     fontFamily: typography.headlineMd.fontFamily,
+  },
+  qrSection: {
+    alignItems: 'center',
+    marginVertical: spacing.md,
+  },
+  qrImage: {
+    width: 200,
+    height: 200,
+    borderRadius: borderRadius.md,
   },
   methodSection: {
     marginBottom: 'auto',

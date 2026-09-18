@@ -178,14 +178,6 @@ function MainTabNavigator() {
 }
 
 function BookingStackNavigator() {
-  const { resetDraft } = useBooking();
-
-  useEffect(() => {
-    return () => {
-      resetDraft();
-    };
-  }, [resetDraft]);
-
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="SelectLocationScreen" component={SelectLocationScreen} />
@@ -199,6 +191,7 @@ function BookingStackNavigator() {
       <Stack.Screen name="GoodsDetailsScreen" component={GoodsDetailsScreen} />
       <Stack.Screen name="GoodsInsuranceScreen" component={GoodsInsuranceScreen} />
       <Stack.Screen name="ValidateBookingScreen" component={ValidateBookingScreen} />
+      <Stack.Screen name="MultiDropOverviewScreen" component={MultiDropOverviewScreen} />
       
       {/* Payment Screens */}
       <Stack.Screen name="PaymentMethodScreen" component={PaymentMethodScreen} />
@@ -206,6 +199,7 @@ function BookingStackNavigator() {
       <Stack.Screen name="PaymentSelectionScreen" component={PaymentSelectionScreen} />
       <Stack.Screen name="PaymentConfirmationScreen" component={PaymentConfirmationScreen} />
       <Stack.Screen name="PaymentProcessingScreen" component={PaymentProcessingScreen} />
+      <Stack.Screen name="PaymentPendingScreen" component={PaymentPendingScreen} />
       <Stack.Screen name="PaymentSuccessfulScreen" component={PaymentSuccessfulScreen} />
       <Stack.Screen name="PaymentFailedScreen" component={PaymentFailedScreen} />
       <Stack.Screen name="CashPaymentStatusScreen" component={CashPaymentStatusScreen} />
@@ -231,7 +225,6 @@ function ActiveTripStackNavigator() {
       {/* Logistics/Trip states */}
       <Stack.Screen name="PickupVerifiedSuccessScreen" component={PickupVerifiedSuccessScreen} />
       <Stack.Screen name="PickupOtpVerificationScreen" component={PickupOtpVerificationScreen} />
-      <Stack.Screen name="MultiDropOverviewScreen" component={MultiDropOverviewScreen} />
       <Stack.Screen name="MultiDropProgressScreen" component={MultiDropProgressScreen} />
       <Stack.Screen name="CurrentDropDetailsScreen" component={CurrentDropDetailsScreen} />
       <Stack.Screen name="DropOtpVerificationScreen" component={DropOtpVerificationScreen} />

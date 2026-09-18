@@ -152,7 +152,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
             </View>
             <Pressable
               style={styles.rateButton}
-              onPress={() => (onRateTrip ? onRateTrip() : navigation?.navigate('DriverRatingScreen'))}
+              onPress={() => (onRateTrip ? onRateTrip() : navigation?.navigate('ActiveTripStack', { screen: 'DriverRatingScreen' }))}
             >
               <Text style={styles.rateButtonText}>Rate Trip</Text>
             </Pressable>
@@ -164,7 +164,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
           <Pressable
             style={styles.primaryActionButton}
             onPress={() =>
-              onDownloadInvoice ? onDownloadInvoice() : navigation?.navigate('DigitalReceiptScreen')
+              onDownloadInvoice ? onDownloadInvoice() : navigation?.navigate('BookingStack', { screen: 'DigitalReceiptScreen' })
             }
           >
             <Feather name="download" size={20} color={colors.onPrimary} />
@@ -172,7 +172,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
           </Pressable>
           <Pressable
             style={styles.secondaryActionButton}
-            onPress={() => (onNeedHelp ? onNeedHelp() : navigation?.navigate('ActiveTripChatScreen'))}
+            onPress={() => (onNeedHelp ? onNeedHelp() : navigation?.navigate('ActiveTripStack', { screen: 'ActiveTripChatScreen' }))}
           >
             <Feather name="help-circle" size={20} color={colors.onSurface} />
             <Text style={styles.secondaryActionText}>Need Help?</Text>

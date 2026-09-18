@@ -10,6 +10,8 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import Button from '../../components/atoms/Button';
 
+import { useBooking } from '../../state/BookingContext';
+
 export interface PaymentFailedScreenProps {
   readonly amountDue?: string;
   readonly onRetry?: () => void;
@@ -24,6 +26,10 @@ const PaymentFailedScreen: React.FC<PaymentFailedScreenProps & { navigation?: an
   onBack,
   navigation,
 }) => {
+  const { draft, trip, ride } = useBooking();
+  const currentFare = trip?.fare || ride?.fare || draft.fareEstimate?.fare;
+  const actualAmount = currentFare ? `₹ ${currentFare.toString()}` : '--';
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top App Bar */}
@@ -54,7 +60,7 @@ const PaymentFailedScreen: React.FC<PaymentFailedScreenProps & { navigation?: an
           {/* Amount Detail */}
           <View style={styles.amountContainer}>
             <Text style={styles.amountLabel}>Amount Due</Text>
-            <Text style={styles.amountValue}>{amountDue}</Text>
+            <Text style={styles.amountValue}>{actualAmount}</Text>
           </View>
         </View>
 

@@ -162,11 +162,11 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
         zoomEnabled={scrollEnabled}
         onRegionChangeComplete={
           onRegionChangeComplete
-            ? (region) =>
+            ? (region, details) =>
                 onRegionChangeComplete({
                   latitude: region.latitude,
                   longitude: region.longitude,
-                } as GeoPoint)
+                } as GeoPoint, details)
             : undefined
         }
       >

@@ -69,7 +69,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
       if (editTarget?.index !== undefined && editTarget.index < draft.drops.length) {
         return draft.drops[editTarget.index];
       }
-      return draft.pendingDrop ?? draft.drops[draft.drops.length - 1];
+      return draft.pendingDrop;
     }
     return undefined;
   }, [activeType, draft.pickup, draft.drops, draft.pendingDrop, editTarget]);
@@ -117,9 +117,14 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
   }, [activeType, draft.pickup, draft.drops]);
 
   const handleRegionChange = useCallback(
-    (point: GeoPoint) => {
+    (point: GeoPoint, details?: { isGesture?: boolean }) => {
       // Don't resolve if we are just looking at the timeline
       if (mode === 'edit' && !editTarget) return;
+
+      // DO NOT auto-fetch if it wasn't a user gesture!
+      if (details && !details.isGesture) {
+        return;
+      }
 
       if (
         tempPlace &&
@@ -419,7 +424,7 @@ label="Done Editing"
 
       <DraggableBottomSheet
         snapPoints={[200, SCREEN_HEIGHT * 0.65, SCREEN_HEIGHT * 0.85]}
-        initialSnapIndex={1}
+        initialSnapIndex={initialMode === 'drop' ? 2 : 1}
       >
         <ScrollView
           showsVerticalScrollIndicator={false}

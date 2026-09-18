@@ -86,7 +86,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
         <Text style={styles.headerTitle}>Pick Up</Text>
-        <Pressable style={styles.iconButton} onPress={() => (onClose ? onClose() : navigation?.navigate('HomeScreen'))}>
+        <Pressable style={styles.iconButton} onPress={() => (onClose ? onClose() : navigation?.goBack())}>
           <Feather name="x" size={24} color={colors.primary} />
         </Pressable>
       </View>

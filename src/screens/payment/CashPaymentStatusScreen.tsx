@@ -11,6 +11,8 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import Button from '../../components/atoms/Button';
 
+import { useBooking } from '../../state/BookingContext';
+
 export interface CashPaymentStatusScreenProps {
   readonly amount?: string;
   readonly onContinue?: (method: string) => void;
@@ -38,6 +40,10 @@ const CashPaymentStatusScreen: React.FC<CashPaymentStatusScreenProps & { navigat
   onBack,
   navigation,
 }) => {
+  const { draft, trip, ride } = useBooking();
+  const currentFare = trip?.fare || ride?.fare || draft.fareEstimate?.fare;
+  const actualAmount = currentFare ? currentFare.toString() : '--';
+  
   const [selectedMethod, setSelectedMethod] = useState<string>('cod');
 
   return (
@@ -60,7 +66,7 @@ const CashPaymentStatusScreen: React.FC<CashPaymentStatusScreenProps & { navigat
           <Text style={styles.summaryLabel}>Total Amount</Text>
           <View style={styles.amountContainer}>
             <Text style={styles.currencySymbol}>₹</Text>
-            <Text style={styles.amountValue}>{amount}</Text>
+            <Text style={styles.amountValue}>{actualAmount}</Text>
           </View>
         </View>
 
@@ -80,12 +86,7 @@ const CashPaymentStatusScreen: React.FC<CashPaymentStatusScreenProps & { navigat
                 ]}
                 onPress={() => setSelectedMethod(method.id)}
               >
-                <View
-                  style={[
-                    styles.optionIconBox,
-                    isSelected && styles.optionIconBoxSelected,
-                  ]}
-                >
+                <View style={styles.optionIconBox}>
                   <MaterialIcons
                     name={method.icon}
                     size={24}
@@ -237,9 +238,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,
-  },
-  optionIconBoxSelected: {
-    backgroundColor: colors.primaryContainer,
   },
   optionTextContainer: {
     flex: 1,

@@ -79,7 +79,7 @@ const SavedAddressesScreen: React.FC<SavedAddressesScreenProps & { navigation?: 
         </View>
         <Pressable
           style={styles.iconButton}
-          onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
+          onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripStack', { screen: 'ActiveTripChatScreen' }))}
         >
           <Feather name="help-circle" size={24} color={colors.primary} />
         </Pressable>
@@ -112,7 +112,7 @@ const SavedAddressesScreen: React.FC<SavedAddressesScreenProps & { navigation?: 
                   style={styles.actionButton}
                   onPress={() => {
                     onEditAddress?.(address.id);
-                    navigation?.navigate('SelectDropLocationScreen');
+                    navigation?.navigate('BookingStack', { screen: 'SelectDropLocationScreen' });
                   }}
                 >
                   <Feather name="edit-2" size={20} color={colors.onSurfaceVariant} />
@@ -144,7 +144,7 @@ const SavedAddressesScreen: React.FC<SavedAddressesScreenProps & { navigation?: 
       <View style={styles.bottomActionArea}>
         <Pressable
           style={styles.addButton}
-          onPress={() => (onAddAddress ? onAddAddress() : navigation?.navigate('AddressSearchScreen'))}
+          onPress={() => (onAddAddress ? onAddAddress() : navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' }))}
         >
           <Feather name="plus" size={24} color={colors.onPrimary} />
           <Text style={styles.addButtonText}>Add New Address</Text>

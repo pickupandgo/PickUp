@@ -10,10 +10,12 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { CommonActions } from '@react-navigation/native';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { Feather } from '@expo/vector-icons';
 import BottomNavBar from '../../components/BottomNavBar';
 import { navigateToTab } from '../../navigation/tabRoutes';
+import { useBooking } from '../../state/BookingContext';
 
 export interface WrittenReviewScreenProps {
   readonly onBack?: () => void;
@@ -45,6 +47,7 @@ const WrittenReviewScreen: React.FC<WrittenReviewScreenProps & { navigation?: an
   onTabPress,
   navigation,
 }) => {
+  const { clearActiveRide } = useBooking();
   const [reviewText, setReviewText] = useState('');
   const [isFocused, setIsFocused] = useState(false);
 
@@ -159,7 +162,13 @@ const WrittenReviewScreen: React.FC<WrittenReviewScreenProps & { navigation?: an
             style={[styles.submitButton, isSubmitDisabled && styles.submitButtonDisabled]}
             onPress={() => {
               onSubmit?.(reviewText);
-              navigation?.navigate('HomeScreen');
+              clearActiveRide();
+              navigation?.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'MainTabs', params: { screen: 'HomeScreen' } }],
+                })
+              );
             }}
             disabled={isSubmitDisabled}
           >

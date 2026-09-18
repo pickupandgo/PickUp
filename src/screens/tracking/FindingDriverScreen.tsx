@@ -5,16 +5,21 @@ import {
   Animated,
   StyleSheet,
   Pressable,
-  ImageBackground,
   Easing,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { mockVehicleTypes } from '../../data/mockData';
 import { Feather } from '@expo/vector-icons';
+import MapCanvas, { NEIGHBORHOOD_DELTA } from '../../components/map/MapCanvas';
 import { useBooking, toGeoPoint } from '../../state/BookingContext';
 import { findDriverAndCreateRide, NoDriversAvailableError } from '../../api/matching';
 import { getRideTrip } from '../../api/engine';
 import { toApiError } from '../../api/http';
+
+import type { GeoPoint } from '../../api/types';
+import { MIN_DRIVER_SEARCH_DURATION_MS } from '../../config/constants';
 
 export interface FindingDriverScreenProps {
   readonly onCancel?: () => void;
@@ -29,7 +34,7 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
   const [pulseAnim] = useState(new Animated.Value(0));
   const [progressAnim] = useState(new Animated.Value(0));
 
-  const { draft, primaryDrop, customerId, setRide, setTrip, setAssignedDriver } = useBooking();
+  const { draft, primaryDrop, customerId, setRide, setTrip, setAssignedDriver, ride, trip } = useBooking();
   const [statusText, setStatusText] = useState('Searching for nearby drivers…');
   const [failure, setFailure] = useState<string>();
   const abortRef = useRef<AbortController | undefined>(undefined);
@@ -49,6 +54,9 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
     abortRef.current = controller;
     let cancelled = false;
 
+    // 4. Record search start time precisely once when backend search begins
+    const searchStartedAt = Date.now();
+
     (async () => {
       try {
         const { ride, driver } = await findDriverAndCreateRide(
@@ -56,13 +64,14 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
             customerId,
             pickup,
             drop: primaryDrop,
-              drops: draft.drops.map(toGeoPoint),
-              vehicleType: draft.vehicleType,
+            drops: draft.drops.map(toGeoPoint),
+            vehicleType: draft.vehicleType,
             weight: draft.weightKg,
             fare: draft.fareEstimate?.fare,
           },
           {
             signal: controller.signal,
+            searchCenter: pickup,
             onProgress: ({ attempt, totalCandidates, driver: candidate }) => {
               if (cancelled) return;
               setStatusText(
@@ -81,14 +90,51 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
         if (cancelled) return;
         if (trip) setTrip(trip);
 
+        // 5. Driver found has priority - immediately go to next screen
         navigation?.navigate('DriverFoundScreen');
       } catch (caught) {
-        if (cancelled || controller.signal.aborted) return;
-        if (caught instanceof NoDriversAvailableError) {
-          navigation?.navigate('NoDriversAvailableScreen');
+        // 2. Handle AbortError Explicitly
+        if (
+          cancelled ||
+          controller.signal.aborted ||
+          (caught instanceof Error && caught.name === 'AbortError')
+        ) {
           return;
         }
-        setFailure(toApiError(caught).userMessage);
+
+        // 1. NEVER classify network errors as No Driver
+        if (!(caught instanceof NoDriversAvailableError)) {
+          setFailure(toApiError(caught).userMessage);
+          return;
+        }
+
+        // 6. No driver before 40 seconds: wait locally for the remaining duration
+        const elapsed = Date.now() - searchStartedAt;
+        const remaining = MIN_DRIVER_SEARCH_DURATION_MS - elapsed;
+
+        if (remaining > 0) {
+          setStatusText('Finding Driver');
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const timerId = setTimeout(resolve, remaining);
+              
+              const onAbort = () => {
+                clearTimeout(timerId);
+                reject(new Error('AbortError'));
+              };
+              
+              controller.signal.addEventListener('abort', onAbort, { once: true });
+            });
+          } catch (e) {
+            // Customer cancelled during wait (or component unmounted)
+            return;
+          }
+        }
+        
+        if (cancelled || controller.signal.aborted) return;
+
+        // 7. Navigate once definitively no drivers and minimum duration met
+        navigation?.navigate('NoDriversAvailableScreen');
       }
     })();
 
@@ -97,7 +143,7 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
       controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId]);
+  }, [customerId, draft.pickup?.latitude, draft.pickup?.longitude]);
 
   const handleCancel = () => {
     abortRef.current?.abort();
@@ -106,19 +152,6 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
   };
 
   useEffect(() => {
-    // Pulse animation for the map pin
-    const pulseLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 2000,
-          easing: Easing.bezier(0.215, 0.61, 0.355, 1),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    pulseLoop.start();
-
     // Indeterminate progress bar animation
     const progressLoop = Animated.loop(
       Animated.timing(progressAnim, {
@@ -131,54 +164,31 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
     progressLoop.start();
     
     return () => {
-      pulseLoop.stop();
       progressLoop.stop();
     };
-  }, [pulseAnim, progressAnim]);
-
-  const pulseScale = pulseAnim.interpolate({
-    inputRange: [0, 0.8, 1],
-    outputRange: [0.8, 2.5, 2.5],
-  });
-
-  const pulseOpacity = pulseAnim.interpolate({
-    inputRange: [0, 0.8, 1],
-    outputRange: [0.5, 0, 0],
-  });
+  }, [progressAnim]);
 
   const progressTranslate = progressAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['-100%', '330%'],
   });
 
+  const currentFare = trip?.fare || ride?.fare || draft.fareEstimate?.fare;
+  const currentVehicle = ride?.vehicleType || draft.vehicleType || 'Any Vehicle';
+  const vehicleData = mockVehicleTypes.find((v) => v.name === currentVehicle || v.id === currentVehicle);
+
   return (
     <View style={styles.container}>
-      {/* Map Background */}
-      <ImageBackground
-        source={{
-          uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDwoKdogXLDviOGhD1X2B7fNQUBDa5m4V5AF0mQKHmmuMqx-nerI2-PYdE18EypUlA_hmsQcX44QaZXk528XOtiHUaSOmxsSy5kRpL7ksLowlE0yzo0erVktsFV9SgDjM9mZKltrLp7PzQ6WgFCDowItZDm0MeLJtBW3Psa7-vl3Z7LttTmFPV68OnMYPj9Vng7fIBtDSvDNL4ZUs2qxee5Yyd8hXkigQMuYJK2rTAe_ySsHrvxo7dq',
-        }}
+      <MapCanvas
         style={styles.mapCanvas}
-        imageStyle={{ opacity: 0.6 }}
-      >
-        {/* Pulsing Pin */}
-        <View style={styles.mapPinContainer}>
-          <Animated.View
-            style={[
-              styles.pulseRing,
-              {
-                transform: [{ scale: pulseScale }],
-                opacity: pulseOpacity,
-              },
-            ]}
-          />
-          <View style={styles.mapPinDot} />
-        </View>
-      </ImageBackground>
+        center={draft.pickup ?? undefined}
+        zoomDelta={NEIGHBORHOOD_DELTA}
+        markers={draft.pickup ? [{ id: 'pickup', coordinate: draft.pickup, kind: 'pickup', title: 'Pickup' }] : []}
+      />
 
       {/* Top App Bar */}
-      <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
-        <View style={styles.header}>
+      <SafeAreaView edges={['top']} style={styles.headerSafeArea} pointerEvents="box-none">
+        <View style={styles.header} pointerEvents="box-none">
           <Pressable
             style={styles.iconButton}
             onPress={() => (onBack ? onBack() : navigation?.goBack())}
@@ -192,8 +202,8 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
       </SafeAreaView>
 
       {/* Main Content Area (Bottom) */}
-      <SafeAreaView edges={['bottom']} style={styles.contentSafeArea}>
-        <View style={styles.contentContainer}>
+      <SafeAreaView edges={['bottom']} style={styles.contentSafeArea} pointerEvents="box-none">
+        <View style={styles.contentContainer} pointerEvents="box-none">
           {/* Trip Summary Card */}
           <View style={styles.summaryCard}>
             {/* Status Section */}
@@ -201,7 +211,7 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
               <View style={styles.statusHeaderRow}>
                 <Text style={styles.statusLabel}>STATUS</Text>
                 <View style={styles.statusBadge}>
-                  <Text style={styles.statusBadgeText}>Booking Confirmed</Text>
+                  <Text style={styles.statusBadgeText}>In progress</Text>
                 </View>
               </View>
               <Text style={styles.statusTitle}>{failure ?? statusText}</Text>
@@ -224,22 +234,26 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
               <View style={styles.pickupRow}>
                 <Feather name="map-pin" size={20} color={colors.onSurfaceVariant} />
                 <View style={styles.pickupInfo}>
-                  <Text style={styles.pickupLabel}>Pickup</Text>
-                  <Text style={styles.pickupText}>Sardarpura Warehouse</Text>
+                  <Text style={styles.pickupLabel}>Searching near</Text>
+                  <Text style={styles.pickupText}>{draft.pickup?.address || 'Selected Pickup'}</Text>
                 </View>
               </View>
 
               <View style={styles.vehicleCard}>
                 <View style={styles.vehicleInfoRow}>
-                  <Feather name="truck" size={20} color={colors.onSurfaceVariant} />
+                  {vehicleData?.image ? (
+                    <Image source={vehicleData.image} style={styles.vehicleIconImage} resizeMode="contain" />
+                  ) : (
+                    <Feather name="truck" size={20} color={colors.onSurfaceVariant} />
+                  )}
                   <View>
                     <Text style={styles.vehicleLabel}>Vehicle</Text>
-                    <Text style={styles.vehicleText}>Tata Ace</Text>
+                    <Text style={styles.vehicleText}>{currentVehicle}</Text>
                   </View>
                 </View>
                 <View style={styles.fareInfo}>
                   <Text style={styles.fareLabel}>Est. Fare</Text>
-                  <Text style={styles.fareText}>₹450</Text>
+                  <Text style={styles.fareText}>{currentFare != null ? `₹${currentFare}` : '...'}</Text>
                 </View>
               </View>
             </View>
@@ -264,30 +278,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 0,
   },
-  mapPinContainer: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: [{ translateX: -8 }, { translateY: -8 }],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pulseRing: {
-    position: 'absolute',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.primaryContainer,
-  },
-  mapPinDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: colors.primaryContainer,
-    borderWidth: 2,
-    borderColor: colors.surface,
-    zIndex: 10,
-  },
+
 
   // Header
   headerSafeArea: {
@@ -305,12 +296,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface + 'CC', // 80% opacity for blur effect (simplified)
   },
   iconButton: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
     borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceContainerLowest,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: -8,
+    ...shadows.card,
   },
   headerTitle: {
     fontSize: typography.headlineMd.fontSize,
@@ -319,7 +311,7 @@ const styles = StyleSheet.create({
     fontFamily: typography.headlineMd.fontFamily,
   },
   headerSpacer: {
-    width: 40,
+    width: 48,
   },
 
   // Content
@@ -435,6 +427,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+  },
+  vehicleIconImage: {
+    width: 32,
+    height: 32,
   },
   vehicleLabel: {
     fontSize: typography.labelSm.fontSize,

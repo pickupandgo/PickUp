@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import Button from '../../components/atoms/Button';
+import { useBooking } from '../../state/BookingContext';
 
 export interface PaymentSuccessfulScreenProps {
   readonly amount?: string;
@@ -20,14 +21,17 @@ export interface PaymentSuccessfulScreenProps {
 }
 
 const PaymentSuccessfulScreen: React.FC<PaymentSuccessfulScreenProps & { navigation?: any }> = ({
-  amount = '₹ 340',
-  transactionId = 'TXN-8472910',
-  date = 'Oct 24, 2023',
   paymentMethod = 'UPI',
   onViewBooking,
   onHome,
   navigation,
 }) => {
+  const { ride, trip, draft } = useBooking();
+  const currentFare = trip?.fare || ride?.fare || draft.fareEstimate?.fare;
+  const amount = currentFare ? `₹ ${currentFare.toString()}` : '--';
+  const transactionId = `TXN-${(trip?.id || ride?.id || '8472910').substring(0, 8).toUpperCase()}`;
+  const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <View style={styles.container}>
@@ -79,7 +83,7 @@ const PaymentSuccessfulScreen: React.FC<PaymentSuccessfulScreenProps & { navigat
           />
           <Pressable
             style={styles.homeButton}
-            onPress={() => (onHome ? onHome() : navigation?.navigate('HomeScreen'))}
+            onPress={() => (onHome ? onHome() : navigation?.navigate('MainTabs', { screen: 'HomeScreen' }))}
           >
             <Text style={styles.homeButtonText}>Back to Home</Text>
           </Pressable>

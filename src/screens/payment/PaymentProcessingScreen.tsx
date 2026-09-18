@@ -9,15 +9,18 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { Feather } from '@expo/vector-icons';
+import { useBooking } from '../../state/BookingContext';
 
 export interface PaymentProcessingScreenProps {
   readonly amount?: string;
 }
 
 const PaymentProcessingScreen: React.FC<PaymentProcessingScreenProps & { navigation?: any }> = ({
-  amount = '₹ 340.00', // Use mock default
   navigation,
 }) => {
+  const { draft } = useBooking();
+  const amount = draft.fareEstimate ? `₹ ${draft.fareEstimate.fare.toFixed(2)}` : '--';
+  
   const rotation = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
 

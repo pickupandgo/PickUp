@@ -39,6 +39,7 @@ export interface MatchOptions {
   readonly perDriverTimeoutMs?: number;
   readonly onProgress?: (progress: MatchProgress) => void;
   readonly signal?: AbortSignal;
+  readonly searchCenter?: GeoPoint;
 }
 
 /**
@@ -121,9 +122,10 @@ export const findDriverAndCreateRide = async (
     perDriverTimeoutMs = PER_DRIVER_TIMEOUT_MS,
     onProgress,
     signal,
+    searchCenter,
   } = options;
 
-  const pickup: GeoPoint = input.pickup;
+  const pickup: GeoPoint = searchCenter ?? input.pickup;
   const candidates = await getNearbyDrivers(pickup, radiusKm, signal);
 
   if (!candidates.length) {

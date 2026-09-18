@@ -36,7 +36,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
   onRecentLocationPress,
   onActiveTripPress,
 }) => {
-  const { draft, setPickup, customerId, trip, setTrip } = useBooking();
+  const { draft, setPickup, customerId, trip, setTrip, startNewBooking } = useBooking();
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string>();
 
@@ -267,7 +267,10 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                           : draft.pickup?.address ?? 'Set pickup location'}
                       </Text>
                       <Pressable
-                        onPress={() => navigation?.navigate('SelectLocationScreen')}
+                        onPress={() => {
+                          startNewBooking();
+                          navigation?.navigate('BookingStack', { screen: 'SelectLocationScreen' });
+                        }}
                         hitSlop={8}
                         accessibilityRole="button"
                         style={styles.changeActionButton}
@@ -286,11 +289,17 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                 <Divider />
 
                 <View style={styles.inputRowContainer}>
-                  <Pressable style={styles.dotLineWrapper} onPress={() => navigation?.navigate('AddressSearchScreen')}>
+                  <Pressable style={styles.dotLineWrapper} onPress={() => {
+                    startNewBooking();
+                    navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
+                  }}>
                     <Text style={styles.dropPinIcon}>📍</Text>
                     <View style={[styles.connectingLine, styles.connectingLineShort]} />
                   </Pressable>
-                  <Pressable style={styles.inputContentWrapper} onPress={() => navigation?.navigate('AddressSearchScreen')}>
+                  <Pressable style={styles.inputContentWrapper} onPress={() => {
+                    startNewBooking();
+                    navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
+                  }}>
                     <View style={styles.inputFieldRow}>
                       <Text style={styles.placeholderValue}>Enter drop location</Text>
                       <View style={styles.arrowCircle}>
@@ -303,7 +312,10 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                 {/* Add another drop */}
                 <Pressable
                   style={styles.addDropRow}
-                  onPress={() => navigation?.navigate('AddressSearchScreen')}
+                  onPress={() => {
+                    startNewBooking();
+                    navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
+                  }}
                 >
                   <Feather name="plus" size={16} color={colors.onSurfaceVariant} />
                   <Text style={styles.addDropText}>Add another drop</Text>
@@ -312,7 +324,10 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
 
               <Button
                 label={strings.home.startBooking}
-                onPress={() => navigation?.navigate('AddressSearchScreen')}
+                onPress={() => {
+                  startNewBooking();
+                  navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
+                }}
                 variant="primary"
                 size="lg"
                 fullWidth
@@ -332,8 +347,9 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                     subtitle={loc.address}
                     leading={<Feather name="clock" size={18} color={colors.onSurfaceVariant} />}
                     onPress={() => {
+                      startNewBooking();
                       onRecentLocationPress?.(loc.address);
-                      navigation?.navigate('AddressSearchScreen');
+                      navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
                     }}
                   />
                 </React.Fragment>

@@ -77,6 +77,7 @@ interface BookingContextValue {
   readonly setReceiver: (receiver: { readonly name: string; readonly phone: string }) => void;
   readonly setFareEstimate: (estimate: FareEstimate | undefined) => void;
   readonly resetDraft: () => void;
+  readonly startNewBooking: () => void;
 
   // Active ride / trip
   readonly ride: Ride | undefined;
@@ -187,6 +188,17 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
 
   const resetDraft = useCallback(() => setDraft(EMPTY_DRAFT), []);
 
+  const startNewBooking = useCallback(() => {
+    setDraft((d) => ({
+      ...EMPTY_DRAFT,
+      pickup: d.pickup,
+    }));
+    setRide(undefined);
+    setTrip(undefined);
+    setAssignedDriver(undefined);
+  }, []);
+
+
   const clearActiveRide = useCallback(() => {
     setRide(undefined);
     setTrip(undefined);
@@ -215,6 +227,7 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
       setReceiver,
       setFareEstimate,
       resetDraft,
+      startNewBooking,
       ride,
       trip,
       assignedDriver,
@@ -240,6 +253,7 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
       setReceiver,
       setFareEstimate,
       resetDraft,
+      startNewBooking,
       ride,
       trip,
       assignedDriver,

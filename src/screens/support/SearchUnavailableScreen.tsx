@@ -91,7 +91,7 @@ const SearchUnavailableScreen: React.FC<SearchUnavailableScreenProps & { navigat
                   <Pressable
                     style={styles.secondaryButton}
                     onPress={() =>
-                      onManualEntry ? onManualEntry() : navigation?.navigate('AddressSearchScreen')
+                      onManualEntry ? onManualEntry() : navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' })
                     }
                   >
                     <Text style={styles.secondaryButtonText}>Enter address manually</Text>

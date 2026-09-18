@@ -5,9 +5,11 @@ import {
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { CommonActions } from '@react-navigation/native';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import Button from '../../components/atoms/Button';
+import { useBooking } from '../../state/BookingContext';
 
 export interface CancellationResultScreenProps {
   readonly tripId?: string;
@@ -21,6 +23,7 @@ const CancellationResultScreen: React.FC<CancellationResultScreenProps & { navig
   onHome,
   navigation,
 }) => {
+  const { clearActiveRide } = useBooking();
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <View style={styles.container}>
@@ -59,7 +62,19 @@ const CancellationResultScreen: React.FC<CancellationResultScreenProps & { navig
         <View style={styles.actionContainer}>
           <Button
             label="BACK TO HOME"
-            onPress={() => (onHome ? onHome() : navigation?.navigate('HomeScreen'))}
+            onPress={() => {
+              if (onHome) {
+                onHome();
+              } else {
+                clearActiveRide();
+                navigation?.dispatch(
+                  CommonActions.reset({
+                    index: 0,
+                    routes: [{ name: 'MainTabs', params: { screen: 'HomeScreen' } }],
+                  })
+                );
+              }
+            }}
             variant="primary"
             fullWidth
             size="lg"
