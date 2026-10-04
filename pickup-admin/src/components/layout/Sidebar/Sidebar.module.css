@@ -1,0 +1,209 @@
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  z-index: var(--z-sidebar);
+  transition: width var(--transition-slow) ease;
+  overflow: hidden;
+}
+
+.sidebar--collapsed {
+  width: var(--sidebar-collapsed-width);
+}
+
+/* ---- Logo Area ---- */
+.logoArea {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 18px 16px;
+  border-bottom: 1px solid var(--sidebar-border);
+  flex-shrink: 0;
+  min-height: var(--header-height);
+}
+
+.logoMark {
+  width: 36px;
+  height: 36px;
+  background: var(--sidebar-logo-bg);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.logoText {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.logoName {
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.logoSub {
+  font-size: var(--font-size-xs);
+  color: var(--sidebar-section);
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+}
+
+/* ---- Nav ---- */
+.nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-4) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.nav::-webkit-scrollbar { width: 0; }
+
+.section {
+  margin-bottom: var(--space-2);
+}
+
+.sectionTitle {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--sidebar-section);
+  padding: var(--space-3) var(--space-4) var(--space-1);
+  white-space: nowrap;
+}
+
+/* ---- Nav Item ---- */
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 10px 16px;
+  margin: 1px 8px;
+  border-radius: var(--radius-md);
+  color: var(--sidebar-text);
+  text-decoration: none;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  white-space: nowrap;
+  cursor: pointer;
+  position: relative;
+}
+
+.navItem:hover:not(.navItem--disabled):not(.navItem--active) {
+  background: var(--sidebar-item-hover);
+  color: var(--sidebar-text-hover);
+}
+
+.navItem--active {
+  background: var(--sidebar-item-active);
+  color: var(--sidebar-text-active);
+  font-weight: 600;
+}
+
+.navItem--active .navIcon {
+  color: #ffffff;
+}
+
+.navItem--disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.navIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: inherit;
+}
+
+.navLabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comingSoon {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: rgba(255,255,255,0.08);
+  color: var(--sidebar-section);
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+/* ---- Collapse Button ---- */
+.collapseBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 14px 16px;
+  border-top: 1px solid var(--sidebar-border);
+  color: var(--sidebar-section);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  cursor: pointer;
+  width: 100%;
+  white-space: nowrap;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.collapseBtn:hover {
+  color: var(--sidebar-text-hover);
+  background: var(--sidebar-item-hover);
+}
+
+/* ---- Mobile ---- */
+.mobileOverlay {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform var(--transition-slow) ease, width var(--transition-slow) ease;
+  }
+
+  .sidebar--mobileOpen {
+    transform: translateX(0);
+    width: var(--sidebar-width) !important;
+    box-shadow: var(--shadow-xl);
+  }
+
+  .mobileOverlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
+    z-index: calc(var(--z-sidebar) - 1);
+    animation: fadeInOverlay var(--transition-fast) ease;
+  }
+}

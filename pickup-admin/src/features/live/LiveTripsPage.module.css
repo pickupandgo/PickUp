@@ -1,0 +1,282 @@
+.container {
+  display: flex;
+  height: calc(100vh - 64px); /* assuming header is 64px */
+  background: var(--color-background);
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 400px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.header {
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.title {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.searchBox {
+  position: relative;
+  margin-bottom: var(--space-3);
+}
+
+.searchInput {
+  width: 100%;
+  padding: 8px 12px 8px 32px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+  font-size: var(--font-size-sm);
+}
+
+.searchInput:focus {
+  border-color: var(--color-brand-500);
+}
+
+.searchIcon {
+  position: absolute;
+  left: 10px;
+  top: 9px;
+  color: var(--color-text-tertiary);
+}
+
+.tripList {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.tripItem {
+  padding: var(--space-3);
+  border: 1px solid transparent;
+  border-bottom-color: var(--color-border);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.tripItem:hover {
+  background: var(--color-gray-50);
+}
+
+.tripItem.active {
+  background: var(--color-brand-50);
+  border-color: var(--color-brand-200);
+  border-radius: var(--radius-md);
+}
+
+.tripHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.tripId {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.tripDriver {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+}
+
+.tripRoute {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tripUpdate {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+  text-align: right;
+}
+
+/* Detail Panel overlay */
+.detailPanel {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  width: 320px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+}
+
+.detailHeader {
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  background: var(--color-surface);
+  z-index: 2;
+}
+
+.detailBody {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.detailSectionTitle {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.detailValue {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+/* Map Placeholder Styles */
+.mapArea {
+  flex: 1;
+  position: relative;
+  background: #e8eaed; /* Map background color */
+  overflow: hidden;
+}
+
+.mapGrid {
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(to right, #d0d2d6 1px, transparent 1px),
+    linear-gradient(to bottom, #d0d2d6 1px, transparent 1px);
+  background-size: 50px 50px;
+  opacity: 0.5;
+}
+
+.mapControls {
+  position: absolute;
+  bottom: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  z-index: 10;
+}
+
+.mapControlBtn {
+  width: 36px;
+  height: 36px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  box-shadow: var(--shadow-sm);
+}
+.mapControlBtn:hover {
+  background: var(--color-gray-50);
+}
+
+.marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  transition: transform 0.2s, top 1s linear, left 1s linear;
+  z-index: 2;
+}
+
+.marker:hover {
+  transform: translate(-50%, -50%) scale(1.1);
+  z-index: 5;
+}
+
+.markerIcon {
+  width: 32px;
+  height: 32px;
+  background: var(--color-brand-500);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid white;
+  box-shadow: var(--shadow-md);
+}
+
+.markerIcon.selected {
+  background: var(--color-warning-500);
+  animation: pulse 2s infinite;
+}
+
+.markerLabel {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-top: 4px;
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+
+@media (max-width: 768px) {
+  .container {
+    flex-direction: column-reverse;
+  }
+  .sidebar {
+    width: 100%;
+    height: 40%;
+  }
+  .mapArea {
+    height: 60%;
+  }
+  .detailPanel {
+    width: 100%;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 0;
+  }
+}

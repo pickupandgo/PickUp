@@ -1,0 +1,120 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-family);
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  user-select: none;
+  position: relative;
+  letter-spacing: 0.01em;
+}
+
+/* Sizes */
+.btn--sm {
+  height: 32px;
+  padding: 0 12px;
+  font-size: var(--font-size-xs);
+}
+
+.btn--md {
+  height: 40px;
+  padding: 0 16px;
+  font-size: var(--font-size-sm);
+}
+
+.btn--lg {
+  height: 48px;
+  padding: 0 24px;
+  font-size: var(--font-size-base);
+}
+
+/* Full width */
+.btn--full {
+  width: 100%;
+}
+
+/* Variants */
+.btn--primary {
+  background: var(--color-brand-600);
+  color: #ffffff;
+  border-color: var(--color-brand-600);
+}
+.btn--primary:hover:not(:disabled) {
+  background: var(--color-brand-700);
+  border-color: var(--color-brand-700);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+.btn--primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.btn--secondary {
+  background: var(--color-gray-100);
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
+}
+.btn--secondary:hover:not(:disabled) {
+  background: var(--color-gray-200);
+}
+
+.btn--danger {
+  background: var(--color-danger-600);
+  color: #ffffff;
+  border-color: var(--color-danger-600);
+}
+.btn--danger:hover:not(:disabled) {
+  background: var(--color-danger-700);
+  border-color: var(--color-danger-700);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-color: transparent;
+}
+.btn--ghost:hover:not(:disabled) {
+  background: var(--color-gray-100);
+  color: var(--color-text-primary);
+}
+
+.btn--outline {
+  background: transparent;
+  color: var(--color-brand-600);
+  border-color: var(--color-brand-600);
+}
+.btn--outline:hover:not(:disabled) {
+  background: var(--color-brand-50);
+}
+
+/* Disabled */
+.btn--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Icon */
+.icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Spinner */
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin var(--transition-slow) linear infinite;
+}
