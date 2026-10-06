@@ -1,0 +1,954 @@
+// MultipleRide backend: payments, driver wallet, driver earnings and weekly payouts.
+//
+// Source of truth: PickUp_Payment_Wallet_Industry_Grade_DB_Queries.pdf (PW), identity columns
+// from M3 (users, drivers), payment-scoped subsets of M5 (bookings) and M6 (trips), and the
+// approved V1 business rules (docs/OPEN_DECISIONS.md section F). See
+// docs/ARCHITECTURE_TRACEABILITY.md.
+//
+// Rules enforced here and in the migration SQL:
+//   - Money is always BIGINT paise. Never floats.
+//   - PostgreSQL is the financial source of truth.
+//   - The wallet ledger is append-only (trigger blocks UPDATE/DELETE).
+//   - Customer payment, merchant settlement, driver earning (payable or not), driver payout and
+//     driver wallet are separate records. None of them is ever derived from, or stored in,
+//     another one's balance.
+// CHECK constraints and triggers live in prisma/migrations/*/migration.sql because the Prisma
+// schema language cannot express them.
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  moduleFormat    = "cjs"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  CUSTOMER
+  DRIVER
+  ADMIN
+
+  @@map("user_role")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+
+  @@map("user_status")
+}
+
+/// M3 approval lifecycle (OPEN_DECISIONS D-05).
+enum DriverApprovalStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+
+  @@map("driver_approval_status")
+}
+
+/// PW: ACTIVE, LOW_BALANCE, BLOCKED.
+enum WalletStatus {
+  ACTIVE
+  LOW_BALANCE
+  BLOCKED
+
+  @@map("wallet_status")
+}
+
+/// PW ledger entry types.
+enum WalletEntryType {
+  TOPUP
+  CASH_RIDE_FEE
+  REFUND_REVERSAL
+  ADJUSTMENT
+
+  @@map("wallet_entry_type")
+}
+
+enum LedgerDirection {
+  CREDIT
+  DEBIT
+
+  @@map("ledger_direction")
+}
+
+/// Ledger rows are immutable, so only final POSTED rows are ever written.
+enum TransactionStatus {
+  POSTED
+
+  @@map("transaction_status")
+}
+
+/// PW values plus FAILED and REFUNDED (OPEN_DECISIONS D-10).
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUND_PENDING
+  REFUNDED
+
+  @@map("payment_status")
+}
+
+/// D-01 option B: intent-level booking states. Execution detail lives on trips.status.
+enum BookingStatus {
+  CREATED
+  SEARCHING_DRIVER
+  DRIVER_ASSIGNED
+  COMPLETED
+  CANCELLED
+
+  @@map("booking_status")
+}
+
+/// D-06: PW/MP payment methods. PREPAID_UPI covers every Razorpay Checkout method. How a
+/// PAY_AT_* booking was actually paid (CASH or ONLINE_QR) is recorded on payment_collections.
+enum BookingPaymentMethod {
+  PREPAID_UPI
+  PAY_AT_PICKUP
+  PAY_AT_DELIVERY
+
+  @@map("booking_payment_method")
+}
+
+/// D-10. The name differs from payment_status, which belongs to the payments table.
+enum BookingPaymentStatus {
+  UNPAID
+  PAID
+  REFUND_PENDING
+  REFUNDED
+
+  @@map("booking_payment_status")
+}
+
+/// M6 lifecycle from assignment onwards (D-02 option A), plus CANCELLED.
+enum TripStatus {
+  DRIVER_ASSIGNED
+  DRIVER_ARRIVED
+  PICKUP_VERIFIED
+  IN_TRANSIT
+  DROP_PROGRESS
+  DELIVERED
+  PAYMENT_CONFIRMED
+  COMPLETED
+  CANCELLED
+
+  @@map("trip_status")
+}
+
+/// Who received the customer's money for a trip.
+enum EarningSettlement {
+  /// Paid online to Nikhil Enterprises through Razorpay; the net share is paid out weekly.
+  ONLINE
+  /// Paid in cash to the driver; the platform fee was debited from the driver wallet.
+  CASH
+
+  @@map("earning_settlement")
+}
+
+enum EarningStatus {
+  /// ONLINE earning whose customer payment was captured, but Razorpay has not yet confirmed the
+  /// merchant settlement to Nikhil Enterprises' bank account. Never paid out in this state.
+  AWAITING_SETTLEMENT
+  /// ONLINE earning whose customer payment is settled: waiting for the next weekly payout.
+  PAYABLE
+  /// Excluded from payouts until an admin releases it (dispute, reversed payout, manual hold).
+  ON_HOLD
+  /// Included in a payout that has not finished yet.
+  IN_PAYOUT
+  /// The payout that carried it was processed by the provider.
+  PAID
+  /// CASH earning: the driver already holds the money; nothing is owed.
+  SETTLED_IN_CASH
+
+  @@map("earning_status")
+}
+
+enum BankAccountStatus {
+  /// Submitted by the driver; bank validation and admin approval pending. No payouts.
+  PENDING_VERIFICATION
+  /// Validated by the bank and approved by an admin. The only status that receives payouts.
+  VERIFIED
+  /// Refused by an admin. Final.
+  REJECTED
+  /// No payouts: replaced by a newer account, a payout to it was reversed, or an admin stopped it.
+  SUSPENDED
+
+  @@map("bank_account_status")
+}
+
+enum PayoutBatchStatus {
+  PREPARED
+  EXECUTING
+  COMPLETED
+
+  @@map("payout_batch_status")
+}
+
+enum PayoutStatus {
+  /// Created with its items; not sent to the provider yet.
+  PREPARED
+  /// Claimed by an executor; the provider call may or may not have happened.
+  SUBMITTING
+  /// Accepted by the provider (queued, pending or processing).
+  SUBMITTED
+  PROCESSED
+  FAILED
+  REVERSED
+
+  @@map("payout_status")
+}
+
+enum PayoutItemStatus {
+  INCLUDED
+  PAID
+  /// The payout failed; the earning went back to PAYABLE for a later payout.
+  RELEASED
+  /// The payout was reversed by the bank; the earning is ON_HOLD for review.
+  REVERSED
+
+  @@map("payout_item_status")
+}
+
+/// Base identity (M3 users). One row per phone number.
+model User {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// E.164 format, e.g. +919876543210.
+  phone     String     @unique(map: "uq_users_phone") @db.VarChar(20)
+  role      UserRole
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  authIdentities           AuthIdentity[]
+  driver                   Driver?                   @relation("DriverUser")
+  customer                 Customer?
+  approvedDrivers          Driver[]                  @relation("DriverApprovedBy")
+  payments                 Payment[]
+  performedLedgerEntries   DriverWalletTransaction[]
+  adminActions             AdminAction[]
+  createdFeeRules          FeeRule[]                 @relation("FeeRuleCreatedBy")
+  deactivatedFeeRules      FeeRule[]                 @relation("FeeRuleDeactivatedBy")
+  heldEarnings             DriverEarning[]           @relation("EarningHeldBy")
+  verifiedBankAccounts     DriverBankAccount[]       @relation("BankAccountVerifiedBy")
+  bankAccountStatusChanges DriverBankAccount[]       @relation("BankAccountStatusChangedBy")
+  createdPayoutBatches     PayoutBatch[]             @relation("PayoutBatchCreatedBy")
+  bankValidationRequests   BankAccountVerification[] @relation("BankValidationRequestedBy")
+
+  @@map("users")
+}
+
+/// Links an external identity (Firebase UID today) to a user.
+model AuthIdentity {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  /// Identity provider name, e.g. "firebase".
+  provider  String   @db.VarChar(30)
+  /// Provider subject (Firebase UID).
+  subject   String   @db.VarChar(128)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([provider, subject], map: "uq_auth_identities_provider_subject")
+  @@index([userId], map: "idx_auth_identities_user")
+  @@map("auth_identities")
+}
+
+/// Operational driver profile (M3 drivers, minimal subset for this slice).
+model Driver {
+  id               String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String               @unique(map: "uq_drivers_user") @map("user_id") @db.Uuid
+  approvalStatus   DriverApprovalStatus @default(PENDING) @map("approval_status")
+  approvedAt       DateTime?            @map("approved_at") @db.Timestamptz(6)
+  approvedByUserId String?              @map("approved_by_user_id") @db.Uuid
+  /// Name on the driver's approved KYC documents. Set by ops tooling (never by the API role) and
+  /// compared with the account holder name the bank reports during bank-account validation.
+  legalName        String?              @map("legal_name") @db.VarChar(120)
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         User                @relation("DriverUser", fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy   User?               @relation("DriverApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  wallet       DriverWallet?
+  trips        Trip[]
+  collections  PaymentCollection[]
+  earnings     DriverEarning[]
+  bankAccounts DriverBankAccount[]
+  payouts      DriverPayout[]
+
+  @@map("drivers")
+}
+
+/// PW 1.1: one wallet per driver. balance_paise is a cached balance; the ledger is the audit trail.
+model DriverWallet {
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId     String       @unique(map: "uq_driver_wallets_driver") @map("driver_id") @db.Uuid
+  balancePaise BigInt       @default(0) @map("balance_paise")
+  status       WalletStatus @default(ACTIVE)
+  version      BigInt       @default(0)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  driver       Driver                    @relation(fields: [driverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  transactions DriverWalletTransaction[]
+
+  @@index([status], map: "idx_driver_wallets_status")
+  @@map("driver_wallets")
+}
+
+/// PW 1.2: append-only wallet ledger. amount_paise is always positive; direction decides credit/debit.
+model DriverWalletTransaction {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId          String            @map("wallet_id") @db.Uuid
+  type              WalletEntryType
+  direction         LedgerDirection
+  amountPaise       BigInt            @map("amount_paise")
+  balanceAfterPaise BigInt            @map("balance_after_paise")
+  /// driver_wallets.version produced by this entry (1, 2, 3, ...). Unique per wallet, so two
+  /// entries can never be applied on top of the same balance, and it orders the ledger exactly.
+  walletVersion     BigInt            @map("wallet_version")
+  status            TransactionStatus @default(POSTED)
+  referenceType     String            @map("reference_type") @db.VarChar(40)
+  referenceId       String            @map("reference_id") @db.VarChar(100)
+  idempotencyKey    String            @unique(map: "uq_wallet_tx_idempotency_key") @map("idempotency_key") @db.VarChar(150)
+  provider          String?           @db.VarChar(40)
+  providerOrderId   String?           @map("provider_order_id") @db.VarChar(100)
+  providerPaymentId String?           @map("provider_payment_id") @db.VarChar(100)
+  providerEventId   String?           @map("provider_event_id") @db.VarChar(150)
+  performedByUserId String?           @map("performed_by_user_id") @db.Uuid
+  reason            String?
+  metadata          Json              @default("{}")
+  /// clock_timestamp() (not now()) so entries are stamped when they are applied under the wallet
+  /// lock, not when their transaction started.
+  createdAt         DateTime          @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+
+  wallet      DriverWallet       @relation(fields: [walletId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  performedBy User?              @relation(fields: [performedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  collection  PaymentCollection?
+
+  @@unique([walletId, walletVersion], map: "uq_wallet_tx_wallet_version")
+  @@unique([provider, providerEventId], map: "uq_wallet_tx_provider_event")
+  @@unique([provider, providerPaymentId], map: "uq_wallet_tx_topup_provider_payment", where: raw("((type = 'TOPUP'::wallet_entry_type) AND (provider_payment_id IS NOT NULL))"))
+  @@index([walletId, createdAt(sort: Desc)], map: "idx_wallet_tx_wallet_created")
+  @@index([referenceType, referenceId], map: "idx_wallet_tx_reference")
+  @@map("driver_wallet_transactions")
+}
+
+/// PW 1.3: Razorpay payment records. One row per Razorpay order.
+model Payment {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Set for purpose BOOKING (customer prepaid payment), NULL for wallet top-ups (CHECKs).
+  bookingId         String?       @map("booking_id") @db.Uuid
+  userId            String        @map("user_id") @db.Uuid
+  /// BOOKING or DRIVER_WALLET_TOPUP (CHECK constraint in SQL).
+  purpose           String        @db.VarChar(30)
+  provider          String        @default("RAZORPAY") @db.VarChar(40)
+  razorpayOrderId   String?       @unique(map: "uq_payments_razorpay_order") @map("razorpay_order_id") @db.VarChar(100)
+  razorpayPaymentId String?       @unique(map: "uq_payments_razorpay_payment") @map("razorpay_payment_id") @db.VarChar(100)
+  amountPaise       BigInt        @map("amount_paise")
+  status            PaymentStatus @default(PENDING)
+  /// Method reported by Razorpay once paid (UPI, CARD, ...).
+  paymentMethod     String?       @map("payment_method") @db.VarChar(40)
+  currency          String        @default("INR") @db.Char(3)
+  /// Client Idempotency-Key, unique per user, so retries never create a second order.
+  idempotencyKey    String        @map("idempotency_key") @db.VarChar(150)
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  booking    Booking?           @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  events     PaymentEvent[]
+  earning    DriverEarning?
+  settlement PaymentSettlement?
+
+  @@unique([userId, idempotencyKey], map: "uq_payments_user_idempotency")
+  // At most one live payment per booking, so a booking can never be charged twice. A FAILED
+  // payment (its order was never created) does not block a new attempt.
+  @@unique([bookingId], map: "uq_payments_booking_active", where: raw("(((purpose)::text = 'BOOKING'::text) AND (status <> 'FAILED'::payment_status))"))
+  @@index([status, createdAt], map: "idx_payments_status_created")
+  @@index([userId, createdAt(sort: Desc)], map: "idx_payments_user_created")
+  @@index([bookingId], map: "idx_payments_booking")
+  @@map("payments")
+}
+
+/// PW 1.4: verified provider webhook events. event_id is the database-level idempotency guard.
+/// Only signature-verified events are stored (see migration CHECK), so a forged request can never
+/// reserve an event id ahead of the genuine event.
+model PaymentEvent {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId         String    @unique(map: "uq_payment_events_event_id") @map("event_id") @db.VarChar(150)
+  eventType       String    @map("event_type") @db.VarChar(100)
+  provider        String    @default("RAZORPAY") @db.VarChar(40)
+  payload         Json
+  signatureValid  Boolean   @map("signature_valid")
+  /// Payment this event resolved to, when it matched one of ours.
+  paymentId       String?   @map("payment_id") @db.Uuid
+  /// Processing result, e.g. APPLIED, ALREADY_APPLIED, IGNORED, AMOUNT_MISMATCH.
+  outcome         String?   @db.VarChar(40)
+  attempts        Int       @default(0)
+  processedAt     DateTime? @map("processed_at") @db.Timestamptz(6)
+  processingError String?   @map("processing_error")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([createdAt], map: "idx_payment_events_unprocessed", where: raw("(processed_at IS NULL)"))
+  @@index([paymentId], map: "idx_payment_events_payment")
+  @@map("payment_events")
+}
+
+/// Customer profile (M5 ER: customers.user_id). Minimal until M2 is supplied (D-09).
+model Customer {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @unique(map: "uq_customers_user") @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  bookings Booking[]
+
+  @@map("customers")
+}
+
+/// Payment-scoped subset of M5 bookings. The trip engine registers each booking (server to
+/// server) when the customer confirms it. Goods, stops and insurance stay in the engine.
+model Booking {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// The trip engine's booking id. Registration is idempotent on it.
+  externalRef        String               @unique(map: "uq_bookings_external_ref") @map("external_ref") @db.VarChar(100)
+  customerId         String               @map("customer_id") @db.Uuid
+  /// Requested vehicle category code (M5 vehicle_category_id; vehicle_categories is not in this
+  /// slice). Selects category-specific fee rules.
+  vehicleCategory    String?              @map("vehicle_category") @db.VarChar(50)
+  status             BookingStatus        @default(CREATED)
+  /// The confirmed fare shown to the customer at booking confirmation, in paise.
+  fareEstimateMinor  BigInt               @map("fare_estimate_minor")
+  /// V1: always equal to the confirmed fare (CHECK). Fares never change after confirmation.
+  finalFareMinor     BigInt               @map("final_fare_minor")
+  paymentMethod      BookingPaymentMethod @map("payment_method")
+  paymentStatus      BookingPaymentStatus @default(UNPAID) @map("payment_status")
+  /// Fee rule in effect at confirmation, pinned so later rule versions never change this booking.
+  feeRuleId          String               @map("fee_rule_id") @db.Uuid
+  confirmedAt        DateTime             @map("confirmed_at") @db.Timestamptz(6)
+  completedAt        DateTime?            @map("completed_at") @db.Timestamptz(6)
+  cancelledAt        DateTime?            @map("cancelled_at") @db.Timestamptz(6)
+  cancellationReason String?              @map("cancellation_reason") @db.VarChar(200)
+  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  customer    Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  feeRule     FeeRule             @relation(fields: [feeRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  trip        Trip?
+  payments    Payment[]
+  collections PaymentCollection[]
+  earning     DriverEarning?
+  disputes    PaymentDispute[]
+  settlements PaymentSettlement[]
+
+  @@index([customerId, createdAt(sort: Desc)], map: "idx_bookings_customer_created")
+  @@index([status, createdAt], map: "idx_bookings_status_created")
+  @@index([feeRuleId], map: "idx_bookings_fee_rule")
+  @@map("bookings")
+}
+
+/// Payment-scoped subset of M6 trips: one trip per booking, created at assignment. vehicle_id
+/// and current_stop_id are owned by the trip engine for now (documented deviation).
+model Trip {
+  id                 String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bookingId          String     @unique(map: "uq_trips_booking") @map("booking_id") @db.Uuid
+  driverId           String     @map("driver_id") @db.Uuid
+  status             TripStatus @default(DRIVER_ASSIGNED)
+  assignedAt         DateTime   @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  arrivedAt          DateTime?  @map("arrived_at") @db.Timestamptz(6)
+  pickupVerifiedAt   DateTime?  @map("pickup_verified_at") @db.Timestamptz(6)
+  startedAt          DateTime?  @map("started_at") @db.Timestamptz(6)
+  deliveredAt        DateTime?  @map("delivered_at") @db.Timestamptz(6)
+  paymentConfirmedAt DateTime?  @map("payment_confirmed_at") @db.Timestamptz(6)
+  completedAt        DateTime?  @map("completed_at") @db.Timestamptz(6)
+  cancelledAt        DateTime?  @map("cancelled_at") @db.Timestamptz(6)
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking     Booking             @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  driver      Driver              @relation(fields: [driverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  collections PaymentCollection[]
+  earning     DriverEarning?
+
+  @@index([driverId, status], map: "idx_trips_driver_status")
+  @@index([status], map: "idx_trips_status")
+  @@map("trips")
+}
+
+/// PW 1.6: versioned platform-fee rules. Amounts, type and window start are never edited and
+/// rows are never deleted (triggers). A new version closes the previous one via effective_to.
+model FeeRule {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Vehicle category code, or NULL for every category.
+  category            String?   @db.VarChar(50)
+  /// FIXED (value in paise) or PERCENTAGE (value in percent of the fare). CHECK in SQL.
+  ruleType            String    @map("rule_type") @db.VarChar(20)
+  value               Decimal   @db.Decimal(12, 4)
+  /// Always HALF_UP (CHECK, OPEN_DECISIONS D-44): a PERCENTAGE fee is rounded half up to whole
+  /// paise by src/common/money.ts. Kept on every rule so each version records how it computed.
+  roundingMode        String    @default("HALF_UP") @map("rounding_mode") @db.VarChar(10)
+  effectiveFrom       DateTime  @map("effective_from") @db.Timestamptz(6)
+  effectiveTo         DateTime? @map("effective_to") @db.Timestamptz(6)
+  active              Boolean   @default(true)
+  /// Why this rule exists (approval reference). Required.
+  reason              String
+  /// Admin who created it; NULL when created with the ops CLI.
+  createdByUserId     String?   @map("created_by_user_id") @db.Uuid
+  deactivatedAt       DateTime? @map("deactivated_at") @db.Timestamptz(6)
+  deactivatedByUserId String?   @map("deactivated_by_user_id") @db.Uuid
+  deactivationReason  String?   @map("deactivation_reason")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  createdBy     User?               @relation("FeeRuleCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  deactivatedBy User?               @relation("FeeRuleDeactivatedBy", fields: [deactivatedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  bookings      Booking[]
+  collections   PaymentCollection[]
+  earnings      DriverEarning[]
+
+  @@index([category, active, effectiveFrom(sort: Desc)], map: "idx_fee_rules_lookup")
+  @@map("fee_rules")
+}
+
+/// PW 1.5: money collected for a PAY_AT_PICKUP / PAY_AT_DELIVERY booking, either as cash or
+/// through a booking-linked Razorpay payment link / QR code. Never a personal UPI id.
+model PaymentCollection {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bookingId           String    @map("booking_id") @db.Uuid
+  tripId              String    @map("trip_id") @db.Uuid
+  /// PICKUP or DELIVERY (CHECK).
+  stage               String    @db.VarChar(20)
+  /// CASH or ONLINE_QR (CHECK).
+  method              String    @db.VarChar(20)
+  amountPaise         BigInt    @map("amount_paise")
+  collectedByDriverId String    @map("collected_by_driver_id") @db.Uuid
+  /// PENDING, COMPLETED, FAILED or REVERSED (CHECK).
+  status              String    @default("COMPLETED") @db.VarChar(20)
+  provider            String?   @db.VarChar(40)
+  /// ONLINE_QR only: PAYMENT_LINK or QR_CODE (CHECK).
+  providerProduct     String?   @map("provider_product") @db.VarChar(30)
+  /// ONLINE_QR only: the provider object shown to the customer (plink_... or qr_...).
+  providerReferenceId String?   @map("provider_reference_id") @db.VarChar(100)
+  /// ONLINE_QR only: what the driver app renders (payment link URL or QR image URL).
+  providerLinkUrl     String?   @map("provider_link_url") @db.VarChar(500)
+  providerOrderId     String?   @map("provider_order_id") @db.VarChar(100)
+  providerPaymentId   String?   @map("provider_payment_id") @db.VarChar(100)
+  /// Method reported by the provider once paid (UPI, CARD, ...).
+  paymentMethod       String?   @map("payment_method") @db.VarChar(40)
+  /// CASH only: platform fee debited from the driver wallet for this collection.
+  platformFeePaise    BigInt?   @map("platform_fee_paise")
+  feeRuleId           String?   @map("fee_rule_id") @db.Uuid
+  /// CASH only: the CASH_RIDE_FEE ledger entry (NULL when the fee is zero).
+  walletTransactionId String?   @unique(map: "uq_collections_wallet_tx") @map("wallet_transaction_id") @db.Uuid
+  idempotencyKey      String    @unique(map: "uq_collections_idempotency_key") @map("idempotency_key") @db.VarChar(150)
+  expiresAt           DateTime? @map("expires_at") @db.Timestamptz(6)
+  completedAt         DateTime? @map("completed_at") @db.Timestamptz(6)
+  failureReason       String?   @map("failure_reason") @db.VarChar(100)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking           Booking                  @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  trip              Trip                     @relation(fields: [tripId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  collectedBy       Driver                   @relation(fields: [collectedByDriverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  feeRule           FeeRule?                 @relation(fields: [feeRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  walletTransaction DriverWalletTransaction? @relation(fields: [walletTransactionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  earning           DriverEarning?
+  settlement        PaymentSettlement?
+
+  @@unique([provider, providerPaymentId], map: "uq_collection_provider_payment", where: raw("(provider_payment_id IS NOT NULL)"))
+  @@unique([provider, providerReferenceId], map: "uq_collection_provider_reference", where: raw("(provider_reference_id IS NOT NULL)"))
+  // One live collection per booking: a booking can never be collected twice.
+  @@unique([bookingId], map: "uq_collection_booking_active", where: raw("((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('COMPLETED'::character varying)::text]))"))
+  @@index([bookingId], map: "idx_collections_booking")
+  @@index([tripId], map: "idx_collections_trip")
+  @@index([status, createdAt], map: "idx_collections_status_created")
+  @@map("payment_collections")
+}
+
+/// What the driver earned on one completed trip: gross fare, platform fee, other deductions, TDS
+/// and the net share. Separate from the wallet. The wallet balance is never the driver's earnings.
+/// Amounts are computed by the backend only and are immutable once recorded (trigger).
+model DriverEarning {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bookingId            String            @unique(map: "uq_earnings_booking") @map("booking_id") @db.Uuid
+  tripId               String            @unique(map: "uq_earnings_trip") @map("trip_id") @db.Uuid
+  driverId             String            @map("driver_id") @db.Uuid
+  settlement           EarningSettlement
+  /// The confirmed fare the customer paid, in paise.
+  grossAmountPaise     BigInt            @map("gross_amount_paise")
+  platformFeePaise     BigInt            @map("platform_fee_paise")
+  /// Approved deductions other than the platform fee. Always 0 in V1 (none is approved).
+  otherDeductionsPaise BigInt            @default(0) @map("other_deductions_paise")
+  /// Tax deducted at source. Always 0 while the TDS policy is DISABLED (OPEN_DECISIONS D-57).
+  tdsAmountPaise       BigInt            @default(0) @map("tds_amount_paise")
+  /// gross - fee - other deductions - TDS (CHECK). ONLINE: owed to the driver by payout. CASH:
+  /// already kept by the driver.
+  netAmountPaise       BigInt            @map("net_amount_paise")
+  /// DISABLED or TAX_RULE (CHECK): the TDS policy snapshotted when the earning was recorded.
+  tdsPolicy            String            @default("DISABLED") @map("tds_policy") @db.VarChar(20)
+  /// The tax rule version applied (TAX_RULE policy only).
+  taxRuleId            String?           @map("tax_rule_id") @db.Uuid
+  feeRuleId            String            @map("fee_rule_id") @db.Uuid
+  /// The customer payment this came from: a prepaid BOOKING payment ...
+  paymentId            String?           @unique(map: "uq_earnings_payment") @map("payment_id") @db.Uuid
+  /// ... or a pickup/delivery collection (cash or QR). Exactly one is set (CHECK).
+  collectionId         String?           @unique(map: "uq_earnings_collection") @map("collection_id") @db.Uuid
+  status               EarningStatus
+  /// ONLINE only: Razorpay's merchant settlement of the customer payment. Required before the
+  /// earning can be PAYABLE (CHECK); set once (trigger).
+  paymentSettlementId  String?           @unique(map: "uq_earnings_payment_settlement") @map("payment_settlement_id") @db.Uuid
+  /// ONLINE only: when the earning became eligible for a payout, i.e. the later of the trip
+  /// completion and the merchant settlement. Set once, when it first becomes PAYABLE.
+  payableAt            DateTime?         @map("payable_at") @db.Timestamptz(6)
+  holdReason           String?           @map("hold_reason") @db.VarChar(500)
+  heldAt               DateTime?         @map("held_at") @db.Timestamptz(6)
+  heldByUserId         String?           @map("held_by_user_id") @db.Uuid
+  paidAt               DateTime?         @map("paid_at") @db.Timestamptz(6)
+  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking           Booking            @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  trip              Trip               @relation(fields: [tripId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  driver            Driver             @relation(fields: [driverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  feeRule           FeeRule            @relation(fields: [feeRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  taxRule           TaxRule?           @relation(fields: [taxRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  payment           Payment?           @relation(fields: [paymentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  collection        PaymentCollection? @relation(fields: [collectionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  paymentSettlement PaymentSettlement? @relation(fields: [paymentSettlementId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  heldBy            User?              @relation("EarningHeldBy", fields: [heldByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  payoutItems       PayoutItem[]
+
+  @@index([driverId, createdAt(sort: Desc)], map: "idx_earnings_driver_created")
+  @@index([status, payableAt], map: "idx_earnings_status_payable")
+  @@map("driver_earnings")
+}
+
+/// Merchant settlement: Razorpay's confirmation that one customer payment reached Nikhil
+/// Enterprises' bank account. Recorded from Razorpay's settlement reconciliation data (or the
+/// non-production simulator), never inferred from the payment capture. Immutable (trigger). An
+/// ONLINE earning becomes PAYABLE only once its customer payment has one of these.
+model PaymentSettlement {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider             String   @default("RAZORPAY") @db.VarChar(40)
+  /// pay_... of the settled customer payment.
+  providerPaymentId    String   @map("provider_payment_id") @db.VarChar(100)
+  /// setl_... of the Razorpay settlement that carried it.
+  providerSettlementId String   @map("provider_settlement_id") @db.VarChar(100)
+  /// Bank reference of the settlement transfer, when Razorpay reports one.
+  settlementUtr        String?  @map("settlement_utr") @db.VarChar(100)
+  /// When Razorpay settled the payment (provider time).
+  settledAt            DateTime @map("settled_at") @db.Timestamptz(6)
+  /// Payment amount reported in the settlement data. Equal to ours, or nothing is recorded.
+  amountPaise          BigInt   @map("amount_paise")
+  /// Razorpay's fee and GST on the payment, deducted from the settlement (the merchant's cost,
+  /// never the driver's).
+  feePaise             BigInt   @default(0) @map("fee_paise")
+  taxPaise             BigInt   @default(0) @map("tax_paise")
+  bookingId            String   @map("booking_id") @db.Uuid
+  /// The prepaid booking payment that was settled ...
+  paymentId            String?  @unique(map: "uq_settlements_payment") @map("payment_id") @db.Uuid
+  /// ... or the online pickup/delivery collection. Exactly one is set (CHECK).
+  collectionId         String?  @unique(map: "uq_settlements_collection") @map("collection_id") @db.Uuid
+  /// RAZORPAY_RECON (settlement reconciliation API) or SIMULATED (non-production only). CHECK.
+  source               String   @db.VarChar(20)
+  /// The provider's reconciliation item fields used for the match, for audit.
+  details              Json     @default("{}")
+  createdAt            DateTime @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+
+  booking    Booking            @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  payment    Payment?           @relation(fields: [paymentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  collection PaymentCollection? @relation(fields: [collectionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  earning    DriverEarning?
+
+  @@unique([provider, providerPaymentId], map: "uq_settlements_provider_payment")
+  @@index([bookingId], map: "idx_settlements_booking")
+  @@index([providerSettlementId], map: "idx_settlements_provider_settlement")
+  @@index([settledAt], map: "idx_settlements_settled_at")
+  @@map("payment_settlements")
+}
+
+/// Versioned tax-deduction (TDS) rules. Deliberately empty: whether and how driver payouts are
+/// subject to TDS waits for the CA (OPEN_DECISIONS D-57), and TDS_ENABLED=true is refused at
+/// startup. Rows can only be added by ops tooling (the API role can read, never write), are never
+/// edited except to close a version, and are never deleted (triggers).
+model TaxRule {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Rule family, e.g. TDS_194C. CHECK format.
+  code              String    @db.VarChar(40)
+  version           Int
+  /// EARNING (per trip earning) or PAYOUT (per payout). CHECK.
+  appliesTo         String    @map("applies_to") @db.VarChar(20)
+  /// Percent of the taxable amount (CHECK 0 <= rate < 100).
+  ratePercent       Decimal   @map("rate_percent") @db.Decimal(7, 4)
+  effectiveFrom     DateTime  @map("effective_from") @db.Timestamptz(6)
+  effectiveTo       DateTime? @map("effective_to") @db.Timestamptz(6)
+  /// The CA approval this version implements. Required.
+  approvalReference String    @map("approval_reference")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  earnings DriverEarning[]
+  payouts  DriverPayout[]
+
+  @@unique([code, version], map: "uq_tax_rules_code_version")
+  @@map("tax_rules")
+}
+
+/// Payout beneficiary. Only the last 4 digits of the account number are stored: the full number
+/// goes straight to the payout provider, which returns a fund account id.
+model DriverBankAccount {
+  id                     String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId               String            @map("driver_id") @db.Uuid
+  accountHolderName      String            @map("account_holder_name") @db.VarChar(120)
+  ifsc                   String            @db.Char(11)
+  accountNumberLast4     String            @map("account_number_last4") @db.Char(4)
+  provider               String            @db.VarChar(40)
+  providerContactId      String            @map("provider_contact_id") @db.VarChar(100)
+  providerFundAccountId  String            @map("provider_fund_account_id") @db.VarChar(100)
+  status                 BankAccountStatus @default(PENDING_VERIFICATION)
+  verifiedAt             DateTime?         @map("verified_at") @db.Timestamptz(6)
+  verifiedByUserId       String?           @map("verified_by_user_id") @db.Uuid
+  /// The provider validation id (fav_...) the approval relied on.
+  verificationReference  String?           @map("verification_reference") @db.VarChar(200)
+  /// The completed, active bank validation an admin approved this account on. Required for
+  /// VERIFIED (CHECK); reinstating a suspended account needs a newer one (trigger).
+  approvedVerificationId String?           @unique(map: "uq_bank_accounts_approved_verification") @map("approved_verification_id") @db.Uuid
+  /// The admin's explanation when the bank's registered name was not an exact KYC match.
+  nameMatchResolution    String?           @map("name_match_resolution") @db.VarChar(500)
+  /// Reason for REJECTED or SUSPENDED.
+  statusReason           String?           @map("status_reason") @db.VarChar(500)
+  statusChangedByUserId  String?           @map("status_changed_by_user_id") @db.Uuid
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  driver               Driver                    @relation(fields: [driverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  verifiedBy           User?                     @relation("BankAccountVerifiedBy", fields: [verifiedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  statusChangedBy      User?                     @relation("BankAccountStatusChangedBy", fields: [statusChangedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  approvedVerification BankAccountVerification?  @relation("BankAccountApprovedVerification", fields: [approvedVerificationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  verifications        BankAccountVerification[] @relation("BankAccountVerifications")
+  payouts              DriverPayout[]
+
+  @@unique([provider, providerFundAccountId], map: "uq_bank_accounts_fund_account")
+  // One live (pending or verified) bank account per driver.
+  @@unique([driverId], map: "uq_bank_accounts_driver_active", where: raw("(status = ANY (ARRAY['PENDING_VERIFICATION'::bank_account_status, 'VERIFIED'::bank_account_status]))"))
+  @@index([driverId], map: "idx_bank_accounts_driver")
+  @@index([status, createdAt], map: "idx_bank_accounts_status_created")
+  @@map("driver_bank_accounts")
+}
+
+/// One bank-account validation through the payout provider (RazorpayX Fund Account Validation, a
+/// penny drop): whether the account is active and the holder name the bank has on record. It is
+/// evidence for an admin's decision; it never approves an account by itself.
+model BankAccountVerification {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bankAccountId        String    @map("bank_account_id") @db.Uuid
+  provider             String    @db.VarChar(40)
+  /// fav_... returned by the provider.
+  providerValidationId String    @map("provider_validation_id") @db.VarChar(100)
+  /// PENNY_DROP (CHECK).
+  method               String    @db.VarChar(20)
+  /// CREATED (result pending), COMPLETED or FAILED (CHECK). Final states are immutable.
+  status               String    @default("CREATED") @db.VarChar(20)
+  /// COMPLETED only: ACTIVE or INVALID, as reported by the bank.
+  accountStatus        String?   @map("account_status") @db.VarChar(20)
+  /// Account holder name registered with the bank, as returned by the provider.
+  registeredName       String?   @map("registered_name") @db.VarChar(200)
+  /// The provider's own name-match score (0-100), when it returns one.
+  nameMatchScore       Int?      @map("name_match_score")
+  /// Our comparison of registered_name with the driver's KYC name: MATCH, PARTIAL, MISMATCH or
+  /// UNAVAILABLE (CHECK).
+  nameMatchResult      String?   @map("name_match_result") @db.VarChar(20)
+  /// The driver's KYC legal name used for the comparison.
+  comparedName         String?   @map("compared_name") @db.VarChar(120)
+  utr                  String?   @db.VarChar(100)
+  failureReason        String?   @map("failure_reason") @db.VarChar(300)
+  /// The admin who asked for this validation; NULL when the driver's submission started it.
+  requestedByUserId    String?   @map("requested_by_user_id") @db.Uuid
+  completedAt          DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  bankAccount DriverBankAccount  @relation("BankAccountVerifications", fields: [bankAccountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  requestedBy User?              @relation("BankValidationRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  approvedFor DriverBankAccount? @relation("BankAccountApprovedVerification")
+
+  @@unique([provider, providerValidationId], map: "uq_bank_validations_provider_validation")
+  @@index([bankAccountId, createdAt(sort: Desc)], map: "idx_bank_validations_account_created")
+  @@index([status, createdAt], map: "idx_bank_validations_status_created")
+  @@map("bank_account_verifications")
+}
+
+/// A weekly (or admin-triggered) payout run.
+model PayoutBatch {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// schedule:<cycle> for the scheduler, admin:<user>:<Idempotency-Key> for admins.
+  idempotencyKey   String            @unique(map: "uq_payout_batches_idempotency_key") @map("idempotency_key") @db.VarChar(150)
+  /// ISO week of the cutoff in the payout timezone, e.g. 2026-W40.
+  cycleKey         String            @map("cycle_key") @db.VarChar(20)
+  /// SCHEDULE or ADMIN (CHECK).
+  origin           String            @db.VarChar(20)
+  /// Earnings that became payable at or before this instant are included.
+  cutoffAt         DateTime          @map("cutoff_at") @db.Timestamptz(6)
+  status           PayoutBatchStatus @default(PREPARED)
+  payoutCount      Int               @default(0) @map("payout_count")
+  totalAmountPaise BigInt            @default(0) @map("total_amount_paise")
+  createdByUserId  String?           @map("created_by_user_id") @db.Uuid
+  executedAt       DateTime?         @map("executed_at") @db.Timestamptz(6)
+  completedAt      DateTime?         @map("completed_at") @db.Timestamptz(6)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdBy User?          @relation("PayoutBatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  payouts   DriverPayout[]
+
+  @@index([createdAt(sort: Desc)], map: "idx_payout_batches_created")
+  @@map("payout_batches")
+}
+
+/// One bank transfer to one driver within a batch. The id doubles as the provider idempotency
+/// key and reference id, so a retried submission can never create a second transfer.
+model DriverPayout {
+  id                   String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId              String       @map("batch_id") @db.Uuid
+  driverId             String       @map("driver_id") @db.Uuid
+  bankAccountId        String       @map("bank_account_id") @db.Uuid
+  /// Sum of the carried earnings' net amounts (checked at commit against the items).
+  grossAmountPaise     BigInt       @map("gross_amount_paise")
+  /// Tax deducted at source on this payout. 0 while the TDS policy is DISABLED.
+  tdsAmountPaise       BigInt       @default(0) @map("tds_amount_paise")
+  /// Approved payout-level deductions. Always 0 in V1.
+  otherDeductionsPaise BigInt       @default(0) @map("other_deductions_paise")
+  /// DISABLED or TAX_RULE (CHECK), snapshotted when the payout was prepared.
+  tdsPolicy            String       @default("DISABLED") @map("tds_policy") @db.VarChar(20)
+  taxRuleId            String?      @map("tax_rule_id") @db.Uuid
+  /// What is transferred: gross - TDS - other deductions (CHECK).
+  amountPaise          BigInt       @map("amount_paise")
+  currency             String       @default("INR") @db.Char(3)
+  /// IMPS, NEFT or RTGS, fixed when the payout is prepared (CHECK).
+  mode                 String       @db.VarChar(10)
+  status               PayoutStatus @default(PREPARED)
+  provider             String       @db.VarChar(40)
+  providerPayoutId     String?      @map("provider_payout_id") @db.VarChar(100)
+  /// The provider's own status string, e.g. queued, processing, processed.
+  providerStatus       String?      @map("provider_status") @db.VarChar(30)
+  utr                  String?      @db.VarChar(100)
+  failureReason        String?      @map("failure_reason") @db.VarChar(300)
+  attempts             Int          @default(0)
+  lastAttemptAt        DateTime?    @map("last_attempt_at") @db.Timestamptz(6)
+  submittedAt          DateTime?    @map("submitted_at") @db.Timestamptz(6)
+  processedAt          DateTime?    @map("processed_at") @db.Timestamptz(6)
+  failedAt             DateTime?    @map("failed_at") @db.Timestamptz(6)
+  reversedAt           DateTime?    @map("reversed_at") @db.Timestamptz(6)
+  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  batch       PayoutBatch       @relation(fields: [batchId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  driver      Driver            @relation(fields: [driverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  bankAccount DriverBankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  taxRule     TaxRule?          @relation(fields: [taxRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  items       PayoutItem[]
+  events      PayoutEvent[]
+
+  @@unique([batchId, driverId], map: "uq_payouts_batch_driver")
+  @@unique([provider, providerPayoutId], map: "uq_payouts_provider_payout", where: raw("(provider_payout_id IS NOT NULL)"))
+  @@index([driverId, createdAt(sort: Desc)], map: "idx_payouts_driver_created")
+  @@index([status, createdAt], map: "idx_payouts_status_created")
+  @@index([bankAccountId], map: "idx_payouts_bank_account")
+  @@map("driver_payouts")
+}
+
+/// The earnings carried by a payout. An earning can be INCLUDED or PAID in at most one payout
+/// (partial unique index), so the same earning can never be paid twice.
+model PayoutItem {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  payoutId    String           @map("payout_id") @db.Uuid
+  earningId   String           @map("earning_id") @db.Uuid
+  amountPaise BigInt           @map("amount_paise")
+  status      PayoutItemStatus @default(INCLUDED)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  payout  DriverPayout  @relation(fields: [payoutId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  earning DriverEarning @relation(fields: [earningId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([payoutId, earningId], map: "uq_payout_items_payout_earning")
+  @@unique([earningId], map: "uq_payout_items_earning_active", where: raw("(status = ANY (ARRAY['INCLUDED'::payout_item_status, 'PAID'::payout_item_status]))"))
+  @@index([earningId], map: "idx_payout_items_earning")
+  @@map("payout_items")
+}
+
+/// Signature-verified payout-provider webhook events (mirror of payment_events).
+model PayoutEvent {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId         String    @unique(map: "uq_payout_events_event_id") @map("event_id") @db.VarChar(150)
+  eventType       String    @map("event_type") @db.VarChar(100)
+  provider        String    @default("RAZORPAYX") @db.VarChar(40)
+  payload         Json
+  signatureValid  Boolean   @map("signature_valid")
+  payoutId        String?   @map("payout_id") @db.Uuid
+  outcome         String?   @db.VarChar(40)
+  attempts        Int       @default(0)
+  processedAt     DateTime? @map("processed_at") @db.Timestamptz(6)
+  processingError String?   @map("processing_error")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  payout DriverPayout? @relation(fields: [payoutId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([createdAt], map: "idx_payout_events_unprocessed", where: raw("(processed_at IS NULL)"))
+  @@index([payoutId], map: "idx_payout_events_payout")
+  @@map("payout_events")
+}
+
+/// Razorpay disputes (chargebacks) on customer payments. A disputed payment's earning is put
+/// ON_HOLD so it is never paid out without an admin decision.
+model PaymentDispute {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider          String   @default("RAZORPAY") @db.VarChar(40)
+  providerDisputeId String   @map("provider_dispute_id") @db.VarChar(100)
+  providerPaymentId String   @map("provider_payment_id") @db.VarChar(100)
+  /// Booking the disputed payment belongs to, when it is one of ours.
+  bookingId         String?  @map("booking_id") @db.Uuid
+  amountPaise       BigInt   @map("amount_paise")
+  /// Provider status: open, under_review, won, lost, closed, ...
+  status            String   @db.VarChar(30)
+  reasonCode        String?  @map("reason_code") @db.VarChar(100)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([provider, providerDisputeId], map: "uq_disputes_provider_dispute")
+  @@index([providerPaymentId], map: "idx_disputes_provider_payment")
+  @@index([bookingId], map: "idx_disputes_booking")
+  @@map("payment_disputes")
+}
+
+/// M1 admin_actions: append-only audit of admin and ops-CLI actions on financial records
+/// (fee rules, earning holds, bank account verification, payout batches).
+model AdminAction {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// The admin who acted; NULL for the ops CLI and the payout scheduler.
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String   @db.VarChar(60)
+  targetType  String   @map("target_type") @db.VarChar(40)
+  targetId    String   @map("target_id") @db.VarChar(100)
+  reason      String?
+  details     Json     @default("{}")
+  createdAt   DateTime @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([targetType, targetId, createdAt(sort: Desc)], map: "idx_admin_actions_target")
+  @@index([actorUserId, createdAt(sort: Desc)], map: "idx_admin_actions_actor")
+  @@map("admin_actions")
+}
