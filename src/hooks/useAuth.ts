@@ -14,7 +14,8 @@ export interface UseAuthResult {
   readonly sendOtp: (phone: string) => Promise<void>;
   readonly verifyOtp: (otp: string) => Promise<boolean>;
   readonly loginWithEmail: (email: string, password: string) => Promise<boolean>;
-  readonly resendOtp: () => Promise<void>;
+  readonly signUpWithEmail: (email: string, password: string) => Promise<boolean>;
+  readonly resendOtp: (phoneOverride?: string) => Promise<void>;
   readonly completeOnboarding: (vehicleId: string, language: string) => Promise<void>;
   readonly logout: () => Promise<void>;
 }
@@ -50,12 +51,10 @@ export function useAuth(): UseAuthResult {
       console.log(`💥 [useAuth] calling authService.requestOtp`);
       
       await authService.requestOtp(phoneNumber);
-      
-      console.log(`💥 [useAuth] requestOtp promise resolved successfully`);
       setAuthState('otp_sent');
     } catch (e: any) {
-      console.log(`💥 [useAuth] sendOtp caught exception:`, e);
-      setError('Failed to send OTP. Please try again.');
+      const msg = e?.message || 'Failed to send OTP. Please try again.';
+      setError(msg);
       throw e;
     } finally {
       isRequestingOtp.current = false;
@@ -70,8 +69,9 @@ export function useAuth(): UseAuthResult {
       await AuthService.getInstance().verifyOtp(phone, otp);
       setAuthState('onboarding');
       return true;
-    } catch (e) {
-      setError('Verification failed. Please try again.');
+    } catch (e: any) {
+      const msg = e?.message || 'Verification failed. Please try again.';
+      setError(msg);
       return false;
     } finally {
       setIsLoading(false);
@@ -83,8 +83,6 @@ export function useAuth(): UseAuthResult {
     setError(null);
     try {
       await AuthService.getInstance().loginWithEmail(email, password);
-      // Firebase's onAuthStateChanged will handle the authState transition 
-      // via RootNavigator when authentication succeeds.
       return true;
     } catch (e: any) {
       setError(e.message || 'Login failed. Please check your credentials.');
@@ -94,15 +92,41 @@ export function useAuth(): UseAuthResult {
     }
   }, []);
 
-
-  const resendOtp = useCallback(async () => {
+  const signUpWithEmail = useCallback(async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
     setError(null);
     try {
-      await AuthService.getInstance().requestOtp(phone);
-    } catch (e) {
-      setError('Failed to resend OTP.');
+      await AuthService.getInstance().signUpWithEmail(email, password);
+      return true;
+    } catch (e: any) {
+      setError(e.message || 'Sign up failed. Please try again.');
+      return false;
     } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const resendOtp = useCallback(async (phoneOverride?: string) => {
+    const targetPhone = phoneOverride || phone;
+    if (!targetPhone) {
+      const err = new Error('Phone number is missing for resend request.');
+      setError(err.message);
+      throw err;
+    }
+    if (isRequestingOtp.current) {
+      console.warn('[AUTH] Duplicate resend request blocked while in progress');
+      throw new Error('Request already in progress');
+    }
+    isRequestingOtp.current = true;
+    setIsLoading(true);
+    setError(null);
+    try {
+      await AuthService.getInstance().requestOtp(targetPhone, true);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to resend OTP.');
+      throw e;
+    } finally {
+      isRequestingOtp.current = false;
       setIsLoading(false);
     }
   }, [phone]);
@@ -146,6 +170,7 @@ export function useAuth(): UseAuthResult {
     sendOtp,
     verifyOtp,
     loginWithEmail,
+    signUpWithEmail,
     resendOtp,
     completeOnboarding,
     logout,

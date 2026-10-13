@@ -1,224 +1,335 @@
 import { ApiClient } from '../api/ApiClient';
-import { env } from '../../config/env';
 import type { DriverProfile } from '../../types/user';
-import { getAuth, signInWithPhoneNumber, signOut, onAuthStateChanged } from '@react-native-firebase/auth';
-import type { ConfirmationResult, User } from '@react-native-firebase/auth';
+import {
+  getAuth,
+  signInWithPhoneNumber,
+  onAuthStateChanged,
+  signOut as fbSignOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  type User,
+  type ConfirmationResult,
+} from '@react-native-firebase/auth';
+import { OtpCooldownManager, usePhoneCooldown, DEFAULT_COOLDOWN_SECONDS } from './OtpCooldownManager';
+
+export type { User, ConfirmationResult };
+export { OtpCooldownManager, usePhoneCooldown };
 
 export interface IAuthService {
-  requestOtp(phone: string): Promise<void>;
+  requestOtp(phone: string, forceResend?: boolean): Promise<void>;
   verifyOtp(phone: string, otp: string): Promise<{ token: string; isNewUser: boolean }>;
   loginWithEmail(email: string, password: string): Promise<{ token: string; isNewUser: boolean }>;
+  signUpWithEmail(email: string, password: string): Promise<{ token: string; isNewUser: boolean }>;
   completeOnboarding(vehicleId: string, language: string): Promise<{ driver: DriverProfile }>;
   getProfile(): Promise<DriverProfile>;
   logout(): Promise<void>;
   observeAuthState?(callback: (user: User | null) => void): () => void;
+  getConfirmation?(): ConfirmationResult | null;
+  getRemainingCooldown?(phone?: string): number;
+  hasActiveSession?(phone?: string): boolean;
 }
+
+export const RESEND_COOLDOWN_SECONDS = DEFAULT_COOLDOWN_SECONDS;
 
 function delay(ms: number): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-export class MockAuthService implements IAuthService {
-  async requestOtp(_phone: string): Promise<void> {
-    await delay(1000);
-  }
+/** Normalizes and validates Indian phone numbers into E.164 (+91XXXXXXXXXX) format */
+export const formatToE164 = (phoneNumber: string): string => {
+  const trimmed = phoneNumber.trim();
+  const digitsOnly = trimmed.replace(/\D/g, '');
 
-  async verifyOtp(_phone: string, otp: string): Promise<{ token: string; isNewUser: boolean }> {
-    await delay(1000);
-    if (otp === '123456') {
-      return { token: 'mock-jwt-token', isNewUser: true };
-    }
-    throw new Error('Invalid OTP');
+  if (digitsOnly.length === 10) {
+    return `+91${digitsOnly}`;
   }
-
-  async loginWithEmail(email: string, _password: string): Promise<{ token: string; isNewUser: boolean }> {
-    await delay(1000);
-    if (email === 'test@example.com') {
-      return { token: 'mock-jwt-token', isNewUser: false };
-    }
-    return { token: 'mock-jwt-token', isNewUser: true };
+  if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) {
+    return `+${digitsOnly}`;
   }
-
-  async completeOnboarding(_vehicleId: string, language: string): Promise<{ driver: DriverProfile }> {
-    await delay(500);
-    return {
-      driver: {
-        id: 'DRV-001',
-        name: 'Rajesh Kumar',
-        phone: '+91 9876543210',
-        location: 'Mumbai, Maharashtra',
-        profileCompletionPercent: 85,
-        status: 'offline',
-        language,
-      }
-    };
+  if (trimmed.startsWith('+') && digitsOnly.length >= 10 && digitsOnly.length <= 15) {
+    return `+${digitsOnly}`;
   }
+  throw new Error('Please enter a valid 10-digit mobile number.');
+};
 
-  async getProfile(): Promise<DriverProfile> {
-    await delay(500);
-    return {
-      id: 'DRV-001',
-      name: 'Rajesh Kumar',
-      phone: '+91 9876543210',
-      location: 'Mumbai, Maharashtra',
-      profileCompletionPercent: 85,
-      status: 'offline',
-      language: 'en',
-    };
+/** Masks a phone number for logs */
+export const maskPhoneNumber = (phone: string): string => {
+  if (phone.length <= 4) return '****';
+  return phone.slice(0, 3) + '******' + phone.slice(-4);
+};
+
+/** Maps Firebase Auth native error codes to user-friendly messages */
+export const mapFirebaseAuthError = (error: any): string => {
+  const code = error?.code || '';
+  switch (code) {
+    case 'auth/invalid-phone-number':
+      return 'The mobile number entered is invalid.';
+    case 'auth/missing-phone-number':
+      return 'Mobile number is required.';
+    case 'auth/quota-exceeded':
+      return 'SMS quota exceeded for today. Please try again later.';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please wait a few moments before trying again.';
+    case 'auth/invalid-verification-code':
+      return 'Incorrect OTP. Please enter the 6-digit code received via SMS.';
+    case 'auth/code-expired':
+      return 'The OTP has expired. Please request a new code.';
+    case 'auth/session-expired':
+      return 'Verification session has expired. Please request a new OTP.';
+    case 'auth/network-request-failed':
+      return 'Network connection issue. Please check your internet connection.';
+    case 'auth/app-not-authorized':
+      return 'This app is not authorized for Firebase phone authentication. Verify SHA fingerprints.';
+    case 'auth/captcha-check-failed':
+      return 'App verification failed. Please try again.';
+    case 'auth/invalid-credential':
+      return 'Invalid credentials provided.';
+    case 'auth/user-not-found':
+      return 'No account found with this email.';
+    case 'auth/wrong-password':
+      return 'Incorrect password.';
+    case 'auth/email-already-in-use':
+      return 'An account already exists with this email.';
+    case 'auth/weak-password':
+      return 'Password must be at least 6 characters.';
+    default:
+      return error?.message || 'Authentication failed. Please try again.';
   }
-
-  async logout(): Promise<void> {
-    await delay(300);
-  }
-}
-
-export class ApiAuthService implements IAuthService {
-  private client = ApiClient.getInstance();
-
-  async requestOtp(phone: string): Promise<void> {
-    await this.client.post('/auth/request-otp', { phone });
-  }
-
-  async verifyOtp(phone: string, otp: string): Promise<{ token: string; isNewUser: boolean }> {
-    const response = await this.client.post<{ token: string; isNewUser: boolean }>('/auth/verify-otp', { phone, otp });
-    this.client.setToken(response.token);
-    return response;
-  }
-
-  async loginWithEmail(email: string, password: string): Promise<{ token: string; isNewUser: boolean }> {
-    const response = await this.client.post<{ token: string; isNewUser: boolean }>('/auth/login', { email, password });
-    this.client.setToken(response.token);
-    return response;
-  }
-
-  async completeOnboarding(vehicleId: string, language: string): Promise<{ driver: DriverProfile }> {
-    return this.client.post<{ driver: DriverProfile }>('/auth/onboard', { vehicleId, language });
-  }
-
-  async getProfile(): Promise<DriverProfile> {
-    return this.client.get<DriverProfile>('/auth/me');
-  }
-
-  async logout(): Promise<void> {
-    await this.client.post('/auth/logout');
-    this.client.setToken(null);
-  }
-}
+};
 
 export class FirebaseAuthService implements IAuthService {
   private confirmation: ConfirmationResult | null = null;
   private isRequesting: boolean = false;
+  private activePhone: string | null = null;
 
-  async requestOtp(phone: string): Promise<void> {
-    if (this.isRequesting) {
-      console.log(`💥 [FirebaseAuthService] requestOtp already in progress, ignoring.`);
-      throw new Error('Request already in progress');
+  getConfirmation(): ConfirmationResult | null {
+    return this.confirmation;
+  }
+
+  getRemainingCooldown(phone?: string): number {
+    const manager = OtpCooldownManager.getInstance();
+    if (phone) {
+      return manager.getRemaining(phone);
     }
+    if (this.activePhone) {
+      return manager.getRemaining(this.activePhone);
+    }
+    return 0;
+  }
+
+  hasActiveSession(phone?: string): boolean {
+    if (!this.confirmation) return false;
+    if (phone) {
+      try {
+        const formatted = formatToE164(phone);
+        return this.activePhone === formatted;
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  async requestOtp(phone: string, forceResend: boolean = false): Promise<void> {
+    if (this.isRequesting) {
+      console.warn('[AUTH] Duplicate SMS request blocked while in progress');
+      throw new Error('Verification request already in progress.');
+    }
+
+    const formattedPhone = formatToE164(phone);
+    console.log('[AUTH] Phone number validation passed');
+
+    const remaining = this.getRemainingCooldown(formattedPhone);
+    if (remaining > 0 && !forceResend && this.hasActiveSession(formattedPhone)) {
+      console.log(`[AUTH] Active session exists within cooldown (${remaining}s remaining), reusing session`);
+      return;
+    }
+
+    if (remaining > 0 && !forceResend) {
+      console.log(`[AUTH] Request blocked by cooldown (${remaining}s remaining)`);
+      throw new Error(`Please wait ${remaining} seconds before requesting another code.`);
+    }
+
     this.isRequesting = true;
-    console.log(`💥 [FirebaseAuthService] requestOtp entered`);
-    const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
-    console.log(`💥 [FirebaseAuthService] formatted phone: ${formattedPhone.replace(/.(?=.{4})/g, '*')}`);
-    
-    console.log(`💥 [FirebaseAuthService] calling getAuth()`);
-    const auth = getAuth();
-    
-    console.log(`💥 [FirebaseAuthService] calling signInWithPhoneNumber`);
+    if (forceResend) {
+      console.log(`[AUTH] Firebase resend request started for ${maskPhoneNumber(formattedPhone)}`);
+    } else {
+      console.log(`[AUTH] Firebase SMS request started for ${maskPhoneNumber(formattedPhone)}`);
+    }
+
     try {
-      this.confirmation = await signInWithPhoneNumber(auth, formattedPhone);
-      console.log(`💥 [FirebaseAuthService] ConfirmationResult received successfully`);
+      const authInstance = getAuth();
+      // On React Native Firebase Android, calling (authInstance as any).signInWithPhoneNumber(phone, forceResend)
+      // forwards forceResend directly to NativeRNFBTurboAuth.java:
+      // PhoneAuthProvider.getInstance(firebaseAuth).verifyPhoneNumber(..., mForceResendingToken)
+      const confirmationResult = await (authInstance as any).signInWithPhoneNumber(
+        formattedPhone,
+        forceResend,
+      );
+      this.confirmation = confirmationResult;
+      this.activePhone = formattedPhone;
+      OtpCooldownManager.getInstance().setCooldown(formattedPhone, RESEND_COOLDOWN_SECONDS);
+
+      if (forceResend) {
+        console.log('[AUTH] Firebase resend request succeeded');
+        console.log('[AUTH] Active confirmation result replaced');
+      } else {
+        console.log('[AUTH] Firebase verification request accepted');
+      }
     } catch (e: any) {
-      console.log(`💥 [FirebaseAuthService] Exception caught in signInWithPhoneNumber:`, e);
-      throw e;
+      const errorCode = e?.code || e?.message || 'unknown';
+      if (errorCode === 'auth/too-many-requests') {
+        // Enforce local cooldown lock to prevent repeated requests
+        OtpCooldownManager.getInstance().setCooldown(formattedPhone, RESEND_COOLDOWN_SECONDS);
+      }
+      if (forceResend) {
+        console.warn(`[AUTH] Firebase resend request failed: ${errorCode}`);
+      } else {
+        console.warn(`[AUTH] Firebase SMS request failed: ${errorCode}`);
+      }
+      throw new Error(mapFirebaseAuthError(e));
     } finally {
       this.isRequesting = false;
     }
   }
 
-  async verifyOtp(_phone: string, otp: string): Promise<{ token: string; isNewUser: boolean }> {
-    if (!this.confirmation) {
-      throw new Error('No OTP request found');
+  async verifyOtp(phone: string, otp: string): Promise<{ token: string; isNewUser: boolean }> {
+    const cleanOtp = otp.trim();
+    if (cleanOtp.length !== 6) {
+      throw new Error('Please enter a complete 6-digit OTP.');
     }
-    
-    console.log(`[OTP DEBUG] Firebase confirmation started`);
-    console.log(`💥 [FirebaseAuthService] verifyOtp entered`);
-    console.log(`💥 [FirebaseAuthService] ConfirmationResult exists for this session`);
-    console.log(`💥 [FirebaseAuthService] calling confirmation.confirm() started`);
-    
+    if (!this.confirmation) {
+      throw new Error('No active verification session. Please request a new OTP.');
+    }
+
+    if (phone) {
+      try {
+        const formatted = formatToE164(phone);
+        if (this.activePhone && this.activePhone !== formatted) {
+          throw new Error('Verification session does not match this phone number. Please request a new OTP.');
+        }
+      } catch (err: any) {
+        if (err?.message?.includes('Verification session')) {
+          throw err;
+        }
+      }
+    }
+
+    console.log('[AUTH] OTP confirmation started');
+
     try {
-      const userCredential = await this.confirmation.confirm(otp);
-      
-      console.log(`[OTP DEBUG] Firebase confirmation succeeded`);
-      console.log(`💥 [FirebaseAuthService] confirmation.confirm() succeeded`);
-      const uid = userCredential.user?.uid;
-      console.log(`💥 [FirebaseAuthService] Authenticated Firebase User UID: ${uid ? uid.substring(0, 4) + '***' : 'unknown'}`);
-      
-      // In the future, we would send getAuth().currentUser?.getIdToken() to our backend here.
-      return { token: 'firebase-jwt-token', isNewUser: true };
+      const userCredential = await this.confirmation.confirm(cleanOtp);
+      console.log('[AUTH] OTP confirmation succeeded');
+
+      const currentUser = getAuth().currentUser;
+      const token = (await currentUser?.getIdToken()) || '';
+      if (token) {
+        ApiClient.getInstance().setToken(token);
+      }
+
+      return {
+        token,
+        isNewUser: userCredential?.additionalUserInfo?.isNewUser ?? false,
+      };
     } catch (e: any) {
-      console.log(`💥 [FirebaseAuthService] Exception caught in confirm():`, e);
-      throw e;
+      console.warn('[AUTH] Firebase authentication failed:', e?.code || e?.message);
+      throw new Error(mapFirebaseAuthError(e));
     }
   }
 
   async loginWithEmail(email: string, password: string): Promise<{ token: string; isNewUser: boolean }> {
-    console.log(`💥 [FirebaseAuthService] loginWithEmail entered`);
-    const auth = getAuth();
-    
     try {
-      // We need to import signInWithEmailAndPassword at the top of the file, let's just use it off the auth object if possible
-      // Actually, since React Native Firebase uses the auth instance for methods, it's:
-      const { signInWithEmailAndPassword } = require('@react-native-firebase/auth');
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      
-      console.log(`💥 [FirebaseAuthService] Email login succeeded`);
-      const uid = userCredential.user?.uid;
-      console.log(`💥 [FirebaseAuthService] Authenticated Firebase User UID: ${uid ? uid.substring(0, 4) + '***' : 'unknown'}`);
-      
-      return { token: 'firebase-jwt-token', isNewUser: false };
+      const userCredential = await signInWithEmailAndPassword(getAuth(), email.trim(), password);
+      console.log('[AUTH] Firebase email authentication succeeded');
+
+      const token = (await userCredential.user.getIdToken()) || '';
+      if (token) {
+        ApiClient.getInstance().setToken(token);
+      }
+
+      return { token, isNewUser: false };
     } catch (e: any) {
-      console.log(`💥 [FirebaseAuthService] Exception caught in loginWithEmail:`, e);
-      throw e;
+      console.warn('[AUTH] Firebase email login failed:', e?.code || e?.message);
+      throw new Error(mapFirebaseAuthError(e));
+    }
+  }
+
+  async signUpWithEmail(email: string, password: string): Promise<{ token: string; isNewUser: boolean }> {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(getAuth(), email.trim(), password);
+      console.log('[AUTH] Firebase email sign-up succeeded');
+
+      const token = (await userCredential.user.getIdToken()) || '';
+      if (token) {
+        ApiClient.getInstance().setToken(token);
+      }
+
+      return { token, isNewUser: true };
+    } catch (e: any) {
+      console.warn('[AUTH] Firebase email signup failed:', e?.code || e?.message);
+      throw new Error(mapFirebaseAuthError(e));
     }
   }
 
   async completeOnboarding(vehicleId: string, language: string): Promise<{ driver: DriverProfile }> {
     await delay(500);
-    const auth = getAuth();
+    const currentUser = getAuth().currentUser;
     return {
       driver: {
-        id: auth.currentUser?.uid || 'DRV-001',
-        name: 'Rajesh Kumar', 
-        phone: auth.currentUser?.phoneNumber || '+91 9876543210',
+        id: currentUser?.uid || 'DRV-001',
+        name: 'Rajesh Kumar',
+        phone: currentUser?.phoneNumber || '+91 9876543210',
         location: 'Mumbai, Maharashtra',
-        profileCompletionPercent: 100, 
+        profileCompletionPercent: 100,
         status: 'offline',
         language,
-      }
+      },
     };
   }
 
   async getProfile(): Promise<DriverProfile> {
     await delay(500);
-    const auth = getAuth();
+    const currentUser = getAuth().currentUser;
     return {
-      id: auth.currentUser?.uid || 'DRV-001',
+      id: currentUser?.uid || 'DRV-001',
       name: 'Rajesh Kumar',
-      phone: auth.currentUser?.phoneNumber || '+91 9876543210',
+      phone: currentUser?.phoneNumber || '+91 9876543210',
       location: 'Mumbai, Maharashtra',
-      profileCompletionPercent: 0, 
+      profileCompletionPercent: 0,
       status: 'offline',
       language: 'en',
     };
   }
 
   async logout(): Promise<void> {
-    const auth = getAuth();
-    await signOut(auth);
+    try {
+      await fbSignOut(getAuth());
+      this.confirmation = null;
+      this.activePhone = null;
+      ApiClient.getInstance().setToken(null);
+      console.log('[AUTH] Firebase sign-out completed');
+    } catch (error) {
+      console.warn('[AUTH] Error during sign-out:', error);
+      throw error;
+    }
   }
 
   observeAuthState(callback: (user: User | null) => void): () => void {
-    const auth = getAuth();
-    return onAuthStateChanged(auth, callback);
+    return onAuthStateChanged(getAuth(), async (user: User | null) => {
+      if (user) {
+        console.log('[AUTH] Auth state restored');
+        try {
+          const token = await user.getIdToken();
+          ApiClient.getInstance().setToken(token);
+        } catch (e) {
+          console.warn('[AUTH] Failed to fetch ID token on auth restore:', e);
+        }
+      } else {
+        console.log('[AUTH] Auth state unauthenticated');
+        ApiClient.getInstance().setToken(null);
+      }
+      callback(user);
+    });
   }
 }
 
@@ -226,14 +337,9 @@ export class AuthService {
   private static instance: IAuthService;
 
   static getInstance(): IAuthService {
-    console.log(`💥 [AuthService] getInstance() entered. env.IS_MOCK_MODE = ${env.IS_MOCK_MODE}`);
     if (!AuthService.instance) {
-      console.log(`💥 [AuthService] Creating new FirebaseAuthService instance (FORCED)`);
       AuthService.instance = new FirebaseAuthService();
     }
-    console.log(`💥 [AuthService] Returning instance of ${AuthService.instance.constructor.name}`);
     return AuthService.instance;
   }
 }
-
-

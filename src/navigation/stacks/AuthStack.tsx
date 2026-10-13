@@ -15,7 +15,7 @@ export interface AuthStackProps {
 }
 
 export const AuthStack: React.FC<AuthStackProps> = ({ onAuthComplete, initialRouteName }) => {
-  const { sendOtp, verifyOtp, loginWithEmail, resendOtp, completeOnboarding, isLoading, error } = useAuth();
+  const { sendOtp, verifyOtp, loginWithEmail, signUpWithEmail, resendOtp, completeOnboarding, isLoading, error } = useAuth();
 
   return (
     <Stack.Navigator
@@ -31,7 +31,9 @@ export const AuthStack: React.FC<AuthStackProps> = ({ onAuthComplete, initialRou
             navigation={navigation}
             onSendOtp={sendOtp}
             onLoginWithEmail={loginWithEmail}
+            onSignUpWithEmail={signUpWithEmail}
             isLoading={isLoading}
+            error={error}
           />
         )}
       </Stack.Screen>
@@ -41,7 +43,7 @@ export const AuthStack: React.FC<AuthStackProps> = ({ onAuthComplete, initialRou
             navigation={navigation}
             route={route}
             onVerifyOtp={verifyOtp}
-            onResendOtp={resendOtp}
+            onResendOtp={() => resendOtp(route.params.phone)}
             isLoading={isLoading}
             error={error}
           />

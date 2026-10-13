@@ -1,4 +1,4 @@
-package com.pickup.driver.location
+package com.multipleride.driver.location
 
 import android.annotation.SuppressLint
 import android.app.PendingIntent
@@ -185,7 +185,7 @@ class LocationManager(private val context: Context) {
      */
     @SuppressLint("MissingPermission")
     fun addGeofence(
-        request: com.pickup.driver.location.GeofenceRequest,
+        request: com.multipleride.driver.location.GeofenceRequest,
         pendingIntent: PendingIntent,
         onSuccess: () -> Unit,
         onError: (LocationErrorCode) -> Unit,
@@ -202,7 +202,7 @@ class LocationManager(private val context: Context) {
             .setRequestId(request.id)
             .setCircularRegion(request.latitude, request.longitude, request.radiusMeters)
             .setExpirationDuration(
-                if (request.expirationMs == com.pickup.driver.location.GeofenceRequest.NO_EXPIRATION) {
+                if (request.expirationMs == com.multipleride.driver.location.GeofenceRequest.NO_EXPIRATION) {
                     Geofence.NEVER_EXPIRE
                 } else {
                     request.expirationMs

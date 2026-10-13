@@ -1,4 +1,4 @@
-package com.pickup.driver.location
+package com.multipleride.driver.location
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -30,8 +30,8 @@ class LocationService : Service() {
     companion object {
         private const val TAG = "PickUpLocationSvc"
 
-        private const val ACTION_START = "com.pickup.driver.location.ACTION_START"
-        private const val ACTION_STOP = "com.pickup.driver.location.ACTION_STOP"
+        private const val ACTION_START = "com.multipleride.driver.location.ACTION_START"
+        private const val ACTION_STOP = "com.multipleride.driver.location.ACTION_STOP"
 
         @Volatile
         private var isRunning: Boolean = false

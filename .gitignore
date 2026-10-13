@@ -94,3 +94,4 @@ android/app/build/
 android/app/.cxx/
 android/build/
 android/.gradle/
+android/app/src/main/assets/
