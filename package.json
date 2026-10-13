@@ -1,5 +1,5 @@
 {
-  "name": "com.pickup.driver",
+  "name": "com.multipleride.driver",
   "version": "0.0.1",
   "private": true,
   "scripts": {
@@ -7,7 +7,8 @@
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
-    "test": "jest"
+    "test": "jest",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@gorhom/bottom-sheet": "^5.2.14",
@@ -19,7 +20,6 @@
     "@react-navigation/bottom-tabs": "^7.18.17",
     "@react-navigation/native": "^7.3.17",
     "@react-navigation/native-stack": "^7.18.9",
-    "firebase": "^12.18.0",
     "material-symbols": "^0.47.0",
     "react": "19.2.3",
     "react-native": "0.87.0",

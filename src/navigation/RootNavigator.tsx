@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import { AuthStack } from './stacks/AuthStack';
@@ -57,6 +57,26 @@ export const RootNavigator: React.FC = () => {
     }
   }, [initializing]);
 
+  const renderAuthStack = useCallback(() => (
+    <AuthStack 
+      initialRouteName="UnifiedAuth"
+      onAuthComplete={() => {
+        void markOnboardingComplete();
+        setOnboardingComplete(true);
+      }} 
+    />
+  ), []);
+
+  const renderOnboardingStack = useCallback(() => (
+    <AuthStack 
+      initialRouteName="LanguageSelection"
+      onAuthComplete={() => {
+        void markOnboardingComplete();
+        setOnboardingComplete(true);
+      }} 
+    />
+  ), []);
+
   if (initializing) {
     return null; // Don't render until Firebase auth state is determined
   }
@@ -64,37 +84,11 @@ export const RootNavigator: React.FC = () => {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {!isAuthenticated ? (
-        <Stack.Screen name="Auth">
-          {() => {
-            console.log(`[OTP DEBUG] rendering Auth stack (unauthenticated)`);
-            return (
-              <AuthStack 
-                initialRouteName="UnifiedAuth"
-                onAuthComplete={() => {
-                  void markOnboardingComplete();
-                  setOnboardingComplete(true);
-                }} 
-              />
-            );
-          }}
-        </Stack.Screen>
+        <Stack.Screen name="Auth" children={renderAuthStack} />
       ) : onboardingComplete ? (
         <Stack.Screen name="Main" component={MainTabNavigator} />
       ) : (
-        <Stack.Screen name="Onboarding">
-          {() => {
-            console.log(`[OTP DEBUG] rendering Onboarding stack (initialRouteName=LanguageSelection)`);
-            return (
-              <AuthStack 
-                initialRouteName="LanguageSelection"
-                onAuthComplete={() => {
-                  void markOnboardingComplete();
-                  setOnboardingComplete(true);
-                }} 
-              />
-            );
-          }}
-        </Stack.Screen>
+        <Stack.Screen name="Onboarding" children={renderOnboardingStack} />
       )}
     </Stack.Navigator>
   );

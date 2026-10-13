@@ -26,7 +26,7 @@ export const authData = {
   countryCode: '+91',
   otpTitle: 'Verify OTP',
   otpSubtitle: 'Enter the 6-digit code sent to',
-  resendTimerSeconds: 30,
+  resendTimerSeconds: 60,
   resendText: 'Resend Code',
 } as const;
 

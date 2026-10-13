@@ -1,4 +1,4 @@
-package com.pickup.driver.location
+package com.multipleride.driver.location
 
 /**
  * Centralized configuration for the location subsystem.

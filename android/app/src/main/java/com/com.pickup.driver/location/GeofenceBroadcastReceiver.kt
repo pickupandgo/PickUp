@@ -1,4 +1,4 @@
-package com.pickup.driver.location
+package com.multipleride.driver.location
 
 import android.content.BroadcastReceiver
 import android.content.Context

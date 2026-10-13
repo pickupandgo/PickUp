@@ -1,4 +1,4 @@
-package com.pickup.driver.location
+package com.multipleride.driver.location
 
 /**
  * Strongly-typed Kotlin models for the native location subsystem.

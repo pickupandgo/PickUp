@@ -1,4 +1,4 @@
-package com.pickup.driver.location
+package com.multipleride.driver.location
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule

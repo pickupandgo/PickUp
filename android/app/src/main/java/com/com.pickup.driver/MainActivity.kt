@@ -1,4 +1,4 @@
-package com.pickup.driver
+package com.multipleride.driver
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

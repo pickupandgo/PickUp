@@ -3,6 +3,8 @@ import { View, Text, Pressable, StyleSheet, KeyboardAvoidingView, Platform, Aler
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing } from '../../theme';
 import { authData } from '../../data/mockData';
+import { AuthService, RESEND_COOLDOWN_SECONDS, usePhoneCooldown } from '../../services/auth/AuthService';
+import { clearOnboardingComplete } from '../../state/onboarding';
 import { OTPInput } from '../../components/atoms/OTPInput';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { AppHeader } from '../../components/molecules/AppHeader';
@@ -27,67 +29,75 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
   error = null,
   testID,
 }) => {
+  const { phone, authMode = 'login' } = route.params;
+  const isSignUp = authMode === 'signup';
+  const { cooldownRemaining, isCoolingDown } = usePhoneCooldown(phone);
+
   const [otp, setOtp] = useState('');
   const [hasError, setHasError] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [resendTimer, setResendTimer] = useState<number>(authData.resendTimerSeconds);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const { phone } = route.params;
-
-  useEffect(() => {
-    timerRef.current = setInterval(() => {
-      setResendTimer((prev) => {
-        if (prev <= 1) {
-          if (timerRef.current) clearInterval(timerRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
+  const [isResending, setIsResending] = useState(false);
+  const isResendingRef = useRef(false);
+  const isVerifyingRef = useRef(false);
 
   const handleOtpComplete = useCallback(async (value: string) => {
-    if (isVerifying) return;
+    if (isVerifyingRef.current || isVerifying || isLoading) return;
     
-    console.log(`[OTP DEBUG] OTP value entered (length: ${value.length})`);
+    isVerifyingRef.current = true;
     setHasError(false);
+    setLocalError(null);
+    setSuccessMessage(null);
     setIsVerifying(true);
-    console.log(`[OTP DEBUG] verification started`);
     
     try {
+      if (isSignUp) {
+        await clearOnboardingComplete();
+      }
       const success = await onVerifyOtp(value);
-      console.log(`[OTP DEBUG] useAuth verification returned: ${success}`);
       if (!success) {
         setHasError(true);
       }
+    } catch (e: any) {
+      setHasError(true);
+      setLocalError(e?.message || 'Invalid OTP. Please try again.');
     } finally {
+      isVerifyingRef.current = false;
       setIsVerifying(false);
     }
-  }, [onVerifyOtp, isVerifying]);
+  }, [onVerifyOtp, isVerifying, isLoading, isSignUp]);
 
   const handleVerify = useCallback(async () => {
-    console.log(`[OTP DEBUG] VERIFY pressed`);
-    if (otp.length < 6) return;
+    if (otp.length < 6 || isVerifying || isLoading) return;
     await handleOtpComplete(otp);
-  }, [otp, handleOtpComplete]);
+  }, [otp, handleOtpComplete, isVerifying, isLoading]);
 
   const handleResend = useCallback(async () => {
-    await onResendOtp();
-    setResendTimer(authData.resendTimerSeconds);
-    timerRef.current = setInterval(() => {
-      setResendTimer((prev) => {
-        if (prev <= 1) {
-          if (timerRef.current) clearInterval(timerRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }, [onResendOtp]);
+    console.log('[AUTH] Resend pressed');
+    if (cooldownRemaining > 0 || isCoolingDown || isResending || isResendingRef.current) {
+      console.log('[AUTH] Resend blocked by cooldown');
+      return;
+    }
+
+    isResendingRef.current = true;
+    setIsResending(true);
+    setHasError(false);
+    setLocalError(null);
+    setSuccessMessage(null);
+
+    try {
+      await onResendOtp();
+      setOtp('');
+      setSuccessMessage('A new verification code was requested.');
+    } catch (e: any) {
+      setHasError(true);
+      setLocalError(e?.message || 'Failed to resend OTP. Please try again.');
+    } finally {
+      isResendingRef.current = false;
+      setIsResending(false);
+    }
+  }, [onResendOtp, cooldownRemaining, isCoolingDown, isResending]);
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
@@ -102,9 +112,13 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <View style={styles.content}>
-          <Text style={styles.title}>{authData.otpTitle}</Text>
+          <Text style={styles.title}>
+            {isSignUp ? 'Driver Sign Up Verification' : 'Driver Log In Verification'}
+          </Text>
           <Text style={styles.subtitle}>
-            Enter the 6-digit code sent to {phone}
+            {isSignUp
+              ? `Enter the 6-digit code sent to ${phone} to complete your registration.`
+              : `Enter the 6-digit code sent to ${phone} to access your account.`}
           </Text>
           <Pressable onPress={() => navigation.goBack()}>
             <Text style={styles.changeNumber}>Change Number</Text>
@@ -118,19 +132,26 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
             style={styles.otpInput}
           />
 
-          {hasError || error ? (
-            <Text style={styles.errorText}>{error || 'Invalid OTP. Please try again.'}</Text>
+          {successMessage && !hasError && !error && !localError ? (
+            <Text style={styles.successText}>{successMessage}</Text>
+          ) : null}
+
+          {hasError || error || localError ? (
+            <Text style={styles.errorText}>{localError || error || 'Invalid OTP. Please try again.'}</Text>
           ) : null}
 
           {/* Resend */}
           <View style={styles.resendContainer}>
-            {resendTimer > 0 ? (
+            {isResending ? (
+              <Text style={styles.resendTimer}>Requesting new code...</Text>
+            ) : cooldownRemaining > 0 ? (
               <Text style={styles.resendTimer}>
-                {authData.resendText} in {resendTimer}s
+                {authData.resendText} in {cooldownRemaining}s
               </Text>
             ) : (
               <Pressable
                 onPress={handleResend}
+                disabled={cooldownRemaining > 0 || isResending}
                 accessibilityRole="button"
                 accessibilityLabel={authData.resendText}
               >
@@ -189,6 +210,12 @@ const styles = StyleSheet.create({
   errorText: {
     ...typography.bodyMd,
     color: colors.error,
+    textAlign: 'center',
+    marginTop: spacing.md,
+  },
+  successText: {
+    ...typography.bodyMd,
+    color: colors.success || '#10B981',
     textAlign: 'center',
     marginTop: spacing.md,
   },
