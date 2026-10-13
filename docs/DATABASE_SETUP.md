@@ -163,6 +163,24 @@ UPDATE payment_settlements SET amount_paise = 1;
 UPDATE drivers SET legal_name = 'x';
 ```
 
+### Step-up bank-account changes
+
+`20261008120000_bank_account_change_requests`:
+
+- New table `bank_account_change_requests` (append-only by trigger; one open request per driver). `created_at` and `expires_at` (10 minutes) are always set by the database clock; a pending request's expiry can be brought forward, never extended. Verification needs a sign-in after the request (`step_up_auth_time > created_at`) on the driver's registered phone, inside the window, and must add its bank account in the same transaction (deferred check).
+- `driver_bank_accounts.change_request_id` (unique, immutable): every new account must reference a step-up verified request of the same driver.
+- Fund-account uniqueness now covers live (pending or verified) accounts only, so a driver can return to an earlier account (RazorpayX returns the same fund account for identical details).
+- **Data correction, with an `admin_actions` entry:** accounts still `PENDING_VERIFICATION` (submitted without a step-up) become `SUSPENDED` with `STEP_UP_REQUIRED`; they can never be approved, and the driver submits them again.
+
+Then **re-run `02-app-grants.sql`** (new table). Connected as `mr_app`, these must fail with `permission denied`:
+
+```sql
+UPDATE bank_account_change_requests SET created_at = now() - interval '1 day';
+UPDATE bank_account_change_requests SET expires_at = now() + interval '1 day';
+UPDATE driver_bank_accounts SET change_request_id = gen_random_uuid();
+DELETE FROM bank_account_change_requests;
+```
+
 ## Ongoing rules
 
 - **Schema changes:** only through new migration files. Re-run step 4 (migrate, then grants) on every release that adds one.

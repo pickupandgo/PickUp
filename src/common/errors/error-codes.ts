@@ -10,6 +10,11 @@ export const ErrorCode = {
   USER_NOT_PROVISIONED: 'USER_NOT_PROVISIONED',
   ACCOUNT_DISABLED: 'ACCOUNT_DISABLED',
   FORBIDDEN: 'FORBIDDEN',
+  /**
+   * The action needs a fresh re-authentication (phone OTP) on top of the session.
+   * `details.reason`: NOT_PHONE_SIGN_IN, PHONE_MISMATCH or REAUTHENTICATION_REQUIRED.
+   */
+  STEP_UP_REQUIRED: 'STEP_UP_REQUIRED',
 
   // Request handling
   NOT_FOUND: 'NOT_FOUND',
@@ -86,6 +91,11 @@ export const ErrorCode = {
   PAYOUT_NOT_FOUND: 'PAYOUT_NOT_FOUND',
   /** A bank-account change is already waiting for validation and admin approval. */
   BANK_ACCOUNT_CHANGE_PENDING: 'BANK_ACCOUNT_CHANGE_PENDING',
+  BANK_CHANGE_REQUEST_NOT_FOUND: 'BANK_CHANGE_REQUEST_NOT_FOUND',
+  /** The step-up window (10 minutes) passed: start a new change request. */
+  BANK_CHANGE_REQUEST_EXPIRED: 'BANK_CHANGE_REQUEST_EXPIRED',
+  /** The change request was already used, cancelled or superseded. `details.status` says which. */
+  BANK_CHANGE_REQUEST_CLOSED: 'BANK_CHANGE_REQUEST_CLOSED',
   BANK_VALIDATION_NOT_FOUND: 'BANK_VALIDATION_NOT_FOUND',
   /** The bank validation does not allow approval (not completed, account not active, ...). */
   BANK_VALIDATION_NOT_ACCEPTABLE: 'BANK_VALIDATION_NOT_ACCEPTABLE',

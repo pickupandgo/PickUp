@@ -8,6 +8,7 @@ import {
   type ProviderPayout,
   type ValidateBankAccountInput,
 } from '../../src/payouts/payout.gateway';
+import { detailsKey } from '../../src/payouts/simulated-payout.gateway';
 import { RazorpayApiError, RazorpayUnavailableError } from '../../src/razorpay/razorpay.errors';
 import { newId } from './fake-razorpay.gateway';
 
@@ -22,14 +23,17 @@ interface StoredPayout extends ProviderPayout {
 
 /**
  * In-memory RazorpayX with the documented behaviours: X-Payout-Idempotency returns the original
- * payout for a repeated key, and payout states are moved explicitly by the test (as in RazorpayX
- * test mode, where payouts stay in processing until moved from the dashboard).
+ * payout for a repeated key, identical contact or fund account details return the existing
+ * object, and payout states are moved explicitly by the test (as in RazorpayX test mode, where
+ * payouts stay in processing until moved from the dashboard).
  */
 export class FakePayoutGateway extends PayoutGateway {
   readonly enabled = true;
   readonly provider = PAYOUT_PROVIDER_RAZORPAYX;
   readonly payouts = new Map<string, StoredPayout>();
   readonly fundAccounts = new Map<string, { contactId: string; ifsc: string; last4: string }>();
+  private readonly contactsByDetails = new Map<string, string>();
+  private readonly fundAccountsByDetails = new Map<string, string>();
   readonly validations = new Map<string, ProviderBankValidation>();
   readonly calls = {
     createContact: 0,
@@ -64,7 +68,10 @@ export class FakePayoutGateway extends PayoutGateway {
       if (input.name.trim().length < 3) {
         throw new RazorpayApiError(400, 'BAD_REQUEST_ERROR', 'The name is invalid');
       }
-      return { contactId: newId('cont_') };
+      const key = detailsKey(input.driverId, input.name);
+      const contactId = this.contactsByDetails.get(key) ?? newId('cont_');
+      this.contactsByDetails.set(key, contactId);
+      return { contactId };
     });
   }
 
@@ -74,7 +81,9 @@ export class FakePayoutGateway extends PayoutGateway {
       if (input.ifsc === 'FAKE0000000') {
         throw new RazorpayApiError(400, 'BAD_REQUEST_ERROR', 'The IFSC is invalid');
       }
-      const fundAccountId = newId('fa_');
+      const key = detailsKey(input.contactId, input.holderName, input.ifsc, input.accountNumber);
+      const fundAccountId = this.fundAccountsByDetails.get(key) ?? newId('fa_');
+      this.fundAccountsByDetails.set(key, fundAccountId);
       this.fundAccounts.set(fundAccountId, {
         contactId: input.contactId,
         ifsc: input.ifsc,

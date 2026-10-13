@@ -129,10 +129,17 @@ async function startJwks() {
   });
   await new Promise((resolve) => jwksServer.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${jwksServer.address().port}/jwks`;
-  const sign = (subject) => {
+  /** A Firebase-shaped ID token. `authTime` is the (re-)authentication time, in seconds. */
+  const sign = (subject, { authTime, phoneNumber } = {}) => {
     const now = Math.floor(Date.now() / 1000);
     return jwt.sign(
-      { iat: now, exp: now + 3600, auth_time: now, firebase: { sign_in_provider: 'phone' } },
+      {
+        iat: now,
+        exp: now + 3600,
+        auth_time: authTime ?? now,
+        ...(phoneNumber ? { phone_number: phoneNumber } : {}),
+        firebase: { sign_in_provider: 'phone' },
+      },
       privateKey,
       { algorithm: 'RS256', keyid: kid, subject, issuer: ISSUER, audience: AUDIENCE },
     );
@@ -327,8 +334,9 @@ async function main() {
   };
   console.log('Provisioning admin, driver (KYC name Ramesh Kumar), customer and the 10% fee rule');
   provision(e2eUrl, ['create-admin', '--phone', phone(), '--subject', subjects.admin]);
+  const driverPhone = phone();
   const driverAccount = provision(e2eUrl, [
-    'create-driver', '--phone', phone(), '--subject', subjects.driver, '--approve', '--name', 'Ramesh Kumar',
+    'create-driver', '--phone', driverPhone, '--subject', subjects.driver, '--approve', '--name', 'Ramesh Kumar',
   ]);
   provision(e2eUrl, ['create-customer', '--phone', phone(), '--subject', subjects.customer]);
   const feeRule = provision(e2eUrl, [
@@ -378,7 +386,7 @@ async function main() {
   console.log('INTERNAL_API_KEY and the webhook signatures (HMAC-SHA256 of the body with the webhook secret).');
 
   const admin = { name: 'ADMIN_TOKEN', token: idp.sign(subjects.admin) };
-  const driver = { name: 'DRIVER_TOKEN', token: idp.sign(subjects.driver) };
+  const driver = { name: 'DRIVER_TOKEN', token: idp.sign(subjects.driver, { phoneNumber: driverPhone }) };
   const customer = { name: 'CUSTOMER_TOKEN', token: idp.sign(subjects.customer) };
   const engineKey = { 'X-Internal-Api-Key': { value: secrets.internalApiKey, shown: '$INTERNAL_API_KEY' } };
   const engine = (method, route, body, expect = [200, 201]) =>
@@ -395,17 +403,33 @@ async function main() {
   let payoutId;
   let providerPayoutId;
 
-  await step(0, 'Driver bank account: submitted, validated by the bank, approved by an admin', async () => {
-    const submitted = await call('POST', '/v1/bank-account', {
-      as: driver,
-      body: {
-        accountHolderName: 'Ramesh Kumar',
-        ifsc: 'HDFC0001234',
-        accountNumber: '000011112222',
-        confirmAccountNumber: '000011112222',
-      },
-      expect: [201],
-    });
+  await step(0, 'Driver bank account: change request, phone OTP step-up, bank validation, admin approval', async () => {
+    const details = {
+      accountHolderName: 'Ramesh Kumar',
+      ifsc: 'HDFC0001234',
+      accountNumber: '000011112222',
+      confirmAccountNumber: '000011112222',
+    };
+    const challenge = await call('POST', '/v1/bank-account/change-requests', { as: driver, expect: [201] });
+    const changeRequestId = challenge.body.changeRequestId;
+    check(challenge.body.status === 'PENDING_STEP_UP', 'change request waits for the step-up');
+    check(challenge.body.stepUp?.method === 'FIREBASE_PHONE_REAUTH', 'step-up is a Firebase phone OTP re-auth');
+    const confirmRoute = `/v1/bank-account/change-requests/${changeRequestId}/confirm`;
+    // The existing session alone (signed in before the request) can never set a payout account.
+    const stolen = await call('POST', confirmRoute, { as: driver, body: details, expect: [403] });
+    check(stolen.body.error.code === 'STEP_UP_REQUIRED', 'the existing session is refused (STEP_UP_REQUIRED)');
+    // The app re-authenticates with an OTP: a fresh ID token with auth_time after the request.
+    const requestedAt = Math.floor(Date.parse(challenge.body.createdAt) / 1000);
+    while (Math.floor(Date.now() / 1000) <= requestedAt) {
+      await sleep(200);
+    }
+    const reauthenticated = {
+      name: 'DRIVER_STEP_UP_TOKEN',
+      token: idp.sign(subjects.driver, { phoneNumber: driverPhone }),
+    };
+    const submitted = await call('POST', confirmRoute, { as: reauthenticated, body: details, expect: [201] });
+    const replay = await call('POST', confirmRoute, { as: reauthenticated, body: details, expect: [409] });
+    idempotent('a used change request cannot be confirmed again', replay.body.error.code === 'BANK_CHANGE_REQUEST_CLOSED');
     bankAccountId = submitted.body.bankAccountId;
     check(submitted.body.status === 'PENDING_VERIFICATION', 'new account is PENDING_VERIFICATION');
     check(submitted.body.payoutsEnabled === false, 'no payouts before approval');
@@ -436,8 +460,10 @@ async function main() {
     check(approved.body.status === 'VERIFIED', 'account VERIFIED');
     check(approved.body.validations[0].nameMatchResult === 'MATCH', 'bank name matches KYC name');
     check(approved.body.validations[0].accountStatus === 'ACTIVE', 'bank reports the account active');
+    check(approved.body.changeRequest?.changeRequestId === changeRequestId, 'approval shows the step-up evidence');
     report.ids.bankAccountId = bankAccountId;
-    return { bankAccountId, providerValidationId: favId, nameMatch: 'MATCH' };
+    report.ids.changeRequestId = changeRequestId;
+    return { bankAccountId, changeRequestId, providerValidationId: favId, nameMatch: 'MATCH' };
   });
 
   await step(1, 'Payment created: booking registered, driver assigned, Razorpay order created', async () => {

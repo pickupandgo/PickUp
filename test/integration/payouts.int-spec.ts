@@ -18,10 +18,14 @@ import {
 import {
   advanceTrip,
   bookedTrip,
+  changeBankAccount,
+  confirmBankAccountChange,
+  requestBankAccountChange,
   sendPayoutWebhook,
   setTripStatus,
   settleAndSync,
   startBookingPayment,
+  stepUpToken,
   TO_DELIVERED,
   verifyBookingPayment,
 } from '../helpers/flows';
@@ -165,13 +169,16 @@ describe('Driver payouts', () => {
     return ctx.prisma.bankAccountVerification.findUniqueOrThrow({ where: { id: validation.id } });
   }
 
-  function submitBankAccount(driver: TestDriver, accountNumber: string, holder = 'Test Driver') {
-    return request(ctx.server).post('/v1/bank-account').set(bearer(driver.token)).send({
-      accountHolderName: holder,
-      ifsc: 'hdfc0001234',
-      accountNumber,
-      confirmAccountNumber: accountNumber,
-    });
+  /** The step-up bank-account change: request, phone OTP re-authentication, confirm. */
+  async function submitBankAccount(
+    driver: TestDriver,
+    accountNumber: string,
+    holder = 'Test Driver',
+    expectedStatus = 201,
+  ) {
+    const res = await changeBankAccount(ctx, driver, { accountNumber, accountHolderName: holder });
+    expect({ status: res.status, body: res.body }).toMatchObject({ status: expectedStatus });
+    return res;
   }
 
   function approve(bankAccountId: string, body: Record<string, string> = {}) {
@@ -558,19 +565,20 @@ describe('Driver payouts', () => {
       const driver = await createDriver(ctx, { legalName: 'Ramesh Kumar' });
       const { earning } = await payableEarning(driver);
 
-      const mismatch = await request(ctx.server)
-        .post('/v1/bank-account')
-        .set(bearer(driver.token))
-        .send({
+      const started = await requestBankAccountChange(ctx, driver).expect(201);
+      const mismatch = await confirmBankAccountChange(
+        ctx,
+        started.body.changeRequestId as string,
+        stepUpToken(ctx, driver, started.body.createdAt as string),
+        {
           accountHolderName: 'Ramesh Kumar',
-          ifsc: 'hdfc0001234',
           accountNumber: '123456789012',
           confirmAccountNumber: '123456789013',
-        })
-        .expect(400);
+        },
+      ).expect(400);
       expect(mismatch.body.error.code).toBe('VALIDATION_FAILED');
 
-      const created = await submitBankAccount(driver, '123456789012', 'Ramesh Kumar').expect(201);
+      const created = await submitBankAccount(driver, '123456789012', 'Ramesh Kumar');
       expect(created.body).toMatchObject({
         status: 'PENDING_VERIFICATION',
         payoutsEnabled: false,
@@ -585,8 +593,8 @@ describe('Driver payouts', () => {
       });
       expect(JSON.stringify(row)).not.toContain('123456789012');
 
-      // A second submission while one is pending is refused.
-      const duplicate = await submitBankAccount(driver, '999956789012', 'Ramesh Kumar').expect(409);
+      // A second change while one is pending is refused before any OTP is sent.
+      const duplicate = await requestBankAccountChange(ctx, driver).expect(409);
       expect(duplicate.body.error.code).toBe('BANK_ACCOUNT_CHANGE_PENDING');
 
       // Not approved yet (validation still running): the earning is not paid out.
@@ -638,11 +646,38 @@ describe('Driver payouts', () => {
         verificationReference: validation.providerValidationId,
         driverLegalName: 'Ramesh Kumar',
       });
+      // The admin sees how the driver proved it was them. The first request (the one with the
+      // mismatched numbers) was superseded by the one that added the account.
+      expect(approved.body.changeRequest).toMatchObject({
+        changeRequestId: approved.body.changeRequestId,
+        stepUpMethod: 'FIREBASE_PHONE_REAUTH',
+        stepUpAuthTime: expect.any(String),
+      });
+      expect(approved.body.changeRequestId).not.toBe(started.body.changeRequestId);
+      expect(
+        await ctx.prisma.bankAccountChangeRequest.findUniqueOrThrow({
+          where: { id: started.body.changeRequestId as string },
+        }),
+      ).toMatchObject({ status: 'CANCELLED', closeReason: 'SUPERSEDED' });
       expect(approved.body.validations[0]).toMatchObject({ nameMatchResult: 'PARTIAL' });
       const action = await ctx.prisma.adminAction.findFirstOrThrow({
         where: { action: 'BANK_ACCOUNT_APPROVED', targetId: bankAccountId },
       });
       expect(action.reason).toMatch(/PAN card checked/);
+      // The non-exact match has its own audit record with both names and the resolution.
+      const resolved = await ctx.prisma.adminAction.findFirstOrThrow({
+        where: { action: 'BANK_NAME_MISMATCH_RESOLVED', targetId: bankAccountId },
+      });
+      expect(resolved).toMatchObject({
+        actorUserId: admin.userId,
+        reason: 'Bank records initials only; PAN card checked, ticket 42',
+        details: {
+          registeredName: 'R KUMAR',
+          kycName: 'Ramesh Kumar',
+          nameMatchResult: 'PARTIAL',
+          validationId: validation.id,
+        },
+      });
 
       const verifiedBatch = await prepare().expect(201);
       const payout = await payoutOf(driver.driverId, verifiedBatch.body.batch.batchId as string);
@@ -661,7 +696,7 @@ describe('Driver payouts', () => {
 
     it('never approves an invalid account or one whose validation failed', async () => {
       const driver = await createDriver(ctx);
-      const created = await submitBankAccount(driver, '555566667777').expect(201);
+      const created = await submitBankAccount(driver, '555566667777');
       const bankAccountId = created.body.bankAccountId as string;
       await bankAnswers(bankAccountId, { accountStatus: 'invalid', registeredName: null });
       const refused = await approve(bankAccountId, {
@@ -693,7 +728,19 @@ describe('Driver payouts', () => {
       const old = await accountOf(driver.driverId);
       const { earning } = await payableEarning(driver);
 
-      const created = await submitBankAccount(driver, '222233334444').expect(201);
+      // Requesting the change alone changes nothing: the old account still receives payouts.
+      const started = await requestBankAccountChange(ctx, driver).expect(201);
+      expect((await accountOf(driver.driverId)).status).toBe('VERIFIED');
+      const created = await confirmBankAccountChange(
+        ctx,
+        started.body.changeRequestId as string,
+        stepUpToken(ctx, driver, started.body.createdAt as string),
+        { accountNumber: '222233334444' },
+      ).expect(201);
+      expect(created.body).toMatchObject({
+        status: 'PENDING_VERIFICATION',
+        payoutsEnabled: false,
+      });
       const replaced = await ctx.prisma.driverBankAccount.findUniqueOrThrow({
         where: { id: old.id },
       });
@@ -722,7 +769,7 @@ describe('Driver payouts', () => {
 
     it('needs the driver KYC name before any approval', async () => {
       const driver = await createDriver(ctx, { legalName: null });
-      const created = await submitBankAccount(driver, '888899990000').expect(201);
+      const created = await submitBankAccount(driver, '888899990000');
       const bankAccountId = created.body.bankAccountId as string;
       const validation = await bankAnswers(bankAccountId, {
         accountStatus: 'active',
@@ -733,19 +780,312 @@ describe('Driver payouts', () => {
       expect(refused.body.error.code).toBe('DRIVER_KYC_NAME_MISSING');
     });
 
-    it('rejects bad bank details reported by the provider', async () => {
+    it('rejects bad bank details reported by the provider, leaving the request open to correct them', async () => {
       const driver = await createDriver(ctx);
-      const res = await request(ctx.server)
-        .post('/v1/bank-account')
-        .set(bearer(driver.token))
-        .send({
-          accountHolderName: 'Ramesh Kumar',
-          ifsc: 'FAKE0000000',
-          accountNumber: '123456789012',
-          confirmAccountNumber: '123456789012',
-        })
-        .expect(422);
+      const started = await requestBankAccountChange(ctx, driver).expect(201);
+      const changeRequestId = started.body.changeRequestId as string;
+      const token = stepUpToken(ctx, driver, started.body.createdAt as string);
+      const res = await confirmBankAccountChange(ctx, changeRequestId, token, {
+        accountHolderName: 'Ramesh Kumar',
+        ifsc: 'FAKE0000000',
+        accountNumber: '123456789012',
+      }).expect(422);
       expect(res.body.error.code).toBe('BANK_ACCOUNT_REJECTED_BY_PROVIDER');
+      expect(
+        await ctx.prisma.driverBankAccount.count({ where: { driverId: driver.driverId } }),
+      ).toBe(0);
+      // Same request, same step-up, corrected IFSC: no second OTP needed inside the window.
+      await confirmBankAccountChange(ctx, changeRequestId, token, {
+        accountHolderName: 'Ramesh Kumar',
+        ifsc: 'HDFC0001234',
+        accountNumber: '123456789012',
+      }).expect(201);
+    });
+
+    it('lets a driver switch back to an earlier account (RazorpayX returns the same fund account)', async () => {
+      const driver = await createDriver(ctx);
+      const first = await submitBankAccount(driver, '313131313131');
+      await bankAnswers(first.body.bankAccountId as string, {
+        accountStatus: 'active',
+        registeredName: 'TEST DRIVER',
+      });
+      await approve(first.body.bankAccountId as string).expect(200);
+      await submitBankAccount(driver, '424242424242');
+      await request(ctx.server)
+        .post(`/v1/admin/bank-accounts/${(await accountOf(driver.driverId)).id}/reject`)
+        .set(bearer(admin.token))
+        .send({ reason: 'Driver asked to go back to the first account' })
+        .expect(200);
+
+      const again = await submitBankAccount(driver, '313131313131');
+      const [original, back] = await Promise.all([
+        ctx.prisma.driverBankAccount.findUniqueOrThrow({
+          where: { id: first.body.bankAccountId as string },
+        }),
+        ctx.prisma.driverBankAccount.findUniqueOrThrow({
+          where: { id: again.body.bankAccountId as string },
+        }),
+      ]);
+      // A new row, validated and approved again from scratch; the replaced one stays replaced.
+      expect(back.id).not.toBe(original.id);
+      expect(back.providerFundAccountId).toBe(original.providerFundAccountId);
+      expect(back.status).toBe('PENDING_VERIFICATION');
+      expect(original.status).toBe('SUSPENDED');
+    });
+  });
+
+  describe('bank account changes need a step-up re-authentication', () => {
+    const details = { accountNumber: '765476547654' };
+    const refusals = () =>
+      ctx.prisma.adminAction.count({ where: { action: 'BANK_ACCOUNT_CHANGE_STEP_UP_REFUSED' } });
+
+    async function openRequest(driver: TestDriver) {
+      const started = await requestBankAccountChange(ctx, driver).expect(201);
+      return {
+        changeRequestId: started.body.changeRequestId as string,
+        createdAt: started.body.createdAt as string,
+        body: started.body as Record<string, unknown>,
+      };
+    }
+
+    it('returns a phone OTP challenge and holds no bank details', async () => {
+      const driver = await createDriver(ctx);
+      const { body, changeRequestId } = await openRequest(driver);
+      expect(body).toMatchObject({
+        status: 'PENDING_STEP_UP',
+        stepUp: {
+          method: 'FIREBASE_PHONE_REAUTH',
+          phoneNumberHint: `${driver.phone.slice(0, 3)}******${driver.phone.slice(-4)}`,
+          notBefore: body.createdAt,
+        },
+      });
+      const window = Date.parse(body.expiresAt as string) - Date.parse(body.createdAt as string);
+      expect(window).toBe(10 * 60_000);
+      const row = await ctx.prisma.bankAccountChangeRequest.findUniqueOrThrow({
+        where: { id: changeRequestId },
+      });
+      expect(row).toMatchObject({ status: 'PENDING_STEP_UP', stepUpAuthTime: null });
+    });
+
+    it('refuses the existing session: a stolen token alone can never add a payout destination', async () => {
+      const driver = await driverWithBank();
+      const old = await accountOf(driver.driverId);
+      const { changeRequestId } = await openRequest(driver);
+      const contactsBefore = ctx.payouts.calls.createContact;
+      const refusedBefore = await refusals();
+
+      // The driver's normal token: signed in (auth_time) before the request was created.
+      const res = await confirmBankAccountChange(
+        ctx,
+        changeRequestId,
+        driver.token,
+        details,
+      ).expect(403);
+      expect(res.body.error).toMatchObject({
+        code: 'STEP_UP_REQUIRED',
+        details: {
+          reason: 'REAUTHENTICATION_REQUIRED',
+          method: 'FIREBASE_PHONE_REAUTH',
+          changeRequestId,
+        },
+      });
+      // Nothing changed: no provider call, the old account still VERIFIED, the request open.
+      expect(ctx.payouts.calls.createContact).toBe(contactsBefore);
+      expect(await accountOf(driver.driverId)).toMatchObject({ id: old.id, status: 'VERIFIED' });
+      expect(
+        await ctx.prisma.bankAccountChangeRequest.findUniqueOrThrow({
+          where: { id: changeRequestId },
+        }),
+      ).toMatchObject({ status: 'PENDING_STEP_UP' });
+      // The refusal is on the audit trail for the admin who reviews this driver.
+      expect(await refusals()).toBe(refusedBefore + 1);
+    });
+
+    type TokenOptions = { authTime?: number; phoneNumber?: string; signInProvider?: string };
+    const cases: [string, (createdAt: string) => TokenOptions, string][] = [
+      [
+        'a sign-in in the same second as the request',
+        (createdAt) => ({ authTime: Math.floor(Date.parse(createdAt) / 1000) }),
+        'REAUTHENTICATION_REQUIRED',
+      ],
+      [
+        'an OTP to another phone number',
+        () => ({ phoneNumber: '+910000000001' }),
+        'PHONE_MISMATCH',
+      ],
+      ['a non-phone sign-in', () => ({ signInProvider: 'custom' }), 'NOT_PHONE_SIGN_IN'],
+    ];
+    it.each(cases)('refuses %s', async (_label, tokenOptions, reason) => {
+      const driver = await createDriver(ctx);
+      const { changeRequestId, createdAt } = await openRequest(driver);
+      const token = stepUpToken(ctx, driver, createdAt, tokenOptions(createdAt));
+      const res = await confirmBankAccountChange(ctx, changeRequestId, token, details).expect(403);
+      expect(res.body.error).toMatchObject({ code: 'STEP_UP_REQUIRED', details: { reason } });
+      expect(
+        await ctx.prisma.driverBankAccount.count({ where: { driverId: driver.driverId } }),
+      ).toBe(0);
+    });
+
+    it('a step-up proves this request only: expired, cancelled, used and foreign requests are refused', async () => {
+      const driver = await createDriver(ctx);
+
+      // Expired (brought forward by ops; the database never lets it be extended).
+      const expired = await openRequest(driver);
+      await ctx.prisma.$executeRaw`
+        UPDATE bank_account_change_requests
+        SET expires_at = created_at + interval '1 millisecond'
+        WHERE id = ${expired.changeRequestId}::uuid`;
+      const late = await confirmBankAccountChange(
+        ctx,
+        expired.changeRequestId,
+        stepUpToken(ctx, driver, expired.createdAt),
+        details,
+      ).expect(409);
+      expect(late.body.error.code).toBe('BANK_CHANGE_REQUEST_EXPIRED');
+      expect(
+        await ctx.prisma.bankAccountChangeRequest.findUniqueOrThrow({
+          where: { id: expired.changeRequestId },
+        }),
+      ).toMatchObject({ status: 'EXPIRED' });
+
+      // Cancelled by the driver (idempotent), then confirmed anyway.
+      const cancelled = await openRequest(driver);
+      for (let i = 0; i < 2; i += 1) {
+        const res = await request(ctx.server)
+          .post(`/v1/bank-account/change-requests/${cancelled.changeRequestId}/cancel`)
+          .set(bearer(driver.token))
+          .expect(200);
+        expect(res.body).toMatchObject({ status: 'CANCELLED', stepUp: null });
+      }
+      const afterCancel = await confirmBankAccountChange(
+        ctx,
+        cancelled.changeRequestId,
+        stepUpToken(ctx, driver, cancelled.createdAt),
+        details,
+      ).expect(409);
+      expect(afterCancel.body.error).toMatchObject({
+        code: 'BANK_CHANGE_REQUEST_CLOSED',
+        details: { status: 'CANCELLED' },
+      });
+
+      // Another driver's request, even with a valid step-up of their own.
+      const other = await createDriver(ctx);
+      const foreign = await openRequest(other);
+      await confirmBankAccountChange(
+        ctx,
+        foreign.changeRequestId,
+        stepUpToken(ctx, driver, foreign.createdAt),
+        details,
+      ).expect(404);
+
+      // Used once: a replay of the same confirmation is refused.
+      const used = await openRequest(driver);
+      const token = stepUpToken(ctx, driver, used.createdAt);
+      await confirmBankAccountChange(ctx, used.changeRequestId, token, details).expect(201);
+      const replay = await confirmBankAccountChange(ctx, used.changeRequestId, token, {
+        accountNumber: '111122223333',
+      }).expect(409);
+      expect(replay.body.error).toMatchObject({
+        code: 'BANK_CHANGE_REQUEST_CLOSED',
+        details: { status: 'COMPLETED' },
+      });
+      expect(
+        await ctx.prisma.driverBankAccount.count({ where: { driverId: driver.driverId } }),
+      ).toBe(1);
+    });
+
+    it('two concurrent confirmations add exactly one account', async () => {
+      const driver = await driverWithBank();
+      const { changeRequestId, createdAt } = await openRequest(driver);
+      const token = stepUpToken(ctx, driver, createdAt);
+      const results = await Promise.all([
+        confirmBankAccountChange(ctx, changeRequestId, token, details),
+        confirmBankAccountChange(ctx, changeRequestId, token, { accountNumber: '989898989898' }),
+      ]);
+      expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+      const accounts = await ctx.prisma.driverBankAccount.findMany({
+        where: { driverId: driver.driverId },
+      });
+      expect(accounts.map((a) => a.status).sort()).toEqual(['PENDING_VERIFICATION', 'SUSPENDED']);
+      expect(accounts.filter((a) => a.changeRequestId === changeRequestId)).toHaveLength(1);
+    });
+
+    it('a new request replaces the open one', async () => {
+      const driver = await createDriver(ctx);
+      const first = await openRequest(driver);
+      const second = await openRequest(driver);
+      const [a, b] = await Promise.all(
+        [first, second].map((r) =>
+          ctx.prisma.bankAccountChangeRequest.findUniqueOrThrow({
+            where: { id: r.changeRequestId },
+          }),
+        ),
+      );
+      expect(a).toMatchObject({ status: 'CANCELLED', closeReason: 'SUPERSEDED' });
+      expect(b).toMatchObject({ status: 'PENDING_STEP_UP' });
+      await confirmBankAccountChange(
+        ctx,
+        first.changeRequestId,
+        stepUpToken(ctx, driver, first.createdAt),
+        details,
+      ).expect(409);
+    });
+
+    it('the database refuses an account that is not bound to a step-up verified request', async () => {
+      const driver = await createDriver(ctx);
+      const other = await createDriver(ctx);
+      // Raw SQL, so the database's own reason is visible (Prisma maps it to a generic error).
+      const account = (changeRequestId: string | null) =>
+        ctx.prisma.$executeRaw`
+          INSERT INTO driver_bank_accounts (driver_id, account_holder_name, ifsc,
+            account_number_last4, provider, provider_contact_id, provider_fund_account_id,
+            change_request_id)
+          VALUES (${driver.driverId}::uuid, 'Test Driver', 'HDFC0001234', '0000', 'RAZORPAYX',
+            'cont_direct', ${`fa_${idempotencyKey()}`}, ${changeRequestId}::uuid)`;
+      await expect(account(null)).rejects.toThrow(/step-up verified change request/);
+      const pending = await openRequest(driver);
+      await expect(account(pending.changeRequestId)).rejects.toThrow(
+        /step-up verified change request/,
+      );
+      const foreign = await openRequest(other);
+      await expect(account(foreign.changeRequestId)).rejects.toThrow(
+        /step-up verified change request/,
+      );
+
+      // Step-up evidence is checked by the database too: sign-in after the request, on the
+      // driver's registered phone, never committed without the account.
+      const verify = (authTime: string, phone: string) =>
+        ctx.prisma.$executeRaw`
+          UPDATE bank_account_change_requests
+          SET status = 'STEP_UP_VERIFIED', step_up_auth_time = ${authTime}::timestamptz,
+              step_up_phone = ${phone}
+          WHERE id = ${pending.changeRequestId}::uuid`;
+      const before = new Date(Date.parse(pending.createdAt) - 1000).toISOString();
+      const after = new Date((Math.floor(Date.parse(pending.createdAt) / 1000) + 1) * 1000);
+      await expect(verify(before, driver.phone)).rejects.toThrow(/after the change request/);
+      await expect(verify(after.toISOString(), other.phone)).rejects.toThrow(
+        /registered phone number/,
+      );
+      await expect(verify(after.toISOString(), driver.phone)).rejects.toThrow(
+        /in the same transaction/,
+      );
+
+      // Backdating a request or extending its window is impossible.
+      const third = await createDriver(ctx);
+      const backdated = await ctx.prisma.bankAccountChangeRequest.create({
+        data: {
+          driverId: third.driverId,
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          expiresAt: new Date('2027-01-01T00:00:00Z'),
+        },
+      });
+      expect(Date.now() - backdated.createdAt.getTime()).toBeLessThan(60_000);
+      expect(backdated.expiresAt.getTime() - backdated.createdAt.getTime()).toBe(10 * 60_000);
+      await expect(
+        ctx.prisma.$executeRaw`
+          UPDATE bank_account_change_requests SET expires_at = expires_at + interval '1 hour'
+          WHERE id = ${backdated.id}::uuid`,
+      ).rejects.toThrow(/never be extended/);
     });
   });
 
@@ -779,8 +1119,8 @@ describe('Driver payouts', () => {
     expect(
       (await ctx.prisma.driverEarning.findUniqueOrThrow({ where: { bookingId } })).status,
     ).toBe('PAYABLE');
-    // Driver links a bank account; the bank validates it; an admin approves it.
-    const account = await submitBankAccount(driver, '000011112222', 'Suresh Singh').expect(201);
+    // Driver links a bank account (step-up OTP); the bank validates it; an admin approves it.
+    const account = await submitBankAccount(driver, '000011112222', 'Suresh Singh');
     await bankAnswers(account.body.bankAccountId as string, {
       accountStatus: 'active',
       registeredName: 'SURESH SINGH',

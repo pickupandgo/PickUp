@@ -13,8 +13,10 @@ import {
 import {
   advanceTrip,
   bookedTrip,
+  changeBankAccount,
   collect,
   fundWallet,
+  requestBankAccountChange,
   sendPayoutWebhook,
   setTripStatus,
   startBookingPayment,
@@ -194,17 +196,19 @@ describe('Least-privilege database role', () => {
       .set(bearer(admin.token))
       .expect(200);
 
-    // Bank account: submitted, validated by the bank (webhook), approved by an admin.
-    const account = await request(ctx.server)
-      .post('/v1/bank-account')
+    // Bank account: change request, phone OTP step-up, confirmed, validated by the bank
+    // (webhook), approved by an admin. A cancelled request on the way.
+    const abandoned = await requestBankAccountChange(ctx, driver).expect(201);
+    await request(ctx.server)
+      .post(`/v1/bank-account/change-requests/${abandoned.body.changeRequestId as string}/cancel`)
       .set(bearer(driver.token))
-      .send({
-        accountHolderName: 'Least Privilege',
-        ifsc: 'HDFC0001234',
-        accountNumber: '123456781234',
-        confirmAccountNumber: '123456781234',
-      })
-      .expect(201);
+      .expect(200);
+    const account = await changeBankAccount(ctx, driver, {
+      accountHolderName: 'Least Privilege',
+      ifsc: 'HDFC0001234',
+      accountNumber: '123456781234',
+    });
+    expect(account.status).toBe(201);
     const bankAccountId = account.body.bankAccountId as string;
     const validation = await owner.bankAccountVerification.findFirstOrThrow({
       where: { bankAccountId },
@@ -340,6 +344,27 @@ describe('Least-privilege database role', () => {
     ],
     ['delete bank validations', 'DELETE FROM bank_account_verifications'],
     ['set a driver KYC name', "UPDATE drivers SET legal_name = 'Someone Else'"],
+    [
+      'rebind a bank account to another change request',
+      'UPDATE driver_bank_accounts SET change_request_id = gen_random_uuid()',
+    ],
+    [
+      'backdate a bank change request',
+      "UPDATE bank_account_change_requests SET created_at = now() - interval '1 day'",
+    ],
+    [
+      'extend a bank change request',
+      "UPDATE bank_account_change_requests SET expires_at = now() + interval '1 day'",
+    ],
+    [
+      'move a bank change request to another driver',
+      'UPDATE bank_account_change_requests SET driver_id = gen_random_uuid()',
+    ],
+    [
+      'forge the step-up verification time',
+      'UPDATE bank_account_change_requests SET step_up_verified_at = now()',
+    ],
+    ['delete bank change requests', 'DELETE FROM bank_account_change_requests'],
   ])('the API role cannot %s', async (_label, sql) => {
     const client = new PrismaClient({
       adapter: new PrismaPg({ connectionString: restrictedDatabaseUrl(), max: 1 }),

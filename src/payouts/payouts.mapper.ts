@@ -1,5 +1,7 @@
+import { STEP_UP_METHOD } from '../auth/step-up';
 import { paiseToNumber } from '../common/money';
 import type {
+  BankAccountChangeRequest,
   BankAccountVerification,
   DriverBankAccount,
   DriverPayout,
@@ -11,6 +13,8 @@ import type {
   AdminBankAccountDetailResponse,
   AdminBankAccountResponse,
   AdminPayoutResponse,
+  BankAccountChangeEvidenceResponse,
+  BankAccountChangeRequestResponse,
   BankAccountResponse,
   BankValidationResponse,
   DriverPayoutResponse,
@@ -46,6 +50,37 @@ export function toBankAccountResponse(
   };
 }
 
+/** `phoneNumberHint` is only known (and only needed) right after the request is created. */
+export function toChangeRequestResponse(
+  request: BankAccountChangeRequest,
+  phoneNumberHint?: string,
+): BankAccountChangeRequestResponse {
+  return {
+    changeRequestId: request.id,
+    status: request.status,
+    createdAt: request.createdAt.toISOString(),
+    expiresAt: request.expiresAt.toISOString(),
+    stepUp:
+      request.status === 'PENDING_STEP_UP' && phoneNumberHint
+        ? {
+            method: STEP_UP_METHOD,
+            phoneNumberHint,
+            notBefore: request.createdAt.toISOString(),
+          }
+        : null,
+  };
+}
+
+function toChangeEvidence(request: BankAccountChangeRequest): BankAccountChangeEvidenceResponse {
+  return {
+    changeRequestId: request.id,
+    stepUpMethod: request.stepUpMethod,
+    stepUpAuthTime: iso(request.stepUpAuthTime),
+    stepUpVerifiedAt: iso(request.stepUpVerifiedAt),
+    requestedAt: request.createdAt.toISOString(),
+  };
+}
+
 export function toBankValidationResponse(
   validation: BankAccountVerification,
 ): BankValidationResponse {
@@ -78,6 +113,7 @@ export function toAdminBankAccountResponse(
     provider: account.provider,
     providerContactId: account.providerContactId,
     providerFundAccountId: account.providerFundAccountId,
+    changeRequestId: account.changeRequestId,
     verifiedByUserId: account.verifiedByUserId,
     verificationReference: account.verificationReference,
     approvedVerificationId: account.approvedVerificationId,
@@ -92,6 +128,7 @@ export function toAdminBankAccountDetailResponse(
   return {
     ...toAdminBankAccountResponse(detail.account, detail.verifications[0] ?? null),
     driverLegalName: detail.driverLegalName,
+    changeRequest: detail.changeRequest ? toChangeEvidence(detail.changeRequest) : null,
     validations: detail.verifications.map(toBankValidationResponse),
   };
 }

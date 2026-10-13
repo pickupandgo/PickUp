@@ -64,7 +64,7 @@ export class AuthGuard implements CanActivate {
     }
 
     const identity = await this.verifier.verify(token);
-    const principal = await this.principals.resolve(identity.subject);
+    const principal = await this.principals.resolve(identity);
 
     if (policy === 'DRIVER' && !principal.driver) {
       throw forbidden('This action requires a driver account');

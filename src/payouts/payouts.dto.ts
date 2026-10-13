@@ -112,6 +112,40 @@ export class ListPayoutsQuery {
   limit?: number;
 }
 
+/** What the app must do before confirming a bank-account change request. */
+export class StepUpChallengeResponse {
+  /**
+   * FIREBASE_PHONE_REAUTH: re-authenticate the signed-in Firebase user with an OTP sent to the
+   * registered phone, then call confirm with the fresh ID token.
+   */
+  method!: string;
+  /** The registered number the OTP must be sent to, masked (+91******3210). */
+  phoneNumberHint!: string;
+  /** The re-authentication must happen after this instant. */
+  notBefore!: string;
+}
+
+export class BankAccountChangeRequestResponse {
+  changeRequestId!: string;
+  /** PENDING_STEP_UP, COMPLETED, CANCELLED or EXPIRED. */
+  status!: string;
+  createdAt!: string;
+  /** Confirm before this instant (10 minutes after createdAt). */
+  expiresAt!: string;
+  /** Present while the request waits for the step-up. */
+  stepUp!: StepUpChallengeResponse | null;
+}
+
+/** For admins approving an account: how the driver proved it was them. */
+export class BankAccountChangeEvidenceResponse {
+  changeRequestId!: string;
+  stepUpMethod!: string;
+  /** The OTP sign-in (token auth_time); always after requestedAt. */
+  stepUpAuthTime!: string | null;
+  stepUpVerifiedAt!: string | null;
+  requestedAt!: string;
+}
+
 export class BankAccountResponse {
   bankAccountId!: string;
   accountHolderName!: string;
@@ -158,6 +192,7 @@ export class AdminBankAccountResponse extends BankAccountResponse {
   provider!: string;
   providerContactId!: string;
   providerFundAccountId!: string;
+  changeRequestId!: string | null;
   verifiedByUserId!: string | null;
   verificationReference!: string | null;
   approvedVerificationId!: string | null;
@@ -168,6 +203,11 @@ export class AdminBankAccountResponse extends BankAccountResponse {
 export class AdminBankAccountDetailResponse extends AdminBankAccountResponse {
   /** The driver's KYC legal name the bank name is compared with. */
   driverLegalName!: string | null;
+  /**
+   * The step-up verified change request that added the account. Null only for accounts added
+   * before step-up verification existed (they can't be approved).
+   */
+  changeRequest!: BankAccountChangeEvidenceResponse | null;
   /** Newest first. */
   validations!: BankValidationResponse[];
 }

@@ -136,6 +136,69 @@ export function verifyBookingPayment(
     .send(body);
 }
 
+export interface BankDetails {
+  readonly accountHolderName?: string;
+  readonly ifsc?: string;
+  readonly accountNumber: string;
+  readonly confirmAccountNumber?: string;
+}
+
+/** Step 1 of a bank-account change, with the driver's normal session. */
+export function requestBankAccountChange(ctx: TestContext, driver: TestDriver): request.Test {
+  return request(ctx.server)
+    .post('/v1/bank-account/change-requests')
+    .set(bearer(driver.token))
+    .send();
+}
+
+/**
+ * Step 2: what the app gets from Firebase after the driver re-authenticates with an OTP on the
+ * registered phone, after the change request was created (`notBefore`).
+ */
+export function stepUpToken(
+  ctx: TestContext,
+  driver: TestDriver,
+  notBefore: string | Date,
+  options: { phoneNumber?: string; signInProvider?: string; authTime?: number } = {},
+): string {
+  const after = Math.floor(new Date(notBefore).getTime() / 1000) + 1;
+  return ctx.tokens.sign(driver.subject, {
+    authTime: options.authTime ?? after,
+    phoneNumber: options.phoneNumber ?? driver.phone,
+    signInProvider: options.signInProvider ?? 'phone',
+  });
+}
+
+/** Step 3: the new details, sent with the step-up token. */
+export function confirmBankAccountChange(
+  ctx: TestContext,
+  changeRequestId: string,
+  token: string,
+  details: BankDetails,
+): request.Test {
+  return request(ctx.server)
+    .post(`/v1/bank-account/change-requests/${changeRequestId}/confirm`)
+    .set(bearer(token))
+    .send({
+      accountHolderName: details.accountHolderName ?? 'Test Driver',
+      ifsc: details.ifsc ?? 'hdfc0001234',
+      accountNumber: details.accountNumber,
+      confirmAccountNumber: details.confirmAccountNumber ?? details.accountNumber,
+    });
+}
+
+/** The whole bank-account change: request, phone OTP re-authentication, confirm. */
+export async function changeBankAccount(
+  ctx: TestContext,
+  driver: TestDriver,
+  details: BankDetails,
+): Promise<request.Response> {
+  const started = await requestBankAccountChange(ctx, driver).expect(201);
+  const changeRequestId = started.body.changeRequestId as string;
+  const token = stepUpToken(ctx, driver, started.body.createdAt as string);
+  return confirmBankAccountChange(ctx, changeRequestId, token, details);
+}
+
 export function sendPayoutWebhook(
   ctx: TestContext,
   webhook: SignedWebhook,

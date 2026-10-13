@@ -10,7 +10,12 @@ export interface SignOptions {
   readonly expiresInSeconds?: number;
   readonly kid?: string;
   readonly privateKey?: KeyObject;
+  /** Seconds since the epoch. Defaults to now (a token from a sign-in that just happened). */
   readonly authTime?: number;
+  /** `phone_number` claim, as Firebase phone sign-in sets it. Omitted when undefined. */
+  readonly phoneNumber?: string;
+  /** `firebase.sign_in_provider`. Defaults to "phone". */
+  readonly signInProvider?: string;
 }
 
 /** Issues Firebase-shaped RS256 ID tokens signed by a key generated for this test run. */
@@ -32,7 +37,8 @@ export class TestTokenIssuer {
         iat: now,
         exp: now + (options.expiresInSeconds ?? 3600),
         auth_time: options.authTime ?? now,
-        firebase: { sign_in_provider: 'phone' },
+        ...(options.phoneNumber === undefined ? {} : { phone_number: options.phoneNumber }),
+        firebase: { sign_in_provider: options.signInProvider ?? 'phone' },
       },
       options.privateKey ?? this.privateKey,
       {

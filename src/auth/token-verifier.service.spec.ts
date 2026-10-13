@@ -56,10 +56,31 @@ describe('TokenVerifier', () => {
   }
 
   it('accepts a valid token and returns the subject', async () => {
-    await expect(verifier.verify(sign())).resolves.toEqual({
+    const authTime = Math.floor(Date.now() / 1000) - 120;
+    await expect(
+      verifier.verify(sign({ auth_time: authTime, firebase: { sign_in_provider: 'phone' } })),
+    ).resolves.toEqual({
       subject: 'firebase-uid-123',
       phoneNumber: '+910000000000',
+      authTime,
+      signInProvider: 'phone',
     });
+  });
+
+  it('reports missing or malformed step-up claims as null instead of trusting them', async () => {
+    await expect(
+      verifier.verify(sign({ auth_time: undefined, phone_number: undefined })),
+    ).resolves.toMatchObject({ authTime: null, phoneNumber: null, signInProvider: null });
+    await expect(
+      verifier.verify(sign({ firebase: 'phone', phone_number: '+91'.padEnd(30, '9') })),
+    ).resolves.toMatchObject({ signInProvider: null, phoneNumber: null });
+    await expect(
+      verifier.verify(sign({ firebase: { sign_in_provider: 'custom' } })),
+    ).resolves.toMatchObject({ signInProvider: 'custom' });
+  });
+
+  it('rejects a non-numeric auth_time', async () => {
+    await expectInvalid(sign({ auth_time: 'yesterday' }));
   });
 
   it('rejects a token for another Firebase project', async () => {

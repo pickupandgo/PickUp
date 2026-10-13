@@ -385,7 +385,7 @@ OPEN_DECISIONS section G. Migrations `20261007120000_earning_awaiting_settlement
 | Monday 11:00 IST, configurable (D-48) | Done. Defaults in config; pre-batch settlement pull; one batch per ISO week; `Clock` injected for tests. | `PayoutSchedulerService`, `payout-schedule.ts`, `GET /v1/admin/payout-schedule`, `POST /v1/admin/payout-schedule/run` | payouts ("weekly scheduler: every Monday 11:00 IST"); `payout-schedule.spec.ts`; `app-config.spec.ts` |
 | Batch excludes unsettled, held, paid or already batched earnings | Done. | `PayoutBatchesService` eligibility query; `payout_items` partial unique index | payouts #12, scheduler test |
 | Bank validation + admin approval (D-49) | Done against the documented RazorpayX API (availability: D-58). Approval needs a completed ACTIVE validation; non-MATCH needs a written resolution; enforced by trigger too. | `BankAccountsService`, `name-match.ts`, `bank_account_verifications`, `fund_account.validation.*` webhooks | payouts ("bank accounts" suite); `name-match.spec.ts`; `razorpayx-http.gateway.spec.ts` |
-| Account change (assumption B) | Done: the old account is suspended at once; the new one needs validation and approval. | `BankAccountsService.submit` | payouts ("a new bank account suspends the old one…") |
+| Account change (assumption B) | Done: the old account is suspended at once; the new one needs validation and approval. Since section 8 behind a step-up. | `BankAccountChangesService.confirm` | payouts ("a new bank account suspends the old one…") |
 | Reversed payout (assumption C) | Done: earnings ON_HOLD, account SUSPENDED, reinstatement needs a new validation; no automatic retry. | `PayoutStatusService.reverse` | payouts ("a reversed payout holds its earnings and suspends the account…") |
 | TDS-ready, policy DISABLED (D-57) | Done: deduction fields on earnings and payouts with CHECKs; versioned empty `tax_rules`, read-only for the API; `TDS_ENABLED=true` refused; client-sent amounts rejected. | `src/common/deductions.ts`; schema | `deductions.spec.ts`; trips-earnings ("refuses client-sent fees, TDS or net amounts"); least-privilege |
 | Separate records | Done: payment, settlement, earning (payable), payout, wallet. | schema | least-privilege, payouts #18 |
@@ -394,3 +394,19 @@ OPEN_DECISIONS section G. Migrations `20261007120000_earning_awaiting_settlement
 Simulated providers (`SETTLEMENT_PROVIDER=simulated`, `PAYOUT_PROVIDER=simulated`, `/v1/dev/simulate/*`) exist only for local end-to-end runs; config validation refuses them in production and with live keys.
 
 Last full run, 6 Oct 2026: 186 unit tests and 211 integration tests passing against PostgreSQL 17, plus the end-to-end run. Lint, typecheck and build are clean.
+
+## 8. Implementation status: third set of approved decisions
+
+OPEN_DECISIONS section H. Migration `20261008120000_bank_account_change_requests`.
+
+| Decision | Status | Implementation | Tests |
+|---|---|---|---|
+| Step-up OTP before any payout-destination change (D-61) | Done: change request → Firebase phone re-authentication (`auth_time` after the request, registered `phone_number`, `sign_in_provider=phone`) → confirm. Also for the first account. Enforced by triggers, CHECKs and grants. | `BankAccountChangesService`, `src/auth/step-up.ts`, `Principal.session`, `bank_account_change_requests`, `driver_bank_accounts.change_request_id` | `step-up.spec.ts`, `token-verifier.service.spec.ts`; payouts ("bank account changes need a step-up re-authentication": stolen session, same-second sign-in, other phone, non-phone sign-in, expired, cancelled, used, foreign, concurrent confirmations, superseded, database refusals); least-privilege (flow with production grants, 6 new refusals); e2e step 0 |
+| Old account suspended on acceptance; new one not payout-eligible until validation and approval | Done: suspension and insert in the confirming transaction; nothing changes on the request alone. | `BankAccountChangesService.confirm` | payouts ("a new bank account suspends the old one…", "refuses the existing session…") |
+| RazorpayX capabilities not assumed (D-46, D-58) | Done: `RAZORPAYX_CAPABILITIES_CONFIRMED` gate (production, live keys); provider-abstracted `PayoutGateway`. | `env.schema.ts`, `openReadinessItems` startup log | `app-config.spec.ts` ("production-readiness gates") |
+| Settlement recon open item (D-56) | Done: `SETTLEMENT_RECON_VERIFIED` gate. | `env.schema.ts` | `app-config.spec.ts` |
+| Non-exact name match always resolved and audited (D-60) | Done: reordered words are PARTIAL; `BANK_NAME_MISMATCH_RESOLVED` audit row with both names, result and resolution. | `name-match.ts`, `BankAccountsService.approve` | `name-match.spec.ts`; payouts ("validates with the bank…") |
+| No manual settlement (D-62) | Unchanged. | — | trips-earnings, payouts |
+| Return to an earlier bank account | Done: fund-account uniqueness on live accounts only; simulated and fake gateways return the same contact and fund account for identical details, like RazorpayX. | migration, `SimulatedPayoutGateway` | payouts ("lets a driver switch back…") |
+
+Last full run: 203 unit tests and 227 integration tests passing against PostgreSQL 17, plus the end-to-end run (12 steps, 9 idempotency checks). Lint, typecheck and build are clean.

@@ -1,4 +1,4 @@
-import { ConfigurationError, loadConfig } from './app-config';
+import { ConfigurationError, loadConfig, openReadinessItems } from './app-config';
 
 const KEY_SECRET = 'unit_secret_value_1234';
 const WEBHOOK_SECRET = 'unit_webhook_secret_value_0123456789abcd';
@@ -45,9 +45,126 @@ describe('loadConfig', () => {
   });
 
   it('detects live keys', () => {
-    expect(loadConfig(validEnv({ RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456' })).razorpay.mode).toBe(
-      'live',
-    );
+    // Live keys need an explicit settlement decision (D-56 gate below); disabled is the safe one.
+    expect(
+      loadConfig(
+        validEnv({ RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456', SETTLEMENT_PROVIDER: 'disabled' }),
+      ).razorpay.mode,
+    ).toBe('live');
+  });
+
+  describe('production-readiness gates', () => {
+    const razorpayx = {
+      PAYOUT_PROVIDER: 'razorpayx',
+      RAZORPAYX_ACCOUNT_NUMBER: '7878780080316316',
+      RAZORPAYX_WEBHOOK_SECRET: 'x_webhook_secret_value_0123456789abcdef',
+    };
+    const production = {
+      NODE_ENV: 'production',
+      RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456',
+      SETTLEMENT_PROVIDER: 'disabled',
+    };
+
+    it('never assumes RazorpayX capabilities in production until they are confirmed (D-46, D-58)', () => {
+      const refused = problemsFor(validEnv({ ...production, ...razorpayx })).join('\n');
+      expect(refused).toMatch(/PAYOUT_PROVIDER: .*RAZORPAYX_CAPABILITIES_CONFIRMED=true/);
+      // Same with live RazorpayX keys outside production.
+      expect(
+        problemsFor(
+          validEnv({
+            ...razorpayx,
+            SETTLEMENT_PROVIDER: 'disabled',
+            RAZORPAYX_KEY_ID: 'rzp_live_XyZ1234567',
+            RAZORPAYX_KEY_SECRET: 'live_x_secret_value_1234',
+          }),
+        ).join(),
+      ).toMatch(/RAZORPAYX_CAPABILITIES_CONFIRMED/);
+
+      const confirmed = loadConfig(
+        validEnv({ ...production, ...razorpayx, RAZORPAYX_CAPABILITIES_CONFIRMED: 'true' }),
+      );
+      expect(confirmed.payouts.provider).toBe('razorpayx');
+      expect(confirmed.readiness.razorpayxCapabilitiesConfirmed).toBe(true);
+      // Payouts off is always allowed, and is the default.
+      expect(loadConfig(validEnv(production)).payouts.provider).toBeNull();
+    });
+
+    it('never trusts live settlement data until reconciliation is verified (D-56)', () => {
+      const refused = problemsFor(
+        validEnv({ ...production, SETTLEMENT_PROVIDER: 'razorpay' }),
+      ).join('\n');
+      expect(refused).toMatch(/SETTLEMENT_PROVIDER: .*SETTLEMENT_RECON_VERIFIED=true/);
+      expect(problemsFor(validEnv({ RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456' })).join()).toMatch(
+        /SETTLEMENT_RECON_VERIFIED/,
+      );
+
+      const verified = loadConfig(
+        validEnv({
+          ...production,
+          SETTLEMENT_PROVIDER: 'razorpay',
+          SETTLEMENT_RECON_VERIFIED: 'true',
+        }),
+      );
+      expect(verified.settlements.provider).toBe('razorpay');
+      expect(verified.readiness.settlementReconVerified).toBe(true);
+      expect(loadConfig(validEnv(production)).settlements.provider).toBeNull();
+    });
+
+    it('does not gate development and tests with Razorpay test keys', () => {
+      const config = loadConfig(validEnv(razorpayx));
+      expect(config.payouts.provider).toBe('razorpayx');
+      expect(config.settlements.provider).toBe('razorpay');
+      expect(config.readiness).toEqual({
+        razorpayxCapabilitiesConfirmed: false,
+        settlementReconVerified: false,
+      });
+    });
+
+    it('lists the open items for the startup log', () => {
+      const open = openReadinessItems(loadConfig(validEnv(production)));
+      expect(open.join('\n')).toMatch(/D-46\/D-58/);
+      expect(open.join('\n')).toMatch(/D-56/);
+      expect(open.join('\n')).toMatch(/D-57/);
+      const ready = openReadinessItems(
+        loadConfig(
+          validEnv({
+            ...production,
+            ...razorpayx,
+            RAZORPAYX_CAPABILITIES_CONFIRMED: 'true',
+            SETTLEMENT_PROVIDER: 'razorpay',
+            SETTLEMENT_RECON_VERIFIED: 'true',
+            COLLECTION_LINK_PROVIDER: 'razorpay_qr_code',
+          }),
+        ),
+      );
+      // TDS stays open until the CA confirms the rule.
+      expect(ready).toEqual([expect.stringMatching(/^D-57/)]);
+    });
+
+    it('collects with a UPI QR when live; a payment-link QR is for test mode only (D-47)', () => {
+      expect(
+        problemsFor(
+          validEnv({ ...production, COLLECTION_LINK_PROVIDER: 'razorpay_payment_link' }),
+        ).join('\n'),
+      ).toMatch(/COLLECTION_LINK_PROVIDER: .*razorpay_qr_code/);
+      expect(
+        problemsFor(
+          validEnv({
+            RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456',
+            SETTLEMENT_PROVIDER: 'disabled',
+            COLLECTION_LINK_PROVIDER: 'razorpay_payment_link',
+          }),
+        ).join(),
+      ).toMatch(/COLLECTION_LINK_PROVIDER/);
+      expect(
+        loadConfig(validEnv({ ...production, COLLECTION_LINK_PROVIDER: 'razorpay_qr_code' }))
+          .collections.product,
+      ).toBe('QR_CODE');
+      // Test mode keeps payment links, because Razorpay QR codes can't be paid there.
+      const testMode = loadConfig(validEnv({ COLLECTION_LINK_PROVIDER: 'razorpay_payment_link' }));
+      expect(testMode.collections.product).toBe('PAYMENT_LINK');
+      expect(openReadinessItems(testMode).join('\n')).toMatch(/D-47: .*test mode only/);
+    });
   });
 
   it('accepts both webhook secrets during a rotation', () => {

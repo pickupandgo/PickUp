@@ -4,7 +4,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { configureApp } from './bootstrap/configure-app';
-import { ConfigurationError, loadConfig } from './config/app-config';
+import { ConfigurationError, loadConfig, openReadinessItems } from './config/app-config';
 
 async function bootstrap(): Promise<void> {
   // Local development convenience only. In production, configuration comes from the platform's
@@ -33,6 +33,16 @@ async function bootstrap(): Promise<void> {
   }
   if (config.nodeEnv === 'production' && config.razorpay.mode === 'test') {
     logger.warn('Running in production with Razorpay TEST keys; no real money will move');
+  }
+  const openItems = openReadinessItems(config);
+  if (openItems.length > 0) {
+    const report = { openItems };
+    const message = 'Open production-readiness items (docs/OPEN_DECISIONS.md)';
+    if (config.nodeEnv === 'production') {
+      logger.warn(report, message);
+    } else {
+      logger.log(report, message);
+    }
   }
 }
 

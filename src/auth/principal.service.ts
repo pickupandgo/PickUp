@@ -4,6 +4,7 @@ import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Principal } from './principal';
+import type { VerifiedIdentity } from './token-verifier.service';
 
 /**
  * Maps a verified external identity to our user record. Roles, driver profile and account
@@ -17,9 +18,11 @@ export class PrincipalService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
-  async resolve(subject: string): Promise<Principal> {
+  async resolve(verified: VerifiedIdentity): Promise<Principal> {
     const identity = await this.prisma.authIdentity.findUnique({
-      where: { provider_subject: { provider: this.config.auth.provider, subject } },
+      where: {
+        provider_subject: { provider: this.config.auth.provider, subject: verified.subject },
+      },
       select: {
         user: {
           select: {
@@ -57,6 +60,11 @@ export class PrincipalService {
         ? { id: user.driver.id, approvalStatus: user.driver.approvalStatus }
         : null,
       customer: user.customer ? { id: user.customer.id } : null,
+      session: {
+        authenticatedAt: verified.authTime === null ? null : new Date(verified.authTime * 1000),
+        signInProvider: verified.signInProvider,
+        phoneNumber: verified.phoneNumber,
+      },
     };
   }
 }

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import { SettlementsModule } from '../settlements/settlements.module';
 import { AdminPayoutsController } from './admin-payouts.controller';
+import { BankAccountChangesService } from './bank-account-changes.service';
 import { BankAccountsService } from './bank-accounts.service';
 import { DisabledPayoutGateway } from './disabled-payout.gateway';
 import { DriverPayoutsController } from './driver-payouts.controller';
@@ -34,6 +35,7 @@ import { SimulatedPayoutGateway } from './simulated-payout.gateway';
       },
     },
     BankAccountsService,
+    BankAccountChangesService,
     PayoutStatusService,
     PayoutBatchesService,
     PayoutExecutionService,

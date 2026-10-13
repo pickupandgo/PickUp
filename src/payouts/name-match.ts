@@ -2,11 +2,18 @@
  * Compares the account holder name the bank reports (bank validation) with the driver's KYC
  * legal name. The result is evidence for the admin, who makes the approval decision:
  *
- *   MATCH        same words after normalisation (case, punctuation, honorifics, word order)
- *   PARTIAL      every word of the shorter name matches the longer one, allowing initials
- *                ("R KUMAR" vs "RAMESH KUMAR"): an admin must record why it is acceptable
+ *   MATCH        exactly the same words in the same order, ignoring only case, punctuation,
+ *                accents and honorifics ("Mr. Ramesh Kumar" vs "RAMESH KUMAR"). The only
+ *                result an admin may approve without a written resolution.
+ *   PARTIAL      the same words in another order ("KUMAR RAMESH"), or every word of the
+ *                shorter name matching the longer one, allowing initials ("R KUMAR") or a
+ *                missing middle name: an admin must record why it is acceptable
  *   MISMATCH     anything else: an admin must record a resolution, or reject the account
- *   UNAVAILABLE  one of the names is missing (e.g. the bank returned no name)
+ *   UNAVAILABLE  one of the names is missing (e.g. the bank returned no name): needs a
+ *                resolution too
+ *
+ * Every non-MATCH approval is refused without a resolution (API and database) and audited as
+ * BANK_NAME_MISMATCH_RESOLVED with both names (OPEN_DECISIONS D-60).
  */
 
 export type NameMatchResult = 'MATCH' | 'PARTIAL' | 'MISMATCH' | 'UNAVAILABLE';
@@ -52,23 +59,18 @@ export function compareNames(
   if (kyc.length === 0 || bank.length === 0) {
     return 'UNAVAILABLE';
   }
-  if (sameWords(kyc, bank)) {
+  if (sameWordsInOrder(kyc, bank)) {
     return 'MATCH';
   }
-  // Either side may carry the initials ("R KUMAR" vs "RAMESH KUMAR" and the reverse).
+  // Reordered words, and initials on either side ("R KUMAR" vs "RAMESH KUMAR" and the reverse).
   const partial =
     (bank.length <= kyc.length && coveredWithInitials(bank, kyc)) ||
     (kyc.length <= bank.length && coveredWithInitials(kyc, bank));
   return partial ? 'PARTIAL' : 'MISMATCH';
 }
 
-function sameWords(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  const sortedA = [...a].sort();
-  const sortedB = [...b].sort();
-  return sortedA.every((token, index) => token === sortedB[index]);
+function sameWordsInOrder(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((token, index) => token === b[index]);
 }
 
 /**

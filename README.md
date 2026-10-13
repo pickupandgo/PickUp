@@ -19,6 +19,7 @@ Amounts are always integer paise (₹1 = 100 paise), rounded HALF_UP where a per
 
 - **Bookings and earnings:** the trip engine registers bookings (fare and fee rule fixed at confirmation); the customer pays in the app or at pickup/delivery; completing a trip creates its earning once. An ONLINE earning becomes payable only after Razorpay settles the customer payment to Nikhil Enterprises.
 - **Payouts:** every Monday at 11:00 IST the scheduler prepares one batch of settled earnings for drivers with an admin-approved, bank-validated account; an admin executes it; a payout is PAID only when RazorpayX confirms it. TDS fields exist but stay 0 until a CA-approved rule exists.
+- **Bank accounts:** adding or changing one needs a step-up phone OTP re-authentication after the change request (a stolen session can't redirect payouts), then a bank validation and an admin approval.
 
 Not in this slice: a refunds API, customer features beyond booking payment, dispatch.
 
@@ -75,5 +76,5 @@ Run the migrate image with the migrator connection string, and the API image wit
 ## Known limitations
 
 - Rate limits live in memory, so run a single instance until they move to a shared store such as Redis.
-- Booking payments and cash collection are not built. The cash-collection idempotency test (#2) is a placeholder until they are.
 - Refunds for payments that can't be applied automatically are done by hand in the Razorpay Dashboard (OPEN_DECISIONS D-22, D-43).
+- Production-readiness items still open (each keeps a money path off instead of assuming it works; the startup log lists them): RazorpayX activation and capabilities (D-46, D-58, `RAZORPAYX_CAPABILITIES_CONFIRMED`), live settlement reconciliation (D-56, `SETTLEMENT_RECON_VERIFIED`), TDS (D-57).

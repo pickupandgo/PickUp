@@ -68,7 +68,15 @@ GRANT UPDATE (status, payment_settlement_id, payable_at, hold_reason, held_at, h
               paid_at, updated_at)
     ON driver_earnings TO mr_app;
 
--- Bank accounts: the beneficiary details are immutable; only verification state changes.
+-- Bank-account change requests (step-up): owner, method and the step-up window (created_at,
+-- expires_at, both set by the database) are never writable; the step-up evidence is written once
+-- and checked by a trigger (sign-in after the request, the driver's registered phone).
+GRANT SELECT, INSERT ON bank_account_change_requests TO mr_app;
+GRANT UPDATE (status, step_up_auth_time, step_up_phone, close_reason, updated_at)
+    ON bank_account_change_requests TO mr_app;
+
+-- Bank accounts: the beneficiary details and the change request that added them are immutable;
+-- only verification state changes.
 GRANT SELECT, INSERT ON driver_bank_accounts TO mr_app;
 GRANT UPDATE (status, verified_at, verified_by_user_id, verification_reference,
               approved_verification_id, name_match_resolution, status_reason,

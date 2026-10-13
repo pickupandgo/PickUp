@@ -61,7 +61,9 @@ export const envSchema = z
     // previous during a rotation). Unset means the internal API is disabled.
     INTERNAL_API_KEYS: z.string().optional(),
 
-    // Pickup/delivery online collection (booking-linked QR). Disabled until a product is chosen.
+    // Pickup/delivery online collection (booking-linked QR). Live: razorpay_qr_code (a UPI QR any
+    // UPI app can pay, D-47). razorpay_payment_link draws a QR of a payment link and is allowed
+    // only in test mode, where Razorpay QR codes can't be paid.
     COLLECTION_LINK_PROVIDER: z
       .enum(['disabled', 'razorpay_payment_link', 'razorpay_qr_code'])
       .default('disabled'),
@@ -75,6 +77,12 @@ export const envSchema = z
     //   simulated  in-memory settlements fed through /v1/dev/simulate (non-production, test keys)
     //   disabled   nothing is ever settled, so no ONLINE earning becomes payable
     SETTLEMENT_PROVIDER: z.enum(['razorpay', 'simulated', 'disabled']).default('razorpay'),
+    // Production-readiness gate (OPEN_DECISIONS D-56). Razorpay test mode never settles, so the
+    // settlement reconciliation fields have only been checked against the documentation. Set to
+    // true only after they were verified on Nikhil Enterprises' live account; until then
+    // SETTLEMENT_PROVIDER=razorpay is refused in production and with live keys (use disabled:
+    // ONLINE earnings then stay AWAITING_SETTLEMENT and nothing is paid out).
+    SETTLEMENT_RECON_VERIFIED: booleanString.default(false),
     // How often settlements are pulled from Razorpay (0 = only on webhooks, admin request and
     // before each scheduled payout batch), and how many days back each pull looks.
     SETTLEMENT_SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(0).max(1440).default(60),
@@ -91,6 +99,11 @@ export const envSchema = z
     // (non-production, test keys only) moves payouts and bank validations through
     // /v1/dev/simulate instead of RazorpayX.
     PAYOUT_PROVIDER: z.enum(['disabled', 'razorpayx', 'simulated']).default('disabled'),
+    // Production-readiness gate (OPEN_DECISIONS D-46, D-58). Set to true only once Nikhil
+    // Enterprises' RazorpayX account is activated and Payouts, Fund Account Validation (penny
+    // drop), the payout IP allowlist and the payout/validation webhooks are confirmed on it.
+    // Until then PAYOUT_PROVIDER=razorpayx is refused in production and with live keys.
+    RAZORPAYX_CAPABILITIES_CONFIRMED: booleanString.default(false),
     RAZORPAYX_ACCOUNT_NUMBER: z
       .string()
       .regex(/^[A-Za-z0-9]{6,40}$/, 'must be the RazorpayX account number (letters and digits)')
@@ -199,6 +212,43 @@ export const envSchema = z
           message: 'simulated is only allowed outside production with Razorpay test keys',
         });
       }
+    }
+    // Production-readiness gates: capabilities nobody has confirmed on the live accounts yet are
+    // never assumed (OPEN_DECISIONS D-46, D-56, D-58).
+    const liveRazorpay =
+      env.NODE_ENV === 'production' || env.RAZORPAY_KEY_ID.startsWith('rzp_live_');
+    const liveRazorpayX =
+      env.NODE_ENV === 'production' ||
+      (env.RAZORPAYX_KEY_ID ?? env.RAZORPAY_KEY_ID).startsWith('rzp_live_');
+    if (
+      env.PAYOUT_PROVIDER === 'razorpayx' &&
+      liveRazorpayX &&
+      !env.RAZORPAYX_CAPABILITIES_CONFIRMED
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PAYOUT_PROVIDER'],
+        message:
+          'razorpayx needs RAZORPAYX_CAPABILITIES_CONFIRMED=true once the RazorpayX account is activated and Payouts, Fund Account Validation and its webhooks are confirmed (OPEN_DECISIONS D-46, D-58); keep PAYOUT_PROVIDER=disabled until then',
+      });
+    }
+    // Decided (D-47): live pickup/delivery collection uses Razorpay UPI QR Codes, which any UPI
+    // app can scan and pay. A QR of a payment link is for test mode only.
+    if (env.COLLECTION_LINK_PROVIDER === 'razorpay_payment_link' && liveRazorpay) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['COLLECTION_LINK_PROVIDER'],
+        message:
+          'razorpay_payment_link is for test mode only; live collection uses razorpay_qr_code (UPI QR, OPEN_DECISIONS D-47), or disabled until QR Codes is enabled on the Razorpay account',
+      });
+    }
+    if (env.SETTLEMENT_PROVIDER === 'razorpay' && liveRazorpay && !env.SETTLEMENT_RECON_VERIFIED) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SETTLEMENT_PROVIDER'],
+        message:
+          'razorpay needs SETTLEMENT_RECON_VERIFIED=true once settlement reconciliation is verified on the live account (OPEN_DECISIONS D-56); use SETTLEMENT_PROVIDER=disabled until then',
+      });
     }
     if (env.PAYOUT_AUTO_EXECUTE && !env.PAYOUT_SCHEDULE_ENABLED) {
       ctx.addIssue({

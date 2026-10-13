@@ -415,13 +415,14 @@ Nikhil Enterprises approved the V1 money model. It is implemented as given; noth
 
 #### D-46 Payout account and product
 - **Needed:** RazorpayX activation, the business account number, payout IP allowlisting, whether Fund Account Validation (penny drop) is available, and who funds the payout balance.
-- **Now:** `PAYOUT_PROVIDER=disabled`; payout and bank-account endpoints answer `503 PAYOUT_PROVIDER_NOT_CONFIGURED`.
-- **Owner:** Nikhil Enterprises. **Status:** Open, blocks payouts.
+- **Now:** `PAYOUT_PROVIDER=disabled`; payout and bank-account endpoints answer `503 PAYOUT_PROVIDER_NOT_CONFIGURED`. The payout code is provider-abstracted (`PayoutGateway`); nothing assumes RazorpayX capabilities on the real account. **Production-readiness gate:** `PAYOUT_PROVIDER=razorpayx` is refused in production and with live keys until `RAZORPAYX_CAPABILITIES_CONFIRMED=true`, which may only be set once the Nikhil Enterprises RazorpayX account is activated and Payouts, Fund Account Validation and the webhooks are confirmed on it (with D-58).
+- **Owner:** Nikhil Enterprises. **Status:** Open, production-readiness item, blocks payouts.
 
 #### D-47 QR product
 - **Options:** Razorpay Payment Links (the driver app shows a QR of the link; works in test mode) or Razorpay QR Codes (UPI QR; must be enabled by Razorpay and can only be paid in live mode).
-- **Now:** both are implemented behind `COLLECTION_LINK_PROVIDER`; default `disabled`. Development uses payment links.
-- **Owner:** Nikhil Enterprises. **Status:** Open.
+- **Decision (Raj):** live collection uses Razorpay QR Codes: a single-use, fixed-amount UPI QR that GPay, PhonePe, Paytm or any UPI app scans and pays, confirmed by Razorpay. The payment-link QR is for test mode only; the server refuses `COLLECTION_LINK_PROVIDER=razorpay_payment_link` in production and with live keys. A self-made UPI QR (`upi://pay` to a bank VPA) is ruled out: no booking-level confirmation, refunds or settlement data.
+- **Now:** QR Codes is not enabled on the account (probe: `POST /v1/payments/qr_codes` answers "The requested URL was not found on the server"). Development keeps payment links.
+- **Owner:** Nikhil Enterprises: request QR Codes activation in the Razorpay Dashboard (test and live). **Status:** Decided; activation pending, production-readiness item.
 
 #### D-48 Payout weekday and time
 - **Decision (6 Oct 2026):** every Monday at 11:00 IST. These are now the defaults of `PAYOUT_SCHEDULE_WEEKDAY` (1) and `PAYOUT_SCHEDULE_TIME` (11:00), still configurable per deployment.
@@ -468,7 +469,7 @@ Raj confirmed these for Nikhil Enterprises. They are implemented as given (migra
 | **Payout schedule (D-48):** every Monday 11:00 IST, configurable. | `PAYOUT_SCHEDULE_WEEKDAY=1`, `PAYOUT_SCHEDULE_TIME=11:00`, `PAYOUT_SCHEDULE_TIMEZONE=Asia/Kolkata` (defaults). The scheduler pulls settlements first, then prepares one batch per ISO week (`schedule:<week>`). `GET /v1/admin/payout-schedule` shows the last and next run. |
 | **Batch contents:** only eligible earnings; never unsettled, disputed/held, already paid, or in another live batch; atomic; no earning in two batches; asynchronous reconciliation; PAID only after provider confirmation. | Eligibility = `PAYABLE` + settlement link + payable at or before the cutoff + driver's account `VERIFIED`. One transaction; partial unique index on live payout items; `PROCESSED` from the provider is the only path to `PAID`. |
 | **Bank account verification (D-49):** holder name, account number, IFSC; RazorpayX validation; admin approval on an active account whose name sufficiently matches KYC, with no unresolved mismatch. States PENDING_VERIFICATION, VERIFIED, REJECTED, SUSPENDED. | `bank_account_verifications` stores provider, validation id (fav_), status, account status, registered name, provider score, our name-match result (MATCH / PARTIAL / MISMATCH / UNAVAILABLE) and the KYC name compared, UTR, timestamps. Approval needs a completed ACTIVE validation; a non-MATCH needs `mismatchResolution` (stored and audited). The database enforces it too (trigger). The full account number is never stored. |
-| **Account changes (assumption B):** the old account must not silently stay the destination; the new one is validated and approved again. | A new submission suspends the VERIFIED account at once (`REPLACED_BY_NEW_ACCOUNT`, audited); nothing is paid until the new account is approved. A replaced account can never be reinstated. A second submission while one is pending is refused (`BANK_ACCOUNT_CHANGE_PENDING`). |
+| **Account changes (assumption B):** the old account must not silently stay the destination; the new one is validated and approved again. | A new submission suspends the VERIFIED account at once (`REPLACED_BY_NEW_ACCOUNT`, audited); nothing is paid until the new account is approved. A replaced account can never be reinstated. A second submission while one is pending is refused (`BANK_ACCOUNT_CHANGE_PENDING`). Since section H a submission needs a step-up OTP. |
 | **Fee rule snapshot (assumption A).** | Bookings pin `fee_rule_id` at confirmation; earnings copy it. Unchanged. |
 | **Reversed payout (assumption C):** hold for review, no duplicate payout, reversal reconciled, admin review before payable again, no silent retry. | Items `REVERSED`, earnings `ON_HOLD`, destination account `SUSPENDED` (`PAYOUT_REVERSED`). Releasing the earning makes it payable, but no batch pays a suspended account; reinstating it needs a new bank validation started after the suspension. |
 | **TDS architecture:** `TDS_ENABLED=false`, TDS amount 0, versioned rule, backend-only, snapshotted, immutable, never client-supplied. | Earnings and payouts carry `other_deductions_paise`, `tds_amount_paise`, `tds_policy` (`DISABLED`) and `tax_rule_id` (NULL); CHECKs tie net = gross − fee − other − TDS. `tax_rules` is versioned, empty, and read-only for the API role. `TDS_ENABLED=true` is refused at startup. Unknown request fields (`tdsRate`, `tdsAmount`, `netPayable`) are rejected with 400. |
@@ -482,7 +483,8 @@ Raj confirmed these for Nikhil Enterprises. They are implemented as given (migra
 - **Context:** Razorpay test mode does not settle payments. The probe on 6 Oct 2026 (test keys) got HTTP 200 with empty lists from `/v1/settlements` and `/v1/settlements/recon/combined`, so the field values have only been checked against the documentation.
 - **To verify on the live account:** that `type=payment` entries report `settled`, `settled_at`, `settlement_id` and `amount` as documented; which time zone the `year/month/day` filter uses (the sync scans a look-back window of India dates, default 7 days, so either answer is covered); and how instant or on-demand settlements appear, if Nikhil Enterprises uses them.
 - **Until then:** an ONLINE earning stays `AWAITING_SETTLEMENT` (safe: nothing is paid). `GET /v1/admin/settlements/overdue-earnings` lists earnings still waiting after `SETTLEMENT_OVERDUE_DAYS` (5).
-- **Owner:** Tech lead + finance. **Status:** Open, verify before go-live.
+- **Production-readiness gate:** `SETTLEMENT_PROVIDER=razorpay` is refused in production and with live keys until `SETTLEMENT_RECON_VERIFIED=true`, set only after the checks above pass on the live account. Until then production runs with `SETTLEMENT_PROVIDER=disabled`.
+- **Owner:** Tech lead + finance. **Status:** Open, production-readiness item, verify before go-live.
 
 #### D-57 TDS on driver payouts
 - **Question:** Confirm with CA whether driver payouts require TDS/tax deduction and, if applicable, the exact rule.
@@ -491,8 +493,8 @@ Raj confirmed these for Nikhil Enterprises. They are implemented as given (migra
 
 #### D-58 RazorpayX bank validation availability
 - **Needed:** whether Fund Account Validation is enabled on the RazorpayX account (it is not available in test mode), its per-validation fee, the payout IP allowlist, and whether the `fund_account.validation.*` webhooks are configured. Whether RazorpayX Lite / current account supports it is unconfirmed.
-- **Now:** implemented against the documented API (`POST /v1/fund_accounts/validations` on the existing fund account, penny drop of ₹1); results arrive by webhook or `POST /v1/admin/bank-accounts/:id/validations/:validationId/refresh`.
-- **Owner:** Nikhil Enterprises. **Status:** Open, blocks real bank validation (part of D-46).
+- **Now:** implemented against the documented API (`POST /v1/fund_accounts/validations` on the existing fund account, penny drop of ₹1); results arrive by webhook or `POST /v1/admin/bank-accounts/:id/validations/:validationId/refresh`. Not assumed available: covered by the `RAZORPAYX_CAPABILITIES_CONFIRMED` gate (D-46).
+- **Owner:** Nikhil Enterprises. **Status:** Open, production-readiness item, blocks real bank validation (part of D-46).
 
 #### D-59 Source of the KYC legal name
 - **Context:** the bank's registered name is compared with `drivers.legal_name`. M3 (driver KYC) is not part of this slice.
@@ -500,13 +502,34 @@ Raj confirmed these for Nikhil Enterprises. They are implemented as given (migra
 - **Owner:** Product + ops. **Status:** Open until M3 owns it.
 
 #### D-60 Name matching strictness
-- **Now:** MATCH = the same words after removing case, punctuation, honorifics and word order; PARTIAL = initials or a missing middle name; anything else MISMATCH. Every non-MATCH needs an admin's written resolution. The provider's own score is stored but not used to decide.
-- **Owner:** Ops. **Status:** Confirm.
+- **Decision (section H):** keep the partial-match handling, but any non-exact match always needs an explicit admin resolution with an audit record.
+- **Now:** MATCH = exactly the same words in the same order, ignoring only case, punctuation, accents and honorifics. Reordered words, initials and a missing middle name are PARTIAL; anything else MISMATCH; a missing name UNAVAILABLE. Every non-MATCH needs an admin's written resolution (API and database) and writes a `BANK_NAME_MISMATCH_RESOLVED` audit row with the bank's name, the KYC name, the result, the validation and the resolution. The provider's own score is stored but not used to decide.
+- **Owner:** Ops. **Status:** Resolved.
 
 #### D-61 Who may change a bank account
-- **Now:** the driver submits the new account in the app (5 per hour); the old one is suspended immediately, so a hijacked session can stop payouts but never redirect them without an admin's approval of the new account.
-- **Owner:** Ops. **Status:** Confirm, or require a support ticket before a change.
+- **Decision (section H):** the driver may start a change in the app, but changing the payout destination needs a step-up OTP on top of the session: request → step-up OTP → new account validation → admin approval → payout eligible. A compromised session alone must never redirect payouts.
+- **Now:** implemented as a change request bound to a Firebase phone re-authentication (details in section H). Also required for the first bank account, since that sets the payout destination too.
+- **Owner:** Ops. **Status:** Resolved.
 
 #### D-62 Settlement that never arrives
-- **Now:** no manual "mark as settled" exists; an earning whose settlement never appears in Razorpay's data stays unpaid and is reported as overdue. A manual confirmation (with settlement UTR and approval) can be added if finance needs it.
-- **Owner:** Finance. **Status:** Open.
+- **Decision (section H):** kept as designed. No manual "mark as settled" operation exists; an earning with no valid settlement stays `AWAITING_SETTLEMENT` (unpaid) and is listed by `GET /v1/admin/settlements/overdue-earnings` after `SETTLEMENT_OVERDUE_DAYS` for admin review.
+- **Owner:** Finance. **Status:** Resolved.
+
+---
+
+## H. Approved decisions, third set (after commit `f07ff5c`)
+
+Raj accepted the payment, settlement, earnings, wallet and payout architecture for V1 and asked for the items below before the Driver App collection and earnings screens. Migration `20261008120000_bank_account_change_requests`.
+
+| Decision | Implementation |
+|---|---|
+| **Step-up for a bank-account change (D-61):** request → step-up OTP → new account validation → admin approval → payout eligible. The old verified account may be suspended when the change is accepted; the new one is not payout-eligible until validated and approved. A compromised session alone must never redirect payouts. | `bank_account_change_requests`. (1) The session creates a request (no details; 10-minute window from the database clock). (2) The app re-authenticates the Firebase user with a phone OTP. (3) The fresh ID token confirms the request with the details: `auth_time` must be after the request, `phone_number` must be the registered phone, `sign_in_provider` must be `phone` (`403 STEP_UP_REQUIRED` otherwise, audited). In one transaction the request is verified, the old VERIFIED account suspended (`REPLACED_BY_NEW_ACCOUNT`), the new account added as `PENDING_VERIFICATION` and the request completed. Then bank validation and admin approval as before (D-49). |
+| Why `auth_time` works | A stolen session (ID token or refresh token) can only mint refreshed tokens, and Firebase keeps `auth_time` on refresh; only a real sign-in or re-authentication moves it. So the OTP must happen after the request, which a hijacked session cannot do without the driver's phone. Firebase's own guidance uses `auth_time` the same way against token theft. |
+| Database enforcement | A bank account is only inserted for a `STEP_UP_VERIFIED` request of the same driver (trigger). The trigger accepts the verification only inside the window, with `step_up_auth_time > created_at` (CHECK) on the driver's registered phone; a verified request can't be committed without its account (deferred check). The window can't be backdated or extended; requests and their binding to the account are immutable; the API role has no grant on `created_at`, `expires_at`, `driver_id` or `change_request_id`. Accounts submitted before this migration that were never approved are suspended (`STEP_UP_REQUIRED`) and can never be approved. |
+| Stricter than asked | The first bank account also needs the step-up (it sets the payout destination too). Requesting a change alone changes nothing; the old account is suspended only at confirmation. |
+| Residual risk | Someone holding the unlocked phone itself can pass an SMS OTP. The admin approval of every new account on a bank validation, with a written resolution for any name that is not an exact KYC match, is the control for that case. |
+| **RazorpayX (D-46, D-58):** provider-abstracted; capabilities not assumed until the account is activated and confirmed. | `PayoutGateway` port unchanged. `RAZORPAYX_CAPABILITIES_CONFIRMED` (default false) gates `PAYOUT_PROVIDER=razorpayx` in production and with live keys. |
+| **Settlement recon (D-56)** stays an explicit open item. | `SETTLEMENT_RECON_VERIFIED` (default false) gates `SETTLEMENT_PROVIDER=razorpay` in production and with live keys. The startup log lists every open readiness item. |
+| **Name matching (D-60):** partial matches kept; every non-exact match needs an explicit admin resolution with an audit record. | Reordered words are now PARTIAL, not MATCH. `BANK_NAME_MISMATCH_RESOLVED` audit row per non-exact approval (both names, result, validation, resolution); `BANK_ACCOUNT_APPROVED` carries the same evidence. |
+| **Missing settlement (D-62):** no manual "mark as settled". | Unchanged: unpaid, `AWAITING_SETTLEMENT`, listed as overdue for admin review. |
+| Switching back to an earlier account | RazorpayX returns the existing contact and fund account for identical details, so the fund-account uniqueness now applies to live (pending or verified) accounts only. The new row is validated and approved from scratch. |

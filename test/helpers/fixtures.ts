@@ -69,7 +69,8 @@ export async function createDriver(
     driverId: user.driver.id,
     subject,
     phone,
-    token: deps.tokens.sign(subject),
+    // Like a Firebase phone sign-in: auth_time = now, phone_number = the registered phone.
+    token: deps.tokens.sign(subject, { phoneNumber: phone }),
   };
 }
 
@@ -149,8 +150,9 @@ export function createFeeRule(
 
 /**
  * A bank account an admin has approved, linked to fake provider ids. It goes through the real
- * states (the database refuses anything else): PENDING_VERIFICATION, a completed ACTIVE bank
- * validation with a MATCH, then VERIFIED.
+ * states (the database refuses anything else): a step-up verified change request that adds the
+ * account as PENDING_VERIFICATION, a completed ACTIVE bank validation with a MATCH, then
+ * VERIFIED.
  */
 export async function createVerifiedBankAccount(
   prisma: PrismaClient,
@@ -158,16 +160,35 @@ export async function createVerifiedBankAccount(
   adminUserId: string,
 ) {
   const suffix = randomUUID().replace(/-/g, '').slice(0, 14);
-  const account = await prisma.driverBankAccount.create({
-    data: {
-      driverId,
-      accountHolderName: FIXTURE_DRIVER_NAME,
-      ifsc: 'HDFC0001234',
-      accountNumberLast4: '4321',
-      provider: 'RAZORPAYX',
-      providerContactId: `cont_${suffix}`,
-      providerFundAccountId: `fa_${suffix}`,
-    },
+  const { user } = await prisma.driver.findUniqueOrThrow({
+    where: { id: driverId },
+    include: { user: true },
+  });
+  const request = await prisma.bankAccountChangeRequest.create({ data: { driverId } });
+  // auth_time has whole seconds and must be after the request (the database checks it).
+  const authTime = new Date((Math.floor(request.createdAt.getTime() / 1000) + 1) * 1000);
+  const account = await prisma.$transaction(async (tx) => {
+    await tx.bankAccountChangeRequest.update({
+      where: { id: request.id },
+      data: { status: 'STEP_UP_VERIFIED', stepUpAuthTime: authTime, stepUpPhone: user.phone },
+    });
+    const created = await tx.driverBankAccount.create({
+      data: {
+        driverId,
+        accountHolderName: FIXTURE_DRIVER_NAME,
+        ifsc: 'HDFC0001234',
+        accountNumberLast4: '4321',
+        provider: 'RAZORPAYX',
+        providerContactId: `cont_${suffix}`,
+        providerFundAccountId: `fa_${suffix}`,
+        changeRequestId: request.id,
+      },
+    });
+    await tx.bankAccountChangeRequest.update({
+      where: { id: request.id },
+      data: { status: 'COMPLETED' },
+    });
+    return created;
   });
   const validation = await prisma.bankAccountVerification.create({
     data: {

@@ -8,8 +8,19 @@ import { SigningKeyProvider } from './signing-key.provider';
 export interface VerifiedIdentity {
   /** Provider subject (Firebase UID). */
   readonly subject: string;
-  /** Phone number claim, when the provider includes one. Informational only. */
+  /**
+   * `phone_number` claim, when the provider includes one. Never used for authorization; only
+   * compared with the registered phone during a step-up.
+   */
   readonly phoneNumber: string | null;
+  /**
+   * `auth_time` (seconds since the epoch): when the user last actually signed in. Refreshing an
+   * ID token keeps it; only a new sign-in or re-authentication moves it, which is what a step-up
+   * relies on.
+   */
+  readonly authTime: number | null;
+  /** `firebase.sign_in_provider`, e.g. "phone". */
+  readonly signInProvider: string | null;
 }
 
 const MAX_TOKEN_LENGTH = 4_096;
@@ -94,6 +105,16 @@ export class TokenVerifier {
     }
 
     const phone: unknown = payload['phone_number'];
-    return { subject, phoneNumber: typeof phone === 'string' ? phone : null };
+    const firebase: unknown = payload['firebase'];
+    const provider: unknown =
+      typeof firebase === 'object' && firebase !== null
+        ? (firebase as Record<string, unknown>)['sign_in_provider']
+        : undefined;
+    return {
+      subject,
+      phoneNumber: typeof phone === 'string' && phone.length <= 20 ? phone : null,
+      authTime: typeof authTime === 'number' && Number.isInteger(authTime) ? authTime : null,
+      signInProvider: typeof provider === 'string' && provider.length <= 40 ? provider : null,
+    };
   }
 }

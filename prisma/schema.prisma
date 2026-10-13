@@ -275,13 +275,14 @@ model Driver {
   createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  user         User                @relation("DriverUser", fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  approvedBy   User?               @relation("DriverApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  user         User                       @relation("DriverUser", fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy   User?                      @relation("DriverApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   wallet       DriverWallet?
   trips        Trip[]
   collections  PaymentCollection[]
   earnings     DriverEarning[]
   bankAccounts DriverBankAccount[]
+  bankChanges  BankAccountChangeRequest[]
   payouts      DriverPayout[]
 
   @@map("drivers")
@@ -728,6 +729,10 @@ model DriverBankAccount {
   /// Reason for REJECTED or SUSPENDED.
   statusReason           String?           @map("status_reason") @db.VarChar(500)
   statusChangedByUserId  String?           @map("status_changed_by_user_id") @db.Uuid
+  /// The step-up verified change request that added this account. Required for every new
+  /// account (trigger); NULL only for accounts added before step-up verification existed, which
+  /// can never be approved.
+  changeRequestId        String?           @unique(map: "uq_bank_accounts_change_request") @map("change_request_id") @db.Uuid
   createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -735,15 +740,56 @@ model DriverBankAccount {
   verifiedBy           User?                     @relation("BankAccountVerifiedBy", fields: [verifiedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   statusChangedBy      User?                     @relation("BankAccountStatusChangedBy", fields: [statusChangedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   approvedVerification BankAccountVerification?  @relation("BankAccountApprovedVerification", fields: [approvedVerificationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  changeRequest        BankAccountChangeRequest? @relation(fields: [changeRequestId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   verifications        BankAccountVerification[] @relation("BankAccountVerifications")
   payouts              DriverPayout[]
 
-  @@unique([provider, providerFundAccountId], map: "uq_bank_accounts_fund_account")
+  // RazorpayX returns the existing fund account for identical details, so only live accounts
+  // need a unique one (a driver may switch back to an earlier account).
+  @@unique([provider, providerFundAccountId], map: "uq_bank_accounts_fund_account_live", where: raw("(status = ANY (ARRAY['PENDING_VERIFICATION'::bank_account_status, 'VERIFIED'::bank_account_status]))"))
   // One live (pending or verified) bank account per driver.
   @@unique([driverId], map: "uq_bank_accounts_driver_active", where: raw("(status = ANY (ARRAY['PENDING_VERIFICATION'::bank_account_status, 'VERIFIED'::bank_account_status]))"))
   @@index([driverId], map: "idx_bank_accounts_driver")
   @@index([status, createdAt], map: "idx_bank_accounts_status_created")
   @@map("driver_bank_accounts")
+}
+
+/// A driver's request to add or change the payout bank account (OPEN_DECISIONS D-61). The new
+/// account is accepted only after a step-up: a phone OTP re-authentication that happened after
+/// the request was created, proven by a fresh Firebase ID token (auth_time, phone_number). The
+/// window (created_at, expires_at: 10 minutes) comes from the database clock (trigger).
+///
+///   PENDING_STEP_UP -> STEP_UP_VERIFIED -> COMPLETED (one transaction, with the new account)
+///   PENDING_STEP_UP -> CANCELLED | EXPIRED
+model BankAccountChangeRequest {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId         String    @map("driver_id") @db.Uuid
+  /// PENDING_STEP_UP, STEP_UP_VERIFIED (never committed), COMPLETED, CANCELLED or EXPIRED.
+  status           String    @default("PENDING_STEP_UP") @db.VarChar(20)
+  /// FIREBASE_PHONE_REAUTH (CHECK).
+  stepUpMethod     String    @default("FIREBASE_PHONE_REAUTH") @map("step_up_method") @db.VarChar(30)
+  /// auth_time of the token that proved the step-up. Always after created_at (CHECK).
+  stepUpAuthTime   DateTime? @map("step_up_auth_time") @db.Timestamptz(6)
+  /// phone_number of that token: the driver's registered phone (trigger).
+  stepUpPhone      String?   @map("step_up_phone") @db.VarChar(20)
+  /// Set by the database when the step-up is accepted.
+  stepUpVerifiedAt DateTime? @map("step_up_verified_at") @db.Timestamptz(6)
+  /// CANCELLED only: DRIVER_CANCELLED or SUPERSEDED (CHECK).
+  closeReason      String?   @map("close_reason") @db.VarChar(40)
+  /// created_at + 10 minutes, set by the database. Can be brought forward, never extended.
+  expiresAt        DateTime  @default(dbgenerated("(clock_timestamp() + '00:10:00'::interval)")) @map("expires_at") @db.Timestamptz(6)
+  closedAt         DateTime? @map("closed_at") @db.Timestamptz(6)
+  /// Database clock at insert (the trigger overrides any value supplied).
+  createdAt        DateTime  @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  driver      Driver             @relation(fields: [driverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  bankAccount DriverBankAccount?
+
+  // At most one open request per driver.
+  @@unique([driverId], map: "uq_bank_change_requests_driver_open", where: raw("((status)::text = ANY (ARRAY[('PENDING_STEP_UP'::character varying)::text, ('STEP_UP_VERIFIED'::character varying)::text]))"))
+  @@index([driverId, createdAt(sort: Desc)], map: "idx_bank_change_requests_driver_created")
+  @@map("bank_account_change_requests")
 }
 
 /// One bank-account validation through the payout provider (RazorpayX Fund Account Validation, a

@@ -57,6 +57,16 @@ export interface AppConfig {
     /** Always false: TDS waits for a CA-approved rule (OPEN_DECISIONS D-57). */
     readonly tdsEnabled: false;
   };
+  /**
+   * Production-readiness confirmations (go-live checklist). Without them the matching live
+   * provider is refused in production and with live keys.
+   */
+  readonly readiness: {
+    /** RAZORPAYX_CAPABILITIES_CONFIRMED (D-46, D-58). */
+    readonly razorpayxCapabilitiesConfirmed: boolean;
+    /** SETTLEMENT_RECON_VERIFIED (D-56). */
+    readonly settlementReconVerified: boolean;
+  };
   /** True when any simulated provider is active (non-production, test keys only). */
   readonly simulation: {
     readonly enabled: boolean;
@@ -89,6 +99,33 @@ export interface AppConfig {
 }
 
 export type CollectionProductSetting = 'PAYMENT_LINK' | 'QR_CODE';
+
+/**
+ * Production-readiness items still open for this deployment, for the startup log. Each one keeps
+ * a money path off rather than assuming an unconfirmed provider capability.
+ */
+export function openReadinessItems(config: AppConfig): string[] {
+  const items: string[] = [];
+  if (config.payouts.provider !== 'razorpayx' || !config.readiness.razorpayxCapabilitiesConfirmed) {
+    items.push(
+      'D-46/D-58: RazorpayX activation and capabilities (Payouts, Fund Account Validation, webhooks) not confirmed; real payouts and bank validation are off',
+    );
+  }
+  if (config.settlements.provider !== 'razorpay' || !config.readiness.settlementReconVerified) {
+    items.push(
+      'D-56: settlement reconciliation not verified on the live account; ONLINE earnings are not made payable from live settlement data',
+    );
+  }
+  items.push('D-57: TDS policy DISABLED until the CA confirms the rule');
+  if (config.collections.product !== 'QR_CODE') {
+    items.push(
+      config.collections.product === null
+        ? 'D-47: Razorpay QR Codes (UPI QR) not enabled; drivers collect cash only'
+        : 'D-47: collecting with a payment-link QR (test mode only); live needs Razorpay QR Codes (UPI QR)',
+    );
+  }
+  return items;
+}
 
 /** Raised when environment configuration is missing or invalid. Never includes values. */
 export class ConfigurationError extends Error {
@@ -172,6 +209,10 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     tax: {
       // The schema refuses TDS_ENABLED=true; this is a constant until a rule is implemented.
       tdsEnabled: false,
+    },
+    readiness: {
+      razorpayxCapabilitiesConfirmed: env.RAZORPAYX_CAPABILITIES_CONFIRMED,
+      settlementReconVerified: env.SETTLEMENT_RECON_VERIFIED,
     },
     simulation: {
       enabled: env.SETTLEMENT_PROVIDER === 'simulated' || env.PAYOUT_PROVIDER === 'simulated',

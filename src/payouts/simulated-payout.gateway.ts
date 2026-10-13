@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { RazorpayApiError } from '../razorpay/razorpay.errors';
 import {
   type CreateBankFundAccountInput,
@@ -13,18 +13,25 @@ import {
 
 const id = (prefix: string): string => `${prefix}${randomBytes(7).toString('hex')}`;
 
+/** Lookup key for "same details" without keeping account numbers in memory. */
+export const detailsKey = (...parts: string[]): string =>
+  createHash('sha256').update(parts.join('\u0000')).digest('hex');
+
 /**
  * In-memory payout provider for non-production end-to-end runs (PAYOUT_PROVIDER=simulated, only
  * allowed outside production with Razorpay test keys). It behaves like RazorpayX test mode:
  * X-Payout-Idempotency returns the original payout for a repeated key, new payouts stay
  * `processing`, and validations stay `created`, until moved explicitly through
- * /v1/dev/simulate. Results then reach the backend through the normal paths (signed webhook or
+ * /v1/dev/simulate. Like RazorpayX, identical contact or fund account details return the
+ * existing object. Results then reach the backend through the normal paths (signed webhook or
  * admin sync), never by writing to the database directly.
  */
 export class SimulatedPayoutGateway extends PayoutGateway {
   readonly enabled = true;
   readonly provider = PAYOUT_PROVIDER_SIMULATED;
+  private readonly contacts = new Map<string, string>();
   private readonly fundAccounts = new Map<string, { holderName: string; last4: string }>();
+  private readonly fundAccountsByDetails = new Map<string, string>();
   private readonly validations = new Map<string, ProviderBankValidation>();
   private readonly payouts = new Map<string, ProviderPayout>();
   private readonly payoutsByKey = new Map<string, string>();
@@ -33,11 +40,16 @@ export class SimulatedPayoutGateway extends PayoutGateway {
     if (input.name.trim().length < 3) {
       return Promise.reject(new RazorpayApiError(400, 'BAD_REQUEST_ERROR', 'The name is invalid'));
     }
-    return Promise.resolve({ contactId: id('cont_sim') });
+    const key = detailsKey(input.driverId, input.name);
+    const contactId = this.contacts.get(key) ?? id('cont_sim');
+    this.contacts.set(key, contactId);
+    return Promise.resolve({ contactId });
   }
 
   createBankFundAccount(input: CreateBankFundAccountInput): Promise<{ fundAccountId: string }> {
-    const fundAccountId = id('fa_sim');
+    const key = detailsKey(input.contactId, input.holderName, input.ifsc, input.accountNumber);
+    const fundAccountId = this.fundAccountsByDetails.get(key) ?? id('fa_sim');
+    this.fundAccountsByDetails.set(key, fundAccountId);
     this.fundAccounts.set(fundAccountId, {
       holderName: input.holderName,
       last4: input.accountNumber.slice(-4),

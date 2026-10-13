@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import type { Principal } from '../auth/principal';
 import { requireDriver } from '../auth/require-driver';
@@ -6,7 +5,11 @@ import { recordAdminAction } from '../audit/admin-actions';
 import { Clock } from '../common/clock';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
-import type { BankAccountVerification, DriverBankAccount } from '../generated/prisma/client';
+import type {
+  BankAccountChangeRequest,
+  BankAccountVerification,
+  DriverBankAccount,
+} from '../generated/prisma/client';
 import type { BankAccountStatus } from '../generated/prisma/enums';
 import { isUniqueViolation } from '../prisma/prisma-errors';
 import { PrismaService, type Tx } from '../prisma/prisma.service';
@@ -27,6 +30,8 @@ export interface BankAccountDetail {
   /** Newest first. */
   readonly verifications: BankAccountVerification[];
   readonly driverLegalName: string | null;
+  /** The step-up verified change request that added the account; null for legacy accounts. */
+  readonly changeRequest: BankAccountChangeRequest | null;
 }
 
 export interface ApproveInput {
@@ -47,10 +52,11 @@ const VALIDATION_IN_PROGRESS_MS = 10 * 60_000;
 
 /**
  * Payout beneficiaries (OPEN_DECISIONS D-49). A driver submits holder name, IFSC and account
- * number; the account number goes to the payout provider only. The bank validates the account
- * (RazorpayX penny drop: active or not, and the holder name it has on record), and an admin
- * approves it only on a completed validation of an active account whose name matches the
- * driver's KYC name or whose difference the admin resolved in writing.
+ * number through a step-up verified change request (BankAccountChangesService, D-61); the
+ * account number goes to the payout provider only. The bank validates the account (RazorpayX
+ * penny drop: active or not, and the holder name it has on record), and an admin approves it
+ * only on a completed validation of an active account whose name exactly matches the driver's
+ * KYC name, or whose difference the admin resolved in writing (audited).
  *
  *   PENDING_VERIFICATION -> VERIFIED (admin) | REJECTED (admin) | SUSPENDED
  *   VERIFIED             -> SUSPENDED (admin, replaced by a new account, payout reversed)
@@ -70,119 +76,23 @@ export class BankAccountsService {
     private readonly clock: Clock,
   ) {}
 
-  async submit(
-    principal: Principal,
-    input: BankAccountInput,
-  ): Promise<{ account: DriverBankAccount; validation: BankAccountVerification | null }> {
-    const driver = requireDriver(principal);
-    if (driver.approvalStatus !== 'APPROVED') {
-      throw new AppError(
-        ErrorCode.DRIVER_NOT_APPROVED,
-        HttpStatus.FORBIDDEN,
-        'Only approved drivers can add a bank account',
-      );
-    }
-    if (!this.gateway.enabled) {
-      throw notConfigured();
-    }
-    const last4 = input.accountNumber.slice(-4);
-    const live = await this.prisma.driverBankAccount.findMany({
-      where: { driverId: driver.id, status: { in: ['PENDING_VERIFICATION', 'VERIFIED'] } },
-    });
-    if (live.some((account) => account.status === 'PENDING_VERIFICATION')) {
-      throw changePending();
-    }
-    const verified = live.find((account) => account.status === 'VERIFIED') ?? null;
-    if (verified && verified.ifsc === input.ifsc && verified.accountNumberLast4 === last4) {
-      throw exists('This bank account is already linked and verified');
-    }
-
-    // Provider objects first: no database lock is ever held during a provider call.
-    let contactId: string;
-    let fundAccountId: string;
+  /**
+   * Starts the bank validation of an account the driver just submitted (through a step-up
+   * verified change request, see BankAccountChangesService). A failed start leaves the account
+   * pending; an admin can start the validation again.
+   */
+  async startInitialValidation(
+    account: DriverBankAccount,
+  ): Promise<BankAccountVerification | null> {
     try {
-      ({ contactId } = await this.gateway.createContact({
-        driverId: driver.id,
-        name: input.accountHolderName,
-      }));
-      ({ fundAccountId } = await this.gateway.createBankFundAccount({
-        contactId,
-        holderName: input.accountHolderName,
-        ifsc: input.ifsc,
-        accountNumber: input.accountNumber,
-      }));
-    } catch (error) {
-      throw toPayoutProviderError(error);
-    }
-
-    const accountId = randomUUID();
-    let account: DriverBankAccount;
-    try {
-      account = await this.prisma.runInTransaction(async (tx) => {
-        if (verified) {
-          const current = await lockAccount(tx, verified.id);
-          if (current.status === 'VERIFIED') {
-            await tx.driverBankAccount.update({
-              where: { id: verified.id },
-              data: {
-                status: 'SUSPENDED',
-                statusReason: `${REPLACED_BY_NEW_ACCOUNT}: the driver submitted bank account ${accountId}`,
-                statusChangedByUserId: principal.userId,
-              },
-            });
-            await recordAdminAction(tx, {
-              actorUserId: principal.userId,
-              action: 'BANK_ACCOUNT_SUSPENDED',
-              targetType: 'DRIVER_BANK_ACCOUNT',
-              targetId: verified.id,
-              reason: REPLACED_BY_NEW_ACCOUNT,
-              details: { replacedBy: accountId },
-            });
-          }
-        }
-        const created = await tx.driverBankAccount.create({
-          data: {
-            id: accountId,
-            driverId: driver.id,
-            accountHolderName: input.accountHolderName,
-            ifsc: input.ifsc,
-            accountNumberLast4: last4,
-            provider: this.gateway.provider,
-            providerContactId: contactId,
-            providerFundAccountId: fundAccountId,
-          },
-        });
-        await recordAdminAction(tx, {
-          actorUserId: principal.userId,
-          action: 'BANK_ACCOUNT_SUBMITTED',
-          targetType: 'DRIVER_BANK_ACCOUNT',
-          targetId: accountId,
-          details: { replacedAccountId: verified?.id ?? null, ifsc: input.ifsc, last4 },
-        });
-        return created;
-      });
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw changePending();
-      }
-      throw error;
-    }
-    this.logger.log(
-      { bankAccountId: account.id, driverId: driver.id, replaced: verified?.id ?? null },
-      'Bank account submitted for validation and approval',
-    );
-
-    // A failed start leaves the account pending; an admin can start the validation again.
-    let validation: BankAccountVerification | null = null;
-    try {
-      validation = await this.startValidation(account, null);
+      return await this.startValidation(account, null);
     } catch (error) {
       this.logger.warn(
         { bankAccountId: account.id, reason: (error as Error).name },
         'Bank validation could not be started; an admin can retry it',
       );
+      return null;
     }
-    return { account, validation };
   }
 
   /** The driver's current (or most recent) bank account and its latest validation. */
@@ -225,13 +135,22 @@ export class BankAccountsService {
   async getDetail(bankAccountId: string): Promise<BankAccountDetail> {
     const account = await this.prisma.driverBankAccount.findUnique({
       where: { id: bankAccountId },
-      include: { driver: true, verifications: { orderBy: { createdAt: 'desc' } } },
+      include: {
+        driver: true,
+        verifications: { orderBy: { createdAt: 'desc' } },
+        changeRequest: true,
+      },
     });
     if (!account) {
       throw notFound();
     }
-    const { driver, verifications, ...rest } = account;
-    return { account: rest, verifications, driverLegalName: driver.legalName };
+    const { driver, verifications, changeRequest, ...rest } = account;
+    return {
+      account: rest,
+      verifications,
+      driverLegalName: driver.legalName,
+      changeRequest,
+    };
   }
 
   /**
@@ -255,6 +174,9 @@ export class BankAccountsService {
         account.statusReason?.startsWith(REPLACED_BY_NEW_ACCOUNT)
       ) {
         throw invalidState(account.status, 'A replaced bank account cannot be reinstated');
+      }
+      if (neverApprovable(account)) {
+        throw invalidState(account.status, WITHOUT_STEP_UP_MESSAGE);
       }
       const driver = await tx.driver.findUniqueOrThrow({ where: { id: account.driverId } });
       if (driver.approvalStatus !== 'APPROVED') {
@@ -340,6 +262,7 @@ export class BankAccountsService {
         );
       }
       const reinstating = account.status === 'SUSPENDED';
+      const exact = nameMatch === 'MATCH';
       const approved = await tx.driverBankAccount.update({
         where: { id: bankAccountId },
         data: {
@@ -348,22 +271,40 @@ export class BankAccountsService {
           verifiedByUserId: admin.userId,
           verificationReference: validation.providerValidationId,
           approvedVerificationId: validation.id,
-          nameMatchResolution: nameMatch === 'MATCH' ? null : resolution,
+          nameMatchResolution: exact ? null : resolution,
           statusReason: null,
           statusChangedByUserId: admin.userId,
         },
       });
+      // The names compared, the result and the admin's resolution, in the same transaction.
+      const nameEvidence = {
+        validationId: validation.id,
+        providerValidationId: validation.providerValidationId,
+        registeredName: validation.registeredName,
+        kycName: validation.comparedName,
+        nameMatchResult: nameMatch,
+        nameMatchScore: validation.nameMatchScore,
+      };
+      if (!exact) {
+        await recordAdminAction(tx, {
+          actorUserId: admin.userId,
+          action: 'BANK_NAME_MISMATCH_RESOLVED',
+          targetType: 'DRIVER_BANK_ACCOUNT',
+          targetId: bankAccountId,
+          reason: resolution,
+          details: nameEvidence,
+        });
+      }
       await recordAdminAction(tx, {
         actorUserId: admin.userId,
         action: reinstating ? 'BANK_ACCOUNT_REINSTATED' : 'BANK_ACCOUNT_APPROVED',
         targetType: 'DRIVER_BANK_ACCOUNT',
         targetId: bankAccountId,
-        reason: nameMatch === 'MATCH' ? null : resolution,
+        reason: exact ? null : resolution,
         details: {
-          validationId: validation.id,
-          providerValidationId: validation.providerValidationId,
-          nameMatchResult: nameMatch,
-          nameMatchScore: validation.nameMatchScore,
+          ...nameEvidence,
+          nameResolutionRequired: !exact,
+          changeRequestId: account.changeRequestId,
           previousStatus: account.status,
         },
       });
@@ -416,6 +357,9 @@ export class BankAccountsService {
       account.status === 'SUSPENDED' && account.statusReason?.startsWith(REPLACED_BY_NEW_ACCOUNT);
     if ((account.status !== 'PENDING_VERIFICATION' && account.status !== 'SUSPENDED') || replaced) {
       throw invalidState(account.status, 'This bank account cannot be validated again');
+    }
+    if (neverApprovable(account)) {
+      throw invalidState(account.status, WITHOUT_STEP_UP_MESSAGE);
     }
     const running = await this.prisma.bankAccountVerification.findFirst({
       where: {
@@ -618,7 +562,18 @@ export function mapValidationResult(result: ProviderBankValidation): MappedValid
   }
 }
 
-async function lockAccount(tx: Tx, bankAccountId: string): Promise<DriverBankAccount> {
+const WITHOUT_STEP_UP_MESSAGE =
+  'This bank account was submitted without step-up verification and can never be approved; reject it and ask the driver to submit it again';
+
+/**
+ * Accounts added before step-up verification existed that were never approved: the database
+ * refuses to make them VERIFIED (migration 20261008120000), so the API says so up front.
+ */
+function neverApprovable(account: DriverBankAccount): boolean {
+  return account.changeRequestId === null && account.verifiedAt === null;
+}
+
+export async function lockAccount(tx: Tx, bankAccountId: string): Promise<DriverBankAccount> {
   const rows = await tx.$queryRaw<{ id: string }[]>`
     SELECT id FROM driver_bank_accounts WHERE id = ${bankAccountId}::uuid FOR UPDATE`;
   if (rows.length === 0) {
@@ -667,16 +622,14 @@ function notFound(): AppError {
   );
 }
 
-function exists(message = 'A bank account is already linked'): AppError {
+export function exists(message = 'A bank account is already linked'): AppError {
   return new AppError(ErrorCode.BANK_ACCOUNT_EXISTS, HttpStatus.CONFLICT, message);
 }
 
-function changePending(): AppError {
-  return new AppError(
-    ErrorCode.BANK_ACCOUNT_CHANGE_PENDING,
-    HttpStatus.CONFLICT,
-    'A bank account is already waiting for verification. Contact support to change it',
-  );
+export function changePending(
+  message = 'A bank account is already waiting for verification. Contact support to change it',
+): AppError {
+  return new AppError(ErrorCode.BANK_ACCOUNT_CHANGE_PENDING, HttpStatus.CONFLICT, message);
 }
 
 function notAcceptable(message: string, details: Record<string, string | number | null>): AppError {
