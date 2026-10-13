@@ -17,6 +17,7 @@ import { DropOTPScreen } from '../../screens/trip/DropOTPScreen';
 import { DeliveryProofCameraScreen } from '../../screens/trip/DeliveryProofCameraScreen';
 import { DeliveryProofPreviewScreen } from '../../screens/trip/DeliveryProofPreviewScreen';
 import { TripCompletedScreen } from '../../screens/trip/TripCompletedScreen';
+import { CollectPaymentScreen } from '../../screens/trip/CollectPaymentScreen';
 import { CancellationReasonScreen } from '../../screens/trip/CancellationReasonScreen';
 import { CancellationProcessingScreen } from '../../screens/trip/CancellationProcessingScreen';
 import { CancellationResultScreen } from '../../screens/trip/CancellationResultScreen';
@@ -60,6 +61,13 @@ export const HomeStack: React.FC = () => {
         name="TripCompleted"
         component={TripCompletedScreen}
         options={{ animation: 'fade', gestureEnabled: false }}
+      />
+
+      {/* Pickup / delivery payment collection (payments backend) */}
+      <Stack.Screen
+        name="CollectPayment"
+        component={CollectPaymentScreen}
+        options={{ gestureEnabled: false }}
       />
 
       {/* Cancellation Flow */}

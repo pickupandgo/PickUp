@@ -8,6 +8,9 @@ import { JourneyRecap } from '../../components/organisms/JourneyRecap';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { SecondaryButton } from '../../components/atoms/SecondaryButton';
 import { TripController } from '../../services/trip/TripController';
+import { useCollectableTrips } from '../../hooks/useCollectableTrips';
+import { CollectPaymentBanner } from '../../components/molecules/CollectPaymentBanner';
+import type { DriverTripDto } from '../../services/payments/collectionsDto';
 import type { HomeScreenProps } from '../../types/navigation';
 
 /**
@@ -26,6 +29,13 @@ export const TripCompletedScreen: React.FC<TripCompletedScreenProps> = ({
   testID,
 }) => {
   const trip = TripController.getInstance().getTrip() ?? mockActiveTrip;
+  const collectable = useCollectableTrips();
+
+  const handleCollect = useCallback(
+    (backendTrip: DriverTripDto) =>
+      navigation.navigate('CollectPayment', { tripId: backendTrip.tripId }),
+    [navigation],
+  );
 
   const handleBackToHome = useCallback(() => {
     // Clear the finished trip and return to the root of HomeStack.
@@ -47,6 +57,9 @@ export const TripCompletedScreen: React.FC<TripCompletedScreenProps> = ({
           </View>
           <Text style={styles.title}>{tripCompletedLabels.title}</Text>
         </View>
+
+        {/* Pay-at-delivery fare still to collect (payments backend) */}
+        <CollectPaymentBanner trips={collectable} onPress={handleCollect} />
 
         {/* Stats row */}
         <View style={styles.statsRow}>

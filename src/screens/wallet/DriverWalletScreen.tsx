@@ -1,13 +1,24 @@
 import React, { useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  RefreshControl,
+  ActivityIndicator,
+} from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CommonActions } from '@react-navigation/native';
 import { colors, typography, spacing, borderRadius } from '../../theme';
+import { InlineErrorBanner } from '../../components/molecules/InlineErrorBanner';
 import { useWallet } from '../../hooks/useWallet';
 import { useEarnings } from '../../hooks/useEarnings';
 import { useI18n } from '../../i18n';
-import type { Transaction, TransactionCategory } from '../../types/wallet';
+import { formatRupees as formatMoney } from '../../services/payments/money';
+import { TRANSACTION_ICON } from './transactionIcons';
+import type { Transaction } from '../../types/wallet';
 import type { WalletScreenProps } from '../../types/navigation';
 
 export interface DriverWalletScreenProps {
@@ -15,25 +26,17 @@ export interface DriverWalletScreenProps {
   readonly testID?: string;
 }
 
-const CATEGORY_ICON: Record<TransactionCategory, string> = {
-  trip_earning: 'route',
-  recharge: 'account_balance_wallet',
-  platform_commission: 'percent',
-  deduction: 'remove_circle',
-  bonus: 'redeem',
-  refund: 'undo',
-  withdrawal: 'account_balance',
-};
-
-const formatMoney = (value: number, currency = '₹') => `${currency}${Math.round(value).toLocaleString('en-IN')}`;
-
 export const DriverWalletScreen: React.FC<DriverWalletScreenProps> = ({ navigation, testID }) => {
-  const { balance, transactions } = useWallet();
+  const { balance, transactions, isLoading, isRefreshing, error, mode, refresh } = useWallet();
   const { summary } = useEarnings();
   const { t } = useI18n();
 
   const currency = balance?.currency ?? '₹';
+  const isBlocked = balance?.status === 'BLOCKED';
 
+  const handleRefresh = useCallback(() => {
+    refresh().catch(() => undefined);
+  }, [refresh]);
   const handleRecharge = useCallback(() => navigation.navigate('Recharge'), [navigation]);
   const handleViewHistory = useCallback(() => navigation.navigate('TransactionHistory'), [navigation]);
   const handleMenu = useCallback(() => {
@@ -54,7 +57,7 @@ export const DriverWalletScreen: React.FC<DriverWalletScreenProps> = ({ navigati
       <View key={txn.id} style={[styles.txnRow, !isLast && styles.txnRowBorder]}>
         <View style={styles.txnLeft}>
           <View style={styles.txnIcon}>
-            <Icon name={CATEGORY_ICON[txn.category] ?? 'receipt_long'} size={20} color={colors.onSurfaceVariant} />
+            <Icon name={TRANSACTION_ICON[txn.category] ?? 'receipt_long'} size={20} color={colors.onSurfaceVariant} />
           </View>
           <View>
             <Text style={styles.txnTitle}>{txn.title}</Text>
@@ -85,17 +88,52 @@ export const DriverWalletScreen: React.FC<DriverWalletScreenProps> = ({ navigati
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
         <Text style={styles.pageTitle}>{t('wallet.title')}</Text>
+
+        {mode === 'mock' ? <Text style={styles.sampleNote}>{t('wallet.sampleData')}</Text> : null}
+        {error ? (
+          <InlineErrorBanner message={error} onRetry={handleRefresh} retryLabel={t('wallet.retry')} />
+        ) : null}
 
         {/* Balance */}
         <View style={styles.card}>
           <Text style={styles.balanceLabel}>{t('wallet.availableBalance')}</Text>
-          <Text style={styles.balanceValue}>{formatMoney(balance?.balance ?? 0, currency)}</Text>
-          <Text style={styles.balanceMin}>
-            {t('wallet.minRequired', { amount: formatMoney(balance?.minimumBalance ?? 0, currency) })}
-          </Text>
-          <Pressable style={styles.rechargeBtn} onPress={handleRecharge} accessibilityRole="button">
+          {balance ? (
+            <Text style={styles.balanceValue}>{formatMoney(balance.balance, currency)}</Text>
+          ) : isLoading ? (
+            <ActivityIndicator
+              style={styles.balanceLoading}
+              color={colors.primary}
+              accessibilityLabel={t('wallet.availableBalance')}
+            />
+          ) : (
+            <Text style={styles.balanceValue}>—</Text>
+          )}
+          {balance?.minimumBalance != null ? (
+            <Text style={styles.balanceMin}>
+              {t('wallet.minRequired', { amount: formatMoney(balance.minimumBalance, currency) })}
+            </Text>
+          ) : null}
+          {isBlocked ? <Text style={styles.blockedText}>{t('wallet.blocked')}</Text> : null}
+          <Pressable
+            style={[styles.rechargeBtn, isBlocked && styles.rechargeBtnDisabled]}
+            onPress={handleRecharge}
+            disabled={isBlocked}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isBlocked }}
+          >
             <Text style={styles.rechargeBtnText}>{t('wallet.rechargeWallet')}</Text>
           </Pressable>
         </View>
@@ -211,12 +249,29 @@ const styles = StyleSheet.create({
     color: colors.outline,
     marginTop: -spacing.xs,
   },
+  balanceLoading: {
+    alignSelf: 'flex-start',
+    height: 38,
+    marginTop: 2,
+  },
+  blockedText: {
+    ...typography.labelSm,
+    color: colors.error,
+    marginTop: -spacing.xs,
+  },
+  sampleNote: {
+    ...typography.labelSm,
+    color: colors.outline,
+  },
   rechargeBtn: {
     height: 44,
     backgroundColor: colors.primary,
     borderRadius: borderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  rechargeBtnDisabled: {
+    backgroundColor: colors.outlineVariant,
   },
   rechargeBtnText: {
     ...typography.labelSm,

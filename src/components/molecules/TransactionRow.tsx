@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import Icon from '../atoms/Icon';
 import { colors, typography, spacing } from '../../theme';
+import { formatRupees } from '../../services/payments/money';
 
 export type TransactionRowType = 'credit' | 'debit';
 
@@ -39,12 +40,14 @@ export const TransactionRow: React.FC<TransactionRowProps> = ({
       <View style={styles.content}>
         <Text style={styles.title}>{title}</Text>
         {description ? (
-          <Text style={styles.description}>{description}</Text>
+          <Text style={styles.description} numberOfLines={2}>
+            {description}
+          </Text>
         ) : null}
         <Text style={styles.date}>{date}</Text>
       </View>
       <Text style={[styles.amount, isCredit ? styles.amountCredit : styles.amountDebit]}>
-        {prefix}{currency}{amount.toLocaleString('en-IN')}
+        {prefix}{formatRupees(amount, currency)}
       </Text>
     </View>
   );

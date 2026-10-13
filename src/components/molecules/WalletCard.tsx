@@ -2,12 +2,14 @@ import React from 'react';
 import { View, Text, StyleSheet, Pressable, ViewStyle } from 'react-native';
 import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import { formatRupees } from '../../services/payments/money';
 
 export interface WalletCardProps {
   readonly label: string;
   readonly balance: number;
   readonly currency: string;
-  readonly minimumBalance: number;
+  /** Hidden when null (no minimum balance applies). */
+  readonly minimumBalance: number | null;
   readonly onRechargePress?: () => void;
   readonly rechargeLabel?: string;
   readonly minBalancePrefix?: string;
@@ -34,13 +36,15 @@ export const WalletCard: React.FC<WalletCardProps> = ({
         </View>
         <Text style={styles.label}>{label}</Text>
       </View>
-      <Text style={styles.balance}>
-        {currency}{balance.toLocaleString('en-IN')}
-      </Text>
+      <Text style={styles.balance}>{formatRupees(balance, currency)}</Text>
       <View style={styles.footer}>
-        <Text style={styles.minBalance}>
-          {minBalancePrefix} {currency}{minimumBalance.toLocaleString('en-IN')}
-        </Text>
+        {minimumBalance !== null ? (
+          <Text style={styles.minBalance}>
+            {minBalancePrefix} {formatRupees(minimumBalance, currency)}
+          </Text>
+        ) : (
+          <View />
+        )}
         {onRechargePress ? (
           <Pressable
             onPress={onRechargePress}

@@ -11,15 +11,23 @@ export type TransactionCategory =
   | 'deduction'
   | 'bonus'
   | 'refund'
-  | 'withdrawal';
+  | 'withdrawal'
+  | 'adjustment';
 
 export type PaymentMethod = 'bank_account' | 'upi' | 'card';
 
+export type WalletStatus = 'ACTIVE' | 'LOW_BALANCE' | 'BLOCKED';
+
 export interface WalletBalance {
+  /** Rupees (may include paise, e.g. 1250.5). */
   readonly balance: number;
+  /** Display symbol, e.g. "₹". */
   readonly currency: string;
-  readonly minimumBalance: number;
+  /** Rupees, or null when no minimum balance applies. */
+  readonly minimumBalance: number | null;
   readonly isLowBalance: boolean;
+  /** Server wallet status. A BLOCKED wallet cannot be recharged. */
+  readonly status?: WalletStatus;
 }
 
 export interface Transaction {

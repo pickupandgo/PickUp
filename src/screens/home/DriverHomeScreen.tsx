@@ -15,6 +15,9 @@ import { useDriverDispatch } from '../../hooks/useDriverDispatch';
 import { useWallet } from '../../hooks/useWallet';
 import { useEarnings } from '../../hooks/useEarnings';
 import { useActiveTrip } from '../../hooks/useActiveTrip';
+import { useCollectableTrips } from '../../hooks/useCollectableTrips';
+import { CollectPaymentBanner } from '../../components/molecules/CollectPaymentBanner';
+import type { DriverTripDto } from '../../services/payments/collectionsDto';
 import { useI18n } from '../../i18n';
 
 export type DriverMode = 'offline' | 'searching' | 'active_trip';
@@ -195,9 +198,10 @@ const ActiveTripHero: React.FC<{ trip: ActiveTrip; onOpen: () => void }> = ({ tr
 export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, testID }) => {
   const { startTracking, stopTracking, requestPermission, currentLocation } = useDriverLocation();
   const { t } = useI18n();
-  const { balance } = useWallet();
+  const { balance } = useWallet({ includeTransactions: false });
   const { summary } = useEarnings();
   const activeTrip = useActiveTrip();
+  const collectable = useCollectableTrips();
   const [driverMode, setDriverMode] = useState<Exclude<DriverMode, 'active_trip'>>('offline');
   const [sheetMode, setSheetMode] = useState<'none' | 'go_live' | 'go_offline'>('none');
 
@@ -248,12 +252,18 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
   }, [navigation]);
 
   const handleRecharge = useCallback(() => {
-    navigation.getParent()?.navigate('WalletTab', { screen: 'Recharge' });
+    // initial: false keeps the wallet screen underneath, so back and "Back to wallet" land there.
+    navigation.getParent()?.navigate('WalletTab', { screen: 'Recharge', initial: false });
   }, [navigation]);
 
   const handleDetails = useCallback(() => {
-    navigation.getParent()?.navigate('EarningsTab', { screen: 'EarningsHome' });
+    navigation.getParent()?.navigate('EarningsTab', { screen: 'EarningsHistory' });
   }, [navigation]);
+
+  const handleCollect = useCallback(
+    (trip: DriverTripDto) => navigation.navigate('CollectPayment', { tripId: trip.tripId }),
+    [navigation],
+  );
 
   const handleOpenTrip = useCallback(() => {
     if (activeTrip) {
@@ -333,6 +343,9 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: fadeAnim, gap: spacing.lg }}>
+          {/* Payment the driver can collect right now (payments backend) */}
+          <CollectPaymentBanner trips={collectable} onPress={handleCollect} />
+
           {/* State-specific hero */}
           {mode === 'active_trip' && activeTrip ? (
             <ActiveTripHero trip={activeTrip} onOpen={handleOpenTrip} />
@@ -388,7 +401,7 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
               label={t('home.walletLabel')}
               balance={balance?.balance || 0}
               currency={balance?.currency || '₹'}
-              minimumBalance={balance?.minimumBalance || 0}
+              minimumBalance={balance?.minimumBalance ?? null}
               onRechargePress={handleRecharge}
             />
           </View>

@@ -30,6 +30,8 @@ export type HomeStackParamList = {
   DeliveryProofCamera: { readonly tripId: string; readonly stopId: string };
   DeliveryProofPreview: { readonly tripId: string; readonly stopId: string; readonly photoUri: string };
   TripCompleted: { readonly tripId: string };
+  /** Pickup / delivery payment. `tripId` is the payments backend's trip id (not the engine's). */
+  CollectPayment: { readonly tripId: string };
   CancellationReason: { readonly tripId: string };
   CancellationProcessing: { readonly tripId: string; readonly reason: string };
   CancellationResult: { readonly tripId: string; readonly success: boolean };
@@ -53,11 +55,26 @@ export type EarningsStackParamList = {
 
 // ─── Wallet Stack ──────────────────────────────────────────────────
 
+export type RechargeOutcomeKind = 'success' | 'pending' | 'cancelled' | 'failed';
+
 export type WalletStackParamList = {
   DriverWallet: undefined;
   Recharge: undefined;
-  RechargeProcessing: { readonly amount: number; readonly paymentMethodId: string };
-  RechargeResult: { readonly success: boolean; readonly amount?: number };
+  /** One recharge attempt. The key is reused for every retry of this attempt. */
+  RechargeProcessing: { readonly amountPaise: number; readonly idempotencyKey: string };
+  RechargeResult: {
+    readonly outcome: RechargeOutcomeKind;
+    readonly amountPaise: number;
+    readonly paymentId?: string;
+    /** New wallet balance, when the server returned it. */
+    readonly balancePaise?: number;
+    /** Driver-safe failure message. */
+    readonly message?: string;
+    /** Server request id, shown as a support reference. */
+    readonly requestId?: string;
+    /** True when Checkout was used, so money may have left the driver's account. */
+    readonly paymentAttempted?: boolean;
+  };
   TransactionHistory: undefined;
 };
 

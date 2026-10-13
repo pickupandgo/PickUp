@@ -1,3 +1,4 @@
+/* eslint-env jest */
 // Jest setup file for mocking native modules unavailable in the test environment.
 
 // Mock the NativeLocationModule before anything imports it
@@ -163,4 +164,13 @@ jest.mock('react-native-maps', () => {
 jest.mock('react-native-image-picker', () => ({
   launchCamera: jest.fn(),
   launchImageLibrary: jest.fn(),
+}));
+
+// Mock react-native-razorpay: native Checkout is not available in tests.
+jest.mock('react-native-razorpay', () => ({
+  __esModule: true,
+  default: {
+    open: jest.fn(),
+    onExternalWalletSelection: jest.fn(),
+  },
 }));
