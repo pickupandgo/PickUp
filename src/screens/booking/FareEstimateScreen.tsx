@@ -13,7 +13,7 @@ import { strings } from '../../data/mockData';
 import { useBooking } from '../../state/BookingContext';
 import { getFareEstimate } from '../../api/engine';
 import { toApiError } from '../../api/http';
-import { Feather } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
 
 export interface FareEstimateScreenProps {
   readonly onBack?: () => void;

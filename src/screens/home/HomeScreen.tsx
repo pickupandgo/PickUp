@@ -1,22 +1,24 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { strings, mockRecentLocations } from '../../data/mockData';
 import { useBooking } from '../../state/BookingContext';
-import { getCurrentPlace, LocationPermissionDeniedError } from '../../api/geocoding';
+import { getCurrentPlace, reverseGeocode } from '../../api/geocoding';
+import type { GeoPoint } from '../../api/types';
 import { getActiveTripForCustomer } from '../../api/engine';
 import { toApiError } from '../../api/http';
 import { useNearbyDrivers } from '../../hooks/useNearbyDrivers';
-import MapCanvas, { NEIGHBORHOOD_DELTA, type MapMarker } from '../../components/map/MapCanvas';
+import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
+import { DEFAULT_DELTA } from '../../components/map/MapCanvas.types';
 import TopAppBar from '../../components/organisms/TopAppBar';
 import Card from '../../components/molecules/Card';
 import ListRow from '../../components/molecules/ListRow';
 import Button from '../../components/atoms/Button';
 import Divider from '../../components/atoms/Divider';
 import DraggableBottomSheet from '../../components/organisms/DraggableBottomSheet';
-import { Feather } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
 import { setLoggedIn } from '../../state/session';
 
 export interface HomeScreenProps {
@@ -39,6 +41,14 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
   const { draft, setPickup, customerId, trip, setTrip, startNewBooking } = useBooking();
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string>();
+  const blueDotRef = useRef<GeoPoint | undefined>(undefined);
+  const [forceCenterKey, setForceCenterKey] = useState(1);
+  const [deviceLocation, setDeviceLocation] = useState<any>();
+  const deviceLocationRef = useRef<any>(null);
+  const handleUserLocationChange = useCallback((loc: any) => {
+    deviceLocationRef.current = loc;
+    setDeviceLocation(loc);
+  }, []);
 
   // Reaching Home means the user finished login/onboarding — persist the
   // session so the app reopens on Home until they explicitly log out.
@@ -48,24 +58,57 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
 
   /** Resolves the device position into the pickup point. */
   const locatePickup = useCallback(async () => {
+    console.log('[CUSTOMER_MAP] locate button pressed');
     setIsLocating(true);
     setLocationError(undefined);
     try {
-      setPickup(await getCurrentPlace());
+      let place = await getCurrentPlace().catch((err) => {
+        if (blueDotRef.current) {
+          return {
+            latitude: blueDotRef.current.latitude,
+            longitude: blueDotRef.current.longitude,
+            address: 'Current location'
+          };
+        }
+        throw err;
+      });
+      
+      if (blueDotRef.current) {
+        place = {
+          ...place,
+          latitude: blueDotRef.current.latitude,
+          longitude: blueDotRef.current.longitude,
+        };
+      }
+      
+      setPickup(place);
+      console.log('[DEBUG_PICKUP]', { latitude: place.latitude, longitude: place.longitude, source: 'blueDot' });
+      setForceCenterKey(k => k + 1);
     } catch (caught) {
-      setLocationError(
-        caught instanceof LocationPermissionDeniedError
-          ? 'Location permission is off.'
-          : toApiError(caught).userMessage
-      );
+      const apiErr = toApiError(caught);
+      if (apiErr.kind === 'network' && caught && (caught as Error).message) {
+        setLocationError('DEBUG: ' + (caught as Error).message);
+      } else {
+        setLocationError(apiErr.userMessage);
+      }
     } finally {
       setIsLocating(false);
     }
   }, [setPickup]);
 
-  // Resolve pickup once on first mount, unless one is already set.
+  // Center on user on first mount without dropping a pickup pin.
+  const centerOnUser = useCallback(async () => {
+    try {
+      const place = await getCurrentPlace();
+      setDeviceLocation(place);
+      setForceCenterKey(k => k + 1);
+    } catch {
+      // Ignore background errors
+    }
+  }, []);
+
   useEffect(() => {
-    if (!draft.pickup) void locatePickup();
+    if (!draft.pickup) void centerOnUser();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -150,11 +193,13 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
           jumpy in production. Users can pan freely to see drivers farther
           out. */}
       <MapCanvas
-        style={styles.mapBackground}
-        center={draft.pickup}
+          style={styles.mapBackground}
+          center={draft.pickup || deviceLocation}
         markers={mapMarkers}
         showsUserLocation
-        zoomDelta={NEIGHBORHOOD_DELTA}
+        onUserLocationChange={(loc) => { blueDotRef.current = loc; }}
+        zoomDelta={DEFAULT_DELTA}
+        forceCenterKey={forceCenterKey}
       >
         <Pressable
           style={({ pressed }) => [

@@ -1,9 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getIsLoggedIn, setLoggedIn, clearSession } from './session';
+import { getAuth, onAuthStateChanged } from '@react-native-firebase/auth';
+import { signOut } from '../auth/authService';
+import { isProfileComplete, setProfileComplete, clearSession } from './session';
 
 interface SessionContextValue {
   isLoggedIn: boolean | null;
+  hasProfile: boolean;
+  markProfileDone: (data?: any) => Promise<void>;
   login: () => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -12,31 +15,45 @@ const SessionContext = createContext<SessionContextValue | undefined>(undefined)
 
 export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  const [hasProfile, setHasProfile] = useState<boolean>(false);
 
   useEffect(() => {
-    let mounted = true;
-    getIsLoggedIn().then((loggedIn) => {
-      if (mounted) {
-        setIsLoggedIn(loggedIn);
+    const authInstance = getAuth();
+    const subscriber = onAuthStateChanged(authInstance, async (user: any) => {
+      if (user) {
+        console.log('[AUTH] Auth state restored for Customer UID:', user.uid);
+        const profileDone = await isProfileComplete();
+        setHasProfile(profileDone);
+        setIsLoggedIn(true);
+      } else {
+        console.log('[AUTH] Auth state unauthenticated for Customer');
+        setHasProfile(false);
+        setIsLoggedIn(false);
       }
     });
-    return () => {
-      mounted = false;
-    };
+    return subscriber;
   }, []);
 
   const login = async () => {
-    await setLoggedIn();
+    const profileDone = await isProfileComplete();
+    setHasProfile(profileDone);
     setIsLoggedIn(true);
   };
 
+  const markProfileDone = async (data?: any) => {
+    await setProfileComplete(data);
+    setHasProfile(true);
+  };
+
   const logout = async () => {
+    await signOut();
     await clearSession();
+    setHasProfile(false);
     setIsLoggedIn(false);
   };
 
   return (
-    <SessionContext.Provider value={{ isLoggedIn, login, logout }}>
+    <SessionContext.Provider value={{ isLoggedIn, hasProfile, markProfileDone, login, logout }}>
       {children}
     </SessionContext.Provider>
   );

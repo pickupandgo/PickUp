@@ -92,7 +92,7 @@ export const getRoute = async (
   });
 
   if (options.waypoints?.length) {
-    params.set(
+    params.append(
       'waypoints',
       options.waypoints.map((p) => `${p.latitude},${p.longitude}`).join('|')
     );

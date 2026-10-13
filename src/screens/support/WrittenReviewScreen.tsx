@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CommonActions } from '@react-navigation/native';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import { Feather } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
 import BottomNavBar from '../../components/BottomNavBar';
 import { navigateToTab } from '../../navigation/tabRoutes';
 import { useBooking } from '../../state/BookingContext';

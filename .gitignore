@@ -48,5 +48,10 @@ yarn-error.*
 *.tsbuildinfo
 
 # generated native folders
-/ios
-/android
+android/app/src/main/assets/
+
+# scratch scripts
+fix.js
+new_place.txt
+update*.py
+update*.js

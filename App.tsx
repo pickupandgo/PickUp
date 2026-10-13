@@ -1,12 +1,13 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, FlatList, ActivityIndicator } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
+import { View, Text, StyleSheet, Pressable, FlatList, ActivityIndicator, StatusBar } from 'react-native';
+
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { BookingProvider, useBooking } from './src/state/BookingContext';
 import { SessionProvider, useSession } from './src/state/SessionContext';
+import { AuthProvider } from './src/auth/AuthProvider';
 import { colors } from './src/theme';
 
 import ActiveTripChatScreen from './src/screens/support/ActiveTripChatScreen';
@@ -47,6 +48,7 @@ import LiveTrackingExceptionsScreen from './src/screens/tracking/LiveTrackingExc
 import LiveTrackingScreen from './src/screens/tracking/LiveTrackingScreen';
 import LoadingSkeletonScreen from './src/screens/support/LoadingSkeletonScreen';
 import LoginScreen from './src/screens/auth/LoginScreen';
+import SignUpScreen from './src/screens/auth/SignUpScreen';
 import LogoutConfirmationScreen from './src/screens/auth/LogoutConfirmationScreen';
 import MapLoadingScreen from './src/screens/tracking/MapLoadingScreen';
 import MultiDropOverviewScreen from './src/screens/logistics/MultiDropOverviewScreen';
@@ -85,7 +87,7 @@ import TripHistoryScreen from './src/screens/profile/TripHistoryScreen';
 import ValidateBookingScreen from './src/screens/booking/ValidateBookingScreen';
 import VehicleSelectionScreen from './src/screens/booking/SelectVehicleScreen';
 import WrittenReviewScreen from './src/screens/support/WrittenReviewScreen';
-import { Feather } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -127,8 +129,9 @@ function GalleryScreen({ navigation }: any) {
 
 function AuthNavigator() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="LoginScreen">
       <Stack.Screen name="LoginScreen" component={LoginScreen} />
+      <Stack.Screen name="SignUpScreen" component={SignUpScreen} />
       <Stack.Screen name="OtpVerificationScreen" component={OtpVerificationScreen} />
       <Stack.Screen name="CreateProfileScreen" component={CreateProfileScreen} />
     </Stack.Navigator>
@@ -278,8 +281,16 @@ function MainNavigator() {
   );
 }
 
+function OnboardingNavigator() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="CreateProfileScreen" component={CreateProfileScreen} />
+    </Stack.Navigator>
+  );
+}
+
 function RootNavigator() {
-  const { isLoggedIn } = useSession();
+  const { isLoggedIn, hasProfile } = useSession();
 
   if (isLoggedIn === null) {
     return (
@@ -291,7 +302,13 @@ function RootNavigator() {
 
   return (
     <NavigationContainer>
-      {isLoggedIn ? <MainNavigator /> : <AuthNavigator />}
+      {!isLoggedIn ? (
+        <AuthNavigator />
+      ) : hasProfile ? (
+        <MainNavigator />
+      ) : (
+        <OnboardingNavigator />
+      )}
     </NavigationContainer>
   );
 }
@@ -299,12 +316,14 @@ function RootNavigator() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <SessionProvider>
-        <BookingProvider>
-          <RootNavigator />
-        </BookingProvider>
-      </SessionProvider>
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
+      <AuthProvider>
+        <SessionProvider>
+          <BookingProvider>
+            <RootNavigator />
+          </BookingProvider>
+        </SessionProvider>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
@@ -316,3 +335,4 @@ const styles = StyleSheet.create({
   item: { padding: 16, borderBottomWidth: 1, borderColor: '#f0f0f0' },
   itemText: { fontSize: 16, color: '#333' },
 });
+

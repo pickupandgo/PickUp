@@ -7,14 +7,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography } from '../../theme';
-import { Feather } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
 
 export interface EmptyStateScreenProps {
   readonly onBack?: () => void;
   readonly onHelp?: () => void;
   
   // Empty State Content
-  readonly iconName?: keyof typeof Feather.glyphMap;
+  readonly iconName?: string;
   readonly title: string;
   readonly description: string;
   readonly buttonText?: string;

@@ -14,6 +14,7 @@ export interface InputFieldProps {
   readonly editable?: boolean;
   readonly multiline?: boolean;
   readonly maxLength?: number;
+  readonly autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
 }
 
 const InputField: React.FC<InputFieldProps> = ({
@@ -28,6 +29,7 @@ const InputField: React.FC<InputFieldProps> = ({
   editable = true,
   multiline = false,
   maxLength,
+  autoCapitalize,
 }) => {
   return (
     <View style={styles.wrapper}>
@@ -51,6 +53,7 @@ const InputField: React.FC<InputFieldProps> = ({
           editable={editable}
           multiline={multiline}
           maxLength={maxLength}
+          autoCapitalize={autoCapitalize}
           accessibilityLabel={label || placeholder}
         />
       </View>

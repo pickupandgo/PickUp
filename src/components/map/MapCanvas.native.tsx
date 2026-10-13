@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { colors, shadows } from '../../theme';
 import type { GeoPoint } from '../../api/types';
 import {
@@ -21,9 +21,10 @@ import {
 
 // Anchor coordinates in [0..1], where (0.5, 1) means "bottom-centre of the
 // custom view sits on the geographic point". Truck circles use their centre.
+
 const ANCHORS: Record<MapMarker['kind'], { x: number; y: number }> = {
-  pickup: { x: 0.5, y: 1 },
-  drop: { x: 0.5, y: 1 },
+  pickup: { x: 0.5, y: 0.5 },
+  drop: { x: 0.5, y: 0.5 },
   driver: { x: 0.5, y: 0.5 },
   nearby: { x: 0.5, y: 0.5 },
 };
@@ -37,10 +38,13 @@ const PIN_COLORS: Record<'pickup' | 'drop' | 'nearby', string> = {
 /** Filled circle with a white ring, hanging from a thin stem. */
 const StopPin: React.FC<{ readonly color: string }> = ({ color }) => (
   <View style={styles.pinContainer}>
-    <View style={styles.pinHead}>
-      <View style={[styles.pinDot, { backgroundColor: color }]} />
+    <View style={styles.pinVisible}>
+      <View style={styles.pinHead}>
+        <View style={[styles.pinDot, { backgroundColor: color }]} />
+      </View>
+      <View style={[styles.pinStem, { backgroundColor: color }]} />
     </View>
-    <View style={[styles.pinStem, { backgroundColor: color }]} />
+    <View style={styles.pinGhost} />
   </View>
 );
 
@@ -76,8 +80,10 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
   polyline,
   fitToMarkers = false,
   showsUserLocation = false,
-  onRegionChangeComplete,
-  scrollEnabled = true,
+    onRegionChangeComplete,
+    onUserLocationChange,
+    scrollEnabled = true,
+  forceCenterKey,
   zoomDelta,
   children,
 }) => {
@@ -86,6 +92,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
 
   const initialRegion = useMemo(() => {
     const target = center ?? markers[0]?.coordinate ?? FALLBACK_CENTER;
+    console.log('[DEBUG_INITIAL_REGION]', target);
     return {
       latitude: target.latitude,
       longitude: target.longitude,
@@ -124,17 +131,18 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
 
   useEffect(() => {
     if (fitToMarkers || !center || !mapRef.current) return;
-    mapRef.current.animateToRegion(
+    console.log('[DEBUG_MAP_CAMERA]', { latitude: center.latitude, longitude: center.longitude });
+    mapRef.current.animateCamera(
       {
-        latitude: center.latitude,
-        longitude: center.longitude,
-        latitudeDelta: delta,
-        longitudeDelta: delta,
+        center: {
+          latitude: center.latitude,
+          longitude: center.longitude,
+        },
+        zoom: 17,
       },
-      400
+      { duration: 800 }
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [center?.latitude, center?.longitude, fitToMarkers]);
+  }, [center?.latitude, center?.longitude, fitToMarkers, forceCenterKey]);
 
   // Android has a first-mount rendering quirk where custom marker views appear
   // blank if `tracksViewChanges` is false at mount time. Toggling it on for
@@ -156,7 +164,12 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
         style={StyleSheet.absoluteFill}
         initialRegion={initialRegion}
         showsUserLocation={showsUserLocation}
-        showsMyLocationButton={false}
+          onUserLocationChange={onUserLocationChange ? (e) => {
+            if (e.nativeEvent.coordinate) {
+              onUserLocationChange(e.nativeEvent.coordinate);
+            }
+          } : undefined}
+          showsMyLocationButton={false}
         toolbarEnabled={false}
         scrollEnabled={scrollEnabled}
         zoomEnabled={scrollEnabled}
@@ -180,7 +193,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
             title={marker.title}
             description={marker.description}
             anchor={ANCHORS[marker.kind]}
-            centerOffset={ANCHORS[marker.kind]}
+
             tracksViewChanges={tracking}
           >
             {renderMarkerBody(marker.kind)}
@@ -206,6 +219,13 @@ const styles = StyleSheet.create({
   // Themed stop pin — dark filled dot on a white ring, hanging from a stem.
   pinContainer: {
     alignItems: 'center',
+  },
+  pinVisible: {
+    alignItems: 'center',
+  },
+  pinGhost: {
+    height: 42,
+    width: 22,
   },
   pinHead: {
     width: 22,

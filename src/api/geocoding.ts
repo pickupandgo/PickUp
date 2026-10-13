@@ -1,4 +1,11 @@
-import * as Location from 'expo-location';
+import Geolocation from '@react-native-community/geolocation';
+
+Geolocation.setRNConfiguration({
+  skipPermissionRequests: false,
+  authorizationLevel: 'whenInUse',
+  locationProvider: 'playServices',
+});
+import { PermissionsAndroid, Platform } from 'react-native';
 import { env, hasGeocodingConfig } from '../config/env';
 import { ApiError } from './http';
 import type { GeoPoint } from './types';
@@ -276,22 +283,53 @@ export class LocationPermissionDeniedError extends Error {
  * result if reverse geocoding fails, so a Maps outage cannot block booking.
  */
 export const getCurrentPlace = async (signal?: AbortSignal): Promise<ResolvedPlace> => {
-  const { status } = await Location.requestForegroundPermissionsAsync();
-  if (status !== Location.PermissionStatus.GRANTED) {
-    throw new LocationPermissionDeniedError();
+  console.log('[CUSTOMER_LOCATION] getCurrentPosition started');
+  if (Platform.OS === 'android') {
+    console.log('[CUSTOMER_LOCATION] permission status: requesting');
+    console.log('[CUSTOMER_LOCATION] requesting permission: ACCESS_FINE_LOCATION');
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+    );
+    console.log('[CUSTOMER_LOCATION] permission result:', granted);
+    if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+      throw new ApiError('location_permission', 'Location permission denied');
+    }
   }
 
-  const position = await Location.getCurrentPositionAsync({
-    accuracy: Location.Accuracy.Balanced,
+  const position = await new Promise<any>((resolve, reject) => {
+    Geolocation.getCurrentPosition(
+      (pos) => resolve(pos),
+      (err) => reject(err),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+    );
+  }).catch((err) => {
+    console.log('[CUSTOMER_LOCATION] error code:', err.code);
+    console.log('[CUSTOMER_LOCATION] error message:', err.message);
+    if (err.code === 1) throw new ApiError('location_permission', 'Location permission denied');
+    if (err.code === 2) throw new ApiError('location_unavailable', 'GPS position unavailable');
+    if (err.code === 3) throw new ApiError('location_timeout', 'GPS timeout');
+    throw new ApiError('location_unavailable', 'GPS error');
   });
+
+  console.log('[CUSTOMER_LOCATION] success');
+  console.log('[CUSTOMER_LOCATION] latitude:', position.coords.latitude);
+  console.log('[CUSTOMER_LOCATION] longitude:', position.coords.longitude);
+
+  if (
+    !Number.isFinite(position.coords.latitude) ||
+    !Number.isFinite(position.coords.longitude) ||
+    Math.abs(position.coords.latitude) > 90 ||
+    Math.abs(position.coords.longitude) > 180
+  ) {
+    throw new ApiError('location_unavailable', 'Invalid coordinates received');
+  }
+
 
   const point: GeoPoint = {
     latitude: position.coords.latitude,
     longitude: position.coords.longitude,
   };
 
-  // Label resolution is best-effort and must never block a booking:
-  // Google Geocoding → OS geocoder → plain coordinates.
   try {
     const address = await reverseGeocode(point, signal);
     if (address) return { ...point, address };
@@ -299,20 +337,6 @@ export const getCurrentPlace = async (signal?: AbortSignal): Promise<ResolvedPla
     // Geocoding API may be disabled on the project; fall through.
   }
 
-  try {
-    const osResult = await Location.reverseGeocodeAsync(point);
-    const first = osResult[0];
-    if (first) {
-      const label = [first.name, first.street, first.district, first.city, first.region]
-        .filter((part): part is string => Boolean(part))
-        // The OS often repeats the same value across fields.
-        .filter((part, index, all) => all.indexOf(part) === index)
-        .join(', ');
-      if (label) return { ...point, address: label };
-    }
-  } catch {
-    // No OS geocoder available (common on Android without Play Services).
-  }
-
   return { ...point, address: 'Current location' };
 };
+

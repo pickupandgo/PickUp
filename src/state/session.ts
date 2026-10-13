@@ -1,43 +1,80 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-/**
- * Persisted login flag for the customer app.
- *
- * The prototype has no real backend auth, so "being logged in" is just a
- * boolean we store on the device. It's written when the user finishes OTP
- * verification and cleared on logout. `App.tsx` reads it on launch to decide
- * whether to open on HomeScreen (logged in) or LoginScreen (logged out).
- *
- * When real auth lands, replace this flag with a check for a valid token /
- * Firebase user and delete this file.
- */
-
 const SESSION_KEY = 'pickup.isLoggedIn';
+const PROFILE_KEY = 'pickup.profileComplete';
+const PROFILE_DATA_KEY = 'pickup.customerProfile';
 
-/** Marks the user as logged in. Call after successful OTP verification. */
+export interface CustomerProfileData {
+  fullName: string;
+  email: string;
+  age?: string;
+  address?: string;
+}
+
+/** Marks the user as logged in. */
 export const setLoggedIn = async (): Promise<void> => {
   try {
     await AsyncStorage.setItem(SESSION_KEY, 'true');
   } catch {
-    // Non-fatal: the session simply won't survive a restart.
+    // Non-fatal
   }
 };
 
-/** Clears the login flag. Call on logout. */
+/** Clears session and profile completion on logout. */
 export const clearSession = async (): Promise<void> => {
   try {
     await AsyncStorage.removeItem(SESSION_KEY);
+    await AsyncStorage.removeItem(PROFILE_KEY);
   } catch {
-    // Ignore: nothing more we can do if storage is unavailable.
+    // Non-fatal
   }
 };
 
-/** Returns whether the user is currently logged in. */
+/** Returns whether the user is logged in. */
 export const getIsLoggedIn = async (): Promise<boolean> => {
   try {
     return (await AsyncStorage.getItem(SESSION_KEY)) === 'true';
   } catch {
-    // Storage unavailable: treat as logged out so we fail safe to Login.
     return false;
+  }
+};
+
+/** Marks the customer profile as completed. */
+export const setProfileComplete = async (profileData?: CustomerProfileData): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(PROFILE_KEY, 'true');
+    if (profileData) {
+      await AsyncStorage.setItem(PROFILE_DATA_KEY, JSON.stringify(profileData));
+    }
+  } catch {
+    // Non-fatal
+  }
+};
+
+/** Checks if the customer profile has been completed. */
+export const isProfileComplete = async (): Promise<boolean> => {
+  try {
+    return (await AsyncStorage.getItem(PROFILE_KEY)) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+/** Clears the profile completed status. */
+export const clearProfileComplete = async (): Promise<void> => {
+  try {
+    await AsyncStorage.removeItem(PROFILE_KEY);
+  } catch {
+    // Non-fatal
+  }
+};
+
+/** Gets persisted customer profile data. */
+export const getCustomerProfile = async (): Promise<CustomerProfileData | null> => {
+  try {
+    const raw = await AsyncStorage.getItem(PROFILE_DATA_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
   }
 };

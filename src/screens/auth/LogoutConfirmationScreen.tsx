@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import { Feather, MaterialIcons } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { clearSession } from '../../state/session';
 import { useSession } from '../../state/SessionContext';
 
@@ -95,6 +96,7 @@ const LogoutConfirmationScreen: React.FC<LogoutConfirmationScreenProps & { navig
                   style={styles.logoutButton}
                   onPress={async () => {
                     onLogoutConfirm?.();
+                    await clearSession();
                     await logout();
                   }}
                 >

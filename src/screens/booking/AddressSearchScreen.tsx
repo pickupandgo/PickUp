@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography } from '../../theme';
-import { Feather, MaterialIcons } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { usePlaceSearch } from '../../hooks/usePlaceSearch';
 import { useBooking } from '../../state/BookingContext';
 import { getCurrentPlace, LocationPermissionDeniedError, type PlaceSuggestion } from '../../api/geocoding';

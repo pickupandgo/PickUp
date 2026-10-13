@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "702412484863",
+    "project_id": "multipleride-customer",
+    "storage_bucket": "multipleride-customer.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:702412484863:android:4a0514b903f1f157c01cca",
+        "android_client_info": {
+          "package_name": "com.multipleride.customer"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "702412484863-ukmaaf19avaqgukqjv8blu5qpe7te3ah.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.multipleride.customer",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "702412484863-l9l6scc4qprnv8vok5ptjoomcknvhom7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB0_4I9pEhjIcTcrCCVnFLP9cfRe5djtAs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "702412484863-l9l6scc4qprnv8vok5ptjoomcknvhom7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

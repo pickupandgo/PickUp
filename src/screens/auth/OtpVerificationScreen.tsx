@@ -1,5 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
+  verifyOTP,
+  sendPhoneOTP,
+  mapFirebaseAuthError,
+  RESEND_COOLDOWN_SECONDS,
+  usePhoneCooldown,
+} from '../../auth/authService';
+import { clearProfileComplete } from '../../state/session';
+import {
   View,
   Text,
   StyleSheet,
@@ -9,7 +17,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import { Feather, MaterialIcons } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
 
 export interface OtpVerificationScreenProps {
@@ -26,7 +35,7 @@ export interface OtpVerificationScreenProps {
 
 const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?: any }> = ({
   phoneNumber = '+91 98765 43210',
-  timerSeconds = 30,
+  timerSeconds = RESEND_COOLDOWN_SECONDS,
   onVerify,
   onResend,
   onChangeNumber,
@@ -35,25 +44,48 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
   error = null,
   isExpired = false,
   navigation,
-}) => {
-  const [otp, setOtp] = useState(['', '', '', '']);
-  const [remaining, setRemaining] = useState(timerSeconds);
-  const inputRefs = useRef<Array<TextInput | null>>([null, null, null, null]);
+  route,
+}: any) => {
+  const actualPhoneNumber = route?.params?.phoneNumber || phoneNumber;
+  const authMode = route?.params?.authMode || 'login';
+  const isSignUp = authMode === 'signup';
+  const { cooldownRemaining, isCoolingDown } = usePhoneCooldown(actualPhoneNumber);
 
-  // Live countdown for the "Resend OTP" link.
-  useEffect(() => {
-    if (remaining <= 0) {
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [resendExpired, setResendExpired] = useState(false);
+  const inputRefs = useRef<Array<TextInput | null>>([null, null, null, null, null, null]);
+  const isResendingRef = useRef(false);
+  const isVerifyingRef = useRef(false);
+
+  const handleResend = async () => {
+    if (cooldownRemaining > 0 || isCoolingDown || isResending || isResendingRef.current) {
+      console.log('[AUTH] Resend blocked by cooldown');
       return;
     }
-    const interval = setInterval(() => {
-      setRemaining((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [remaining]);
 
-  const handleResend = () => {
-    onResend?.();
-    setRemaining(timerSeconds);
+    console.log('[AUTH] Resend pressed');
+    isResendingRef.current = true;
+    setIsResending(true);
+    setVerifyError(null);
+    setSuccessMessage(null);
+
+    try {
+      await sendPhoneOTP(actualPhoneNumber, true);
+      setOtp(['', '', '', '', '', '']);
+      inputRefs.current[0]?.focus();
+      setSuccessMessage('A new verification code was requested.');
+      setResendExpired(false);
+      onResend?.();
+    } catch (e: any) {
+      setVerifyError(mapFirebaseAuthError(e));
+    } finally {
+      isResendingRef.current = false;
+      setIsResending(false);
+    }
   };
 
   const handleOtpChange = (text: string, index: number) => {
@@ -66,7 +98,7 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
       setOtp(newOtp);
       
       // Auto-advance
-      if (index < 3) {
+      if (index < 5) {
         inputRefs.current[index + 1]?.focus();
       }
     } else {
@@ -85,9 +117,30 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
     }
   };
 
-  const handleVerify = () => {
-    onVerify?.(otp.join(''));
-    navigation?.navigate('CreateProfileScreen');
+  const handleVerify = async () => {
+    const enteredOtp = otp.join('');
+    if (enteredOtp.length < 6 || isVerifying || isVerifyingRef.current || isLoading) return;
+
+    isVerifyingRef.current = true;
+    try {
+      setIsVerifying(true);
+      setVerifyError(null);
+      setSuccessMessage(null);
+      if (isSignUp) {
+        await clearProfileComplete();
+      }
+      await verifyOTP(enteredOtp, actualPhoneNumber);
+      onVerify?.(enteredOtp);
+      // Navigation is handled by SessionContext onAuthStateChanged automatically updating root navigator
+    } catch (e: any) {
+      setVerifyError(mapFirebaseAuthError(e));
+      if (e?.code === 'auth/code-expired' || e?.code === 'auth/session-expired') {
+        setResendExpired(true);
+      }
+    } finally {
+      isVerifyingRef.current = false;
+      setIsVerifying(false);
+    }
   };
 
   const formatTimer = (seconds: number) => {
@@ -110,17 +163,21 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         {/* Header Section */}
         <View style={styles.titleSection}>
-          <Text style={styles.title}>Verify Mobile Number</Text>
+          <Text style={styles.title}>
+            {isSignUp ? 'Verify for Sign Up' : 'Verify Mobile Number'}
+          </Text>
           <Text style={styles.subtitle}>
-            Enter the 4-digit code sent to{'\n'}
-            <Text style={styles.phoneNumber}>{phoneNumber}</Text>
+            {isSignUp
+              ? 'Enter the 6-digit code to complete registration for'
+              : 'Enter the 6-digit code sent to'}{'\n'}
+            <Text style={styles.phoneNumber}>{actualPhoneNumber}</Text>
           </Text>
         </View>
 
         {/* OTP Input Section */}
         <View style={styles.inputSection}>
           <View style={styles.otpContainer}>
-            {[0, 1, 2, 3].map((index) => (
+            {[0, 1, 2, 3, 4, 5].map((index) => (
               <TextInput
                 key={index}
                 ref={(ref) => { inputRefs.current[index] = ref; }}
@@ -136,16 +193,20 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
                 maxLength={1}
                 placeholder="-"
                 placeholderTextColor={colors.onSurfaceVariant}
-                editable={!isLoading && !isExpired}
+                editable={!isLoading && !isExpired && !isResending}
               />
             ))}
           </View>
           
-          {error && !isExpired && (
-            <Text style={styles.errorText}>{error}</Text>
+          {successMessage && !verifyError && (
+            <Text style={styles.successText}>{successMessage}</Text>
           )}
 
-          {isExpired && (
+          {(error || verifyError) && !isExpired && !resendExpired && (
+            <Text style={styles.errorText}>{error || verifyError}</Text>
+          )}
+
+          {(isExpired || resendExpired) && (
             <View style={styles.expiredContainer}>
               <MaterialIcons name="timer" size={16} color={colors.onSurfaceVariant} />
               <Text style={styles.expiredText}>Code has expired. Request a new one.</Text>
@@ -153,9 +214,13 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
           )}
 
           <View style={styles.linksContainer}>
-            <Pressable onPress={handleResend} disabled={remaining > 0}>
-              <Text style={[styles.resendLink, remaining > 0 && styles.resendDisabled]}>
-                Resend OTP ({formatTimer(remaining)})
+            <Pressable onPress={handleResend} disabled={cooldownRemaining > 0 || isResending}>
+              <Text style={[styles.resendLink, (cooldownRemaining > 0 || isResending) && styles.resendDisabled]}>
+                {isResending
+                  ? 'Requesting new code...'
+                  : cooldownRemaining > 0
+                  ? `Resend OTP (${formatTimer(cooldownRemaining)})`
+                  : 'Resend OTP'}
               </Text>
             </Pressable>
             <Pressable onPress={() => (onChangeNumber ? onChangeNumber() : navigation?.goBack())}>
@@ -167,13 +232,13 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
         {/* Actions */}
         <View style={styles.actionsContainer}>
           <Button
-            label={isLoading ? 'VERIFYING...' : 'VERIFY'}
+            label={isVerifying || isLoading ? 'VERIFYING...' : 'VERIFY'}
             onPress={handleVerify}
             variant="primary"
             fullWidth
             size="lg"
-            disabled={otp.join('').length < 4 || isLoading}
-            icon={isLoading ? <MaterialIcons name="loop" size={20} color={colors.onSurfaceVariant} /> : undefined}
+            disabled={otp.join('').length < 6 || isLoading || isVerifying}
+            icon={(isLoading || isVerifying) ? <MaterialIcons name="loop" size={20} color={colors.onSurfaceVariant} /> : undefined}
           />
         </View>
       </ScrollView>
@@ -250,8 +315,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   otpInput: {
-    width: 56,
-    height: 64,
+    width: 48,
+    height: 56,
     backgroundColor: colors.surfaceVariant,
     borderRadius: borderRadius.md,
     textAlign: 'center',
@@ -275,6 +340,13 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: typography.labelSm.fontSize,
     color: colors.error,
+    fontFamily: typography.labelSm.fontFamily,
+    marginBottom: spacing.md,
+    textAlign: 'center',
+  },
+  successText: {
+    fontSize: typography.labelSm.fontSize,
+    color: (colors as any).success || '#10B981',
     fontFamily: typography.labelSm.fontFamily,
     marginBottom: spacing.md,
     textAlign: 'center',

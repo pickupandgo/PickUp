@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+﻿import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { FareEstimate, GeoPoint, NearbyDriver, Ride, Trip } from '../api/types';
 import type { ResolvedPlace } from '../api/geocoding';
@@ -28,7 +28,7 @@ const getCustomerId = async (): Promise<string> => {
  *
  * Scope note: the engine models a single pickup + single drop per ride. The
  * multi-drop screens stay in the UI for the future, but `drops` is capped at one
- * entry for anything sent to the backend — see `primaryDrop`.
+ * entry for anything sent to the backend â€” see `primaryDrop`.
  */
 
 export interface BookingDraft {
@@ -54,7 +54,7 @@ const EMPTY_DRAFT: BookingDraft = { drops: [] };
 interface BookingContextValue {
   readonly customerId: string | undefined;
   readonly draft: BookingDraft;
-  /** First drop — the only one the engine supports today. */
+  /** First drop â€” the only one the engine supports today. */
   readonly primaryDrop: ResolvedPlace | undefined;
   /** True when pickup + at least one drop are set. */
   readonly canEstimate: boolean;

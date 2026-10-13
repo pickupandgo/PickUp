@@ -26,6 +26,8 @@ export interface MapCanvasProps {
   readonly style?: ViewStyle;
   /** Camera centre when `markers` is empty or fitting is disabled. */
   readonly center?: GeoPoint;
+  /** Increment this to force the camera to re-center on the 'center' coordinate. */
+  readonly forceCenterKey?: number;
   readonly markers?: readonly MapMarker[];
   /** Straight line drawn through these points, in order. */
   readonly polyline?: readonly GeoPoint[];
@@ -35,6 +37,8 @@ export interface MapCanvasProps {
   readonly showsUserLocation?: boolean;
   /** Fired when the user finishes panning, for drag-to-pick flows. */
   readonly onRegionChangeComplete?: (point: GeoPoint, details?: { isGesture?: boolean }) => void;
+  /** Fired when the native map component updates the user's live location (blue dot). */
+  readonly onUserLocationChange?: (location: GeoPoint) => void;
   readonly scrollEnabled?: boolean;
   /**
    * Override the initial camera zoom. Larger deltas show more area, so a

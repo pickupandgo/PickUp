@@ -8,14 +8,15 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import { Feather, MaterialIcons } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
 export interface NotificationItem {
   id: string;
   title: string;
   timeText: string;
   description: string;
-  icon: keyof typeof MaterialIcons.glyphMap;
+  icon: string;
   isUnread?: boolean;
   type: 'trip' | 'account' | 'payment';
   /** Route this notification opens when tapped. */

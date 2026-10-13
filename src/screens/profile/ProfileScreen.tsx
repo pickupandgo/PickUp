@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, MaterialIcons } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import { strings, mockUser } from '../../data/mockData';
 import TopAppBar from '../../components/organisms/TopAppBar';
@@ -10,7 +11,7 @@ import ListRow from '../../components/molecules/ListRow';
 import Divider from '../../components/atoms/Divider';
 
 /** Menu rows share one icon treatment so nothing renders in OS emoji colours. */
-const MenuIcon: React.FC<{ readonly name: keyof typeof Feather.glyphMap }> = ({ name }) => (
+const MenuIcon: React.FC<{ readonly name: string }> = ({ name }) => (
   <Feather name={name} size={20} color={colors.onSurfaceVariant} />
 );
 

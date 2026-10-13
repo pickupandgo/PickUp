@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import { Feather } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
 import { getCustomerHistory } from '../../api/engine';
 import { useBooking } from '../../state/BookingContext';
 import type { Trip } from '../../api/types';

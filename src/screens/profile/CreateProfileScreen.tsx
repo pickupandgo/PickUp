@@ -8,7 +8,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import { mockUser } from '../../data/mockData';
 import Button from '../../components/atoms/Button';
@@ -22,7 +22,7 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { navigation?: an
   onSave,
   navigation,
 }) => {
-  const { login } = useSession();
+  const { login, markProfileDone, logout } = useSession();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [age, setAge] = useState('');
@@ -30,6 +30,9 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { navigation?: an
 
   const handleSave = async () => {
     onSave?.();
+    if (markProfileDone) {
+      await markProfileDone({ fullName, email, age, address });
+    }
     await login();
   };
 
@@ -43,7 +46,12 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { navigation?: an
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Create Your Profile</Text>
+          <View style={styles.headerTopRow}>
+            <Text style={styles.title}>Create Your Profile</Text>
+            <Pressable onPress={logout} hitSlop={8} style={styles.logoutButton}>
+              <Text style={styles.logoutText}>Sign Out</Text>
+            </Pressable>
+          </View>
           <Text style={styles.subtitle}>Tell us a little about yourself to get started.</Text>
         </View>
 
@@ -161,6 +169,20 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xxl,
     paddingBottom: spacing.lg,
     gap: spacing.sm,
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  logoutButton: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  logoutText: {
+    fontSize: 14,
+    color: colors.error,
+    fontWeight: '600',
   },
   title: {
     fontSize: typography.headlineMd.fontSize,

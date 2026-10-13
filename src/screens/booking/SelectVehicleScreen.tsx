@@ -5,7 +5,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import { strings, mockVehicleTypes } from '../../data/mockData';
 import { useBooking } from '../../state/BookingContext';
 import { getFareEstimate } from '../../api/engine';
-import { Feather } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
 import TopAppBar from '../../components/organisms/TopAppBar';
 import VehicleOptionCard from '../../components/molecules/VehicleOptionCard';
 

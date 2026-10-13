@@ -9,7 +9,7 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import Feather from 'react-native-vector-icons/Feather';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import { mockUser } from '../../data/mockData';
 import Button from '../../components/atoms/Button';

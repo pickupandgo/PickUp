@@ -10,7 +10,7 @@ import LocationInputRow from '../../components/molecules/LocationInputRow';
 import ListRow from '../../components/molecules/ListRow';
 import Divider from '../../components/atoms/Divider';
 import Button from '../../components/atoms/Button';
-import Feather from '@expo/vector-icons/Feather';
+import Feather from 'react-native-vector-icons/Feather';
 
 export interface ReviewBookingScreenProps {
   readonly onBack?: () => void;
