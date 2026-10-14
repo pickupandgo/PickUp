@@ -410,3 +410,24 @@ OPEN_DECISIONS section H. Migration `20261008120000_bank_account_change_requests
 | Return to an earlier bank account | Done: fund-account uniqueness on live accounts only; simulated and fake gateways return the same contact and fund account for identical details, like RazorpayX. | migration, `SimulatedPayoutGateway` | payouts ("lets a driver switch back…") |
 
 Last full run: 203 unit tests and 227 integration tests passing against PostgreSQL 17, plus the end-to-end run (12 steps, 9 idempotency checks). Lint, typecheck and build are clean.
+
+## 9. Implementation status: payment flow Phase 1
+
+[PAYMENT_FLOW_FINAL_REVIEW.md](./PAYMENT_FLOW_FINAL_REVIEW.md) Phase 1 and OPEN_DECISIONS section I. Migration `20261015120000_booking_quote_snapshot`.
+
+| Requirement | Status | Implementation | Tests |
+|---|---|---|---|
+| New bookings are frozen copies of a redeemed quote, with one stop per drop | Done | `BookingsService.register` / `createFromQuote`, `FareQuoteRedeemer`; triggers `guard_booking_insert`, `guard_booking_stop_insert`, deferred `check_booking_snapshot` | booking-registration ("freezes the quote…", "rounds a percentage fee half up…", database guards with a positive control); trips-earnings; least-privilege (production grants) |
+| The frozen fee is split across the drops and always adds up | Done | `src/bookings/fee-allocation.ts` (largest remainder); deferred database check of each share | `fee-allocation.spec.ts`; booking-registration |
+| Registration takes no amount, is idempotent on `externalRef` and safe under races | Done | `RegisterBookingRequest` (v2), `replayRegistration`, unique indexes on the ref and the quote | booking-registration (validation, replay and conflicts, three race tests); e2e step 1a |
+| No new PREPAID_UPI booking (API and database) | Done | `422 PAYMENT_METHOD_NOT_OFFERED`; `guard_booking_insert`; CHECK `bookings_quote_bookings_not_prepaid` | booking-registration; e2e step 1a |
+| Checkout only for historical PREPAID_UPI bookings, verification unchanged (N4) | Done | `assertLegacyPrepaid` (start, verify); `isHistoricalPrepaid` before capture and in the finalizer; trigger `trg_payments_booking_insert_guard` | legacy-bookings; `src/payments/legacy-prepaid-only.spec.ts`; booking-payments; e2e steps 1–11 |
+| Existing bookings keep their model and values (N3) | Done | `payment_model` backfilled to `LEGACY_BOOKING_LEVEL` only; legacy fee from the pinned rule (`feeFor`, cash collection, earnings) | legacy-bookings; `test/migration/check-legacy-migration.mjs` on the test-data, dev and e2e databases |
+| Snapshot and stops immutable, even for the table owner | Done | `guard_booking_update`, `guard_booking_stop_update`, no delete or truncate, no UPDATE grant on `booking_stops` | booking-registration; least-privilege (snapshot, stop and trigger-disable refusals) |
+| Maximum drops is configuration (N7) | Done | `FARE_MAX_DROPS` (default 5), `422 TOO_MANY_DROPS`, database ceiling 25 | fare ("validates the route itself"); booking-registration (25 drops, a 26th refused) |
+| Development pricing refused in production by the admin API too (L-1) | Done | `createPricingVersionRecord` `production` input | fare ("refuses a PROTOTYPE…") |
+| Tax refused until a rule is approved (L-2) | Done | `422 TAX_NOT_SUPPORTED`; CHECKs on bookings and stops | booking-registration |
+| Delivery collection of new bookings refused until per-drop collection (temporary) | Done | `assertCollectable`, `isCollectionOpen`, trigger `guard_collection_insert` | booking-registration |
+| Migration safety and rollback (N1) | Done | `prisma/sql/preflight-payment-flow.sql`, `npm run db:migration-check`, `down.sql` (refuses once a new booking exists) | migration check: rows unchanged, all LEGACY, schema equal to a fresh install, up / down / up |
+
+Last full run: 290 unit tests and 323 integration tests passing against PostgreSQL 17, plus the end-to-end run (steps 0, 1a and 1–11) and the migration check on three databases. Lint, typecheck, build and the schema drift check are clean.

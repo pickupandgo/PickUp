@@ -39,6 +39,15 @@ export class FareQuotesService {
 
   async create(principal: Principal, request: CreateFareQuoteRequest): Promise<FareQuoteResponse> {
     const customer = requireCustomer(principal);
+    const maxDrops = this.config.fare.maxDrops;
+    if (request.drops.length > maxDrops) {
+      throw new AppError(
+        ErrorCode.TOO_MANY_DROPS,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        `A booking can have at most ${maxDrops} drops`,
+        { maxDrops },
+      );
+    }
     const now = this.clock.now();
     const inEffect = await findPricingVersionInEffect(this.prisma, now);
     if (!inEffect) {

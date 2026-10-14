@@ -181,6 +181,56 @@ UPDATE driver_bank_accounts SET change_request_id = gen_random_uuid();
 DELETE FROM bank_account_change_requests;
 ```
 
+### Customer self-registration, Fare module and booking snapshot (payment flow Phase 1)
+
+Three migrations, applied in order by `prisma migrate deploy`. Only the third touches existing rows, and only to mark them.
+
+1. `20261014120000_customer_self_registration`: the `register_customer()` function (SECURITY DEFINER), the API's only way to create a customer account.
+2. `20261014120100_fare_quotes`: `pricing_versions` (versioned, config immutable), `fare_quotes` (immutable, redeemed once) and `fare_quote_stops` (the drops must add up to the quote at commit).
+3. `20261015120000_booking_quote_snapshot`:
+   - `bookings.payment_model`. Every existing booking becomes `LEGACY_BOOKING_LEVEL`; that is the only change to existing data. The new snapshot columns (`fare_quote_id`, `pricing_version_id`, `fare_paise`, `tax_paise`, `platform_fee_paise`) stay NULL on them.
+   - New table `booking_stops`, empty until the first new booking. Legacy bookings never get stops.
+   - Guards: a new booking must be a `QUOTE_PER_STOP` copy of a quote redeemed for it, with its pinned rule's fee; `PREPAID_UPI` is refused; the snapshot and the stops never change; booking payment rows exist only for historical `PREPAID_UPI` bookings; a collection must match its booking's method, amount and (cash) frozen fee; delivery collections for new bookings are refused until per-drop collection is built (OPEN_DECISIONS section I).
+   - Quote drops may go up to 25 (technical ceiling; the business limit is `FARE_MAX_DROPS`).
+   - The new CHECKs are validated against existing rows. If a row didn't satisfy one, the migration would stop with an error; it never rewrites a row to make it fit.
+
+**Required before migrating any database that holds data (decision N1).** Staging, production and every shared database stay blocked until steps 1 and 2 are done:
+
+1. Run the read-only inventory and have someone review the output. It runs in a READ ONLY transaction:
+
+   ```bash
+   psql "<mr_migrator url>" -f prisma/sql/preflight-payment-flow.sql
+   ```
+
+   Note in particular unpaid `PREPAID_UPI` bookings in progress, unpaid `PAY_AT_PICKUP` bookings past arrival, unpaid `PAY_AT_DELIVERY` bookings at delivery, and pending QR collections. They all keep their current (legacy) rules after the migration.
+2. Take a snapshot you can restore.
+3. Rehearse on a copy. `npm run db:migration-check` copies databases on the **local** Postgres (`CREATE DATABASE … TEMPLATE`), migrates the copies and proves that no pre-existing row changed (row fingerprints over the old columns of every table), that every booking is `LEGACY_BOOKING_LEVEL` without stops, that the schema equals a fresh install, and that `down.sql` followed by a re-deploy gives the same result. It refuses any host other than localhost and drops its `*_migcheck_test` copies at the end. For a remote environment, restore its snapshot into the local Postgres and pass that database's name: `node test/migration/check-legacy-migration.mjs <database>`.
+4. Deploy (`prisma migrate deploy` as `mr_migrator`), then **re-run `02-app-grants.sql`**: without it quotes and registrations fail with `permission denied` (new tables, `register_customer`, `booking_stops`).
+5. Check:
+
+   ```sql
+   SELECT payment_model, count(*) FROM bookings GROUP BY 1;  -- only LEGACY_BOOKING_LEVEL before the first new booking
+   SELECT count(*) FROM booking_stops;                        -- 0 before the first new booking
+   ```
+
+   Connected as `mr_app`, these must fail with `permission denied`:
+
+   ```sql
+   UPDATE bookings SET platform_fee_paise = 0;
+   UPDATE booking_stops SET payable_paise = 1;
+   DELETE FROM booking_stops;
+   UPDATE fare_quotes SET payable_paise = 1;
+   ```
+
+6. No booking can be registered until a pricing version is in effect (quotes answer `503 PRICING_NOT_CONFIGURED`). Production needs approved rates (L-1); `PROTOTYPE*` versions are refused there. See `pricing/README.md`.
+
+**Rollback** (`down.sql` in the migration folder; Prisma never runs it). Only before the first new booking: it refuses to run if a `QUOTE_PER_STOP` booking or a quote with more than 5 drops exists, and it doesn't change any existing row. Roll the backend back to the previous release at the same time.
+
+```bash
+psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261015120000_booking_quote_snapshot/down.sql
+psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261015120000_booking_quote_snapshot';"
+```
+
 ## Ongoing rules
 
 - **Schema changes:** only through new migration files. Re-run step 4 (migrate, then grants) on every release that adds one.

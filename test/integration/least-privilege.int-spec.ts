@@ -201,12 +201,32 @@ describe('Least-privilege database role', () => {
       })
       .expect(201);
 
-    // Cash trip: wallet fee debit, completion, cash earning.
-    await fundWallet(ctx, admin, driver.driverId, 10_000);
+    // Pay at pickup, registered from a quote with production grants (booking, stops, quote
+    // redemption), paid in cash at pickup: wallet fee debit (the frozen fee), cash earning.
+    await fundWallet(ctx, admin, driver.driverId, 20_000);
+    const pickup = await bookedTrip(ctx, customer, driver, {
+      paymentMethod: 'PAY_AT_PICKUP',
+      farePaise: 40_000,
+      category,
+      owner,
+    });
+    expect(await owner.bookingStop.count({ where: { bookingId: pickup.bookingId } })).toBe(1);
+    await advanceTrip(ctx, pickup.tripId, ['DRIVER_ARRIVED']);
+    await collect(ctx, driver, pickup.tripId, { method: 'CASH', amountPaise: 40_000 }).expect(201);
+    await advanceTrip(ctx, pickup.tripId, [
+      'PICKUP_VERIFIED',
+      'IN_TRANSIT',
+      'DROP_PROGRESS',
+      'DELIVERED',
+    ]);
+    await setTripStatus(ctx, pickup.tripId, 'COMPLETED').expect(200);
+
+    // Historical (legacy) cash trip at delivery: wallet fee debit, completion, cash earning.
     const cash = await bookedTrip(ctx, customer, driver, {
       paymentMethod: 'PAY_AT_DELIVERY',
       farePaise: 50_000,
       category,
+      owner,
     });
     await advanceTrip(ctx, cash.tripId, TO_DELIVERED);
     await collect(ctx, driver, cash.tripId, { method: 'CASH', amountPaise: 50_000 }).expect(201);
@@ -217,6 +237,7 @@ describe('Least-privilege database role', () => {
       paymentMethod: 'PAY_AT_DELIVERY',
       farePaise: 30_000,
       category,
+      owner,
     });
     await advanceTrip(ctx, qr.tripId, TO_DELIVERED);
     const shown = await collect(ctx, driver, qr.tripId, {
@@ -232,11 +253,12 @@ describe('Least-privilege database role', () => {
       .expect(200);
     await setTripStatus(ctx, qr.tripId, 'COMPLETED').expect(200);
 
-    // Prepaid trip: customer pays in the app, verified with Razorpay.
+    // Historical prepaid trip: customer pays in the app, verified with Razorpay.
     const prepaid = await bookedTrip(ctx, customer, driver, {
       paymentMethod: 'PREPAID_UPI',
       farePaise: 20_000,
       category,
+      owner,
     });
     const started = await startBookingPayment(ctx, customer, prepaid.bookingId).expect(201);
     const orderId = started.body.checkout.orderId as string;
@@ -367,7 +389,12 @@ describe('Least-privilege database role', () => {
     expect(
       (await owner.driverEarning.findUniqueOrThrow({ where: { id: earning.id } })).status,
     ).toBe('PAID');
-    expect(await walletBalance(ctx, driver.driverId)).toBe(5_000n);
+    // Funded 20,000; the two cash trips each debited their 10% fee: 4,000 frozen on the pickup
+    // booking, 5,000 from the legacy booking's pinned rule.
+    expect(
+      (await owner.booking.findUniqueOrThrow({ where: { id: pickup.bookingId } })).platformFeePaise,
+    ).toBe(4_000n);
+    expect(await walletBalance(ctx, driver.driverId)).toBe(20_000n - 4_000n - 5_000n);
   });
 
   it.each([
@@ -461,6 +488,19 @@ describe('Least-privilege database role', () => {
     ['edit the rates of a pricing version', "UPDATE pricing_versions SET config = '{}'::jsonb"],
     ['move a pricing version', 'UPDATE pricing_versions SET effective_from = now()'],
     ['delete pricing versions', 'DELETE FROM pricing_versions'],
+    ['change a booking stop amount', 'UPDATE booking_stops SET payable_paise = 1'],
+    ['move a booking stop', "UPDATE booking_stops SET status = 'DELIVERED'"],
+    ['delete booking stops', 'DELETE FROM booking_stops'],
+    ['change a booking fare snapshot', 'UPDATE bookings SET fare_paise = 1'],
+    ['change a booking platform fee', 'UPDATE bookings SET platform_fee_paise = 0'],
+    [
+      're-point a booking at another quote',
+      'UPDATE bookings SET fare_quote_id = gen_random_uuid()',
+    ],
+    [
+      'change a booking payment model',
+      "UPDATE bookings SET payment_model = 'LEGACY_BOOKING_LEVEL'",
+    ],
   ])('the API role cannot %s', async (_label, sql) => {
     const client = new PrismaClient({
       adapter: new PrismaPg({ connectionString: restrictedDatabaseUrl(), max: 1 }),
@@ -468,6 +508,32 @@ describe('Least-privilege database role', () => {
     try {
       // Constant SQL from the table above; no user input involved.
       await expect(client.$executeRaw(Prisma.raw(sql))).rejects.toThrow(/permission denied/i);
+    } finally {
+      await client.$disconnect();
+    }
+  });
+
+  // Turning a guard off is an ownership check, not a privilege check, so Postgres reports it
+  // differently ("must be owner of table ..."). The API role owns no table.
+  it.each([
+    ['the booking insert guard', 'ALTER TABLE bookings DISABLE TRIGGER trg_bookings_insert_guard'],
+    ['the booking terms guard', 'ALTER TABLE bookings DISABLE TRIGGER trg_bookings_guard'],
+    ['the booking stop guard', 'ALTER TABLE booking_stops DISABLE TRIGGER trg_booking_stops_guard'],
+    [
+      'the booking payment guard',
+      'ALTER TABLE payments DISABLE TRIGGER trg_payments_booking_insert_guard',
+    ],
+    [
+      'the collection guard',
+      'ALTER TABLE payment_collections DISABLE TRIGGER trg_collections_insert_guard',
+    ],
+  ])('the API role cannot disable %s', async (_label, sql) => {
+    const client = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: restrictedDatabaseUrl(), max: 1 }),
+    });
+    try {
+      // Constant SQL from the table above; no user input involved.
+      await expect(client.$executeRaw(Prisma.raw(sql))).rejects.toThrow(/must be owner of table/i);
     } finally {
       await client.$disconnect();
     }

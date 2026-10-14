@@ -100,9 +100,11 @@ describe('Fare quotes and pricing versions', () => {
   describe('with no pricing version in effect', () => {
     it('quotes nothing instead of falling back to a hard-coded fare', async () => {
       await clearPricingVersions(owner);
+      // Other suites book through quotes too, so compare against what was there before.
+      const before = await ctx.prisma.fareQuote.count();
       const res = await quote().expect(503);
       expect(res.body.error.code).toBe('PRICING_NOT_CONFIGURED');
-      expect(await ctx.prisma.fareQuote.count()).toBe(0);
+      expect(await ctx.prisma.fareQuote.count()).toBe(before);
 
       const current = await request(ctx.server)
         .get('/v1/admin/pricing-versions/current')
@@ -203,11 +205,42 @@ describe('Fare quotes and pricing versions', () => {
     });
 
     it('validates the route itself', async () => {
+      const before = await ctx.prisma.fareQuote.count();
+      const drops = (count: number) => Array.from({ length: count }, () => ROUTE.drops[0]);
       expect((await quote({ drops: [] }).expect(400)).body.error.code).toBe('VALIDATION_FAILED');
-      expect(
-        (await quote({ drops: Array.from({ length: 6 }, () => ROUTE.drops[0]) }).expect(400)).body
-          .error.code,
-      ).toBe('VALIDATION_FAILED');
+      // Past the request's technical ceiling: a malformed request.
+      expect((await quote({ drops: drops(26) }).expect(400)).body.error.code).toBe(
+        'VALIDATION_FAILED',
+      );
+      // Past the configured limit (technical default 5, an open decision): a business refusal
+      // that tells the app the current limit.
+      const tooMany = await quote({ drops: drops(6) }).expect(422);
+      expect(tooMany.body.error).toMatchObject({
+        code: 'TOO_MANY_DROPS',
+        details: { maxDrops: 5 },
+      });
+      expect(await ctx.prisma.fareQuote.count()).toBe(before);
+      await quote({ drops: drops(5) }).expect(201);
+
+      // The limit is configuration (FARE_MAX_DROPS), so changing it needs no release.
+      const limited = await createTestApp({ configOverrides: { FARE_MAX_DROPS: '2' } });
+      try {
+        const as = nextCustomer();
+        const limitedQuote = (count: number) =>
+          request(limited.server)
+            .post('/v1/fare/quotes')
+            .set(bearer(limited.tokens.sign(as.subject)))
+            .send({ ...ROUTE, drops: drops(count) });
+        const refused = await limitedQuote(3).expect(422);
+        expect(refused.body.error).toMatchObject({
+          code: 'TOO_MANY_DROPS',
+          details: { maxDrops: 2 },
+        });
+        await limitedQuote(2).expect(201);
+      } finally {
+        await limited.close();
+      }
+
       await quote({ pickup: { latitude: 91, longitude: 73 } }).expect(400);
       await quote({ weightKg: 0 }).expect(400);
       await quote({ weightKg: 1.00049 }).expect(400);
@@ -740,6 +773,59 @@ describe('Fare quotes and pricing versions', () => {
           reason: 'Missing file case for the integration test',
         }),
       ).rejects.toThrow(/could not be read as JSON/);
+    });
+
+    it('refuses a PROTOTYPE (development) version in production, from the admin API and the CLI', async () => {
+      await clearPricingVersions(owner);
+      const before = await owner.pricingVersion.count();
+      const prototype = {
+        code: `PROTOTYPE-${uniqueVersionCode().slice(0, 8)}`,
+        model: 'LEG_DISTANCE_V1',
+        config: TEST_PRICING_CONFIG,
+        reason: 'Development rates that nobody approved for production',
+      };
+
+      // Production refuses providers nobody has confirmed (readiness gates); none is used here.
+      const production = await createTestApp({
+        configOverrides: {
+          NODE_ENV: 'production',
+          COLLECTION_LINK_PROVIDER: 'razorpay_qr_code',
+          SETTLEMENT_PROVIDER: 'disabled',
+          PAYOUT_PROVIDER: 'disabled',
+        },
+      });
+      try {
+        const refused = await request(production.server)
+          .post('/v1/admin/pricing-versions')
+          .set(bearer(production.tokens.sign(nextAdmin().subject)))
+          .send(prototype)
+          .expect(400);
+        expect(refused.body.error).toMatchObject({ code: 'PRICING_VERSION_INVALID' });
+        expect(refused.body.error.message).toMatch(/refused in production/);
+      } finally {
+        await production.close();
+      }
+
+      const nodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      try {
+        await expect(
+          runProvisionCommand(owner, 'firebase', {
+            kind: 'create-pricing-version',
+            code: prototype.code,
+            model: 'LEG_DISTANCE_V1',
+            configPath: 'pricing/prototype-leg-distance-v1.json',
+            reason: prototype.reason,
+          }),
+        ).rejects.toThrow(/development only and cannot be created in production/);
+      } finally {
+        process.env.NODE_ENV = nodeEnv;
+      }
+      expect(await owner.pricingVersion.count()).toBe(before);
+
+      // Outside production the same code is accepted (development rates for development).
+      await create(prototype).expect(201);
+      await clearPricingVersions(owner);
     });
   });
 });

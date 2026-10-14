@@ -7,6 +7,11 @@ import { isUniqueViolation } from '../prisma/prisma-errors';
 import { parsePricingConfig, type PricingConfig } from './pricing/pricing-config';
 
 export const PRICING_VERSION_CODE_PATTERN = /^[A-Z0-9][A-Z0-9_.-]{1,39}$/;
+/**
+ * Codes reserved for development rates nobody has approved (pricing/README.md, open decision
+ * L-1). Refused in production by the admin API and the ops CLI alike.
+ */
+export const DEVELOPMENT_PRICING_CODE_PREFIX = 'PROTOTYPE';
 /** Clock skew tolerance for "now"; versions can't otherwise be back-dated. */
 const MAX_BACKDATE_MS = 5 * 60_000;
 
@@ -17,6 +22,8 @@ export interface CreatePricingVersionInput {
   readonly effectiveFrom: Date | null;
   readonly reason: string;
   readonly createdByUserId: string | null;
+  /** True in production, where development (PROTOTYPE*) versions are refused. */
+  readonly production: boolean;
 }
 
 export interface CreatePricingVersionResult {
@@ -39,6 +46,11 @@ export async function createPricingVersionRecord(
   const code = input.code.trim();
   if (!PRICING_VERSION_CODE_PATTERN.test(code)) {
     throw invalid('code must be 2-40 upper-case letters, digits, ".", "_" or "-"');
+  }
+  if (input.production && code.startsWith(DEVELOPMENT_PRICING_CODE_PREFIX)) {
+    throw invalid(
+      `${DEVELOPMENT_PRICING_CODE_PREFIX}* pricing versions hold unapproved development rates and are refused in production`,
+    );
   }
   const pricing = parsePricingConfig(input.model, input.config);
   const effectiveFrom = input.effectiveFrom ?? now;

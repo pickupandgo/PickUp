@@ -123,6 +123,7 @@ export class BookingPaymentService {
     body: VerifyTopUpRequest,
   ): Promise<BookingVerifyResult> {
     const booking = await this.findOwnedBooking(principal, bookingId);
+    this.assertLegacyPrepaid(booking);
     const payment = await this.prisma.payment.findFirst({
       where: {
         bookingId: booking.id,
@@ -180,7 +181,12 @@ export class BookingPaymentService {
     return { booking: freshBooking, payment: fresh, providerStatus: result.providerStatus };
   }
 
-  private assertPayable(booking: Booking): void {
+  /**
+   * In-app payment exists only for historical PREPAID_UPI bookings, so they can still be paid
+   * and verified. Every other booking pays the driver at pickup or at delivery. The database
+   * enforces the same rule on every booking payment row (trg_payments_booking_insert_guard).
+   */
+  private assertLegacyPrepaid(booking: Booking): void {
     if (booking.paymentMethod !== 'PREPAID_UPI') {
       throw new AppError(
         ErrorCode.BOOKING_NOT_PAYABLE,
@@ -189,6 +195,18 @@ export class BookingPaymentService {
         { paymentMethod: booking.paymentMethod },
       );
     }
+    if (booking.paymentModel !== 'LEGACY_BOOKING_LEVEL') {
+      throw new AppError(
+        ErrorCode.BOOKING_NOT_PAYABLE,
+        HttpStatus.CONFLICT,
+        'In-app payment is available only for bookings made before pay at pickup',
+        { paymentModel: booking.paymentModel },
+      );
+    }
+  }
+
+  private assertPayable(booking: Booking): void {
+    this.assertLegacyPrepaid(booking);
     if (booking.paymentStatus !== 'UNPAID') {
       throw new AppError(
         ErrorCode.BOOKING_ALREADY_PAID,

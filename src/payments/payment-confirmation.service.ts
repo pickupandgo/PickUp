@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { isHistoricalPrepaid } from '../bookings/booking-payment-state';
 import type { Payment } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RazorpayApiError } from '../razorpay/razorpay.errors';
@@ -103,17 +104,21 @@ export class PaymentConfirmationService {
     return this.report(paymentId, providerPayment, outcome, context);
   }
 
-  /** A booking payment may only be captured while its booking still needs paying. */
+  /**
+   * A booking payment may only be captured while its booking still needs paying, and only for a
+   * historical PREPAID_UPI booking: no other booking is ever paid in the app.
+   */
   private async isCapturable(payment: Payment): Promise<boolean> {
     if (payment.purpose !== PaymentPurpose.BOOKING || !payment.bookingId) {
       return true;
     }
     const booking = await this.prisma.booking.findUnique({
       where: { id: payment.bookingId },
-      select: { status: true, paymentStatus: true },
+      select: { status: true, paymentStatus: true, paymentMethod: true, paymentModel: true },
     });
     return (
       booking !== null &&
+      isHistoricalPrepaid(booking) &&
       booking.paymentStatus === 'UNPAID' &&
       booking.status !== 'CANCELLED' &&
       booking.status !== 'COMPLETED'

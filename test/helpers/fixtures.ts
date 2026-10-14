@@ -1,5 +1,7 @@
 import { randomInt, randomUUID } from 'node:crypto';
-import type { PrismaClient } from '../../src/generated/prisma/client';
+import { resolveFeeRule } from '../../src/fees/fee-rules';
+import type { Booking, PricingVersion, PrismaClient } from '../../src/generated/prisma/client';
+import type { BookingPaymentMethod } from '../../src/generated/prisma/enums';
 import type { UserStatus } from '../../src/generated/prisma/enums';
 import type { TestTokenIssuer } from './test-tokens';
 
@@ -297,8 +299,12 @@ export async function clearPricingVersions(prisma: PrismaClient): Promise<void> 
 
 export interface TestQuote {
   readonly quoteId: string;
+  /** Fare + tax of the whole quote. */
   readonly payablePaise: bigint;
+  /** Fare + tax of each drop, in delivery order. */
   readonly dropPayablePaise: readonly bigint[];
+  /** The quoted drops' ids, in delivery order. */
+  readonly stopIds: readonly string[];
   readonly expiresAt: Date;
 }
 
@@ -312,16 +318,23 @@ export async function createFareQuote(
   options: {
     customerId: string;
     pricingVersionId: string;
-    /** One amount per drop, in paise. The quote total is their sum. */
+    /** One fare per drop, in paise. The quote's fare is their sum. */
     dropPaise: readonly number[];
+    /** Tax per drop, in paise. Defaults to none (pricing has no tax rule yet, L-2). */
+    dropTaxPaise?: readonly number[];
     vehicleCategory?: string;
     weightGrams?: number;
     createdAt?: Date;
     expiresAt?: Date;
   },
 ): Promise<TestQuote> {
-  const drops = options.dropPaise.map((paise) => BigInt(paise));
-  const total = drops.reduce((sum, paise) => sum + paise, 0n);
+  const drops = options.dropPaise.map((paise, index) => {
+    const fare = BigInt(paise);
+    const tax = BigInt(options.dropTaxPaise?.[index] ?? 0);
+    return { fare, tax, payable: fare + tax };
+  });
+  const sum = (pick: (drop: (typeof drops)[number]) => bigint) =>
+    drops.reduce((total, drop) => total + pick(drop), 0n);
   const createdAt = options.createdAt ?? new Date();
   const expiresAt = options.expiresAt ?? new Date(createdAt.getTime() + 600_000);
   const metersPerLeg = 1_000;
@@ -336,32 +349,100 @@ export async function createFareQuote(
         pickupLatitude: '26.238900',
         pickupLongitude: '73.024300',
         distanceMeters: metersPerLeg * drops.length,
-        farePaise: total,
-        taxPaise: 0n,
-        payablePaise: total,
+        farePaise: sum((drop) => drop.fare),
+        taxPaise: sum((drop) => drop.tax),
+        payablePaise: sum((drop) => drop.payable),
         createdAt,
         expiresAt,
       },
     });
     await tx.fareQuoteStop.createMany({
-      data: drops.map((paise, index) => ({
+      data: drops.map((drop, index) => ({
         quoteId: created.id,
         sequence: index + 1,
         latitude: (26.3 + index / 100).toFixed(6),
         longitude: '73.045800',
         distanceMeters: metersPerLeg,
-        farePaise: paise,
-        taxPaise: 0n,
-        payablePaise: paise,
+        farePaise: drop.fare,
+        taxPaise: drop.tax,
+        payablePaise: drop.payable,
       })),
     });
-    return created;
+    const stops = await tx.fareQuoteStop.findMany({
+      where: { quoteId: created.id },
+      orderBy: { sequence: 'asc' },
+      select: { id: true },
+    });
+    return { id: created.id, stopIds: stops.map((stop) => stop.id) };
   });
 
   return {
     quoteId: quote.id,
-    payablePaise: total,
-    dropPayablePaise: drops,
+    payablePaise: sum((drop) => drop.payable),
+    dropPayablePaise: drops.map((drop) => drop.payable),
+    stopIds: quote.stopIds,
     expiresAt,
   };
+}
+
+const fixtureVersions = new WeakMap<PrismaClient, Promise<PricingVersion>>();
+
+/**
+ * The pricing version fixture quotes point at: inactive, so it never prices a real quote and
+ * never overlaps a version a test creates. One per client, created on first use.
+ */
+export function fixturePricingVersion(prisma: PrismaClient): Promise<PricingVersion> {
+  let version = fixtureVersions.get(prisma);
+  if (!version) {
+    version = createPricingVersion(prisma, {
+      code: `FIXTURE-${uniqueVersionCode()}`.slice(0, 40),
+      active: false,
+    });
+    fixtureVersions.set(prisma, version);
+  }
+  return version;
+}
+
+/**
+ * Inserts a booking exactly as it was registered before fare quotes existed (engine-sent fare,
+ * the fee rule in effect pinned, no stops), marked LEGACY_BOOKING_LEVEL. Such rows can no longer
+ * be created through the API or by the application role: the insert guard refuses them. This
+ * fixture needs the table owner, which disables only that guard, inside its own transaction.
+ * Used to prove historical bookings (including PREPAID_UPI) keep their behaviour.
+ */
+export async function createLegacyBooking(
+  owner: PrismaClient,
+  options: {
+    customerId: string;
+    paymentMethod: BookingPaymentMethod;
+    farePaise: number;
+    category: string | null;
+    externalRef?: string;
+  },
+): Promise<Booking> {
+  const fare = BigInt(options.farePaise);
+  return owner.$transaction(async (tx) => {
+    const confirmedAt = new Date();
+    const rule = await resolveFeeRule(tx, options.category, confirmedAt);
+    await tx.$executeRaw`ALTER TABLE bookings DISABLE TRIGGER trg_bookings_insert_guard`;
+    const booking = await tx.booking.create({
+      data: {
+        externalRef: options.externalRef ?? `LEGACY-${randomUUID()}`,
+        customerId: options.customerId,
+        vehicleCategory: options.category,
+        fareEstimateMinor: fare,
+        finalFareMinor: fare,
+        paymentMethod: options.paymentMethod,
+        feeRuleId: rule.id,
+        paymentModel: 'LEGACY_BOOKING_LEVEL',
+        confirmedAt,
+      },
+    });
+    // The insert queued the deferred snapshot check, and Postgres refuses ALTER TABLE while a
+    // table has pending trigger events. Run the check now (it passes for LEGACY rows), then turn
+    // the guard back on before anything else can use this transaction.
+    await tx.$executeRaw`SET CONSTRAINTS trg_bookings_snapshot IMMEDIATE`;
+    await tx.$executeRaw`ALTER TABLE bookings ENABLE TRIGGER trg_bookings_insert_guard`;
+    return booking;
+  });
 }

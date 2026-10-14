@@ -61,6 +61,8 @@ export const ErrorCode = {
   DRIVER_NOT_FOUND: 'DRIVER_NOT_FOUND',
   BOOKING_NOT_FOUND: 'BOOKING_NOT_FOUND',
   BOOKING_REF_CONFLICT: 'BOOKING_REF_CONFLICT',
+  /** The payment method is not offered for new bookings (PREPAID_UPI is retired). */
+  PAYMENT_METHOD_NOT_OFFERED: 'PAYMENT_METHOD_NOT_OFFERED',
   BOOKING_NOT_PAYABLE: 'BOOKING_NOT_PAYABLE',
   BOOKING_ALREADY_PAID: 'BOOKING_ALREADY_PAID',
   BOOKING_CLOSED: 'BOOKING_CLOSED',
@@ -82,6 +84,10 @@ export const ErrorCode = {
   QUOTE_EXPIRED: 'QUOTE_EXPIRED',
   /** The quote was already used for another booking. */
   QUOTE_ALREADY_USED: 'QUOTE_ALREADY_USED',
+  /** More drops than a booking may have right now. `details.maxDrops` is the current limit. */
+  TOO_MANY_DROPS: 'TOO_MANY_DROPS',
+  /** The quote carries tax, which can't be booked until a tax rule is approved. */
+  TAX_NOT_SUPPORTED: 'TAX_NOT_SUPPORTED',
 
   // Collections (pickup / delivery payments)
   COLLECTION_NOT_ALLOWED: 'COLLECTION_NOT_ALLOWED',

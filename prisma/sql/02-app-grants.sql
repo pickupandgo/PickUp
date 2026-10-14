@@ -122,5 +122,10 @@ GRANT UPDATE (effective_to, active, deactivated_at, deactivated_by_user_id, deac
 GRANT SELECT, INSERT ON fare_quotes TO mr_app;
 GRANT UPDATE (redeemed_at) ON fare_quotes TO mr_app;
 GRANT SELECT, INSERT ON fare_quote_stops TO mr_app;
+
+-- Booking stops: written once at registration with amounts copied from the quote (triggers). No
+-- UPDATE grant until the stop lifecycle is enabled; the amounts never change.
+GRANT SELECT, INSERT ON booking_stops TO mr_app;
+
 -- Admin audit trail: append-only (a trigger also blocks UPDATE, DELETE and TRUNCATE).
 GRANT SELECT, INSERT ON admin_actions TO mr_app;

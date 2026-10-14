@@ -21,6 +21,7 @@
     "e2e:local": "npm run build && node test/e2e/run-local-e2e.mjs",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:status": "prisma migrate status",
+    "db:migration-check": "node test/migration/check-legacy-migration.mjs",
     "provision": "node dist/cli/provision.js"
   },
   "dependencies": {

@@ -1,16 +1,26 @@
 import request from 'supertest';
 import type { EngineTripStatus } from '../../src/bookings/trip-lifecycle';
+import type { PrismaClient } from '../../src/generated/prisma/client';
 import {
   MerchantSettlementsService,
   type SettlementSyncResult,
 } from '../../src/settlements/merchant-settlements.service';
 import { WalletService } from '../../src/wallet/wallet.service';
-import { bearer, idempotencyKey, type TestCustomer, type TestDriver } from './fixtures';
+import {
+  bearer,
+  createFareQuote,
+  createLegacyBooking,
+  fixturePricingVersion,
+  idempotencyKey,
+  type TestCustomer,
+  type TestDriver,
+} from './fixtures';
 import type { SignedWebhook } from './razorpay-payloads';
 import type { TestContext } from './test-app';
 import { TEST_INTERNAL_API_KEY } from './test-config';
 
 export type PaymentMethod = 'PREPAID_UPI' | 'PAY_AT_PICKUP' | 'PAY_AT_DELIVERY';
+export type PaymentModel = 'QUOTE_PER_STOP' | 'LEGACY_BOOKING_LEVEL';
 
 export const TO_DELIVERED: readonly EngineTripStatus[] = [
   'DRIVER_ARRIVED',
@@ -31,25 +41,64 @@ export function engine(ctx: TestContext) {
 
 export interface BookingOptions {
   readonly paymentMethod: PaymentMethod;
+  /** The booking's payable amount, in paise. */
   readonly farePaise: number;
+  /** Vehicle category: the quote's category (QUOTE_PER_STOP) or the booking's (legacy). */
   readonly category: string;
   readonly externalRef?: string;
+  /** QUOTE_PER_STOP only: one amount per drop. Defaults to a single drop with the whole fare. */
+  readonly dropPaise?: readonly number[];
+  /**
+   * Which model to create. Defaults to QUOTE_PER_STOP through the real registration API, except:
+   *  - PREPAID_UPI only exists on historical bookings, so it is always LEGACY_BOOKING_LEVEL;
+   *  - PAY_AT_DELIVERY is LEGACY_BOOKING_LEVEL until per-drop collection exists, so tests of
+   *    today's whole-booking delivery collection keep running against the rows that still use it.
+   */
+  readonly model?: PaymentModel;
+  /** Client that may insert historical rows (the table owner). Defaults to ctx.prisma. */
+  readonly owner?: PrismaClient;
 }
 
-/** Registers a confirmed booking through the internal API and returns its id. */
+export function defaultModel(method: PaymentMethod): PaymentModel {
+  return method === 'PAY_AT_PICKUP' ? 'QUOTE_PER_STOP' : 'LEGACY_BOOKING_LEVEL';
+}
+
+/**
+ * Registers a confirmed booking and returns its id. QUOTE_PER_STOP: a fare quote for the
+ * customer is inserted (exact amounts, no pricing involved), then the booking is registered from
+ * it through the internal API, as the trip engine does. LEGACY_BOOKING_LEVEL: see
+ * createLegacyBooking.
+ */
 export async function registerBooking(
   ctx: TestContext,
   customer: TestCustomer,
   options: BookingOptions,
 ): Promise<string> {
+  const model = options.model ?? defaultModel(options.paymentMethod);
+  const owner = options.owner ?? ctx.prisma;
+  if (model === 'LEGACY_BOOKING_LEVEL') {
+    const booking = await createLegacyBooking(owner, {
+      customerId: customer.customerId,
+      paymentMethod: options.paymentMethod,
+      farePaise: options.farePaise,
+      category: options.category,
+      externalRef: options.externalRef,
+    });
+    return booking.id;
+  }
+  const quote = await createFareQuote(owner, {
+    customerId: customer.customerId,
+    pricingVersionId: (await fixturePricingVersion(owner)).id,
+    dropPaise: options.dropPaise ?? [options.farePaise],
+    vehicleCategory: options.category,
+  });
   const res = await engine(ctx)
     .post('/v1/internal/bookings')
     .send({
       externalRef: options.externalRef ?? `ENG-${idempotencyKey()}`,
       customerSubject: customer.subject,
-      vehicleCategory: options.category,
+      quoteId: quote.quoteId,
       paymentMethod: options.paymentMethod,
-      confirmedFarePaise: options.farePaise,
     })
     .expect(201);
   return res.body.bookingId as string;

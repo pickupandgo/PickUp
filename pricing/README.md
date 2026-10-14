@@ -21,7 +21,7 @@ the per-vehicle multipliers), converted to paise with the vehicle multiplier fol
 category's rates. They exist so the Fare module can be exercised end to end before the real
 fares are decided. **Nobody has approved them** (`docs/OPEN_DECISIONS.md`, D-14).
 
-Create it with a `PROTOTYPE…` code, which the CLI refuses in production:
+Create it with a `PROTOTYPE…` code, which the CLI and the admin API both refuse in production:
 
 ```
 node dist/cli/provision.js create-pricing-version \

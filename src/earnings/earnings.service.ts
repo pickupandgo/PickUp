@@ -86,6 +86,8 @@ export class EarningsService {
 
     const rule = await tx.feeRule.findUniqueOrThrow({ where: { id: booking.feeRuleId } });
     const gross = booking.finalFareMinor;
+    // The fee frozen at registration; a legacy booking computes it from its pinned rule.
+    const onlineFee = booking.platformFeePaise ?? feeForFare(rule, gross);
     const base = {
       bookingId: booking.id,
       tripId: trip.id,
@@ -108,7 +110,7 @@ export class EarningsService {
       });
       data = {
         ...base,
-        ...breakdown(gross, feeForFare(rule, gross)),
+        ...breakdown(gross, onlineFee),
         settlement: 'ONLINE',
         paymentId: payment.id,
         ...onlineStatus(disputed, settlement, completedAt),
@@ -138,7 +140,7 @@ export class EarningsService {
         });
         data = {
           ...base,
-          ...breakdown(gross, feeForFare(rule, gross)),
+          ...breakdown(gross, onlineFee),
           settlement: 'ONLINE',
           collectionId: collection.id,
           ...onlineStatus(disputed, settlement, completedAt),

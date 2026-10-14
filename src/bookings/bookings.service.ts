@@ -2,15 +2,19 @@ import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import type { Principal } from '../auth/principal';
 import { requireCustomer, requireDriver } from '../auth/require-driver';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
+import { Clock } from '../common/clock';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import { EarningsService } from '../earnings/earnings.service';
+import { type FrozenFare, FareQuoteRedeemer } from '../fare/fare-contract';
 import { FeeRulesService } from '../fees/fee-rules.service';
-import type { Booking, DriverEarning, Prisma, Trip } from '../generated/prisma/client';
+import type { Booking, BookingStop, DriverEarning, Prisma, Trip } from '../generated/prisma/client';
 import type { BookingPaymentMethod, TripStatus } from '../generated/prisma/enums';
 import { isUniqueViolation } from '../prisma/prisma-errors';
 import { PrismaService, type Tx } from '../prisma/prisma.service';
 import { lockBooking, lockTripOfBooking } from './booking-locks';
+import { isOfferedPaymentMethod, OFFERED_PAYMENT_METHODS } from './bookings.dto';
+import { allocatePlatformFee } from './fee-allocation';
 import {
   type EngineTripStatus,
   FINAL_TRIP_STATUSES,
@@ -18,19 +22,14 @@ import {
   tripRank,
 } from './trip-lifecycle';
 
-/** Razorpay's documented minimum (Rs 1) and maximum (Rs 5,00,000) for one order. */
-export const MIN_FARE_PAISE = 100n;
-export const MAX_FARE_PAISE = 50_000_000n;
-
 export interface RegisterBookingInput {
   /** The trip engine's booking id. */
   readonly externalRef: string;
   /** Firebase UID of the customer who confirmed the booking. */
   readonly customerSubject: string;
-  readonly vehicleCategory: string | null;
+  /** The fare quote the customer confirmed. Every amount comes from it. */
+  readonly quoteId: string;
   readonly paymentMethod: BookingPaymentMethod;
-  /** The fare shown to and confirmed by the customer, in paise. */
-  readonly confirmedFarePaise: bigint;
 }
 
 export interface BookingWithTrip {
@@ -78,21 +77,27 @@ export class BookingsService {
     private readonly prisma: PrismaService,
     private readonly feeRules: FeeRulesService,
     private readonly earnings: EarningsService,
+    private readonly redeemer: FareQuoteRedeemer,
+    private readonly clock: Clock,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   /**
-   * Registers a booking at confirmation. The confirmed fare becomes the final fare (V1: fares
-   * never change afterwards) and the fee rule in effect now is pinned to the booking.
-   * Idempotent on externalRef; reusing a ref for different terms is refused.
+   * Registers a booking at confirmation, from the fare quote the customer confirmed. In one
+   * transaction: the quote is redeemed (once, unexpired, the same customer's), its amounts are
+   * frozen on the booking and on one stop per drop, the fee rule in effect now is pinned and its
+   * fee is frozen and split across the drops. The database checks the copy against the quote.
+   *
+   * Idempotent on externalRef: the same ref with the same quote, method and customer returns the
+   * same booking, even when the two requests race; any other reuse of the ref is refused.
    */
   async register(input: RegisterBookingInput): Promise<RegisterResult> {
-    if (input.confirmedFarePaise < MIN_FARE_PAISE || input.confirmedFarePaise > MAX_FARE_PAISE) {
+    if (!isOfferedPaymentMethod(input.paymentMethod)) {
       throw new AppError(
-        ErrorCode.AMOUNT_OUT_OF_RANGE,
-        HttpStatus.BAD_REQUEST,
-        'Confirmed fare is out of range',
-        { minPaise: Number(MIN_FARE_PAISE), maxPaise: Number(MAX_FARE_PAISE) },
+        ErrorCode.PAYMENT_METHOD_NOT_OFFERED,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        'This payment method is no longer offered. Bookings pay at pickup or at delivery',
+        { offered: [...OFFERED_PAYMENT_METHODS] },
       );
     }
 
@@ -106,28 +111,22 @@ export class BookingsService {
 
     const customer = await this.findCustomer(input.customerSubject);
     try {
-      const booking = await this.prisma.runInTransaction(async (tx) => {
-        const confirmedAt = new Date();
-        const rule = await this.feeRules.resolve(tx, input.vehicleCategory, confirmedAt);
-        return tx.booking.create({
-          data: {
-            externalRef: input.externalRef,
-            customerId: customer.id,
-            vehicleCategory: input.vehicleCategory,
-            fareEstimateMinor: input.confirmedFarePaise,
-            finalFareMinor: input.confirmedFarePaise,
-            paymentMethod: input.paymentMethod,
-            feeRuleId: rule.id,
-            confirmedAt,
-          },
-        });
-      });
+      const outcome = await this.prisma.runInTransaction((tx) =>
+        this.createFromQuote(tx, input, customer.id),
+      );
+      if (outcome.kind === 'replay') {
+        return this.replayRegistration(outcome.booking, input);
+      }
+      const { booking, stops } = outcome;
       this.logger.log(
         {
           bookingId: booking.id,
           externalRef: booking.externalRef,
           paymentMethod: booking.paymentMethod,
-          farePaise: Number(booking.finalFareMinor),
+          quoteId: booking.fareQuoteId,
+          payablePaise: Number(booking.finalFareMinor),
+          platformFeePaise: Number(booking.platformFeePaise),
+          stops: stops.length,
           feeRuleId: booking.feeRuleId,
         },
         'Booking registered',
@@ -135,15 +134,25 @@ export class BookingsService {
       return { booking, trip: null, created: true };
     } catch (error) {
       if (isUniqueViolation(error)) {
-        // A concurrent registration of the same ref won the insert.
-        const winner = await this.prisma.booking.findUniqueOrThrow({
+        // A concurrent registration of the same ref (with another quote) won the insert.
+        const winner = await this.prisma.booking.findUnique({
           where: { externalRef: input.externalRef },
           include: { trip: true },
         });
-        return this.replayRegistration(winner, input);
+        if (winner) {
+          return this.replayRegistration(winner, input);
+        }
       }
       throw error;
     }
+  }
+
+  /** The booking's stops, in delivery order. Empty for legacy bookings. */
+  stopsOf(bookingId: string): Promise<BookingStop[]> {
+    return this.prisma.bookingStop.findMany({
+      where: { bookingId },
+      orderBy: { sequence: 'asc' },
+    });
   }
 
   /** CREATED -> SEARCHING_DRIVER. Idempotent. */
@@ -355,8 +364,14 @@ export class BookingsService {
     });
   }
 
-  /** Platform fee for a booking under the rule pinned at its confirmation. */
+  /**
+   * Platform fee for a booking: the fee frozen at registration, or, for a legacy booking, the
+   * fee under the rule pinned at its confirmation (how it was always computed).
+   */
   async feeFor(booking: Booking): Promise<bigint> {
+    if (booking.platformFeePaise !== null) {
+      return booking.platformFeePaise;
+    }
     const rule = await this.prisma.feeRule.findUniqueOrThrow({ where: { id: booking.feeRuleId } });
     return this.feeRules.feeFor(rule, booking.finalFareMinor);
   }
@@ -421,15 +436,107 @@ export class BookingsService {
     return { booking: completedBooking, trip: completedTrip, changed: true, earning };
   }
 
+  /**
+   * Inside the registration transaction. Redeeming locks the quote row, so of two identical
+   * requests the second waits, then finds the quote used by the first; that is a replay, not a
+   * conflict, when the booking holding it has the same ref.
+   */
+  private async createFromQuote(
+    tx: Tx,
+    input: RegisterBookingInput,
+    customerId: string,
+  ): Promise<
+    | { kind: 'created'; booking: Booking; stops: BookingStop[] }
+    | { kind: 'replay'; booking: Booking & { trip: Trip | null } }
+  > {
+    const confirmedAt = this.clock.now();
+    let frozen: FrozenFare;
+    try {
+      frozen = await this.redeemer.redeem(tx, {
+        quoteId: input.quoteId,
+        customerId,
+        at: confirmedAt,
+      });
+    } catch (error) {
+      if (error instanceof AppError && error.code === ErrorCode.QUOTE_ALREADY_USED) {
+        const holder = await tx.booking.findUnique({
+          where: { fareQuoteId: input.quoteId },
+          include: { trip: true },
+        });
+        if (holder && holder.externalRef === input.externalRef) {
+          return { kind: 'replay', booking: holder };
+        }
+      }
+      throw error;
+    }
+    if (frozen.taxPaise !== 0n || frozen.stops.some((stop) => stop.taxPaise !== 0n)) {
+      // Pricing refuses taxes today; a taxed quote can't be booked until a tax rule exists (L-2).
+      throw new AppError(
+        ErrorCode.TAX_NOT_SUPPORTED,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        'Fares with tax cannot be booked until a tax rule is approved',
+      );
+    }
+
+    const rule = await this.feeRules.resolve(tx, frozen.vehicleCategory, confirmedAt);
+    const feePaise = this.feeRules.feeFor(rule, frozen.farePaise);
+    const shares = allocatePlatformFee(
+      feePaise,
+      frozen.stops.map((stop) => ({ sequence: stop.sequence, farePaise: stop.farePaise })),
+    );
+
+    const booking = await tx.booking.create({
+      data: {
+        externalRef: input.externalRef,
+        customerId,
+        vehicleCategory: frozen.vehicleCategory,
+        fareEstimateMinor: frozen.payablePaise,
+        finalFareMinor: frozen.payablePaise,
+        paymentMethod: input.paymentMethod,
+        feeRuleId: rule.id,
+        paymentModel: 'QUOTE_PER_STOP',
+        fareQuoteId: frozen.quoteId,
+        pricingVersionId: frozen.pricingVersionId,
+        farePaise: frozen.farePaise,
+        taxPaise: frozen.taxPaise,
+        platformFeePaise: feePaise,
+        confirmedAt,
+      },
+    });
+    await tx.bookingStop.createMany({
+      data: frozen.stops.map((stop, index) => {
+        const share = shares[index];
+        if (share === undefined) {
+          throw new Error('Fee allocation returned a different number of stops');
+        }
+        return {
+          bookingId: booking.id,
+          fareQuoteStopId: stop.quoteStopId,
+          sequence: stop.sequence,
+          farePaise: stop.farePaise,
+          taxPaise: stop.taxPaise,
+          payablePaise: stop.payablePaise,
+          platformFeeSharePaise: share,
+        };
+      }),
+    });
+    const stops = await tx.bookingStop.findMany({
+      where: { bookingId: booking.id },
+      orderBy: { sequence: 'asc' },
+    });
+    return { kind: 'created', booking, stops };
+  }
+
   private async replayRegistration(
     existing: Booking & { trip: Trip | null },
     input: RegisterBookingInput,
   ): Promise<RegisterResult> {
     const { trip, ...booking } = existing;
+    // Historical bookings were registered without a quote: their ref can't be registered again.
     const sameTerms =
-      booking.finalFareMinor === input.confirmedFarePaise &&
-      booking.paymentMethod === input.paymentMethod &&
-      booking.vehicleCategory === input.vehicleCategory;
+      booking.paymentModel === 'QUOTE_PER_STOP' &&
+      booking.fareQuoteId === input.quoteId &&
+      booking.paymentMethod === input.paymentMethod;
     if (!sameTerms) {
       throw new AppError(
         ErrorCode.BOOKING_REF_CONFLICT,

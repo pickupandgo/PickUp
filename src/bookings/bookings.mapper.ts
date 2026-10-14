@@ -1,6 +1,7 @@
 import { paiseToNumber } from '../common/money';
-import type { Booking, Trip } from '../generated/prisma/client';
+import type { Booking, BookingStop, Trip } from '../generated/prisma/client';
 import type {
+  BookingStopView,
   CustomerBookingResponse,
   DriverTripResponse,
   InternalBookingResponse,
@@ -27,10 +28,22 @@ export function toTripResponse(trip: Trip): TripResponse {
   };
 }
 
+export function toBookingStopView(stop: BookingStop): BookingStopView {
+  return {
+    sequence: stop.sequence,
+    payablePaise: paiseToNumber(stop.payablePaise),
+    status: stop.status,
+  };
+}
+
 export function toInternalBookingResponse(
   booking: Booking,
   trip: Trip | null,
-  paidWith: InternalBookingResponse['paidWith'],
+  extras: {
+    readonly paidWith: InternalBookingResponse['paidWith'];
+    readonly platformFeePaise: bigint;
+    readonly stops: readonly BookingStop[];
+  },
 ): InternalBookingResponse {
   return {
     bookingId: booking.id,
@@ -38,8 +51,16 @@ export function toInternalBookingResponse(
     status: booking.status,
     paymentMethod: booking.paymentMethod,
     paymentStatus: booking.paymentStatus,
-    paidWith,
-    farePaise: paiseToNumber(booking.finalFareMinor),
+    paidWith: extras.paidWith,
+    paymentModel: booking.paymentModel,
+    quoteId: booking.fareQuoteId,
+    pricingVersionId: booking.pricingVersionId,
+    // A legacy booking had no tax concept: its fare is its payable amount.
+    farePaise: paiseToNumber(booking.farePaise ?? booking.finalFareMinor),
+    taxPaise: paiseToNumber(booking.taxPaise ?? 0n),
+    payablePaise: paiseToNumber(booking.finalFareMinor),
+    platformFeePaise: paiseToNumber(extras.platformFeePaise),
+    stops: [...extras.stops].sort((a, b) => a.sequence - b.sequence).map(toBookingStopView),
     vehicleCategory: booking.vehicleCategory,
     feeRuleId: booking.feeRuleId,
     confirmedAt: booking.confirmedAt.toISOString(),
@@ -82,6 +103,11 @@ export function collectionStageOf(booking: Booking): 'PICKUP' | 'DELIVERY' | nul
 export function isCollectionOpen(booking: Booking, trip: Trip): boolean {
   const stage = collectionStageOf(booking);
   if (!stage || booking.paymentStatus !== 'UNPAID' || booking.status === 'CANCELLED') {
+    return false;
+  }
+  if (stage === 'DELIVERY' && booking.paymentModel === 'QUOTE_PER_STOP') {
+    // Collected per drop, which is not enabled yet (the API and the database refuse a
+    // whole-booking delivery collection), so the driver app is never offered one.
     return false;
   }
   const window = stage === 'PICKUP' ? PICKUP_COLLECTION_WINDOW : DELIVERY_COLLECTION_WINDOW;

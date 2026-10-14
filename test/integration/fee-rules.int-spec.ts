@@ -8,21 +8,14 @@ import {
   createAdmin,
   createCustomer,
   createDriver,
+  createFareQuote,
+  fixturePricingVersion,
   type TestAdmin,
   uniqueCategory,
   uniquePhone,
   uniqueSubject,
 } from '../helpers/fixtures';
-import {
-  advanceTrip,
-  assignDriver,
-  engine,
-  setTripStatus,
-  startBookingPayment,
-  TO_DELIVERED,
-} from '../helpers/flows';
-import { sendWebhook } from '../helpers/http';
-import { buildWebhook } from '../helpers/razorpay-payloads';
+import { advanceTrip, assignDriver, collect, engine, setTripStatus } from '../helpers/flows';
 import { createTestApp, type TestContext } from '../helpers/test-app';
 import { TEST_DATABASE_URL } from '../setup/test-database';
 
@@ -79,30 +72,45 @@ describe('Platform fee rules', () => {
     }
   }
 
+  /**
+   * Registers a pay-at-pickup booking from a quote. A quote always names a vehicle category; for
+   * "no category" the quote uses a category with no rule of its own, so the default rule applies.
+   */
   async function register(category: string | null, farePaise = 50_000) {
     const customer = await createCustomer(ctx);
+    const quote = await createFareQuote(ctx.prisma, {
+      customerId: customer.customerId,
+      pricingVersionId: (await fixturePricingVersion(ctx.prisma)).id,
+      dropPaise: [farePaise],
+      vehicleCategory: category ?? uniqueCategory(),
+    });
     return engine(ctx)
       .post('/v1/internal/bookings')
       .send({
         externalRef: `FEE-${randomUUID()}`,
         customerSubject: customer.subject,
-        ...(category ? { vehicleCategory: category } : {}),
-        paymentMethod: 'PREPAID_UPI',
-        confirmedFarePaise: farePaise,
+        quoteId: quote.quoteId,
+        paymentMethod: 'PAY_AT_PICKUP',
       })
       .then((res) => ({ res, customer }));
   }
 
-  /** Pays, delivers and completes a registered prepaid booking; returns its earning. */
-  async function complete(bookingId: string, customer: Awaited<ReturnType<typeof createCustomer>>) {
+  /** Collects at pickup by QR, delivers and completes a registered booking; returns its earning. */
+  async function complete(bookingId: string, farePaise = 50_000) {
     const driver = await createDriver(ctx);
     const tripId = await assignDriver(ctx, bookingId, driver);
-    const started = await startBookingPayment(ctx, customer, bookingId).expect(201);
-    await sendWebhook(
-      ctx,
-      buildWebhook('payment.captured', ctx.razorpay.pay(started.body.checkout.orderId as string)),
-    ).expect(200);
-    await advanceTrip(ctx, tripId, TO_DELIVERED);
+    await setTripStatus(ctx, tripId, 'DRIVER_ARRIVED').expect(200);
+    const shown = await collect(ctx, driver, tripId, {
+      method: 'ONLINE_QR',
+      amountPaise: farePaise,
+    }).expect(201);
+    const collectionId = shown.body.collectionId as string;
+    ctx.links.pay(ctx.links.byCollection(collectionId).referenceId);
+    await request(ctx.server)
+      .get(`/v1/trips/${tripId}/collections/${collectionId}`)
+      .set(bearer(driver.token))
+      .expect(200);
+    await advanceTrip(ctx, tripId, ['PICKUP_VERIFIED', 'IN_TRANSIT', 'DROP_PROGRESS', 'DELIVERED']);
     await setTripStatus(ctx, tripId, 'COMPLETED').expect(200);
     return ctx.prisma.driverEarning.findUniqueOrThrow({ where: { bookingId } });
   }
@@ -173,12 +181,8 @@ describe('Platform fee rules', () => {
     const after = await register(null, 50_000);
     expect(after.res.body.feeRuleId).toBe(second.body.rule.id);
 
-    expect(
-      (await complete(before.res.body.bookingId as string, before.customer)).platformFeePaise,
-    ).toBe(5_000n);
-    expect(
-      (await complete(after.res.body.bookingId as string, after.customer)).platformFeePaise,
-    ).toBe(6_000n);
+    expect((await complete(before.res.body.bookingId as string)).platformFeePaise).toBe(5_000n);
+    expect((await complete(after.res.body.bookingId as string)).platformFeePaise).toBe(6_000n);
 
     const audit = await ctx.prisma.adminAction.findMany({
       where: { targetId: { in: [first.body.rule.id, second.body.rule.id] } },

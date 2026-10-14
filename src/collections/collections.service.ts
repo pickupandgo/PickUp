@@ -303,7 +303,8 @@ export class CollectionsService {
       }
 
       const rule = await tx.feeRule.findUniqueOrThrow({ where: { id: booking.feeRuleId } });
-      const fee = feeForFare(rule, booking.finalFareMinor);
+      // The fee frozen at registration; a legacy booking computes it from its pinned rule.
+      const fee = booking.platformFeePaise ?? feeForFare(rule, booking.finalFareMinor);
       const collectionId = randomUUID();
       const now = new Date();
 
@@ -600,6 +601,17 @@ function assertCollectable(booking: Booking, trip: Trip, amount: bigint): 'PICKU
       ErrorCode.COLLECTION_NOT_ALLOWED,
       HttpStatus.CONFLICT,
       'This booking is prepaid: the customer pays in the app',
+    );
+  }
+  if (stage === 'DELIVERY' && booking.paymentModel === 'QUOTE_PER_STOP') {
+    // Each drop of a quote-priced booking is collected separately; per-drop collection is
+    // enabled with the stop lifecycle. Until then nothing is collected for the whole booking
+    // (the database refuses it too), so no booking ever gets a collection its stops can't explain.
+    throw new AppError(
+      ErrorCode.COLLECTION_NOT_ALLOWED,
+      HttpStatus.CONFLICT,
+      'Per-drop collection for this booking is not available yet',
+      { stage, perStop: true },
     );
   }
   if (booking.paymentStatus !== 'UNPAID') {

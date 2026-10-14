@@ -118,6 +118,32 @@ enum BookingPaymentMethod {
   @@map("booking_payment_method")
 }
 
+/// How a booking's money is modelled (docs/PAYMENT_FLOW_FINAL_REVIEW.md, section K).
+enum BookingPaymentModel {
+  /// Registered before fare quotes existed (engine-sent fare, no stops). These bookings keep the
+  /// booking-level rules they were created under; nothing is backfilled into them. Kept until
+  /// every environment has no unfinished legacy booking (open decision L-22).
+  LEGACY_BOOKING_LEVEL
+  /// Priced from a redeemed fare quote, with one frozen stop row per drop. Every new booking.
+  QUOTE_PER_STOP
+
+  @@map("booking_payment_model")
+}
+
+/// A drop of a QUOTE_PER_STOP booking. The lifecycle (who moves a stop, and when) is enabled in a
+/// later migration; until then every stop stays PENDING (the update guard refuses changes).
+enum BookingStopStatus {
+  PENDING
+  ARRIVED
+  PAYMENT_CONFIRMED
+  DELIVERED
+  DELIVERY_FAILED
+  UNDELIVERED
+  CANCELLED
+
+  @@map("booking_stop_status")
+}
+
 /// D-10. The name differs from payment_status, which belongs to the payments table.
 enum BookingPaymentStatus {
   UNPAID
@@ -423,24 +449,39 @@ model Customer {
 }
 
 /// Payment-scoped subset of M5 bookings. The trip engine registers each booking (server to
-/// server) when the customer confirms it. Goods, stops and insurance stay in the engine.
+/// server) when the customer confirms it, from a fare quote the Fare module priced. The booking
+/// freezes the quote's amounts (the monetary snapshot); nothing changes them afterwards.
 model Booking {
   id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// The trip engine's booking id. Registration is idempotent on it.
   externalRef        String               @unique(map: "uq_bookings_external_ref") @map("external_ref") @db.VarChar(100)
   customerId         String               @map("customer_id") @db.Uuid
-  /// Requested vehicle category code (M5 vehicle_category_id; vehicle_categories is not in this
-  /// slice). Selects category-specific fee rules.
+  /// Vehicle category code. QUOTE_PER_STOP: copied from the quote (trigger). Selects
+  /// category-specific fee rules.
   vehicleCategory    String?              @map("vehicle_category") @db.VarChar(50)
   status             BookingStatus        @default(CREATED)
-  /// The confirmed fare shown to the customer at booking confirmation, in paise.
+  /// The amount payable at confirmation, in paise (fare + tax).
   fareEstimateMinor  BigInt               @map("fare_estimate_minor")
-  /// V1: always equal to the confirmed fare (CHECK). Fares never change after confirmation.
+  /// Always equal to fare_estimate_minor (CHECK): the payable amount never changes after
+  /// confirmation. QUOTE_PER_STOP: the quote's payable amount (trigger).
   finalFareMinor     BigInt               @map("final_fare_minor")
   paymentMethod      BookingPaymentMethod @map("payment_method")
   paymentStatus      BookingPaymentStatus @default(UNPAID) @map("payment_status")
   /// Fee rule in effect at confirmation, pinned so later rule versions never change this booking.
   feeRuleId          String               @map("fee_rule_id") @db.Uuid
+  /// Which rules this booking follows. Set at registration, immutable (trigger).
+  paymentModel       BookingPaymentModel  @map("payment_model")
+  /// QUOTE_PER_STOP only: the fare quote redeemed for this booking (one booking per quote).
+  fareQuoteId        String?              @unique(map: "uq_bookings_fare_quote") @map("fare_quote_id") @db.Uuid
+  /// QUOTE_PER_STOP only: the pricing version that priced the quote.
+  pricingVersionId   String?              @map("pricing_version_id") @db.Uuid
+  /// QUOTE_PER_STOP only: the fare excluding tax, in paise.
+  farePaise          BigInt?              @map("fare_paise")
+  /// QUOTE_PER_STOP only: tax in paise. Always 0 until a tax rule is approved (CHECK; L-2).
+  taxPaise           BigInt?              @map("tax_paise")
+  /// QUOTE_PER_STOP only: the platform fee under the pinned rule, frozen at registration and
+  /// split across the stops. LEGACY rows compute it from the pinned rule, as before.
+  platformFeePaise   BigInt?              @map("platform_fee_paise")
   confirmedAt        DateTime             @map("confirmed_at") @db.Timestamptz(6)
   completedAt        DateTime?            @map("completed_at") @db.Timestamptz(6)
   cancelledAt        DateTime?            @map("cancelled_at") @db.Timestamptz(6)
@@ -448,19 +489,53 @@ model Booking {
   createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  customer    Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  feeRule     FeeRule             @relation(fields: [feeRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  trip        Trip?
-  payments    Payment[]
-  collections PaymentCollection[]
-  earning     DriverEarning?
-  disputes    PaymentDispute[]
-  settlements PaymentSettlement[]
+  customer       Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  feeRule        FeeRule             @relation(fields: [feeRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  fareQuote      FareQuote?          @relation(fields: [fareQuoteId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  pricingVersion PricingVersion?     @relation(fields: [pricingVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  stops          BookingStop[]
+  trip           Trip?
+  payments       Payment[]
+  collections    PaymentCollection[]
+  earning        DriverEarning?
+  disputes       PaymentDispute[]
+  settlements    PaymentSettlement[]
 
   @@index([customerId, createdAt(sort: Desc)], map: "idx_bookings_customer_created")
   @@index([status, createdAt], map: "idx_bookings_status_created")
   @@index([feeRuleId], map: "idx_bookings_fee_rule")
+  @@index([pricingVersionId], map: "idx_bookings_pricing_version")
   @@map("bookings")
+}
+
+/// One drop of a QUOTE_PER_STOP booking: the amounts frozen from its quoted drop, and this drop's
+/// share of the platform fee. Amounts are immutable; the stops add up exactly to the booking
+/// (deferred trigger). A legacy booking has no stops.
+model BookingStop {
+  id                    String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bookingId             String            @map("booking_id") @db.Uuid
+  /// The quoted drop these amounts were copied from (trigger checks they are identical).
+  fareQuoteStopId       String            @unique(map: "uq_booking_stops_quote_stop") @map("fare_quote_stop_id") @db.Uuid
+  /// 1-based delivery order, the quoted drop's sequence.
+  sequence              Int               @db.SmallInt
+  farePaise             BigInt            @map("fare_paise")
+  taxPaise              BigInt            @map("tax_paise")
+  /// What is collected for this drop when the receivers pay: fare + tax.
+  payablePaise          BigInt            @map("payable_paise")
+  /// This drop's share of the booking's platform fee, by largest remainder: the shares add up
+  /// exactly to the booking's fee.
+  platformFeeSharePaise BigInt            @map("platform_fee_share_paise")
+  status                BookingStopStatus @default(PENDING)
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking       Booking       @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  fareQuoteStop FareQuoteStop @relation(fields: [fareQuoteStopId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([bookingId, sequence], map: "uq_booking_stops_sequence")
+  /// Target of the composite foreign key that ties a stop's collections to the same booking.
+  @@unique([bookingId, id], map: "uq_booking_stops_booking_id")
+  @@map("booking_stops")
 }
 
 /// Payment-scoped subset of M6 trips: one trip per booking, created at assignment. vehicle_id
@@ -1032,6 +1107,7 @@ model PricingVersion {
   createdBy     User?       @relation("PricingVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   deactivatedBy User?       @relation("PricingVersionDeactivatedBy", fields: [deactivatedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   quotes        FareQuote[]
+  bookings      Booking[]
 
   @@index([active, effectiveFrom(sort: Desc)], map: "idx_pricing_versions_lookup")
   @@map("pricing_versions")
@@ -1063,6 +1139,7 @@ model FareQuote {
   customer       Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   pricingVersion PricingVersion  @relation(fields: [pricingVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   stops          FareQuoteStop[]
+  booking        Booking?
 
   @@index([customerId, createdAt(sort: Desc)], map: "idx_fare_quotes_customer_created")
   @@index([pricingVersionId], map: "idx_fare_quotes_pricing_version")
@@ -1083,7 +1160,8 @@ model FareQuoteStop {
   taxPaise       BigInt  @map("tax_paise")
   payablePaise   BigInt  @map("payable_paise")
 
-  quote FareQuote @relation(fields: [quoteId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  quote       FareQuote    @relation(fields: [quoteId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  bookingStop BookingStop?
 
   @@unique([quoteId, sequence], map: "uq_fare_quote_stops_sequence")
   @@map("fare_quote_stops")

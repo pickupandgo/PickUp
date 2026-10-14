@@ -60,6 +60,8 @@ export interface AppConfig {
   readonly fare: {
     /** Seconds a fare quote stays bookable. */
     readonly quoteTtlSeconds: number;
+    /** Most drops a quote (and so a booking) may have. Technical default 5 (open: D-29). */
+    readonly maxDrops: number;
   };
   /**
    * Production-readiness confirmations (go-live checklist). Without them the matching live
@@ -216,6 +218,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     fare: {
       quoteTtlSeconds: env.FARE_QUOTE_TTL_SECONDS,
+      maxDrops: env.FARE_MAX_DROPS,
     },
     readiness: {
       razorpayxCapabilitiesConfirmed: env.RAZORPAYX_CAPABILITIES_CONFIRMED,

@@ -1,6 +1,7 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { recordAdminAction } from '../audit/admin-actions';
 import type { Principal } from '../auth/principal';
+import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import { Clock } from '../common/clock';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -24,6 +25,7 @@ export class PricingVersionsService {
     private readonly prisma: PrismaService,
     private readonly pricer: FarePricer,
     private readonly clock: Clock,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   now(): Date {
@@ -42,7 +44,11 @@ export class PricingVersionsService {
   ): Promise<CreatePricingVersionResult> {
     const result = await createPricingVersionRecord(
       this.prisma,
-      { ...input, createdByUserId: admin.userId },
+      {
+        ...input,
+        createdByUserId: admin.userId,
+        production: this.config.nodeEnv === 'production',
+      },
       this.clock.now(),
     );
     this.logger.log(

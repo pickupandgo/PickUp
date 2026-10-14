@@ -7,6 +7,17 @@ export interface BookingPaidResult {
 }
 
 /**
+ * True for a historical PREPAID_UPI booking (registered before fare quotes): the only bookings
+ * that may be paid in the app through Razorpay Checkout. Every new booking pays at pickup or at
+ * delivery. The database enforces the same rule on payment rows (trg_payments_booking_insert_guard).
+ */
+export function isHistoricalPrepaid(
+  booking: Pick<Booking, 'paymentMethod' | 'paymentModel'>,
+): boolean {
+  return booking.paymentMethod === 'PREPAID_UPI' && booking.paymentModel === 'LEGACY_BOOKING_LEVEL';
+}
+
+/**
  * Records that the customer's money for a booking has been received and verified (prepaid
  * payment, QR collection or cash). The caller must hold the booking and trip locks.
  *

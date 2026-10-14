@@ -26,7 +26,6 @@ import { type BookingWithTrip, BookingsService } from '../bookings/bookings.serv
 import { CollectionsService } from '../collections/collections.service';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
-import { numberToPaise } from '../common/money';
 
 const uuid = new ParseUUIDPipe({ version: '4' });
 
@@ -45,7 +44,10 @@ export class InternalBookingsController {
     private readonly collections: CollectionsService,
   ) {}
 
-  /** Registers a confirmed booking. 201 when created, 200 when the ref was already registered. */
+  /**
+   * Registers a confirmed booking from its fare quote. 201 when created, 200 when the same ref,
+   * quote and method were already registered. No amount is accepted: they all come from the quote.
+   */
   @Post('bookings')
   async register(
     @Body() body: RegisterBookingRequest,
@@ -54,9 +56,8 @@ export class InternalBookingsController {
     const result = await this.bookings.register({
       externalRef: body.externalRef,
       customerSubject: body.customerSubject,
-      vehicleCategory: body.vehicleCategory ?? null,
+      quoteId: body.quoteId,
       paymentMethod: body.paymentMethod,
-      confirmedFarePaise: numberToPaise(body.confirmedFarePaise),
     });
     response.status(result.created ? HttpStatus.CREATED : HttpStatus.OK);
     return this.view(result);
@@ -121,10 +122,15 @@ export class InternalBookingsController {
   }
 
   private async view(result: BookingWithTrip): Promise<InternalBookingResponse> {
-    return toInternalBookingResponse(
-      result.booking,
-      result.trip,
-      await this.bookings.paidWith(result.booking),
-    );
+    const [paidWith, platformFeePaise, stops] = await Promise.all([
+      this.bookings.paidWith(result.booking),
+      this.bookings.feeFor(result.booking),
+      this.bookings.stopsOf(result.booking.id),
+    ]);
+    return toInternalBookingResponse(result.booking, result.trip, {
+      paidWith,
+      platformFeePaise,
+      stops,
+    });
   }
 }

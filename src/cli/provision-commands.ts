@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { recordAdminAction } from '../audit/admin-actions';
-import { createPricingVersionRecord } from '../fare/pricing-versions';
+import {
+  createPricingVersionRecord,
+  DEVELOPMENT_PRICING_CODE_PREFIX,
+} from '../fare/pricing-versions';
 import { createFeeRuleRecord } from '../fees/fee-rules';
 import type { PrismaClient } from '../generated/prisma/client';
 import type { DriverApprovalStatus, UserRole } from '../generated/prisma/enums';
@@ -35,9 +38,6 @@ export interface PricingVersionResult {
 }
 
 export type ProvisionResult = AccountResult | FeeRuleResult | PricingVersionResult;
-
-/** Codes reserved for unapproved development rates (see docs/OPEN_DECISIONS.md D-14). */
-const DEVELOPMENT_CODE_PREFIX = 'PROTOTYPE';
 
 /**
  * Bootstrap tooling for test and ops accounts and the initial platform fee rule. In production,
@@ -115,10 +115,11 @@ async function createPricingVersion(
   prisma: PrismaClient,
   command: Extract<ProvisionCommand, { kind: 'create-pricing-version' }>,
 ): Promise<PricingVersionResult> {
-  const developmentOnly = command.code.startsWith(DEVELOPMENT_CODE_PREFIX);
-  if (developmentOnly && process.env.NODE_ENV === 'production') {
+  const production = process.env.NODE_ENV === 'production';
+  const developmentOnly = command.code.startsWith(DEVELOPMENT_PRICING_CODE_PREFIX);
+  if (developmentOnly && production) {
     throw new ProvisionUsageError(
-      `A ${DEVELOPMENT_CODE_PREFIX}* pricing version is development only and cannot be created in production`,
+      `A ${DEVELOPMENT_PRICING_CODE_PREFIX}* pricing version is development only and cannot be created in production`,
     );
   }
 
@@ -137,6 +138,7 @@ async function createPricingVersion(
     effectiveFrom: null,
     reason: command.reason,
     createdByUserId: null,
+    production,
   });
   return {
     pricingVersionId: version.id,

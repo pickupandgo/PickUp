@@ -239,7 +239,11 @@ Example, ₹500 fare: fee ₹50, TDS ₹0 (policy DISABLED, OPEN_DECISIONS D-57)
 
 The engine (dispatch, stops, OTPs) reports what happens; this backend owns the money. Every call needs `X-Internal-Api-Key: <one of INTERNAL_API_KEYS>`. Keep the key on the engine's server only.
 
-1. Customer confirms → `POST /v1/internal/bookings` `{ externalRef, customerSubject, vehicleCategory?, paymentMethod, confirmedFarePaise }`. Same `externalRef` again returns the same booking (200). Different terms: `409 BOOKING_REF_CONFLICT`. No fee rule: `409 FEE_RULE_NOT_CONFIGURED`.
+1. Customer confirms → `POST /v1/internal/bookings` `{ externalRef, customerSubject, quoteId, paymentMethod }`, where `quoteId` is the fare quote the customer confirmed (`POST /v1/fare/quotes`; the engine can read it with `GET /v1/internal/fare-quotes/{quoteId}`) and `paymentMethod` is `PAY_AT_PICKUP` or `PAY_AT_DELIVERY`. No amount is accepted: every amount comes from the quote, and any other field (`confirmedFarePaise`, `vehicleCategory`, …) is `400 VALIDATION_FAILED`. The response has `paymentModel: QUOTE_PER_STOP`, `quoteId`, `pricingVersionId`, `farePaise`, `taxPaise`, `payablePaise`, `platformFeePaise` and `stops: [{ sequence, payablePaise, status }]`.
+   - `201` created; `200` for the same `externalRef` with the same quote, method and customer, even when two requests race.
+   - `422 PAYMENT_METHOD_NOT_OFFERED` (`PREPAID_UPI`), `422 QUOTE_NOT_FOUND` (missing, or another customer's), `422 CUSTOMER_NOT_FOUND`, `422 TAX_NOT_SUPPORTED`.
+   - `409 QUOTE_EXPIRED` (ask for a new quote), `409 QUOTE_ALREADY_USED`, `409 BOOKING_REF_CONFLICT` (the ref with other terms), `409 FEE_RULE_NOT_CONFIGURED`.
+   - Historical bookings (`paymentModel: LEGACY_BOOKING_LEVEL`, registered before quotes) show `quoteId: null` and `stops: []`.
 2. Optional: `POST /v1/internal/bookings/{id}/searching`.
 3. Driver accepts → `POST /v1/internal/bookings/{id}/assign` `{ driverSubject }` creates the trip.
 4. Each step → `POST /v1/internal/trips/{tripId}/status` `{ status }`, in this order: `DRIVER_ARRIVED`, `PICKUP_VERIFIED`, `IN_TRANSIT`, `DROP_PROGRESS`, `DELIVERED`, `COMPLETED`. Repeats are no-ops; skipping is `409 INVALID_TRIP_TRANSITION`.
@@ -248,7 +252,9 @@ The engine (dispatch, stops, OTPs) reports what happens; this backend owns the m
 
 `customerSubject` / `driverSubject` are Firebase UIDs of provisioned accounts (`npm run provision -- create-customer|create-driver`).
 
-## 11. Customer app: prepaid booking payment
+## 11. Customer app: paying a historical prepaid booking
+
+New bookings are never paid in the app: they pay at pickup or at delivery (sections 10 and 12). This flow exists only for historical `PREPAID_UPI` bookings (`paymentModel: LEGACY_BOOKING_LEVEL`, registered before quotes), so they can still be paid. For any other booking every route below answers `409 BOOKING_NOT_PAYABLE`, and the webhook and the admin sync never capture or apply a payment for one (the database refuses such a payment row too).
 
 Same Checkout flow as top-ups (section 4), against the booking:
 
@@ -262,6 +268,8 @@ Pay-at-pickup / pay-at-delivery bookings answer `409 BOOKING_NOT_PAYABLE`; the c
 ## 12. Driver app: collecting at pickup or delivery
 
 `GET /v1/trips/{tripId}` returns `payment: { method, status, farePaise, platformFeePaise, driverSharePaise, collectionStage, collectionOpen }`. Show the collect button only when `collectionOpen` is true: PAY_AT_PICKUP from arrival, PAY_AT_DELIVERY after the last drop.
+
+**Until per-drop collection is built (payment flow Phase 4):** a new PAY_AT_DELIVERY booking (`QUOTE_PER_STOP`) is collected per drop, so the whole-booking collection below is refused for it with `409 COLLECTION_NOT_ALLOWED` (`details: { stage: "DELIVERY", perStop: true }`) and `collectionOpen` stays false. Such a booking can't complete yet. Historical PAY_AT_DELIVERY bookings are collected as before, and new PAY_AT_PICKUP bookings work as described here (the cash fee is the one frozen at registration).
 
 `POST /v1/trips/{tripId}/collections` with an `Idempotency-Key` and `{ method, amountPaise }`, where `amountPaise` is the fare shown (it must match).
 
@@ -333,7 +341,11 @@ Collection webhooks only identify the collection; the server then reads its stat
 |---|---|
 | `INTERNAL_AUTH_INVALID` | 401 |
 | `STEP_UP_REQUIRED` (`details.reason`, `details.method`) | 403 |
-| `BANK_ACCOUNT_REJECTED_BY_PROVIDER`, `CUSTOMER_NOT_FOUND`, `DRIVER_NOT_FOUND`, `COLLECTION_AMOUNT_MISMATCH` | 422 |
+| `BANK_ACCOUNT_REJECTED_BY_PROVIDER`, `CUSTOMER_NOT_FOUND`, `DRIVER_NOT_FOUND`, `COLLECTION_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_OFFERED` (`details.offered`), `VEHICLE_CATEGORY_NOT_PRICED`, `TOO_MANY_DROPS` (`details.maxDrops`), `TAX_NOT_SUPPORTED` | 422 |
+| `QUOTE_NOT_FOUND` | 422 (registration) or 404 (reading a quote) |
+| `QUOTE_EXPIRED`, `QUOTE_ALREADY_USED` | 409 |
+| `PRICING_VERSION_INVALID` | 400 |
+| `PRICING_NOT_CONFIGURED` | 503 (quotes) or 404 (admin: no version in effect) |
 | `BOOKING_NOT_FOUND`, `TRIP_NOT_FOUND`, `COLLECTION_NOT_FOUND`, `EARNING_NOT_FOUND`, `BANK_ACCOUNT_NOT_FOUND`, `BANK_CHANGE_REQUEST_NOT_FOUND`, `PAYOUT_NOT_FOUND`, `PAYOUT_BATCH_NOT_FOUND`, `FEE_RULE_NOT_FOUND` | 404 |
 | `BOOKING_REF_CONFLICT`, `BOOKING_NOT_PAYABLE`, `BOOKING_ALREADY_PAID`, `BOOKING_CLOSED`, `TRIP_ALREADY_ASSIGNED`, `INVALID_TRIP_TRANSITION`, `PAYMENT_REQUIRED`, `COLLECTION_NOT_ALLOWED`, `COLLECTION_IN_PROGRESS`, `FEE_RULE_NOT_CONFIGURED`, `FEE_RULE_AMBIGUOUS`, `FEE_RULE_OVERLAP`, `EARNING_INVALID_STATE`, `BANK_ACCOUNT_EXISTS`, `BANK_ACCOUNT_INVALID_STATE`, `BANK_ACCOUNT_CHANGE_PENDING`, `BANK_CHANGE_REQUEST_EXPIRED`, `BANK_CHANGE_REQUEST_CLOSED`, `BANK_VALIDATION_NOT_FOUND`, `BANK_VALIDATION_NOT_ACCEPTABLE`, `BANK_NAME_MISMATCH_UNRESOLVED`, `DRIVER_KYC_NAME_MISSING` | 409 |
 | `FEE_RULE_INVALID` | 400 (creating a rule) or 409 (applying one) |
@@ -354,7 +366,8 @@ The runner creates a separate database (`multipleride_e2e`, dropped and recreate
 | Step | How it is driven |
 |---|---|
 | 0. Driver bank account | Driver opens a change request; confirming with the existing session is refused (`403 STEP_UP_REQUIRED`); a fresh token (OTP re-authentication after the request, registered phone) confirms it; a replay is refused. The simulated bank answers the penny drop; a signed `fund_account.validation.completed` webhook records it; an admin approves (MATCH with the KYC name) and sees the step-up evidence. |
-| 1. Payment created | Trip engine registers and assigns the booking (internal API); the customer starts the payment, which creates a real Razorpay test-mode order. |
+| 1a. New bookings | A development (`PROTOTYPE-E2E-…`) pricing version from the ops CLI; the customer gets a two-drop quote (an amount sent by the app is refused); the engine registers a PAY_AT_PICKUP booking from it (replay 200, the quote can't be used twice); `PREPAID_UPI` and an engine-sent amount are refused. |
+| 1. Payment created | A historical `PREPAID_UPI` booking (inserted as a database migrated from before quotes holds it, since nothing can create one now) is assigned through the internal API; the customer starts the payment, which creates a real Razorpay test-mode order. Steps 1–11 prove the online money path, which new bookings reach through the pickup and delivery QR in later phases. |
 | 2. Payment verified | Signed `payment.captured` webhook (checkout itself needs a phone). A forged signature is refused and not stored. |
 | 3. Settlement confirmed | `/v1/dev/simulate/settlements`, then a signed `settlement.processed` webhook makes the backend pull the (simulated) recon data. |
 | 4. Trip completion | Trip engine status events up to `COMPLETED`, repeated and concurrent. |

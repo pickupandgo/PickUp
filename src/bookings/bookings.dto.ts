@@ -1,10 +1,22 @@
 import { Transform } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from 'class-validator';
-import { FEE_CATEGORY_PATTERN } from '../fees/fee-rules';
+import { IsIn, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
 import { ENGINE_TRIP_STATUSES, type EngineTripStatus } from './trip-lifecycle';
 
+/**
+ * Every booking payment method the database knows. PREPAID_UPI exists only on historical
+ * bookings: it passes validation so a new registration gets the explicit
+ * PAYMENT_METHOD_NOT_OFFERED answer instead of a generic validation error.
+ */
 const PAYMENT_METHODS = ['PREPAID_UPI', 'PAY_AT_PICKUP', 'PAY_AT_DELIVERY'] as const;
 type PaymentMethodValue = (typeof PAYMENT_METHODS)[number];
+
+/** The only payment methods new bookings can use. */
+export const OFFERED_PAYMENT_METHODS = ['PAY_AT_PICKUP', 'PAY_AT_DELIVERY'] as const;
+export type OfferedPaymentMethod = (typeof OFFERED_PAYMENT_METHODS)[number];
+
+export function isOfferedPaymentMethod(method: string): method is OfferedPaymentMethod {
+  return (OFFERED_PAYMENT_METHODS as readonly string[]).includes(method);
+}
 
 export const EXTERNAL_REF_PATTERN = /^[A-Za-z0-9_.:-]{1,100}$/;
 /** Firebase UIDs: up to 128 URL-safe characters. */
@@ -12,29 +24,27 @@ export const SUBJECT_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
-/** Sent by the trip engine when the customer confirms a booking. */
+/**
+ * Sent by the trip engine when the customer confirms a booking. There is no amount here: every
+ * amount (fare, tax, per-drop amounts, platform fee) comes from the quote, and any amount field
+ * sent anyway is rejected like any unknown field.
+ */
 export class RegisterBookingRequest {
   /** The engine's own booking id. Registering the same ref again returns the same booking. */
   @Matches(EXTERNAL_REF_PATTERN, { message: 'externalRef is invalid' })
   externalRef!: string;
 
-  /** Firebase UID of the customer. */
+  /** Firebase UID of the customer, from the engine's verified sign-in (never the request body). */
   @Matches(SUBJECT_PATTERN, { message: 'customerSubject is invalid' })
   customerSubject!: string;
 
-  /** Requested vehicle category code, e.g. MINI_TRUCK. Selects category-specific fee rules. */
-  @IsOptional()
-  @Matches(FEE_CATEGORY_PATTERN, { message: 'vehicleCategory must be an upper-case code' })
-  vehicleCategory?: string;
+  /** The fare quote the customer confirmed (POST /v1/fare/quotes). Redeemed exactly once. */
+  @IsUUID('4', { message: 'quoteId must be a UUID' })
+  quoteId!: string;
 
+  /** PAY_AT_PICKUP or PAY_AT_DELIVERY. PREPAID_UPI is refused (PAYMENT_METHOD_NOT_OFFERED). */
   @IsIn(PAYMENT_METHODS)
   paymentMethod!: PaymentMethodValue;
-
-  /** The fare shown to and confirmed by the customer, in paise. It never changes afterwards. */
-  @IsInt()
-  @Min(1)
-  @Max(Number.MAX_SAFE_INTEGER)
-  confirmedFarePaise!: number;
 }
 
 export class AssignDriverRequest {
@@ -78,6 +88,13 @@ export class TripResponse {
   cancelledAt!: string | null;
 }
 
+export class BookingStopView {
+  sequence!: number;
+  /** What is collected for this drop when the receivers pay. */
+  payablePaise!: number;
+  status!: string;
+}
+
 export class InternalBookingResponse {
   bookingId!: string;
   externalRef!: string;
@@ -86,8 +103,21 @@ export class InternalBookingResponse {
   paymentStatus!: string;
   /** How the booking was paid once PAID: PREPAID_ONLINE, CASH or ONLINE_QR. */
   paidWith!: 'PREPAID_ONLINE' | 'CASH' | 'ONLINE_QR' | null;
-  /** Confirmed fare = amount payable, in paise. */
+  /** QUOTE_PER_STOP for every new booking; LEGACY_BOOKING_LEVEL for historical ones. */
+  paymentModel!: 'LEGACY_BOOKING_LEVEL' | 'QUOTE_PER_STOP';
+  /** The redeemed fare quote; null for historical bookings. */
+  quoteId!: string | null;
+  pricingVersionId!: string | null;
+  /** Fare excluding tax, in paise. */
   farePaise!: number;
+  /** Tax in paise (0 until a tax rule is approved). */
+  taxPaise!: number;
+  /** What the customer, or the receivers together, pay: fare + tax. Fixed at confirmation. */
+  payablePaise!: number;
+  /** Platform fee under the rule pinned at confirmation (frozen for QUOTE_PER_STOP). */
+  platformFeePaise!: number;
+  /** One per drop, in delivery order. Empty for historical bookings. */
+  stops!: BookingStopView[];
   vehicleCategory!: string | null;
   feeRuleId!: string;
   confirmedAt!: string;

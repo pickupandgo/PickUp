@@ -13,6 +13,8 @@ import { quoteNotFound } from './fare-quotes.service';
 
 /** One drop's frozen amounts, in paise. */
 export interface FrozenFareStop {
+  /** The quoted drop's id; the booking's stop references it so its amounts can be checked. */
+  readonly quoteStopId: string;
   readonly sequence: number;
   readonly farePaise: bigint;
   readonly taxPaise: bigint;
@@ -97,6 +99,7 @@ export class FareQuoteRedeemer {
       taxPaise: quote.taxPaise,
       payablePaise: quote.payablePaise,
       stops: quote.stops.map((stop) => ({
+        quoteStopId: stop.id,
         sequence: stop.sequence,
         farePaise: stop.farePaise,
         taxPaise: stop.taxPaise,

@@ -98,6 +98,10 @@ export const envSchema = z
     // How long a fare quote can be booked (seconds). After that the app must ask for a new
     // quote, so a customer always pays a price calculated by the current pricing version.
     FARE_QUOTE_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
+    // Most drops one booking may have. 5 is a technical default, not a business decision: the
+    // final maximum is open (OPEN_DECISIONS D-29). The database allows up to 25 so a change
+    // needs no migration.
+    FARE_MAX_DROPS: z.coerce.number().int().min(1).max(25).default(5),
 
     // Weekly driver payouts (RazorpayX). Disabled until the account is activated. "simulated"
     // (non-production, test keys only) moves payouts and bank validations through

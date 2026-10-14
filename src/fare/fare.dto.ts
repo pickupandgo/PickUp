@@ -21,8 +21,11 @@ import { PRICING_VERSION_CODE_PATTERN } from './pricing-versions';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
-/** At most 5 drops per booking (one pickup, multiple drops). */
-export const MAX_DROPS = 5;
+/**
+ * Technical ceiling on drops in one request, matching the database CHECK. The business limit is
+ * configuration (FARE_MAX_DROPS, default 5; open decision D-29) and is checked by the service.
+ */
+export const TECHNICAL_MAX_DROPS = 25;
 
 export class LocationInput {
   @IsNumber({ allowNaN: false, allowInfinity: false })
@@ -45,10 +48,10 @@ export class CreateFareQuoteRequest {
   @Type(() => LocationInput)
   pickup!: LocationInput;
 
-  /** Drops in delivery order, 1 to 5. */
+  /** Drops in delivery order: at least 1, at most FARE_MAX_DROPS (TOO_MANY_DROPS otherwise). */
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(MAX_DROPS)
+  @ArrayMaxSize(TECHNICAL_MAX_DROPS)
   @ValidateNested({ each: true })
   @Type(() => LocationInput)
   drops!: LocationInput[];

@@ -4,7 +4,9 @@ import {
   createAdmin,
   createCustomer,
   createDriver,
+  createFareQuote,
   createFeeRule,
+  fixturePricingVersion,
   type TestAdmin,
   uniqueCategory,
 } from '../helpers/fixtures';
@@ -89,14 +91,19 @@ describe('Trips and driver earnings', () => {
       }
     });
 
-    it('registers a booking idempotently and pins the confirmed fare and fee rule', async () => {
+    it('registers a booking from its quote idempotently, freezing the amounts and the fee rule', async () => {
       const customer = await createCustomer(ctx);
+      const quote = await createFareQuote(ctx.prisma, {
+        customerId: customer.customerId,
+        pricingVersionId: (await fixturePricingVersion(ctx.prisma)).id,
+        dropPaise: [50_000],
+        vehicleCategory: category,
+      });
       const body = {
         externalRef: `ENG-${Date.now()}`,
         customerSubject: customer.subject,
-        vehicleCategory: category,
+        quoteId: quote.quoteId,
         paymentMethod: 'PAY_AT_DELIVERY',
-        confirmedFarePaise: 50_000,
       };
       const first = await engine(ctx).post('/v1/internal/bookings').send(body).expect(201);
       const again = await engine(ctx).post('/v1/internal/bookings').send(body).expect(200);
@@ -104,14 +111,20 @@ describe('Trips and driver earnings', () => {
       expect(first.body).toMatchObject({
         status: 'CREATED',
         paymentStatus: 'UNPAID',
+        paymentModel: 'QUOTE_PER_STOP',
+        quoteId: quote.quoteId,
         farePaise: 50_000,
+        taxPaise: 0,
+        payablePaise: 50_000,
+        platformFeePaise: 5_000,
+        stops: [{ sequence: 1, payablePaise: 50_000, status: 'PENDING' }],
         paidWith: null,
         trip: null,
       });
 
       const conflict = await engine(ctx)
         .post('/v1/internal/bookings')
-        .send({ ...body, confirmedFarePaise: 60_000 })
+        .send({ ...body, paymentMethod: 'PAY_AT_PICKUP' })
         .expect(409);
       expect(conflict.body.error.code).toBe('BOOKING_REF_CONFLICT');
 
@@ -384,13 +397,21 @@ describe('Trips and driver earnings', () => {
       expect(actions.every((a) => a.actorUserId === admin.userId)).toBe(true);
     });
 
-    it('refuses client-sent fees, TDS or net amounts: the backend computes them', async () => {
+    it('refuses client-sent fares, fees, TDS or net amounts: the backend computes them', async () => {
       const customer = await createCustomer(ctx);
+      const quote = await createFareQuote(ctx.prisma, {
+        customerId: customer.customerId,
+        pricingVersionId: (await fixturePricingVersion(ctx.prisma)).id,
+        dropPaise: [50_000],
+        vehicleCategory: category,
+      });
       for (const extra of [
         { tdsRate: '1' },
         { tdsAmountPaise: 500 },
         { netPayablePaise: 45_000 },
         { platformFeePaise: 0 },
+        { confirmedFarePaise: 1 },
+        { vehicleCategory: category },
       ]) {
         const res = await request(ctx.server)
           .post('/v1/internal/bookings')
@@ -398,14 +419,17 @@ describe('Trips and driver earnings', () => {
           .send({
             externalRef: `ENG-TDS-${Date.now()}-${Object.keys(extra)[0] ?? ''}`,
             customerSubject: customer.subject,
-            vehicleCategory: category,
-            paymentMethod: 'PREPAID_UPI',
-            confirmedFarePaise: 50_000,
+            quoteId: quote.quoteId,
+            paymentMethod: 'PAY_AT_PICKUP',
             ...extra,
           })
           .expect(400);
         expect(res.body.error.code).toBe('VALIDATION_FAILED');
       }
+      // Nothing was redeemed by the refused requests.
+      expect(
+        (await ctx.prisma.fareQuote.findUniqueOrThrow({ where: { id: quote.quoteId } })).redeemedAt,
+      ).toBeNull();
       const { tripId, bookingId } = await paidDeliveredTrip();
       await request(ctx.server)
         .post(`/v1/internal/trips/${tripId}/status`)

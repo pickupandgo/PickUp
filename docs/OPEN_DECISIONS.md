@@ -1,6 +1,6 @@
 # Open Decisions: MultipleRide (Pick Up) V1 Backend
 
-Phase 0 audit, 2 Oct 2026. This file tracks only items the supplied sources leave unresolved or contradict. Source references point to [ARCHITECTURE_TRACEABILITY.md](./ARCHITECTURE_TRACEABILITY.md). [Section E](#e-payments--driver-wallet-slice-raj_backend) records how the payments + wallet slice applied these decisions, and the new ones it raised. [Section F](#f-approved-v1-payment-earnings-and-payout-rules-2-oct-2026) records the approved V1 money rules, what they settle, and what is still open. [Section G](#g-approved-decisions-second-set-6-oct-2026) records the second set of approved decisions (rounding, settlement-gated payouts, Monday payouts, bank validation, TDS readiness) and the items they leave open.
+Phase 0 audit, 2 Oct 2026. This file tracks only items the supplied sources leave unresolved or contradict. Source references point to [ARCHITECTURE_TRACEABILITY.md](./ARCHITECTURE_TRACEABILITY.md). [Section E](#e-payments--driver-wallet-slice-raj_backend) records how the payments + wallet slice applied these decisions, and the new ones it raised. [Section F](#f-approved-v1-payment-earnings-and-payout-rules-2-oct-2026) records the approved V1 money rules, what they settle, and what is still open. [Section G](#g-approved-decisions-second-set-6-oct-2026) records the second set of approved decisions (rounding, settlement-gated payouts, Monday payouts, bank validation, TDS readiness) and the items they leave open. [Section H](#h-approved-decisions-third-set-after-commit-f07ff5c) covers the bank-account step-up, and [section I](#i-payment-flow-phase-1-pay-at-pickup--per-drop-pay-at-delivery) the first phase of the PAY AT PICKUP / per-drop PAY AT DELIVERY flow, including the technical defaults it introduced.
 
 How to read each entry:
 
@@ -130,7 +130,8 @@ I won't choose these rules. Owner for all: Nikhil Enterprises (business/finance/
   - weight multipliers 1.0–3.0
 - **Questions:** are these approved rates or placeholders? Is distance geographic or road distance (D-33)?
 - **Safe default:** fares come only from admin-configured `pricing_rules`. With no active rule, booking creation fails with `PRICING_NOT_CONFIGURED`. No prices are seeded.
-- **Status:** Open, blocks end-to-end booking in P4.
+- **Since the Fare module (M3) and payment flow Phase 1:** pricing is versioned (`pricing_versions`), every fare is a server quote (`POST /v1/fare/quotes`), and a booking can only be registered from a quote. With no version in effect, quoting fails with `503 PRICING_NOT_CONFIGURED`, so no booking can be made. The final rates are L-1 in [PAYMENT_FLOW_FINAL_REVIEW.md](./PAYMENT_FLOW_FINAL_REVIEW.md#l-open-business-decisions). `PROTOTYPE*` versions hold the prototype's rates for development only; the ops CLI and the admin API both refuse them in production.
+- **Status:** Open, blocks taking real bookings in production (BK-7).
 
 ### D-15 Driver platform fee formula
 - **Context:** `fee_rules` supports FIXED or PERCENTAGE per category, but values, units and rounding aren't defined. For FIXED, is the value in paise or rupees? For PERCENTAGE, how is it rounded?
@@ -161,7 +162,8 @@ I won't choose these rules. Owner for all: Nikhil Enterprises (business/finance/
 ### D-19 PAY_AT_DELIVERY with multiple drops
 - **Question:** is payment collected at the final drop, or after all drops? Who pays: the customer, or the receiver at that drop? M6 says the final stop can't complete the trip until the payment gate passes.
 - **Safe default:** the collection is allowed only once all drops are DELIVERED, before PAYMENT_CONFIRMED.
-- **Status:** Open.
+- **Superseded** by the approved per-drop PAY AT DELIVERY: the receiver at each drop pays that drop's amount before handover ([PAYMENT_FLOW_FINAL_REVIEW.md](./PAYMENT_FLOW_FINAL_REVIEW.md)). Historical (LEGACY_BOOKING_LEVEL) bookings keep the safe default above. New bookings can't be collected at delivery until per-drop collection is enabled (section I). How an undelivered drop is treated financially is still open (N5).
+- **Status:** Superseded; the undelivered-drop treatment is open.
 
 ### D-20 Final fare and fare-change policy
 - **Question:** when is `final_fare_minor` set, and can it differ from the estimate (waiting time, extra distance, edited stops)? Which amount does a cash or QR collection use?
@@ -218,12 +220,14 @@ I won't choose these rules. Owner for all: Nikhil Enterprises (business/finance/
 
   JCB and crane are equipment, not goods transport. `capacity_kg` values aren't given anywhere.
 - **Safe default:** categories are admin-managed and none are seeded until an approved list arrives.
+- **Payment flow Phase 1 (N6):** still open. Codes are checked only for their format (`^[A-Z][A-Z0-9_]*$`). The categories in `pricing/prototype-leg-distance-v1.json` are a development list, not a decision. Raj supplies the canonical list before Phase 10 (BK-6).
 - **Owner:** Product. **Status:** Open, blocks P2 seeding.
 
 ### D-29 Maximum drops per booking
 - **Context:** the prototype and the customer app cap it at 5. M5 says the schema must not hard-code it.
 - **Safe default:** a config value, initially 5 to match the current app behaviour.
-- **Owner:** Product. **Status:** Confirm.
+- **Payment flow Phase 1 (N7):** `FARE_MAX_DROPS`, technical default 5, allowed range 1–25. A quote with more drops gets `422 TOO_MANY_DROPS` with `details.maxDrops`. The database only holds a technical ceiling of 25 drops (quotes and booking stops), so changing the limit needs no migration. 5 is not a business rule.
+- **Owner:** Product. **Status:** Open (N7).
 
 ### D-30 Dispatch parameters and no-driver outcome
 - **Context:** M7 wasn't supplied. M4 implies offers go to the top N candidates and the first valid acceptance wins.
@@ -533,3 +537,34 @@ Raj accepted the payment, settlement, earnings, wallet and payout architecture f
 | **Name matching (D-60):** partial matches kept; every non-exact match needs an explicit admin resolution with an audit record. | Reordered words are now PARTIAL, not MATCH. `BANK_NAME_MISMATCH_RESOLVED` audit row per non-exact approval (both names, result, validation, resolution); `BANK_ACCOUNT_APPROVED` carries the same evidence. |
 | **Missing settlement (D-62):** no manual "mark as settled". | Unchanged: unpaid, `AWAITING_SETTLEMENT`, listed as overdue for admin review. |
 | Switching back to an earlier account | RazorpayX returns the existing contact and fund account for identical details, so the fund-account uniqueness now applies to live (pending or verified) accounts only. The new row is validated and approved from scratch. |
+
+---
+
+## I. Payment flow Phase 1 (PAY AT PICKUP + per-drop PAY AT DELIVERY)
+
+Raj approved the architecture in [PAYMENT_FLOW_FINAL_REVIEW.md](./PAYMENT_FLOW_FINAL_REVIEW.md) and confirmed N1–N11. Phase 1 is migration `20261015120000_booking_quote_snapshot`; a database that doesn't have them yet also gets `20261014120000_customer_self_registration` and `20261014120100_fare_quotes` first. Upgrade steps: [DATABASE_SETUP.md](./DATABASE_SETUP.md#customer-self-registration-fare-module-and-booking-snapshot-payment-flow-phase-1).
+
+| Decision | Implementation |
+|---|---|
+| **Existing bookings keep their model (N3).** No stops are backfilled; stored values and collection behaviour don't change. | Every existing booking is `LEGACY_BOOKING_LEVEL`; that marker is the only backfill (a column default during the migration, dropped right after). Legacy bookings have no stops and keep their engine-sent fare, their pinned fee rule (fee computed from it, as before) and the whole-booking collection. `npm run db:migration-check` proves on copies of the dev, e2e and test-data databases that no pre-existing row changes and every booking is LEGACY. |
+| **New bookings are priced from a quote.** | `QUOTE_PER_STOP`. Registration redeems the quote once (unexpired, same customer) and freezes its fare, tax, payable amount, pricing version and the fee of the rule in effect, plus one `booking_stops` row per quoted drop with that drop's payable amount and its share of the fee. The database checks that the booking copies the quote and was redeemed for it at confirmation, that the fee is the pinned rule's fee, and (at commit) that the stops add up to the booking. None of it can change afterwards, even for the table owner. |
+| **PREPAID_UPI is not offered to new bookings (N4).** | Registration answers `422 PAYMENT_METHOD_NOT_OFFERED`; the database refuses the row (insert guard and a CHECK). |
+| **Historical PREPAID_UPI bookings keep Checkout, and only they do (N4).** | Start, verify, the webhook and the admin sync apply a booking payment only to a `LEGACY_BOOKING_LEVEL` + `PREPAID_UPI` booking. The code checks it at start and verify, before capturing an authorized payment, and in the finalizer (`BOOKING_NOT_PAYABLE` otherwise, logged as a payment anomaly). The database refuses a booking payment row for any other booking. Ownership and signature checks are unchanged. |
+| **Pickup gate also for legacy PAY_AT_PICKUP bookings (N2).** | Phase 3, not built yet. |
+| **Completion with undelivered drops (N5).** | Phases 4–5, not built yet. The financial treatment stays open. |
+| **Failed payout → ON_HOLD, explicit release (N10).** | Phase 7, not built yet. |
+| **Removing the legacy code (L-22).** | Open. Only after no environment has unfinished legacy bookings. |
+| **Non-local databases (N1).** | Blocked until `prisma/sql/preflight-payment-flow.sql` has been run there and its output reviewed. Phase 1 is applied to the local dev database only. |
+
+**Temporary restriction until Phase 4 (technical, not policy).** Per-drop collection isn't built yet, so a new (`QUOTE_PER_STOP`) PAY_AT_DELIVERY booking can't be collected: the API answers `409 COLLECTION_NOT_ALLOWED` (`details: { stage: "DELIVERY", perStop: true }`), the database refuses the collection row, and the driver view shows `collectionOpen: false`. Such a booking registers and dispatches but can't complete (payment gate). Don't take real PAY_AT_DELIVERY bookings before Phase 4. New PAY_AT_PICKUP bookings work end to end.
+
+**Technical defaults introduced in Phase 1.** Each is configurable or replaceable later; none is a business decision.
+
+| Default | Where | Decision it waits for |
+|---|---|---|
+| At most 5 drops per quote (`FARE_MAX_DROPS`, range 1–25) | config, `422 TOO_MANY_DROPS` | D-29 / N7 |
+| Database ceiling of 25 drops | CHECKs on `fare_quote_stops`, `booking_stops` | technical only |
+| Tax must be 0: a quote with tax can't be booked (`422 TAX_NOT_SUPPORTED`) | registration, CHECKs | L-2 |
+| The frozen fee is attributed to the drops by largest remainder of each drop's fare (ties to the lower sequence); the shares always add up to the fee, and the fee charged doesn't change | `src/bookings/fee-allocation.ts`, deferred database check | implementation detail |
+| `PROTOTYPE*` pricing versions refused in production by the admin API as well as the CLI | `createPricingVersionRecord` | L-1 |
+| No canonical vehicle category list; format check only | quotes, fee rules | D-28 / N6 |

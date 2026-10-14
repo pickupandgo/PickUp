@@ -52,6 +52,34 @@ let jwksServer;
 /** Read-only queries on the e2e database (webhook outcomes, audit trail). */
 let db;
 
+/**
+ * Inserts a historical PREPAID_UPI booking (LEGACY_BOOKING_LEVEL) the way it exists in a
+ * database migrated from before fare quotes. The API and the application role can't create one:
+ * the insert guard refuses it, so the table owner disables only that guard, in one transaction.
+ */
+async function insertLegacyPrepaidBooking({ externalRef, customerId, feeRuleId, farePaise }) {
+  await db.query('BEGIN');
+  try {
+    await db.query('ALTER TABLE bookings DISABLE TRIGGER trg_bookings_insert_guard');
+    const result = await db.query(
+      `INSERT INTO bookings (external_ref, customer_id, vehicle_category, fare_estimate_minor,
+         final_fare_minor, payment_method, fee_rule_id, payment_model, confirmed_at)
+       VALUES ($1, $2, 'MINI_TRUCK', $3, $3, 'PREPAID_UPI', $4, 'LEGACY_BOOKING_LEVEL', now())
+       RETURNING id`,
+      [externalRef, customerId, farePaise, feeRuleId],
+    );
+    // The insert queued the deferred snapshot check; Postgres refuses ALTER TABLE while a table
+    // has pending trigger events, so run it now (it passes for LEGACY rows).
+    await db.query('SET CONSTRAINTS trg_bookings_snapshot IMMEDIATE');
+    await db.query('ALTER TABLE bookings ENABLE TRIGGER trg_bookings_insert_guard');
+    await db.query('COMMIT');
+    return result.rows[0].id;
+  } catch (error) {
+    await db.query('ROLLBACK');
+    throw error;
+  }
+}
+
 /** Stored rows and processing outcome of one webhook event id. */
 async function webhookEvent(table, eventId) {
   // Constant table names only.
@@ -338,12 +366,19 @@ async function main() {
   const driverAccount = provision(e2eUrl, [
     'create-driver', '--phone', driverPhone, '--subject', subjects.driver, '--approve', '--name', 'Ramesh Kumar',
   ]);
-  provision(e2eUrl, ['create-customer', '--phone', phone(), '--subject', subjects.customer]);
+  const customerAccount = provision(e2eUrl, ['create-customer', '--phone', phone(), '--subject', subjects.customer]);
   const feeRule = provision(e2eUrl, [
     'create-fee-rule', '--type', 'PERCENTAGE', '--value', '10',
     '--reason', 'E2E run: approved V1 platform fee, 10% of the fare',
   ]);
   check(feeRule.roundingMode === 'HALF_UP', 'fee rule rounds HALF_UP');
+  // Development rates only (pricing/README.md): no production pricing exists yet.
+  const pricing = provision(e2eUrl, [
+    'create-pricing-version', '--code', `PROTOTYPE-E2E-${randomBytes(3).toString('hex').toUpperCase()}`,
+    '--file', path.join(ROOT, 'pricing', 'prototype-leg-distance-v1.json'),
+    '--reason', 'E2E run: development prototype rates, not approved for production',
+  ]);
+  check(pricing.developmentOnly === true, 'the prototype pricing version is marked development only');
 
   const secrets = {
     internalApiKey: randomBytes(32).toString('hex'),
@@ -466,19 +501,80 @@ async function main() {
     return { bankAccountId, changeRequestId, providerValidationId: favId, nameMatch: 'MATCH' };
   });
 
-  await step(1, 'Payment created: booking registered, driver assigned, Razorpay order created', async () => {
-    const externalRef = `E2E-${randomUUID()}`;
-    const registration = {
-      externalRef,
-      customerSubject: subjects.customer,
+  await step('1a', 'New bookings: server fare quote, registered from the quote, PREPAID_UPI refused', async () => {
+    const route = {
+      pickup: { latitude: 26.2389, longitude: 73.0243 },
+      drops: [
+        { latitude: 26.3448, longitude: 73.0458 },
+        { latitude: 26.3448, longitude: 73.0858 },
+      ],
       vehicleCategory: 'MINI_TRUCK',
-      paymentMethod: 'PREPAID_UPI',
-      confirmedFarePaise: FARE_PAISE,
+      weightKg: 12.5,
     };
-    const registered = await engine('POST', '/v1/internal/bookings', registration);
-    bookingId = registered.body.bookingId;
-    const again = await engine('POST', '/v1/internal/bookings', registration);
-    idempotent('booking registration repeated with the same externalRef returns the same booking', again.body.bookingId === bookingId);
+    const quoted = await call('POST', '/v1/fare/quotes', { as: customer, body: route, expect: [201] });
+    const quote = quoted.body;
+    check(quote.pricingVersion.pricingVersionId === pricing.pricingVersionId, 'priced by the version in effect');
+    check(quote.drops.length === 2, 'one amount per drop');
+    check(quote.payablePaise === quote.drops[0].payablePaise + quote.drops[1].payablePaise, 'drops add up to the total');
+    const tampered = await call('POST', '/v1/fare/quotes', {
+      as: customer,
+      body: { ...route, farePaise: 1 },
+      expect: [400],
+    });
+    check(tampered.body.error.code === 'VALIDATION_FAILED', 'the app cannot send an amount');
+
+    const registration = {
+      externalRef: `E2E-PICKUP-${randomUUID()}`,
+      customerSubject: subjects.customer,
+      quoteId: quote.quoteId,
+      paymentMethod: 'PAY_AT_PICKUP',
+    };
+    const registered = await engine('POST', '/v1/internal/bookings', registration, [201]);
+    check(registered.body.paymentModel === 'QUOTE_PER_STOP', 'registered from the quote');
+    check(registered.body.payablePaise === quote.payablePaise, 'the booking freezes the quoted total');
+    check(registered.body.platformFeePaise === Math.round(quote.payablePaise / 10), 'the 10% fee is frozen');
+    check(
+      registered.body.stops.map((stop) => stop.payablePaise).join() === quote.drops.map((drop) => drop.payablePaise).join(),
+      'one stop per quoted drop, same amounts',
+    );
+    const again = await engine('POST', '/v1/internal/bookings', registration, [200]);
+    idempotent('registering the same ref and quote again returns the same booking', again.body.bookingId === registered.body.bookingId);
+    const reused = await engine('POST', '/v1/internal/bookings', { ...registration, externalRef: `E2E-REUSE-${randomUUID()}` }, [409]);
+    idempotent('a quote is redeemed once', reused.body.error.code === 'QUOTE_ALREADY_USED');
+
+    const second = await call('POST', '/v1/fare/quotes', { as: customer, body: route, expect: [201] });
+    const prepaid = await engine('POST', '/v1/internal/bookings', {
+      ...registration,
+      externalRef: `E2E-PREPAID-${randomUUID()}`,
+      quoteId: second.body.quoteId,
+      paymentMethod: 'PREPAID_UPI',
+    }, [422]);
+    check(prepaid.body.error.code === 'PAYMENT_METHOD_NOT_OFFERED', 'PREPAID_UPI is refused for new bookings');
+    const engineFare = await engine('POST', '/v1/internal/bookings', {
+      ...registration,
+      externalRef: `E2E-FARE-${randomUUID()}`,
+      quoteId: second.body.quoteId,
+      confirmedFarePaise: 1,
+    }, [400]);
+    check(engineFare.body.error.code === 'VALIDATION_FAILED', 'the engine cannot send a fare');
+    report.ids.pickupBookingId = registered.body.bookingId;
+    return { quoteId: quote.quoteId, bookingId: registered.body.bookingId, payablePaise: quote.payablePaise };
+  });
+
+  await step(1, 'Payment created (historical prepaid booking): driver assigned, Razorpay order created', async () => {
+    // The online money path below (Checkout -> settlement -> payout) runs on a historical
+    // PREPAID_UPI booking, which the API can no longer create. It is inserted as data, the way
+    // such rows exist in a database migrated from before quotes. Phase 11 replaces this flow with
+    // pay at pickup by QR.
+    const externalRef = `E2E-LEGACY-${randomUUID()}`;
+    bookingId = await insertLegacyPrepaidBooking({
+      externalRef,
+      customerId: customerAccount.customerId,
+      feeRuleId: feeRule.feeRuleId,
+      farePaise: FARE_PAISE,
+    });
+    const registered = await engine('GET', `/v1/internal/bookings/by-ref/${externalRef}`, undefined, [200]);
+    check(registered.body.paymentModel === 'LEGACY_BOOKING_LEVEL', 'historical booking keeps its legacy model');
     const assigned = await engine('POST', `/v1/internal/bookings/${bookingId}/assign`, {
       driverSubject: subjects.driver,
     });
@@ -607,16 +703,13 @@ async function main() {
     check(earning.body.status === 'PAYABLE', 'earning PAYABLE');
     check(earning.body.merchantSettled === true && earning.body.payableAt !== null, 'settled and payable');
 
-    // Control: a Rs 300 trip paid and completed but never settled by Razorpay.
-    const ref = `E2E-CONTROL-${randomUUID()}`;
-    const registered = await engine('POST', '/v1/internal/bookings', {
-      externalRef: ref,
-      customerSubject: subjects.customer,
-      vehicleCategory: 'MINI_TRUCK',
-      paymentMethod: 'PREPAID_UPI',
-      confirmedFarePaise: CONTROL_FARE_PAISE,
+    // Control: a Rs 300 trip paid and completed but never settled by Razorpay (historical prepaid).
+    const controlBooking = await insertLegacyPrepaidBooking({
+      externalRef: `E2E-CONTROL-${randomUUID()}`,
+      customerId: customerAccount.customerId,
+      feeRuleId: feeRule.feeRuleId,
+      farePaise: CONTROL_FARE_PAISE,
     });
-    const controlBooking = registered.body.bookingId;
     const assigned = await engine('POST', `/v1/internal/bookings/${controlBooking}/assign`, {
       driverSubject: subjects.driver,
     });

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { applyBookingPaid } from '../bookings/booking-payment-state';
+import { applyBookingPaid, isHistoricalPrepaid } from '../bookings/booking-payment-state';
 import { lockBooking, lockTripOfBooking } from '../bookings/booking-locks';
 import type { PaymentStatus } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
@@ -55,6 +55,11 @@ export class BookingPaymentFinalizerService {
       const booking = await lockBooking(tx, bookingId);
       if (!booking) {
         throw new Error('Booking disappeared during finalization');
+      }
+      if (!isHistoricalPrepaid(booking)) {
+        // Unreachable while trg_payments_booking_insert_guard holds (no such payment row can
+        // exist); never mark any other booking paid from an in-app payment.
+        return Outcome.BOOKING_NOT_PAYABLE;
       }
       const trip = await lockTripOfBooking(tx, bookingId);
       const [locked] = await tx.$queryRaw<LockedPaymentRow[]>`
