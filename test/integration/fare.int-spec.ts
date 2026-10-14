@@ -551,7 +551,7 @@ describe('Fare quotes and pricing versions', () => {
       ]);
       expect(audit.every((row) => row.actorUserId !== null)).toBe(true);
       expect(audit.every((row) => adminIds().has(row.actorUserId as string))).toBe(true);
-      expect(audit.every((row) => row.reason.length >= 10)).toBe(true);
+      expect(audit.every((row) => (row.reason ?? '').length >= 10)).toBe(true);
     });
 
     it('validates the config against its model and refuses overlaps and bad input', async () => {
