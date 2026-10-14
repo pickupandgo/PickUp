@@ -241,6 +241,8 @@ model User {
   bankAccountStatusChanges DriverBankAccount[]       @relation("BankAccountStatusChangedBy")
   createdPayoutBatches     PayoutBatch[]             @relation("PayoutBatchCreatedBy")
   bankValidationRequests   BankAccountVerification[] @relation("BankValidationRequestedBy")
+  createdPricingVersions     PricingVersion[]        @relation("PricingVersionCreatedBy")
+  deactivatedPricingVersions PricingVersion[]        @relation("PricingVersionDeactivatedBy")
 
   @@map("users")
 }
@@ -413,8 +415,9 @@ model Customer {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  bookings Booking[]
+  user       User        @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  bookings   Booking[]
+  fareQuotes FareQuote[]
 
   @@map("customers")
 }
@@ -997,4 +1000,91 @@ model AdminAction {
   @@index([targetType, targetId, createdAt(sort: Desc)], map: "idx_admin_actions_target")
   @@index([actorUserId, createdAt(sort: Desc)], map: "idx_admin_actions_actor")
   @@map("admin_actions")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fare module. Pricing is versioned and server-side only; a quote freezes the amounts the
+// customer saw, and booking registration copies them. No payment code calculates a fare.
+// ---------------------------------------------------------------------------------------------
+
+/// A pricing version. Its config never changes: a pricing change is a new version with its own
+/// start, and every quote records the version that priced it. Same lifecycle as fee rules.
+model PricingVersion {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Unique, human-readable, e.g. PROTOTYPE-2026-10.
+  code                String    @unique(map: "uq_pricing_versions_code") @db.VarChar(40)
+  /// The pricing model the config is written for (CHECK in SQL), e.g. LEG_DISTANCE_V1.
+  model               String    @db.VarChar(40)
+  /// Rates and rules for the model, validated by the Fare module. Immutable.
+  config              Json
+  effectiveFrom       DateTime  @map("effective_from") @db.Timestamptz(6)
+  effectiveTo         DateTime? @map("effective_to") @db.Timestamptz(6)
+  active              Boolean   @default(true)
+  /// Approval reference and why this version exists. Required.
+  reason              String
+  /// Admin who created it; NULL when created with the ops CLI.
+  createdByUserId     String?   @map("created_by_user_id") @db.Uuid
+  deactivatedAt       DateTime? @map("deactivated_at") @db.Timestamptz(6)
+  deactivatedByUserId String?   @map("deactivated_by_user_id") @db.Uuid
+  deactivationReason  String?   @map("deactivation_reason")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  createdBy     User?       @relation("PricingVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  deactivatedBy User?       @relation("PricingVersionDeactivatedBy", fields: [deactivatedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  quotes        FareQuote[]
+
+  @@index([active, effectiveFrom(sort: Desc)], map: "idx_pricing_versions_lookup")
+  @@map("pricing_versions")
+}
+
+/// A server-calculated fare for one route, valid until expires_at and usable for one booking.
+/// Amounts are integer paise; the stops add up to the totals (deferred trigger).
+model FareQuote {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId       String    @map("customer_id") @db.Uuid
+  pricingVersionId String    @map("pricing_version_id") @db.Uuid
+  vehicleCategory  String    @map("vehicle_category") @db.VarChar(50)
+  /// Total goods weight, in grams.
+  weightGrams      Int       @map("weight_grams")
+  pickupLatitude   Decimal   @map("pickup_latitude") @db.Decimal(9, 6)
+  pickupLongitude  Decimal   @map("pickup_longitude") @db.Decimal(9, 6)
+  /// Total route distance, in metres.
+  distanceMeters   Int       @map("distance_meters")
+  /// Fare excluding taxes.
+  farePaise        BigInt    @map("fare_paise")
+  taxPaise         BigInt    @map("tax_paise")
+  /// What the customer (or the receivers together) pays: fare + tax.
+  payablePaise     BigInt    @map("payable_paise")
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+  /// Set once, when a booking is registered from this quote.
+  redeemedAt       DateTime? @map("redeemed_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  customer       Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  pricingVersion PricingVersion  @relation(fields: [pricingVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  stops          FareQuoteStop[]
+
+  @@index([customerId, createdAt(sort: Desc)], map: "idx_fare_quotes_customer_created")
+  @@index([pricingVersionId], map: "idx_fare_quotes_pricing_version")
+  @@map("fare_quotes")
+}
+
+/// One drop of a quote: its location, the leg that reaches it and what that drop costs.
+model FareQuoteStop {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quoteId        String  @map("quote_id") @db.Uuid
+  /// 1-based delivery order.
+  sequence       Int     @db.SmallInt
+  latitude       Decimal @db.Decimal(9, 6)
+  longitude      Decimal @db.Decimal(9, 6)
+  /// Distance from the previous point (the pickup for stop 1), in metres.
+  distanceMeters Int     @map("distance_meters")
+  farePaise      BigInt  @map("fare_paise")
+  taxPaise       BigInt  @map("tax_paise")
+  payablePaise   BigInt  @map("payable_paise")
+
+  quote FareQuote @relation(fields: [quoteId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([quoteId, sequence], map: "uq_fare_quote_stops_sequence")
+  @@map("fare_quote_stops")
 }

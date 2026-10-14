@@ -1,4 +1,4 @@
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -13,6 +13,8 @@ import type { VerifiedIdentity } from './token-verifier.service';
  */
 @Injectable()
 export class PrincipalService {
+  private readonly logger = new Logger(PrincipalService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -37,6 +39,8 @@ export class PrincipalService {
     });
 
     if (!identity) {
+      // The UID is a pseudonymous id, not a credential; ops need it to link or provision accounts.
+      this.logger.log({ subject: verified.subject }, 'Sign-in for an unregistered identity');
       throw new AppError(
         ErrorCode.USER_NOT_PROVISIONED,
         HttpStatus.FORBIDDEN,

@@ -10,12 +10,17 @@ import { PrincipalService } from './principal.service';
 import { TokenVerifier } from './token-verifier.service';
 
 const BEARER_TOKEN = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/;
-const USER_POLICIES: ReadonlySet<AccessPolicy> = new Set(['DRIVER', 'CUSTOMER', 'ADMIN']);
+const TOKEN_POLICIES: ReadonlySet<AccessPolicy> = new Set([
+  'SIGNED_IN',
+  'DRIVER',
+  'CUSTOMER',
+  'ADMIN',
+]);
 
 /**
- * Global guard. Every route must declare @Public, @DriverOnly, @CustomerOnly, @AdminOnly or
- * @InternalOnly; anything else is denied (fail closed). Object-level checks (e.g. "this booking
- * belongs to you") happen in the services, on every query.
+ * Global guard. Every route must declare @Public, @SignedIn, @DriverOnly, @CustomerOnly,
+ * @AdminOnly or @InternalOnly; anything else is denied (fail closed). Object-level checks (e.g.
+ * "this booking belongs to you") happen in the services, on every query.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -42,7 +47,7 @@ export class AuthGuard implements CanActivate {
     if (policy === 'INTERNAL') {
       return this.checkInternalKey(request);
     }
-    if (!policy || !USER_POLICIES.has(policy)) {
+    if (!policy || !TOKEN_POLICIES.has(policy)) {
       throw forbidden();
     }
 
@@ -64,6 +69,16 @@ export class AuthGuard implements CanActivate {
     }
 
     const identity = await this.verifier.verify(token);
+    if (policy === 'SIGNED_IN') {
+      // Registration routes: a verified sign-in is enough; no account is resolved or required.
+      request.identity = {
+        provider: this.config.auth.provider,
+        subject: identity.subject,
+        phoneNumber: identity.phoneNumber,
+        signInProvider: identity.signInProvider,
+      };
+      return true;
+    }
     const principal = await this.principals.resolve(identity);
 
     if (policy === 'DRIVER' && !principal.driver) {

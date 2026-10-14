@@ -6,12 +6,14 @@ import { AuthModule } from './auth/auth.module';
 import { BookingsModule } from './bookings/bookings.module';
 import { CollectionsModule } from './collections/collections.module';
 import { ClockModule } from './common/clock';
+import { CustomersModule } from './customers/customers.module';
 import { AppThrottlerGuard } from './common/http/app-throttler.guard';
 import { buildLoggerModule } from './common/logging/logger.module';
 import type { AppConfig } from './config/app-config';
 import { AppConfigModule } from './config/app-config.module';
 import { EarningsModule } from './earnings/earnings.module';
 import { EngineModule } from './engine/engine.module';
+import { FareModule } from './fare/fare.module';
 import { FeesModule } from './fees/fees.module';
 import { HealthModule } from './health/health.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -37,6 +39,8 @@ export class AppModule {
         ClockModule,
         AuthModule,
         HealthModule,
+        CustomersModule,
+        FareModule,
         WalletModule,
         FeesModule,
         EarningsModule,

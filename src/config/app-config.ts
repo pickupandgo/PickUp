@@ -57,6 +57,10 @@ export interface AppConfig {
     /** Always false: TDS waits for a CA-approved rule (OPEN_DECISIONS D-57). */
     readonly tdsEnabled: false;
   };
+  readonly fare: {
+    /** Seconds a fare quote stays bookable. */
+    readonly quoteTtlSeconds: number;
+  };
   /**
    * Production-readiness confirmations (go-live checklist). Without them the matching live
    * provider is refused in production and with live keys.
@@ -209,6 +213,9 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     tax: {
       // The schema refuses TDS_ENABLED=true; this is a constant until a rule is implemented.
       tdsEnabled: false,
+    },
+    fare: {
+      quoteTtlSeconds: env.FARE_QUOTE_TTL_SECONDS,
     },
     readiness: {
       razorpayxCapabilitiesConfirmed: env.RAZORPAYX_CAPABILITIES_CONFIRMED,

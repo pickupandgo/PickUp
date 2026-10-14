@@ -24,6 +24,42 @@ describe('parseProvisionArgs', () => {
     });
   });
 
+  it('parses link-identity, which needs a reason and takes no account flags', () => {
+    expect(
+      parseProvisionArgs([
+        'link-identity',
+        '--phone',
+        '+919876543210',
+        '--subject',
+        'newProjectUid_1',
+        '--reason',
+        '  Apps moved to Firebase project multipleride-customer ',
+      ]),
+    ).toEqual({
+      kind: 'link-identity',
+      phone: '+919876543210',
+      subject: 'newProjectUid_1',
+      reason: 'Apps moved to Firebase project multipleride-customer',
+    });
+    const base = ['link-identity', '--phone', '+919876543210', '--subject', 'uid_1'];
+    expect(() => parseProvisionArgs(base)).toThrow(/--reason/);
+    expect(() => parseProvisionArgs([...base, '--reason', 'short'])).toThrow(/--reason/);
+    expect(() =>
+      parseProvisionArgs([...base, '--reason', 'Firebase project move', '--approve']),
+    ).toThrow(/--approve is not used/);
+    expect(() =>
+      parseProvisionArgs([
+        'link-identity',
+        '--phone',
+        '+919876543210',
+        '--subject',
+        'bad uid!',
+        '--reason',
+        'Firebase project move',
+      ]),
+    ).toThrow(ProvisionUsageError);
+  });
+
   it('defaults --approve to false and the legal name to none', () => {
     expect(
       parseProvisionArgs(['create-driver', '--phone', '+919876543210', '--subject', 'uid_123']),
@@ -96,6 +132,111 @@ describe('parseProvisionArgs', () => {
       /--value/,
     ],
   ])('rejects fee rule input %j', (argv, message) => {
+    expect(() => parseProvisionArgs(argv)).toThrow(message);
+  });
+
+  it('parses create-pricing-version, defaulting the model, and takes rates only from a file', () => {
+    expect(
+      parseProvisionArgs([
+        'create-pricing-version',
+        '--code',
+        '  V1-2026-11 ',
+        '--file',
+        './pricing/v1-2026-11.json',
+        '--reason',
+        '  Fares approved by Nikhil Enterprises on 2026-11-01 ',
+      ]),
+    ).toEqual({
+      kind: 'create-pricing-version',
+      code: 'V1-2026-11',
+      model: 'LEG_DISTANCE_V1',
+      configPath: './pricing/v1-2026-11.json',
+      reason: 'Fares approved by Nikhil Enterprises on 2026-11-01',
+    });
+    expect(
+      parseProvisionArgs([
+        'create-pricing-version',
+        '--code',
+        'PROTOTYPE-2026-10',
+        '--file',
+        './pricing/prototype-leg-distance-v1.json',
+        '--model',
+        'LEG_DISTANCE_V1',
+        '--reason',
+        'Development only: prototype rates, not approved',
+      ]),
+    ).toMatchObject({ code: 'PROTOTYPE-2026-10', model: 'LEG_DISTANCE_V1' });
+  });
+
+  it.each([
+    [['create-pricing-version', '--file', './p.json', '--reason', 'reason text'], /--code/],
+    [
+      [
+        'create-pricing-version',
+        '--code',
+        'v1-2026-11',
+        '--file',
+        './p.json',
+        '--reason',
+        'reason text',
+      ],
+      /--code/,
+    ],
+    [['create-pricing-version', '--code', 'V1', '--reason', 'reason text'], /--file/],
+    [
+      ['create-pricing-version', '--code', 'V1', '--file', ' ', '--reason', 'reason text'],
+      /--file/,
+    ],
+    [['create-pricing-version', '--code', 'V1', '--file', './p.json'], /--reason/],
+    [
+      [
+        'create-pricing-version',
+        '--code',
+        'V1',
+        '--file',
+        './p.json',
+        '--reason',
+        'reason text',
+        '--model',
+        'SURGE_V9',
+      ],
+      /--model/,
+    ],
+    [
+      [
+        'create-pricing-version',
+        '--code',
+        'V1',
+        '--file',
+        './p.json',
+        '--reason',
+        'reason text',
+        '--value',
+        '10',
+      ],
+      /--value is not used/,
+    ],
+    [
+      [
+        'create-pricing-version',
+        '--code',
+        'V1',
+        '--file',
+        './p.json',
+        '--reason',
+        'reason text',
+        '--phone',
+        '+919876543210',
+      ],
+      /--phone is not used/,
+    ],
+    [[...FEE_RULE, '--reason', 'reason text', '--code', 'V1'], /--code is not used/],
+    [
+      ['create-customer', '--phone', '+919876543210', '--subject', 'uid', '--file', './p.json'],
+      /--file is not used/,
+    ],
+  ])('rejects pricing version input %j', (argv, message) => {
+    expect(() => parseProvisionArgs(argv)).toThrow(ProvisionUsageError);
     expect(() => parseProvisionArgs(argv)).toThrow(message);
   });
 

@@ -1,0 +1,45 @@
+{
+  "currency": "INR",
+  "distanceModel": "HAVERSINE",
+  "vehicles": {
+    "TWO_WHEELER": {
+      "firstLegBasePaise": 2400,
+      "additionalLegBasePaise": 800,
+      "perKmPaise": 960,
+      "minimumLegFarePaise": 100
+    },
+    "THREE_WHEELER": {
+      "firstLegBasePaise": 3000,
+      "additionalLegBasePaise": 1000,
+      "perKmPaise": 1200,
+      "minimumLegFarePaise": 100
+    },
+    "FOUR_WHEELER": {
+      "firstLegBasePaise": 3900,
+      "additionalLegBasePaise": 1300,
+      "perKmPaise": 1560,
+      "minimumLegFarePaise": 100
+    },
+    "MINI_TRUCK": {
+      "firstLegBasePaise": 4800,
+      "additionalLegBasePaise": 1600,
+      "perKmPaise": 1920,
+      "minimumLegFarePaise": 100
+    },
+    "PICKUP_TRUCK": {
+      "firstLegBasePaise": 6000,
+      "additionalLegBasePaise": 2000,
+      "perKmPaise": 2400,
+      "minimumLegFarePaise": 100
+    }
+  },
+  "weightBands": [
+    { "upToGrams": 5000, "multiplierBps": 10000 },
+    { "upToGrams": 10000, "multiplierBps": 12000 },
+    { "upToGrams": 25000, "multiplierBps": 15000 },
+    { "upToGrams": 50000, "multiplierBps": 20000 },
+    { "upToGrams": null, "multiplierBps": 30000 }
+  ],
+  "legRounding": { "incrementPaise": 100, "mode": "UP" },
+  "taxes": []
+}

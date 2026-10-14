@@ -95,6 +95,10 @@ export const envSchema = z
     // rule and a versioned tax rule is implemented (OPEN_DECISIONS D-57); true is refused.
     TDS_ENABLED: booleanString.default(false),
 
+    // How long a fare quote can be booked (seconds). After that the app must ask for a new
+    // quote, so a customer always pays a price calculated by the current pricing version.
+    FARE_QUOTE_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
+
     // Weekly driver payouts (RazorpayX). Disabled until the account is activated. "simulated"
     // (non-production, test keys only) moves payouts and bank validations through
     // /v1/dev/simulate instead of RazorpayX.

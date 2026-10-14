@@ -11,6 +11,20 @@ export interface CustomerPrincipal {
 }
 
 /**
+ * A verified sign-in (identity provider token), before or without an account here. Only routes
+ * declared @SignedIn() see it; everything else needs a registered Principal.
+ */
+export interface SignedInIdentity {
+  /** Identity provider name, e.g. "firebase". */
+  readonly provider: string;
+  /** Provider subject (Firebase UID). */
+  readonly subject: string;
+  /** Verified `phone_number` claim, or null when the sign-in has no verified phone. */
+  readonly phoneNumber: string | null;
+  readonly signInProvider: string | null;
+}
+
+/**
  * Facts about the token that authenticated this request. Never used to decide who the caller is
  * or what they may do (that comes from our database); only for step-up checks on sensitive
  * actions such as changing the payout bank account.
@@ -38,4 +52,6 @@ export interface Principal {
 /** Express request after AuthGuard. The request id (`id`) is added by pino-http. */
 export interface AuthenticatedRequest extends Request {
   principal?: Principal;
+  /** Set on @SignedIn() routes: the verified sign-in, whether or not it has an account. */
+  identity?: SignedInIdentity;
 }

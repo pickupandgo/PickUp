@@ -149,6 +149,59 @@ describe('Provisioning CLI commands', () => {
     ).rejects.toThrow(/No driver/);
   });
 
+  it('links a new sign-in to an existing account, idempotently and audited', async () => {
+    const phone = uniquePhone();
+    const oldSubject = uniqueSubject('oldproject');
+    const created = await runProvisionCommand(owner, 'firebase', {
+      kind: 'create-driver',
+      phone,
+      subject: oldSubject,
+      approve: true,
+      legalName: null,
+    });
+    const newSubject = uniqueSubject('newproject');
+    const link = {
+      kind: 'link-identity',
+      phone,
+      subject: newSubject,
+      reason: 'Apps moved to another Firebase project',
+    } as const;
+
+    const linked = await runProvisionCommand(owner, 'firebase', link);
+    expect(linked).toMatchObject({ userId: created.userId, driverId: created.driverId });
+    await runProvisionCommand(owner, 'firebase', link);
+    expect(
+      (await owner.authIdentity.findMany({ where: { userId: created.userId } }))
+        .map((identity) => identity.subject)
+        .sort(),
+    ).toEqual([newSubject, oldSubject].sort());
+    expect(
+      await owner.adminAction.count({
+        where: { action: 'AUTH_IDENTITY_LINKED', targetId: created.userId },
+      }),
+    ).toBe(1);
+
+    // The new sign-in is the same driver.
+    await request(ctx.server)
+      .get('/v1/wallet')
+      .set(bearer(ctx.tokens.sign(newSubject)))
+      .expect(200);
+
+    // A subject that belongs to someone else is never moved.
+    const other = await runProvisionCommand(owner, 'firebase', {
+      kind: 'create-customer',
+      phone: uniquePhone(),
+      subject: uniqueSubject('cli'),
+    });
+    const otherUser = await owner.user.findUniqueOrThrow({ where: { id: other.userId } });
+    await expect(
+      runProvisionCommand(owner, 'firebase', { ...link, phone: otherUser.phone }),
+    ).rejects.toThrow(/already linked to another user/);
+    await expect(
+      runProvisionCommand(owner, 'firebase', { ...link, phone: uniquePhone() }),
+    ).rejects.toThrow(/No user/);
+  });
+
   it('refuses to approve someone who is not a driver', async () => {
     await expect(
       runProvisionCommand(owner, 'firebase', { kind: 'approve-driver', phone: uniquePhone() }),

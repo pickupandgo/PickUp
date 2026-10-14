@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { recordAdminAction } from '../audit/admin-actions';
+import { createPricingVersionRecord } from '../fare/pricing-versions';
 import { createFeeRuleRecord } from '../fees/fee-rules';
 import type { PrismaClient } from '../generated/prisma/client';
 import type { DriverApprovalStatus, UserRole } from '../generated/prisma/enums';
@@ -22,7 +24,20 @@ export interface FeeRuleResult {
   readonly supersededRuleId: string | null;
 }
 
-export type ProvisionResult = AccountResult | FeeRuleResult;
+export interface PricingVersionResult {
+  readonly pricingVersionId: string;
+  readonly code: string;
+  readonly model: string;
+  readonly effectiveFrom: string;
+  readonly supersededVersionId: string | null;
+  /** True for a PROTOTYPE* code: development rates that nobody has approved for production. */
+  readonly developmentOnly: boolean;
+}
+
+export type ProvisionResult = AccountResult | FeeRuleResult | PricingVersionResult;
+
+/** Codes reserved for unapproved development rates (see docs/OPEN_DECISIONS.md D-14). */
+const DEVELOPMENT_CODE_PREFIX = 'PROTOTYPE';
 
 /**
  * Bootstrap tooling for test and ops accounts and the initial platform fee rule. In production,
@@ -38,7 +53,12 @@ export function runProvisionCommand(
 export function runProvisionCommand(
   prisma: PrismaClient,
   provider: string,
-  command: Exclude<ProvisionCommand, { kind: 'create-fee-rule' }>,
+  command: Extract<ProvisionCommand, { kind: 'create-pricing-version' }>,
+): Promise<PricingVersionResult>;
+export function runProvisionCommand(
+  prisma: PrismaClient,
+  provider: string,
+  command: Exclude<ProvisionCommand, { kind: 'create-fee-rule' | 'create-pricing-version' }>,
 ): Promise<AccountResult>;
 export function runProvisionCommand(
   prisma: PrismaClient,
@@ -59,6 +79,8 @@ export async function runProvisionCommand(
       return approveDriver(prisma, command.phone);
     case 'set-legal-name':
       return setLegalName(prisma, command.phone, command.legalName);
+    case 'link-identity':
+      return linkIdentity(prisma, provider, command);
     case 'create-fee-rule': {
       const { rule, superseded } = await createFeeRuleRecord(prisma, {
         category: command.category,
@@ -79,7 +101,51 @@ export async function runProvisionCommand(
         supersededRuleId: superseded?.id ?? null,
       };
     }
+    case 'create-pricing-version':
+      return createPricingVersion(prisma, command);
   }
+}
+
+/**
+ * Creates a pricing version from a JSON config file. The rates never come from the command line,
+ * so what was applied is exactly what the reviewed file contains. The config is validated against
+ * its model before anything is written, and the version in effect is closed at the new start.
+ */
+async function createPricingVersion(
+  prisma: PrismaClient,
+  command: Extract<ProvisionCommand, { kind: 'create-pricing-version' }>,
+): Promise<PricingVersionResult> {
+  const developmentOnly = command.code.startsWith(DEVELOPMENT_CODE_PREFIX);
+  if (developmentOnly && process.env.NODE_ENV === 'production') {
+    throw new ProvisionUsageError(
+      `A ${DEVELOPMENT_CODE_PREFIX}* pricing version is development only and cannot be created in production`,
+    );
+  }
+
+  let config: unknown;
+  try {
+    config = JSON.parse(readFileSync(command.configPath, 'utf8'));
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'unknown error';
+    throw new ProvisionUsageError(`--file could not be read as JSON: ${detail}`);
+  }
+
+  const { version, superseded } = await createPricingVersionRecord(prisma, {
+    code: command.code,
+    model: command.model,
+    config,
+    effectiveFrom: null,
+    reason: command.reason,
+    createdByUserId: null,
+  });
+  return {
+    pricingVersionId: version.id,
+    code: version.code,
+    model: version.model,
+    effectiveFrom: version.effectiveFrom.toISOString(),
+    supersededVersionId: superseded?.id ?? null,
+    developmentOnly,
+  };
 }
 
 const ROLES: Record<'create-driver' | 'create-admin' | 'create-customer', UserRole> = {
@@ -179,6 +245,58 @@ async function setLegalName(
       driverId: driver.id,
       approvalStatus: driver.approvalStatus,
       customerId: null,
+    };
+  });
+}
+
+/**
+ * Adds a sign-in to the account with this phone, e.g. when the apps move to another Firebase
+ * project and the same person gets a new UID. It only ever adds: a subject already linked to a
+ * different account is refused, and repeating the command changes nothing. Audited.
+ */
+async function linkIdentity(
+  prisma: PrismaClient,
+  provider: string,
+  command: Extract<ProvisionCommand, { kind: 'link-identity' }>,
+): Promise<AccountResult> {
+  return prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({
+      where: { phone: command.phone },
+      include: { driver: true, customer: true, authIdentities: { select: { id: true } } },
+    });
+    if (!user) {
+      throw new ProvisionUsageError('No user exists with this phone number');
+    }
+    const linked = await tx.authIdentity.findUnique({
+      where: { provider_subject: { provider, subject: command.subject } },
+      select: { userId: true },
+    });
+    if (linked && linked.userId !== user.id) {
+      throw new ProvisionUsageError('This subject is already linked to another user');
+    }
+    if (!linked) {
+      await tx.authIdentity.create({
+        data: { userId: user.id, provider, subject: command.subject },
+      });
+      await recordAdminAction(tx, {
+        actorUserId: null,
+        action: 'AUTH_IDENTITY_LINKED',
+        targetType: 'USER',
+        targetId: user.id,
+        reason: command.reason,
+        details: {
+          provider,
+          subject: command.subject,
+          identitiesBefore: user.authIdentities.length,
+        },
+      });
+    }
+    return {
+      userId: user.id,
+      role: user.role,
+      driverId: user.driver?.id ?? null,
+      approvalStatus: user.driver?.approvalStatus ?? null,
+      customerId: user.customer?.id ?? null,
     };
   });
 }

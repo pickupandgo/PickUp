@@ -28,8 +28,11 @@ GRANT UPDATE (status, razorpay_order_id, razorpay_payment_id, payment_method, up
 GRANT SELECT, INSERT ON payment_events TO mr_app;
 GRANT UPDATE (payment_id, outcome, attempts, processed_at, processing_error) ON payment_events TO mr_app;
 
--- Customers are provisioned by ops tooling (mr_migrator), like users and drivers.
+-- Customers: read-only for the API. Self-registration goes through register_customer(), a
+-- SECURITY DEFINER function that can only create CUSTOMER accounts and never re-links a phone;
+-- drivers and admins are still provisioned by ops tooling (mr_migrator).
 GRANT SELECT ON customers TO mr_app;
+GRANT EXECUTE ON FUNCTION register_customer(TEXT, TEXT, TEXT) TO mr_app;
 
 -- Bookings: registered by the trip engine through the API. Fare, payment method, fee rule and
 -- customer are immutable (no column grant, and a trigger as a second line of defence).
@@ -110,5 +113,14 @@ GRANT UPDATE (payout_id, outcome, attempts, processed_at, processing_error) ON p
 GRANT SELECT, INSERT ON payment_disputes TO mr_app;
 GRANT UPDATE (status, amount_paise, reason_code, updated_at) ON payment_disputes TO mr_app;
 
+-- Fare module. Pricing versions are versioned like fee rules: only closing and deactivation
+-- fields change. Quotes and their stops are written once by the server; a quote's only change is
+-- being redeemed by a booking (set once, triggers check it).
+GRANT SELECT, INSERT ON pricing_versions TO mr_app;
+GRANT UPDATE (effective_to, active, deactivated_at, deactivated_by_user_id, deactivation_reason)
+    ON pricing_versions TO mr_app;
+GRANT SELECT, INSERT ON fare_quotes TO mr_app;
+GRANT UPDATE (redeemed_at) ON fare_quotes TO mr_app;
+GRANT SELECT, INSERT ON fare_quote_stops TO mr_app;
 -- Admin audit trail: append-only (a trigger also blocks UPDATE, DELETE and TRUNCATE).
 GRANT SELECT, INSERT ON admin_actions TO mr_app;

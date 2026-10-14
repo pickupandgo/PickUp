@@ -1,5 +1,6 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import request from 'supertest';
+import { FareQuoteRedeemer } from '../../src/fare/fare-contract';
 import { Prisma, PrismaClient } from '../../src/generated/prisma/client';
 import {
   bearer,
@@ -8,13 +9,18 @@ import {
   createDriver,
   type FixtureDeps,
   idempotencyKey,
+  TEST_PRICING_CONFIG,
   uniqueCategory,
+  uniquePhone,
+  uniqueSubject,
+  uniqueVersionCode,
 } from '../helpers/fixtures';
 import {
   advanceTrip,
   bookedTrip,
   changeBankAccount,
   collect,
+  engine,
   fundWallet,
   requestBankAccountChange,
   sendPayoutWebhook,
@@ -98,6 +104,82 @@ describe('Least-privilege database role', () => {
     await request(ctx.server).get('/health/ready').expect(200);
 
     expect(await walletBalance(ctx, driver.driverId)).toBe(35_000n);
+  });
+
+  it('registers customers only through register_customer(), and only as customers', async () => {
+    const subject = uniqueSubject('lp');
+    const phone = uniquePhone();
+    const token = ctx.tokens.sign(subject, { phoneNumber: phone });
+    await request(ctx.server).post('/v1/customers/me').set(bearer(token)).expect(201);
+    await request(ctx.server).post('/v1/customers/me').set(bearer(token)).expect(200);
+    await request(ctx.server).get('/v1/customers/me').set(bearer(token)).expect(200);
+    const user = await owner.user.findUniqueOrThrow({
+      where: { phone },
+      include: { authIdentities: true, customer: true, driver: true },
+    });
+    expect(user).toMatchObject({ role: 'CUSTOMER', driver: null });
+    expect(user.authIdentities.map((identity) => identity.subject)).toEqual([subject]);
+    expect(user.customer).not.toBeNull();
+
+    // The function validates its own input; it is not a general-purpose insert.
+    const client = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: restrictedDatabaseUrl(), max: 1 }),
+    });
+    try {
+      await expect(
+        client.$queryRaw`SELECT * FROM register_customer('firebase', 'x y', '+919876543210')`,
+      ).rejects.toThrow(/invalid subject/);
+    } finally {
+      await client.$disconnect();
+    }
+  });
+
+  it('prices, stores and redeems a fare quote with production grants', async () => {
+    const admin = await createAdmin(deps);
+    const customer = await createCustomer(deps);
+
+    const version = await request(ctx.server)
+      .post('/v1/admin/pricing-versions')
+      .set(bearer(admin.token))
+      .send({
+        code: uniqueVersionCode(),
+        model: 'LEG_DISTANCE_V1',
+        config: TEST_PRICING_CONFIG,
+        reason: 'Least privilege pricing version',
+      })
+      .expect(201);
+
+    const route = {
+      pickup: { latitude: 26.2389, longitude: 73.0243 },
+      drops: [{ latitude: 26.3448, longitude: 73.0458 }],
+      vehicleCategory: 'MINI_TRUCK',
+      weightKg: 2,
+    };
+    const quoted = await request(ctx.server)
+      .post('/v1/fare/quotes')
+      .set(bearer(customer.token))
+      .send(route)
+      .expect(201);
+    const quoteId = quoted.body.quoteId as string;
+    expect(quoted.body.pricingVersion.pricingVersionId).toBe(version.body.version.pricingVersionId);
+    expect(quoted.body.payablePaise).toBeGreaterThan(0);
+
+    await request(ctx.server)
+      .get(`/v1/fare/quotes/${quoteId}`)
+      .set(bearer(customer.token))
+      .expect(200);
+    await engine(ctx).get(`/v1/internal/fare-quotes/${quoteId}`).expect(200);
+
+    // Redeeming is the only change the API role may make to a quote (UPDATE on redeemed_at).
+    const frozen = await ctx.prisma.runInTransaction((tx) =>
+      ctx.app
+        .get(FareQuoteRedeemer)
+        .redeem(tx, { quoteId, customerId: customer.customerId, at: new Date() }),
+    );
+    expect(frozen.payablePaise).toBe(BigInt(quoted.body.payablePaise as number));
+    expect(
+      (await owner.fareQuote.findUniqueOrThrow({ where: { id: quoteId } })).redeemedAt,
+    ).not.toBeNull();
   });
 
   it('serves bookings, collections, earnings and payouts with production grants', async () => {
@@ -327,6 +409,11 @@ describe('Least-privilege database role', () => {
     ['edit the admin audit trail', "UPDATE admin_actions SET reason = 'x'"],
     ['delete the admin audit trail', 'DELETE FROM admin_actions'],
     ['create customers', 'INSERT INTO customers (user_id) VALUES (gen_random_uuid())'],
+    [
+      'link a sign-in to an account',
+      "INSERT INTO auth_identities (user_id, provider, subject) VALUES (gen_random_uuid(), 'firebase', 'x')",
+    ],
+    ['re-point a sign-in', 'UPDATE auth_identities SET user_id = gen_random_uuid()'],
     ['rewrite an earning deduction', 'UPDATE driver_earnings SET tds_amount_paise = 1'],
     ['change an earning TDS policy', "UPDATE driver_earnings SET tds_policy = 'TAX_RULE'"],
     ['rewrite a payout deduction', 'UPDATE driver_payouts SET tds_amount_paise = 1'],
@@ -365,6 +452,15 @@ describe('Least-privilege database role', () => {
       'UPDATE bank_account_change_requests SET step_up_verified_at = now()',
     ],
     ['delete bank change requests', 'DELETE FROM bank_account_change_requests'],
+    ['change a quoted fare', 'UPDATE fare_quotes SET payable_paise = 1'],
+    ['extend a quote', "UPDATE fare_quotes SET expires_at = now() + interval '1 day'"],
+    ['move a quote to another customer', 'UPDATE fare_quotes SET customer_id = gen_random_uuid()'],
+    ['change a quoted drop amount', 'UPDATE fare_quote_stops SET payable_paise = 1'],
+    ['delete quotes', 'DELETE FROM fare_quotes'],
+    ['delete quoted drops', 'DELETE FROM fare_quote_stops'],
+    ['edit the rates of a pricing version', "UPDATE pricing_versions SET config = '{}'::jsonb"],
+    ['move a pricing version', 'UPDATE pricing_versions SET effective_from = now()'],
+    ['delete pricing versions', 'DELETE FROM pricing_versions'],
   ])('the API role cannot %s', async (_label, sql) => {
     const client = new PrismaClient({
       adapter: new PrismaPg({ connectionString: restrictedDatabaseUrl(), max: 1 }),

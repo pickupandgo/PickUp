@@ -215,3 +215,153 @@ export async function createVerifiedBankAccount(
     },
   });
 }
+
+/**
+ * Rates for test pricing versions: Rs 30 first leg, Rs 10 per extra drop, Rs 12/km, rounded up
+ * to whole rupees, with the prototype's weight steps. Not a business decision (D-14).
+ */
+export const TEST_PRICING_CONFIG = {
+  currency: 'INR',
+  distanceModel: 'HAVERSINE',
+  vehicles: {
+    MINI_TRUCK: {
+      firstLegBasePaise: 3000,
+      additionalLegBasePaise: 1000,
+      perKmPaise: 1200,
+      minimumLegFarePaise: 100,
+    },
+  },
+  weightBands: [
+    { upToGrams: 5_000, multiplierBps: 10_000 },
+    { upToGrams: null, multiplierBps: 12_000 },
+  ],
+  legRounding: { incrementPaise: 100, mode: 'UP' },
+  taxes: [],
+} as const;
+
+/** A pricing version code unique to the calling test. */
+export function uniqueVersionCode(): string {
+  return `T${randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase()}`;
+}
+
+/**
+ * Creates a pricing version directly (as the admin API would), effective from a minute ago so
+ * quotes asked for right afterwards are priced by it. Any open version must be closed first:
+ * two versions in effect at once is a data error the Fare module refuses to price with.
+ */
+export function createPricingVersion(
+  prisma: PrismaClient,
+  options: {
+    code?: string;
+    config?: unknown;
+    effectiveFrom?: Date;
+    effectiveTo?: Date | null;
+    active?: boolean;
+  } = {},
+) {
+  const active = options.active ?? true;
+  return prisma.pricingVersion.create({
+    data: {
+      code: options.code ?? uniqueVersionCode(),
+      model: 'LEG_DISTANCE_V1',
+      config: options.config ?? TEST_PRICING_CONFIG,
+      effectiveFrom: options.effectiveFrom ?? new Date(Date.now() - 60_000),
+      effectiveTo: options.effectiveTo ?? null,
+      active,
+      reason: 'Integration test pricing version',
+      // The database requires a deactivated version to say when and why (CHECK).
+      ...(active
+        ? {}
+        : {
+            deactivatedAt: new Date(),
+            deactivationReason: 'Created inactive by an integration test',
+          }),
+    },
+  });
+}
+
+/** Closes or deactivates every pricing version in effect, so a test starts from a known state. */
+export async function clearPricingVersions(prisma: PrismaClient): Promise<void> {
+  const open = await prisma.pricingVersion.findMany({ where: { active: true } });
+  for (const version of open) {
+    await prisma.pricingVersion.update({
+      where: { id: version.id },
+      data: {
+        active: false,
+        deactivatedAt: new Date(),
+        deactivationReason: 'Reset by an integration test',
+      },
+    });
+  }
+}
+
+export interface TestQuote {
+  readonly quoteId: string;
+  readonly payablePaise: bigint;
+  readonly dropPayablePaise: readonly bigint[];
+  readonly expiresAt: Date;
+}
+
+/**
+ * Inserts a fare quote with its drops, bypassing pricing, so payment tests can register a
+ * booking at an exact amount. Written in one transaction: the database checks at commit that
+ * the drops are numbered 1..n and add up to the quote's totals.
+ */
+export async function createFareQuote(
+  prisma: PrismaClient,
+  options: {
+    customerId: string;
+    pricingVersionId: string;
+    /** One amount per drop, in paise. The quote total is their sum. */
+    dropPaise: readonly number[];
+    vehicleCategory?: string;
+    weightGrams?: number;
+    createdAt?: Date;
+    expiresAt?: Date;
+  },
+): Promise<TestQuote> {
+  const drops = options.dropPaise.map((paise) => BigInt(paise));
+  const total = drops.reduce((sum, paise) => sum + paise, 0n);
+  const createdAt = options.createdAt ?? new Date();
+  const expiresAt = options.expiresAt ?? new Date(createdAt.getTime() + 600_000);
+  const metersPerLeg = 1_000;
+
+  const quote = await prisma.$transaction(async (tx) => {
+    const created = await tx.fareQuote.create({
+      data: {
+        customerId: options.customerId,
+        pricingVersionId: options.pricingVersionId,
+        vehicleCategory: options.vehicleCategory ?? 'MINI_TRUCK',
+        weightGrams: options.weightGrams ?? 1_000,
+        pickupLatitude: '26.238900',
+        pickupLongitude: '73.024300',
+        distanceMeters: metersPerLeg * drops.length,
+        farePaise: total,
+        taxPaise: 0n,
+        payablePaise: total,
+        createdAt,
+        expiresAt,
+      },
+    });
+    await tx.fareQuoteStop.createMany({
+      data: drops.map((paise, index) => ({
+        quoteId: created.id,
+        sequence: index + 1,
+        latitude: (26.3 + index / 100).toFixed(6),
+        longitude: '73.045800',
+        distanceMeters: metersPerLeg,
+        farePaise: paise,
+        taxPaise: 0n,
+        payablePaise: paise,
+      })),
+    });
+    return created;
+  });
+
+  return {
+    quoteId: quote.id,
+    payablePaise: total,
+    dropPayablePaise: drops,
+    expiresAt,
+  };
+}

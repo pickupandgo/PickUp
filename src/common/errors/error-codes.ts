@@ -15,6 +15,12 @@ export const ErrorCode = {
    * `details.reason`: NOT_PHONE_SIGN_IN, PHONE_MISMATCH or REAUTHENTICATION_REQUIRED.
    */
   STEP_UP_REQUIRED: 'STEP_UP_REQUIRED',
+  /** The sign-in has no verified phone number (Firebase `phone_number` claim). */
+  PHONE_VERIFICATION_REQUIRED: 'PHONE_VERIFICATION_REQUIRED',
+  /** The verified phone already belongs to another account; it is never re-linked. */
+  PHONE_ALREADY_REGISTERED: 'PHONE_ALREADY_REGISTERED',
+  /** The sign-in belongs to a driver or admin account, which can't also be a customer. */
+  ACCOUNT_ROLE_CONFLICT: 'ACCOUNT_ROLE_CONFLICT',
 
   // Request handling
   NOT_FOUND: 'NOT_FOUND',
@@ -62,6 +68,20 @@ export const ErrorCode = {
   TRIP_ALREADY_ASSIGNED: 'TRIP_ALREADY_ASSIGNED',
   INVALID_TRIP_TRANSITION: 'INVALID_TRIP_TRANSITION',
   PAYMENT_REQUIRED: 'PAYMENT_REQUIRED',
+
+  // Fare (pricing versions and quotes)
+  /** No pricing version is in effect, so no fare can be quoted. */
+  PRICING_NOT_CONFIGURED: 'PRICING_NOT_CONFIGURED',
+  PRICING_VERSION_INVALID: 'PRICING_VERSION_INVALID',
+  PRICING_VERSION_OVERLAP: 'PRICING_VERSION_OVERLAP',
+  PRICING_VERSION_NOT_FOUND: 'PRICING_VERSION_NOT_FOUND',
+  /** The pricing version in effect has no rates for this vehicle category. */
+  VEHICLE_CATEGORY_NOT_PRICED: 'VEHICLE_CATEGORY_NOT_PRICED',
+  QUOTE_NOT_FOUND: 'QUOTE_NOT_FOUND',
+  /** The quote's validity passed; ask for a new quote and show the new price. */
+  QUOTE_EXPIRED: 'QUOTE_EXPIRED',
+  /** The quote was already used for another booking. */
+  QUOTE_ALREADY_USED: 'QUOTE_ALREADY_USED',
 
   // Collections (pickup / delivery payments)
   COLLECTION_NOT_ALLOWED: 'COLLECTION_NOT_ALLOWED',

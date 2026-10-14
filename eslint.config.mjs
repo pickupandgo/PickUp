@@ -4,6 +4,36 @@ import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+/** Modules that hold or move money. They take amounts from the Fare module, never rules. */
+const PAYMENT_MODULES = [
+  'bookings',
+  'collections',
+  'earnings',
+  'engine',
+  'fees',
+  'payments',
+  'payouts',
+  'razorpay',
+  'reconciliation',
+  'settlements',
+  'simulation',
+  'wallet',
+];
+
+const RAW_SQL_RESTRICTIONS = [
+  {
+    property: '$queryRawUnsafe',
+    message: 'Use the tagged $queryRaw template so values are always parameterized.',
+  },
+  {
+    property: '$executeRawUnsafe',
+    message: 'Use the tagged $executeRaw template so values are always parameterized.',
+  },
+];
+
+const FARE_TABLE_MESSAGE =
+  'Payment code reads quotes only through FareQuoteRedeemer (fare/fare-contract), never the Fare tables.';
+
 export default tseslint.config(
   {
     ignores: ['eslint.config.mjs', 'dist/**', 'coverage/**', 'node_modules/**', 'src/generated/**'],
@@ -29,18 +59,51 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
-      'no-restricted-properties': [
+      'no-restricted-properties': ['error', ...RAW_SQL_RESTRICTIONS],
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
+    },
+  },
+  {
+    // Fare boundary: payment code never sees a pricing rule. It uses the Fare module only through
+    // its contract (FareQuoteRedeemer, FrozenFare) and FareModule, and copies frozen amounts.
+    files: [`src/{${PAYMENT_MODULES.join(',')}}/**/*.ts`],
+    rules: {
+      'no-restricted-imports': [
         'error',
         {
-          property: '$queryRawUnsafe',
-          message: 'Use the tagged $queryRaw template so values are always parameterized.',
-        },
-        {
-          property: '$executeRawUnsafe',
-          message: 'Use the tagged $executeRaw template so values are always parameterized.',
+          patterns: [
+            {
+              group: ['**/fare/**', '!**/fare/fare-contract', '!**/fare/fare.module'],
+              message:
+                "Payment code may import only fare/fare-contract and fare/fare.module: it copies a quote's frozen amounts and never prices a fare.",
+            },
+          ],
         },
       ],
-      'prettier/prettier': ['error', { endOfLine: 'auto' }],
+      'no-restricted-properties': [
+        'error',
+        ...RAW_SQL_RESTRICTIONS,
+        { property: 'pricingVersion', message: FARE_TABLE_MESSAGE },
+        { property: 'fareQuote', message: FARE_TABLE_MESSAGE },
+        { property: 'fareQuoteStop', message: FARE_TABLE_MESSAGE },
+      ],
+    },
+  },
+  {
+    // ...and the Fare module never reads payment state.
+    files: ['src/fare/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: PAYMENT_MODULES.map((name) => `**/${name}/**`),
+              message: 'The Fare module prices routes; it must not depend on payment modules.',
+            },
+          ],
+        },
+      ],
     },
   },
   {

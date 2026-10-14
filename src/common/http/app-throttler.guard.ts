@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
-import type { Principal } from '../../auth/principal';
+import type { Principal, SignedInIdentity } from '../../auth/principal';
 
 /**
  * Rate limits per authenticated user when known, otherwise per client IP.
@@ -15,6 +15,10 @@ export class AppThrottlerGuard extends ThrottlerGuard {
     const principal = request['principal'] as Principal | undefined;
     if (principal) {
       return Promise.resolve(`user:${principal.userId}`);
+    }
+    const identity = request['identity'] as SignedInIdentity | undefined;
+    if (identity) {
+      return Promise.resolve(`identity:${identity.provider}:${identity.subject}`);
     }
     const ip = typeof request['ip'] === 'string' ? request['ip'] : 'unknown';
     return Promise.resolve(`ip:${ip}`);
