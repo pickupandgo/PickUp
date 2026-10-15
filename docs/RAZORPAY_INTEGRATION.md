@@ -230,8 +230,11 @@ The fee is a configured rule (V1: 10% of the confirmed fare), pinned to the book
 | App (PREPAID_UPI) | taken from the payout | paid out weekly once settled | ONLINE: `AWAITING_SETTLEMENT` → `PAYABLE` |
 | QR at pickup / delivery | taken from the payout | paid out weekly once settled | ONLINE: `AWAITING_SETTLEMENT` → `PAYABLE` |
 | Cash at pickup / delivery | debited from the driver wallet when the cash is recorded | already in the driver's hand | CASH, `SETTLED_IN_CASH` |
+| Drop by drop (PAY_AT_DELIVERY priced per drop), cash and QR mixed | each cash drop's fee share debited from the wallet when it is recorded | cash drops already in hand; the rest from Phase 5 | MIXED, `AWAITING_SETTLEMENT` (payout of mixed earnings: payment flow Phase 5) |
 
 Example, ₹500 fare: fee ₹50, TDS ₹0 (policy DISABLED, OPEN_DECISIONS D-57), driver share ₹450. Online: once Razorpay settles the ₹500 to Nikhil Enterprises, the next Monday payout carries ₹450. Cash: the wallet drops by ₹50, and the driver keeps the ₹500 cash.
+
+**Booking paid drop by drop** (payment flow Phase 4). Each drop is its own obligation, collected when the driver reaches it, for the drop's frozen payable amount, with the drop's frozen share of the fee. The booking is `PARTIALLY_PAID` until every drop is paid, then `PAID`. Its one earning lists every collection that funded it (method, amount, fee share): CASH if every drop was cash, ONLINE if every drop was paid by QR, MIXED otherwise. Gross is what was collected. An earning funded by several collections stays `AWAITING_SETTLEMENT` until Phase 5 adds per-collection settlement and its payout amount. Until then, multi-drop PAY_AT_DELIVERY bookings containing a QR drop stay blocked in production; all-cash multi-drop and single-drop QR bookings work (section 15).
 
 **Merchant settlement.** Payment capture, the app's success callback and trip completion never make an earning payable. The backend reads Razorpay's settlement reconciliation (`GET /v1/settlements/recon/combined` for each India date in a look-back window) and records a settlement only for a `payment` entry with `settled: true`, a `setl_` id and the same amount as our payment; anything else is not recorded and a mismatch is logged as `"alert":"SETTLEMENT_ANOMALY"`. Pulls happen every `SETTLEMENT_SYNC_INTERVAL_MINUTES` (60), on the `settlement.processed` webhook, on `POST /v1/admin/settlements/sync` and before each scheduled payout batch. No settlement timing (T+2 or other) is assumed.
 
@@ -250,13 +253,14 @@ The engine (dispatch, stops, OTPs) reports what happens; this backend owns the m
    - **Pickup gate.** For a PAY_AT_PICKUP booking, read `paymentGate` once at DRIVER_ARRIVED and check the pickup OTP only when `handoverAllowed` is true. Until the booking is paid, `PICKUP_VERIFIED` (and anything later) is `409 PAYMENT_REQUIRED { stage: "PICKUP", amountPaise }`: refuse the OTP and commit nothing. This applies to historical bookings too.
    - **Drops** (bookings with `stops`, i.e. priced per drop). After `IN_TRANSIT`, report each drop with `POST /v1/internal/trips/{tripId}/stops/{sequence}/status` `{ status: "ARRIVED" | "DELIVERED" | "DELIVERY_FAILED", reason? }`:
      - Drops go in order, one at a time; ARRIVED on a failed drop is its retry.
-     - Read `paymentGate.handoverAllowed` before each drop OTP. DELIVERED on an unpaid pay-at-delivery drop is `409 PAYMENT_REQUIRED { stage: "DROP", stopSequence, amountPaise }`: keep the drop open.
+     - Read `paymentGate.handoverAllowed` before each drop OTP. DELIVERED on an unpaid pay-at-delivery drop is `409 PAYMENT_REQUIRED { stage: "DROP", stopSequence, amountPaise }`: keep the drop open. The driver collects that drop at the drop (section 12); payment for another drop never counts.
+     - DELIVERY_FAILED closes the drop's open QR at Razorpay; a retry (ARRIVED) shows a new one.
      - DELIVERY_FAILED needs a `reason` (3–200 characters), and only DELIVERY_FAILED takes one.
      - Other errors: `404 STOP_NOT_FOUND`, `409 INVALID_STOP_TRANSITION { from, to, currentStop, tripStatus, reason }`, `409 BOOKING_CLOSED`.
      - The trip follows its drops: `DROP_PROGRESS` when the first drop is reached, `DELIVERED` once every drop is delivered, undelivered or cancelled. Reporting those trip statuses yourself is `409 STOP_REQUIRED` / `409 STOPS_PENDING { pendingStops }`.
      - A failed drop holds back the next one until it is retried or an admin resolves it (`POST /v1/admin/bookings/{id}/stops/{sequence}/resolve` `{ resolution: "RETRY" | "UNDELIVERED", reason }`).
    - Historical bookings (`stops: []`) keep reporting `DROP_PROGRESS` and `DELIVERED` themselves.
-5. `PAYMENT_CONFIRMED` is set by this backend when the booking is paid and delivered. `COMPLETED` before that is `409 PAYMENT_REQUIRED`: the engine waits for payment and retries.
+5. `PAYMENT_CONFIRMED` is set by this backend when the booking is paid and delivered. A booking paid drop by drop gets it once every drop is finished and at least one was paid: a drop an admin resolved as undelivered leaves it `PARTIALLY_PAID`, and it still completes (N5). `COMPLETED` before that is `409 PAYMENT_REQUIRED` while nothing is paid (`409 INVALID_TRIP_TRANSITION` while a paid booking still has drops to finish): the engine waits and retries.
 6. Cancel → `POST /v1/internal/bookings/{id}/cancel` `{ reason }`. An open payment QR is closed at Razorpay, and every drop not finished yet is cancelled.
 
 Every booking response carries `paymentGate`: `{ stage, stopSequence, paymentState, amountPaise, cashFeePaise, handoverAllowed, collectionId, lastFailure }`. `paymentState` is one of:
@@ -286,15 +290,24 @@ Pay-at-pickup / pay-at-delivery bookings answer `409 BOOKING_NOT_PAYABLE`; the c
 
 ## 12. Driver app: collecting at pickup or delivery
 
-`GET /v1/trips/{tripId}` returns `payment: { method, status, farePaise, platformFeePaise, driverSharePaise, collectionStage, collectionOpen }`. Show the collect button only when `collectionOpen` is true: PAY_AT_PICKUP from arrival, PAY_AT_DELIVERY after the last drop.
+`GET /v1/trips/{tripId}` returns `payment: { method, status, farePaise, platformFeePaise, driverSharePaise, collectionStage, collectionOpen }`. Show the collect button only when `collectionOpen` is true:
+- PAY_AT_PICKUP: from arrival.
+- PAY_AT_DELIVERY priced per drop (the booking has `stops`): while the driver is at a drop that isn't paid yet.
+- Historical PAY_AT_DELIVERY: after the last drop.
 
-**Until per-drop collection is built (payment flow Phase 4):** a new PAY_AT_DELIVERY booking (`QUOTE_PER_STOP`) is collected per drop, so the whole-booking collection below is refused for it with `409 COLLECTION_NOT_ALLOWED` (`details: { stage: "DELIVERY", perStop: true }`) and `collectionOpen` stays false. Such a booking can't complete yet. Historical PAY_AT_DELIVERY bookings are collected as before, and new PAY_AT_PICKUP bookings work as described here (the cash fee is the one frozen at registration).
+Each collection pays one obligation, and the server decides which and how much (payment flow Phase 4): the whole booking at the pickup, the drop the driver is at for a booking paid drop by drop, or the whole booking after delivery for a historical one. Read the amount from `paymentGate.amountPaise` and the cash fee from `paymentGate.cashFeePaise`.
 
-`POST /v1/trips/{tripId}/collections` with an `Idempotency-Key` and `{ method, amountPaise }`, where `amountPaise` is the fare shown (it must match).
+`POST /v1/trips/{tripId}/collections` with an `Idempotency-Key` and `{ method, amountPaise, stopSequence? }`. `amountPaise` only echoes what is owed: anything else is `422 COLLECTION_AMOUNT_MISMATCH` (`details.expectedPaise`).
+- For a booking paid drop by drop, send the `stopSequence` of the drop the driver is at. Without it the answer is `422 STOP_REQUIRED`.
+- Another drop (a later one, or one already paid) is `409 COLLECTION_NOT_ALLOWED` (`details: { stage, reason: NOT_CURRENT | STOP_ALREADY_PAID, stopSequence, stopStatus, currentStop, tripStatus }`). An unknown drop is `404 STOP_NOT_FOUND`.
+- A whole-booking obligation takes no `stopSequence` (`400 VALIDATION_FAILED`).
 
-- **CASH:** `201` with `status: COMPLETED` and `platformFeePaise`. The fee is already debited from the wallet. `409 INSUFFICIENT_BALANCE` (`details.requiredFeePaise`): ask the driver to recharge, then retry with the same key. Nothing was recorded.
-- **ONLINE_QR:** `201` with `status: PENDING` and `qr: { product, url, expiresAt }`. For `PAYMENT_LINK`, draw `url` as a QR code; for `QR_CODE`, `url` is the QR image. Poll `GET /v1/trips/{tripId}/collections/{collectionId}` every few seconds: the server re-checks Razorpay and returns `COMPLETED` once the money has arrived. `FAILED` means it expired or was cancelled; start a new one.
-- Asking for a QR twice returns the same open QR. Recording cash while a QR is open closes the QR first, and if the customer had already paid it, the cash is refused (`409 BOOKING_ALREADY_PAID`).
+The response is the collection with `stopSequence` (null for the whole booking), plus `bookingPaymentStatus` (`UNPAID`, `PARTIALLY_PAID` or `PAID`) and `paymentGate` as the server recorded them.
+
+- **CASH:** `201` with `status: COMPLETED` and `platformFeePaise` (the booking's fee, or the drop's share of it). The fee is already debited from the wallet, once per collection. `409 INSUFFICIENT_BALANCE` (`details.requiredFeePaise`): ask the driver to recharge, then retry with the same key. Nothing was recorded.
+- **ONLINE_QR:** `201` with `status: PENDING` and `qr: { product, url, expiresAt }`. The QR is for that obligation only. For `PAYMENT_LINK`, draw `url` as a QR code; for `QR_CODE`, `url` is the QR image. Poll `GET /v1/trips/{tripId}/collections/{collectionId}` every few seconds: the server re-checks Razorpay and returns `COMPLETED` once the money has arrived. `FAILED` means it expired or was cancelled; start a new one.
+- Asking for a QR twice returns the same open QR (`replayed: true`). Recording cash while a QR is open closes the QR first, and if the customer had already paid it, the cash is refused: `409 BOOKING_ALREADY_PAID` once the whole booking is paid, or `409 COLLECTION_NOT_ALLOWED` with `STOP_ALREADY_PAID` for a drop while other drops are still owed.
+- Hand over (and show the drop OTP) only when `paymentGate.handoverAllowed` is true.
 
 Never show a driver's personal UPI id. Payments only go to Nikhil Enterprises' Razorpay account.
 
@@ -335,6 +348,14 @@ Earning states: `AWAITING_SETTLEMENT` → `PAYABLE` → `IN_PAYOUT` → `PAID`; 
 
 Collection webhooks only identify the collection; the server then reads its state from Razorpay. Disputes hold the trip's earning and show in `webhook-anomalies`.
 
+**Collections per obligation** (payment flow Phase 4). Each QR is created for one obligation (the booking, or one drop) and for its amount only. Its reference id is our collection id, and its notes carry `collection_id`, `booking_id`, `stage` (`PICKUP` or `DELIVERY`) and, for a drop, `booking_stop_id` and `stop_sequence`. How a payment reaches its collection:
+- `qr_code.credited` names the QR.
+- `payment.captured` without an order is matched by the payment, then the `collection_id` note, then Razorpay's QR lookup.
+
+Every path (webhook, the driver app's polling, `POST /v1/admin/collections/{id}/sync`) re-reads the QR and ends in the same finalizer, which applies the payment once. A repeat is `ALREADY_APPLIED`. If the backend crashed after Razorpay took the money, the next webhook retry, poll or admin sync completes it, still once. A QR only ever pays its own obligation:
+- Money on a QR that was closed (cash taken, attempt failed, booking cancelled, expired) is not applied anywhere and is flagged (`PAYMENT_NOT_PENDING` in `webhook-anomalies`).
+- Money for a drop an admin resolved as undelivered meanwhile is recorded for that drop and flagged (`PAID_FOR_CLOSED_DROP`) for refund review.
+
 **Testing without webhooks:** booking payments complete through verify, QR collections through the driver app's polling, settlements through the periodic pull or `POST /v1/admin/settlements/sync`, bank validations through the admin refresh, and payouts through admin sync.
 
 **Test mode limits** (Razorpay docs and a probe on 6 Oct 2026): QR codes can't be paid in test mode; payment links can. Test payments are not settled (the settlement and recon endpoints answer 200 with empty lists), so in test mode an ONLINE earning stays `AWAITING_SETTLEMENT` unless the simulator is used (section 16). Fund Account Validation is not available in test mode. RazorpayX test payouts stay in `processing` until moved in the RazorpayX dashboard, and test mode sends only some payout events.
@@ -350,7 +371,11 @@ Collection webhooks only identify the collection; the server then reads its stat
 - [ ] The Driver App implements the bank-account step-up (Firebase phone re-authentication before `confirm`).
 - [ ] Every driver's KYC legal name recorded (`provision.js set-legal-name`, D-59) before bank accounts are approved.
 - [ ] `PAYOUT_SCHEDULE_ENABLED=true` (Monday 11:00 IST); `PAYOUT_AUTO_EXECUTE` stays false until finance decides otherwise.
-- [ ] `SETTLEMENT_PROVIDER` and `PAYOUT_PROVIDER` are never `simulated` (the server refuses it in production and with live keys).
+- [ ] `SETTLEMENT_PROVIDER`, `PAYOUT_PROVIDER` and `COLLECTION_LINK_PROVIDER` are never `simulated` (the server refuses it in production and with live keys).
+- [ ] **Production restriction until payment flow Phase 5** (OPEN_DECISIONS section I, Phase 4):
+  - All-cash multi-drop PAY_AT_DELIVERY may work through the current backend flow.
+  - Single-drop QR works (one collection, paid out once settled).
+  - Multi-drop PAY_AT_DELIVERY containing a QR drop must stay blocked until Phase 5 makes earnings funded by several collections correctly payable and settleable. Their earning (ONLINE or MIXED) is recorded but never becomes payable. The backend doesn't refuse such a QR, so keep these bookings off operationally.
 - [ ] Someone owns the daily reports: `earning-mismatches`, `payout-mismatches`, `failed-payouts`, `paid-cancelled-bookings`, `cash-fee-mismatches`, `stale-collections`, `payable-without-bank-account`, `unprocessed-payout-webhooks`, `payout-webhook-anomalies`, and `GET /v1/admin/settlements/overdue-earnings`. Alerts on `"alert":"PAYOUT_ANOMALY"`, `"alert":"PAYMENT_DISPUTE"` and `"alert":"SETTLEMENT_ANOMALY"`.
 - [ ] TDS on driver payouts confirmed with a CA (D-57). `TDS_ENABLED` stays false until a rule is implemented.
 
@@ -360,7 +385,9 @@ Collection webhooks only identify the collection; the server then reads its stat
 |---|---|
 | `INTERNAL_AUTH_INVALID` | 401 |
 | `STEP_UP_REQUIRED` (`details.reason`, `details.method`) | 403 |
-| `BANK_ACCOUNT_REJECTED_BY_PROVIDER`, `CUSTOMER_NOT_FOUND`, `DRIVER_NOT_FOUND`, `COLLECTION_AMOUNT_MISMATCH`, `PAYMENT_METHOD_NOT_OFFERED` (`details.offered`), `VEHICLE_CATEGORY_NOT_PRICED`, `TOO_MANY_DROPS` (`details.maxDrops`), `TAX_NOT_SUPPORTED` | 422 |
+| `BANK_ACCOUNT_REJECTED_BY_PROVIDER`, `CUSTOMER_NOT_FOUND`, `DRIVER_NOT_FOUND`, `COLLECTION_AMOUNT_MISMATCH` (`details.expectedPaise`), `PAYMENT_METHOD_NOT_OFFERED` (`details.offered`), `VEHICLE_CATEGORY_NOT_PRICED`, `TOO_MANY_DROPS` (`details.maxDrops`), `TAX_NOT_SUPPORTED` | 422 |
+| `STOP_REQUIRED` | 422 (a collection without `stopSequence` for a booking paid drop by drop) or 409 (a trip status that the drops set) |
+| `STOP_NOT_FOUND` | 404 |
 | `QUOTE_NOT_FOUND` | 422 (registration) or 404 (reading a quote) |
 | `QUOTE_EXPIRED`, `QUOTE_ALREADY_USED` | 409 |
 | `PRICING_VERSION_INVALID` | 400 |
@@ -386,7 +413,7 @@ The runner creates a separate database (`multipleride_e2e`, dropped and recreate
 |---|---|
 | 0. Driver bank account | Driver opens a change request; confirming with the existing session is refused (`403 STEP_UP_REQUIRED`); a fresh token (OTP re-authentication after the request, registered phone) confirms it; a replay is refused. The simulated bank answers the penny drop; a signed `fund_account.validation.completed` webhook records it; an admin approves (MATCH with the KYC name) and sees the step-up evidence. |
 | 1a. New bookings | A development (`PROTOTYPE-E2E-…`) pricing version from the ops CLI; the customer gets a two-drop quote (an amount sent by the app is refused); the engine registers a PAY_AT_PICKUP booking from it (replay 200, the quote can't be used twice); `PREPAID_UPI` and an engine-sent amount are refused. |
-| 1. Payment created | A historical `PREPAID_UPI` booking (inserted as a database migrated from before quotes holds it, since nothing can create one now) is assigned through the internal API; the customer starts the payment, which creates a real Razorpay test-mode order. Steps 1–11 prove the online money path, which new bookings reach through the pickup and delivery QR in later phases. |
+| 1. Payment created | A historical `PREPAID_UPI` booking (inserted as a database migrated from before quotes holds it, since nothing can create one now) is assigned through the internal API; the customer starts the payment, which creates a real Razorpay test-mode order. Steps 1–11 prove the online money path; steps 13–15 prove it for new bookings paid by QR. |
 | 2. Payment verified | Signed `payment.captured` webhook (checkout itself needs a phone). A forged signature is refused and not stored. |
 | 3. Settlement confirmed | `/v1/dev/simulate/settlements`, then a signed `settlement.processed` webhook makes the backend pull the (simulated) recon data. |
 | 4. Trip completion | Trip engine status events up to `COMPLETED`, repeated and concurrent. |
@@ -397,7 +424,20 @@ The runner creates a separate database (`multipleride_e2e`, dropped and recreate
 | 9. Provider success | Simulated RazorpayX moves the payout to `processed`; a signed `payout.processed` webhook applies it. |
 | 10. Earning PAID | Earning `PAID`; the driver sees the payout with its UTR; the control earning is still unpaid. |
 | 11. Audit trail | Booking chain (payment, settlement, earning, payout, UTR), clean reconciliation reports, `admin_actions`, webhook events and row counts. |
+| 12. PAY_AT_PICKUP, cash | The step 1a booking, still unpaid at the pickup. Cash with an empty wallet is refused (`INSUFFICIENT_BALANCE`); an admin credits the wallet. A wrong amount and a `stopSequence` are refused. Cash for the frozen total debits the frozen fee once (the replay returns the same collection), a second collection is refused, then the handover, the drops and `COMPLETED`: one CASH earning, `SETTLED_IN_CASH`. |
+| 13. PAY_AT_PICKUP, QR | A new one-drop booking. The driver shows a QR for the total (asked again: the same QR), and the handover is refused while it is open. `/v1/dev/simulate/qr-codes/{id}/payments` pays it, and a signed `qr_code.credited` (delivered twice) completes it. `payment.captured`, the driver's poll and the admin sync then find it already paid, and the paid QR takes no second payment. Completion gives an ONLINE earning `AWAITING_SETTLEMENT`, which becomes `PAYABLE` after a simulated settlement and `settlement.processed`. |
+| 14. PAY_AT_DELIVERY, three drops | Drop 1 in cash, drop 2 by QR, drop 3 in cash. At drop 1, a missing `stopSequence`, drop 3, the booking total and an unpaid DELIVERED are refused. A QR shown at drop 1 is closed when cash is taken, and can't be paid afterwards. The booking is `PARTIALLY_PAID` after drops 1 and 2 and `PAID` after drop 3. Drop 2's QR completes through the driver's poll before its webhook arrives. The wallet pays each cash drop's fee share once. The result is one MIXED earning with three linked collections; settling the QR drop leaves it `AWAITING_SETTLEMENT` (Phase 5). |
+| 15. Payout of the QR earning | An admin batch (`POST /v1/admin/payout-batches`) carries only step 13's earning (the cash and MIXED earnings stay out); it is executed, a signed `payout.processed` arrives, and the earning is `PAID` with a UTR. |
+| 16. Phase 4 audit | Reconciliation reports clean for the new bookings and the wallet; no Phase 4 webhook in the anomaly or unprocessed lists; driver summary; one link per completed collection; one CASH_RIDE_FEE debit per cash collection, keyed to it. |
 
-Idempotency checks: a used bank change request confirmed again, repeated booking registration, payment start with the same `Idempotency-Key`, duplicate `payment.captured`, settlement re-sync, repeated `COMPLETED`, re-running the weekly schedule, re-executing the batch, duplicate `payout.processed`. Each must change nothing.
+Idempotency checks: a used bank change request confirmed again, repeated booking registration, payment start with the same `Idempotency-Key`, duplicate `payment.captured`, settlement re-sync, repeated `COMPLETED`, re-running the weekly schedule, re-executing the batch, duplicate `payout.processed`. Phase 4 adds:
+- pickup cash and drop cash replayed with the same key (one collection, one fee debit)
+- the same live QR shown again
+- duplicate `qr_code.credited`
+- `payment.captured`, the driver's poll and the admin sync after the QR is paid
+- the webhook after the poll
+- a second payment on a paid QR
 
-`SETTLEMENT_PROVIDER=simulated` and `PAYOUT_PROVIDER=simulated` mount `/v1/dev/simulate/*` (admin-only). Config validation refuses both in production and with live keys. The simulators only change the fake provider's state; the backend learns about it only through the signed webhooks and syncs it uses in production.
+Each must change nothing.
+
+`SETTLEMENT_PROVIDER=simulated`, `PAYOUT_PROVIDER=simulated` and `COLLECTION_LINK_PROVIDER=simulated` mount `/v1/dev/simulate/*` (admin-only). Config validation refuses all three in production and with live keys. The simulators only change the fake provider's state; the backend learns about it only through the signed webhooks and syncs it uses in production (for a QR: it re-reads the QR from the simulated provider, as it would from Razorpay).

@@ -31,6 +31,11 @@ export const ConfirmationOutcome = {
   BOOKING_NOT_PAYABLE: 'BOOKING_NOT_PAYABLE',
   /** Captured money arrived for a cancelled booking. Recorded as paid; refund review (D-22). */
   PAID_AFTER_CANCELLATION: 'PAID_AFTER_CANCELLATION',
+  /**
+   * Captured money arrived for a drop that was resolved as undelivered meanwhile. Recorded as
+   * paid for that drop; refund review (payment flow Phase 6).
+   */
+  PAID_FOR_CLOSED_DROP: 'PAID_FOR_CLOSED_DROP',
 } as const;
 export type ConfirmationOutcome = (typeof ConfirmationOutcome)[keyof typeof ConfirmationOutcome];
 
@@ -43,6 +48,7 @@ export const ANOMALY_OUTCOMES: ReadonlySet<ConfirmationOutcome> = new Set([
   ConfirmationOutcome.DUPLICATE_BOOKING_PAYMENT,
   ConfirmationOutcome.BOOKING_NOT_PAYABLE,
   ConfirmationOutcome.PAID_AFTER_CANCELLATION,
+  ConfirmationOutcome.PAID_FOR_CLOSED_DROP,
 ]);
 
 /** Webhook-only outcomes, stored on payment_events.outcome. */

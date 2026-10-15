@@ -16,15 +16,25 @@ export class AdminCollectionsController {
 
   @Get(':collectionId')
   async get(@Param('collectionId', uuid) collectionId: string): Promise<AdminCollectionResponse> {
-    return toAdminCollectionResponse(await this.collections.get(collectionId));
+    const collection = await this.collections.get(collectionId);
+    return toAdminCollectionResponse(collection, await this.collections.stopSequenceOf(collection));
   }
 
-  /** Re-reads an online collection from Razorpay and applies a payment the webhook missed. */
+  /**
+   * Re-reads an online collection from Razorpay and applies a payment the webhook missed, through
+   * the same finalizer as the webhook and the driver's refresh.
+   */
   @Post(':collectionId/sync')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async sync(@Param('collectionId', uuid) collectionId: string): Promise<SyncCollectionResponse> {
     const result = await this.collections.sync(collectionId);
-    return { collection: toAdminCollectionResponse(result.collection), outcome: result.outcome };
+    return {
+      collection: toAdminCollectionResponse(
+        result.collection,
+        await this.collections.stopSequenceOf(result.collection),
+      ),
+      outcome: result.outcome,
+    };
   }
 }

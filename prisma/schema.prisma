@@ -147,6 +147,8 @@ enum BookingStopStatus {
 /// D-10. The name differs from payment_status, which belongs to the payments table.
 enum BookingPaymentStatus {
   UNPAID
+  /// Pay at delivery, priced per drop: some but not all drops are paid (payment flow Phase 4).
+  PARTIALLY_PAID
   PAID
   REFUND_PENDING
   REFUNDED
@@ -175,6 +177,9 @@ enum EarningSettlement {
   ONLINE
   /// Paid in cash to the driver; the platform fee was debited from the driver wallet.
   CASH
+  /// Paid drop by drop, partly in cash and partly online (payment flow Phase 4). Its collections
+  /// are listed in earning_collections; paying out its online part is payment flow Phase 5.
+  MIXED
 
   @@map("earning_settlement")
 }
@@ -499,6 +504,7 @@ model Booking {
   payments       Payment[]
   collections    PaymentCollection[]
   earning        DriverEarning?
+  earningCollections EarningCollection[]
   disputes       PaymentDispute[]
   settlements    PaymentSettlement[]
 
@@ -666,6 +672,8 @@ model PaymentCollection {
   feeRule           FeeRule?                 @relation(fields: [feeRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   walletTransaction DriverWalletTransaction? @relation(fields: [walletTransactionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   earning           DriverEarning?
+  /// The earning this collection funds, once the trip completed.
+  earningLink       EarningCollection?
   settlement        PaymentSettlement?
 
   @@unique([provider, providerPaymentId], map: "uq_collection_provider_payment", where: raw("(provider_payment_id IS NOT NULL)"))
@@ -707,7 +715,9 @@ model DriverEarning {
   feeRuleId            String            @map("fee_rule_id") @db.Uuid
   /// The customer payment this came from: a prepaid BOOKING payment ...
   paymentId            String?           @unique(map: "uq_earnings_payment") @map("payment_id") @db.Uuid
-  /// ... or a pickup/delivery collection (cash or QR). Exactly one is set (CHECK).
+  /// ... or a pickup/delivery collection (cash or QR). At most one is set (CHECK). An earning
+  /// funded by several collections (a booking paid drop by drop) has neither: its collections are
+  /// in collectionLinks (deferred trigger).
   collectionId         String?           @unique(map: "uq_earnings_collection") @map("collection_id") @db.Uuid
   status               EarningStatus
   /// ONLINE only: Razorpay's merchant settlement of the customer payment. Required before the
@@ -733,10 +743,37 @@ model DriverEarning {
   paymentSettlement PaymentSettlement? @relation(fields: [paymentSettlementId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   heldBy            User?              @relation("EarningHeldBy", fields: [heldByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   payoutItems       PayoutItem[]
+  /// Every collection that funds this earning, with its method, amount and fee share.
+  collectionLinks   EarningCollection[]
 
   @@index([driverId, createdAt(sort: Desc)], map: "idx_earnings_driver_created")
   @@index([status, payableAt], map: "idx_earnings_status_payable")
   @@map("driver_earnings")
+}
+
+/// The collections that fund a driver earning (payment flow Phase 4): one row per collection,
+/// with its method, amount and platform fee share, so the source of every amount is kept. A
+/// collection funds at most one earning. Written with the earning, in its transaction; never
+/// changed or deleted (triggers). The rows add up to the earning (deferred trigger).
+model EarningCollection {
+  collectionId     String   @id @map("collection_id") @db.Uuid
+  earningId        String   @map("earning_id") @db.Uuid
+  bookingId        String   @map("booking_id") @db.Uuid
+  /// CASH or ONLINE_QR, as on the collection (CHECK).
+  method           String   @db.VarChar(20)
+  amountPaise      BigInt   @map("amount_paise")
+  /// The platform fee on this amount: the fee debited for a cash collection, or the share of the
+  /// fee owed on an online one (the drop's share, or the booking's fee).
+  platformFeePaise BigInt   @map("platform_fee_paise")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  collection PaymentCollection @relation(fields: [collectionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  earning    DriverEarning     @relation(fields: [earningId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  booking    Booking           @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([earningId], map: "idx_earning_collections_earning")
+  @@index([bookingId], map: "idx_earning_collections_booking")
+  @@map("earning_collections")
 }
 
 /// Merchant settlement: Razorpay's confirmation that one customer payment reached Nikhil

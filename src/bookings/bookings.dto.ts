@@ -211,8 +211,11 @@ export class InternalBookingResponse {
   status!: string;
   paymentMethod!: PaymentMethodValue;
   paymentStatus!: string;
-  /** How the booking was paid once PAID: PREPAID_ONLINE, CASH or ONLINE_QR. */
-  paidWith!: 'PREPAID_ONLINE' | 'CASH' | 'ONLINE_QR' | null;
+  /**
+   * How the booking was paid once PAID or PARTIALLY_PAID: PREPAID_ONLINE, CASH or ONLINE_QR, or
+   * MIXED for a booking whose drops were paid partly in cash and partly online.
+   */
+  paidWith!: 'PREPAID_ONLINE' | 'CASH' | 'ONLINE_QR' | 'MIXED' | null;
   /** QUOTE_PER_STOP for every new booking; LEGACY_BOOKING_LEVEL for historical ones. */
   paymentModel!: 'LEGACY_BOOKING_LEVEL' | 'QUOTE_PER_STOP';
   /** The redeemed fare quote; null for historical bookings. */

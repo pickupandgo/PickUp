@@ -1,16 +1,19 @@
+import { toPaymentGateView } from '../bookings/bookings.mapper';
 import { paiseToNumber } from '../common/money';
 import type { PaymentCollection } from '../generated/prisma/client';
 import type {
   AdminCollectionResponse,
   CollectionMethodValue,
   CollectionResponse,
+  DriverCollectionResponse,
 } from './collections.dto';
+import type { CollectionDriverView } from './collections.service';
 
 const iso = (value: Date | null): string | null => (value ? value.toISOString() : null);
 
 export function toCollectionResponse(
   collection: PaymentCollection,
-  replayed = false,
+  options: { readonly stopSequence: number | null; readonly replayed?: boolean },
 ): CollectionResponse {
   const online = collection.method === 'ONLINE_QR';
   return {
@@ -18,6 +21,7 @@ export function toCollectionResponse(
     bookingId: collection.bookingId,
     tripId: collection.tripId,
     stage: collection.stage,
+    stopSequence: options.stopSequence,
     method: collection.method as CollectionMethodValue,
     status: collection.status,
     amountPaise: paiseToNumber(collection.amountPaise),
@@ -38,13 +42,28 @@ export function toCollectionResponse(
     failureReason: collection.failureReason,
     completedAt: iso(collection.completedAt),
     createdAt: collection.createdAt.toISOString(),
-    replayed,
+    replayed: options.replayed ?? false,
   };
 }
 
-export function toAdminCollectionResponse(collection: PaymentCollection): AdminCollectionResponse {
+export function toDriverCollectionResponse(
+  collection: PaymentCollection,
+  view: CollectionDriverView,
+  replayed = false,
+): DriverCollectionResponse {
   return {
-    ...toCollectionResponse(collection),
+    ...toCollectionResponse(collection, { stopSequence: view.stopSequence, replayed }),
+    bookingPaymentStatus: view.bookingPaymentStatus,
+    paymentGate: toPaymentGateView(view.paymentGate),
+  };
+}
+
+export function toAdminCollectionResponse(
+  collection: PaymentCollection,
+  stopSequence: number | null,
+): AdminCollectionResponse {
+  return {
+    ...toCollectionResponse(collection, { stopSequence }),
     collectedByDriverId: collection.collectedByDriverId,
     provider: collection.provider,
     providerReferenceId: collection.providerReferenceId,

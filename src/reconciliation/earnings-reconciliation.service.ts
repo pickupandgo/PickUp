@@ -48,7 +48,15 @@ export class EarningsReconciliationService {
                NULL::uuid AS payout_id, e.collection_id, e.gross_amount_paise AS amount_paise,
                'booking fare ' || b.final_fare_minor::text AS detail
         FROM driver_earnings e JOIN bookings b ON b.id = e.booking_id
-        WHERE e.gross_amount_paise <> b.final_fare_minor
+        -- A booking paid drop by drop earns what its drops collected (an undelivered unpaid drop
+        -- adds nothing, N5); every other earning is the booking's fare.
+        WHERE e.gross_amount_paise <> CASE
+                WHEN b.payment_model = 'QUOTE_PER_STOP'::booking_payment_model
+                 AND b.payment_method = 'PAY_AT_DELIVERY'::booking_payment_method
+                THEN (SELECT COALESCE(sum(c.amount_paise), 0) FROM payment_collections c
+                       WHERE c.booking_id = b.id AND c.status = 'COMPLETED')
+                ELSE b.final_fare_minor
+              END
         UNION ALL
         SELECT 'COMPLETED_TRIP_WITHOUT_EARNING', t.booking_id, NULL, NULL, NULL, NULL, t.id::text
         FROM trips t LEFT JOIN driver_earnings e ON e.trip_id = t.id
@@ -160,7 +168,9 @@ export class EarningsReconciliationService {
   async findPaidCancelledBookings(): Promise<Finding[]> {
     const rows = await this.prisma.$queryRaw<FindingRow[]>`
       SELECT 'PAID_BOOKING_CANCELLED' AS problem, b.id AS booking_id, NULL::uuid AS earning_id,
-             NULL::uuid AS payout_id, c.id AS collection_id, b.final_fare_minor AS amount_paise,
+             NULL::uuid AS payout_id, c.id AS collection_id,
+             -- One row per completed collection: a booking paid drop by drop lists each drop paid.
+             COALESCE(c.amount_paise, b.final_fare_minor) AS amount_paise,
              b.payment_method::text || COALESCE(' via ' || c.method, '') AS detail
       FROM bookings b
       LEFT JOIN payment_collections c

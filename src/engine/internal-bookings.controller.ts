@@ -163,6 +163,15 @@ export class InternalBookingsController {
       );
     }
     const result = await this.stops.report(tripId, sequence, body.status, body.reason ?? null);
+    if (body.status === 'DELIVERY_FAILED' && result.changed) {
+      // Nothing is taken for an attempt that failed: the drop's open QR is closed at Razorpay. A
+      // retry shows a new one; a payment that raced the close is still recorded for this drop.
+      await this.collections.closeOpenCollections(
+        result.booking.id,
+        'DROP_DELIVERY_FAILED',
+        result.stop.id,
+      );
+    }
     return this.view(result);
   }
 

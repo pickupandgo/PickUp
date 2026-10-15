@@ -304,6 +304,60 @@ psql "<mr_migrator url>" -c "REVOKE UPDATE ON booking_stops FROM mr_app;"
 psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261017120000_payment_gate_stop_lifecycle';"
 ```
 
+### Collections per obligation (payment flow Phase 4)
+
+Two migrations, applied in order by `prisma migrate deploy`. Neither touches a row.
+
+- `20261018120000_partially_paid_mixed_enums` adds `PARTIALLY_PAID` to `booking_payment_status` (after UNPAID) and `MIXED` to `earning_settlement`, and nothing else. PostgreSQL can't use an enum value in the transaction that added it, so the rules that use them come in the next migration.
+- `20261018120100_obligation_collections` changes rules and adds one table:
+  - `booking_collected_status(booking)` says what a booking's completed collections pay for.
+  - `guard_booking_update`: the payment status moves UNPAID → PARTIALLY_PAID or PAID, then PARTIALLY_PAID → PAID (the refund moves are unchanged). Only a PAY_AT_DELIVERY booking priced per drop can be PARTIALLY_PAID, and a booking priced per drop is PAID or PARTIALLY_PAID only as its collections say.
+  - `guard_collection_insert`: a booking priced per drop is collected on its own trip, by its own driver, once for the whole booking at the pickup (PAY_AT_PICKUP) or drop by drop (PAY_AT_DELIVERY). A drop can be collected only while the driver is there and before it is paid, for that drop's payable amount. For every booking model, a cash fee must be the collecting driver's own CASH_RIDE_FEE debit of exactly the obligation's fee.
+  - Deferred `trg_collections_effects`: a completed collection of a booking priced per drop moves the booking's payment status, and confirms its drop, in the same transaction.
+  - New table `earning_collections`: the collections that fund each earning. Rows are written with their earning, in its transaction, never change, and can't be deleted or truncated.
+  - Deferred `trg_earnings_sources`: an earning funded by several collections adds up to them. The `driver_earnings` CHECKs now allow such an earning (no single source) and the MIXED settlement.
+
+The trip guard is unchanged. It only refuses PAYMENT_CONFIRMED for an UNPAID booking, so a trip priced per drop whose drops are all finished reaches it with a PARTIALLY_PAID booking and can complete (N5).
+
+Before migrating a database that holds data, the same rules as for Phase 1 apply (decision N1): run the preflight and have it reviewed, take a snapshot, rehearse with `npm run db:migration-check`, then deploy. The preflight now also lists:
+- whether the two Phase 4 enum values exist
+- bookings priced per drop by payment method, status and payment status
+- pending QR collections by booking model and stage (historical ones still pay the whole booking)
+- earning sources, and earnings with no single source
+- cash fee debits by ledger key (per booking, or per collection)
+
+Deploy, then **re-run `02-app-grants.sql`**. The API role needs UPDATE on `booking_stops.payment_confirmed_at`, which the stop guard allows only with that drop's COMPLETED collection. It also needs SELECT and INSERT on `earning_collections`. Without them, drop payments and trip completion fail with `permission denied`.
+
+Check after deploying:
+
+```sql
+SELECT count(*) FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+ WHERE (t.typname, e.enumlabel) IN (('booking_payment_status', 'PARTIALLY_PAID'),
+                                    ('earning_settlement', 'MIXED'));                    -- 2
+SELECT count(*) FROM pg_trigger WHERE tgname IN ('trg_collections_effects', 'trg_earnings_sources');  -- 2
+SELECT count(*) FROM earning_collections;                       -- 0 until a trip completes
+```
+
+Connected as `mr_app`, these must still fail with `permission denied`:
+
+```sql
+UPDATE earning_collections SET amount_paise = 1;
+DELETE FROM earning_collections;
+UPDATE booking_stops SET payable_paise = 1;
+```
+
+**Rollback**, newest first. Roll the backend back to the previous release at the same time. Neither `down.sql` drops data:
+- `20261018120100`'s refuses once an earning is linked to its collections or a drop has its own collection. Otherwise it restores the previous guards and CHECKs exactly and drops `earning_collections` (its grants go with it).
+- `20261018120000`'s refuses while any booking is PARTIALLY_PAID or any earning MIXED. PostgreSQL can't drop an enum value, so it recreates both types, which **rewrites `bookings` and `driver_earnings`** under an exclusive lock (every value stays the same). Run it in a maintenance window.
+
+```bash
+psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261018120100_obligation_collections/down.sql
+psql "<mr_migrator url>" -c "REVOKE UPDATE (payment_confirmed_at) ON booking_stops FROM mr_app;"
+psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261018120100_obligation_collections';"
+psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261018120000_partially_paid_mixed_enums/down.sql
+psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261018120000_partially_paid_mixed_enums';"
+```
+
 ## Ongoing rules
 
 - **Schema changes:** only through new migration files. Re-run step 4 (migrate, then grants) on every release that adds one.

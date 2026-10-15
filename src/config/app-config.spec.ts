@@ -237,7 +237,7 @@ describe('loadConfig', () => {
 
   it('keeps online collection, payouts, the scheduler and the internal API off by default', () => {
     const config = loadConfig(validEnv());
-    expect(config.collections).toEqual({ product: null, linkTtlMinutes: 30 });
+    expect(config.collections).toEqual({ product: null, simulated: false, linkTtlMinutes: 30 });
     expect(config.payouts).toMatchObject({
       provider: null,
       razorpayx: null,
@@ -350,6 +350,20 @@ describe('loadConfig', () => {
     expect(
       problemsFor(validEnv({ ...simulated, RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456' })).join(),
     ).toMatch(/PAYOUT_PROVIDER/);
+
+    // Simulated collection QR codes (Phase 4 local end-to-end runs): same rule.
+    const qr = { COLLECTION_LINK_PROVIDER: 'simulated' };
+    const qrConfig = loadConfig(validEnv(qr));
+    expect(qrConfig.simulation.enabled).toBe(true);
+    expect(qrConfig.collections).toMatchObject({ product: 'QR_CODE', simulated: true });
+    expect(openReadinessItems(qrConfig).join('\n')).toMatch(/D-47: .*simulated/);
+    expect(loadConfig(validEnv()).collections.simulated).toBe(false);
+    expect(problemsFor(validEnv({ ...qr, NODE_ENV: 'production' })).join()).toMatch(
+      /COLLECTION_LINK_PROVIDER/,
+    );
+    expect(
+      problemsFor(validEnv({ ...qr, RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456' })).join(),
+    ).toMatch(/COLLECTION_LINK_PROVIDER/);
   });
 
   it('rejects weak internal API keys without echoing them', () => {

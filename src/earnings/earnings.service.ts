@@ -8,12 +8,14 @@ import { feeForFare } from '../fees/fee-rules';
 import type {
   Booking,
   DriverEarning,
+  PaymentCollection,
   PaymentSettlement,
   Prisma,
   Trip,
 } from '../generated/prisma/client';
 import type { EarningStatus } from '../generated/prisma/enums';
 import { PrismaService, type Tx } from '../prisma/prisma.service';
+import { type EarningFunding, earningFunding } from './earning-funding';
 
 export const EARNINGS_PAGE_SIZE = 20;
 
@@ -26,6 +28,11 @@ export type SettlementApplyOutcome =
   | 'ALREADY_LINKED'
   /** The trip has not completed yet; the earning will start PAYABLE when it does. */
   | 'NO_EARNING_YET'
+  /**
+   * Funded by several collections (a booking paid drop by drop): it stays AWAITING_SETTLEMENT.
+   * Making it payable once every online collection is settled is payment flow Phase 5.
+   */
+  | 'SEVERAL_COLLECTIONS'
   | 'NOT_APPLICABLE';
 
 export interface EarningPage {
@@ -97,6 +104,7 @@ export class EarningsService {
     };
 
     let data: Prisma.DriverEarningUncheckedCreateInput;
+    let funding: EarningFunding | null = null;
     if (booking.paymentMethod === 'PREPAID_UPI') {
       const payment = await tx.payment.findFirst({
         where: { bookingId: booking.id, purpose: 'BOOKING', status: 'PAID' },
@@ -116,39 +124,65 @@ export class EarningsService {
         ...onlineStatus(disputed, settlement, completedAt),
       };
     } else {
-      const collection = await tx.paymentCollection.findFirst({
+      // Every completed collection of the booking funds the earning: one for a booking paid as a
+      // whole, one per paid drop for a booking paid drop by drop (payment flow Phase 4).
+      const collections = await tx.paymentCollection.findMany({
         where: { bookingId: booking.id, status: 'COMPLETED' },
+        include: { bookingStop: { select: { platformFeeSharePaise: true } } },
+        orderBy: [{ completedAt: 'asc' }, { id: 'asc' }],
       });
-      if (!collection) {
-        throw new Error(`Booking ${booking.id} is PAID without a completed collection`);
+      if (collections.length === 0) {
+        throw new Error(`Booking ${booking.id} is paid without a completed collection`);
       }
-      if (collection.method === 'CASH') {
-        if (collection.platformFeePaise === null) {
-          throw new Error(`Cash collection ${collection.id} has no platform fee`);
-        }
-        data = {
-          ...base,
-          ...breakdown(gross, collection.platformFeePaise),
-          settlement: 'CASH',
+      funding = earningFunding(
+        collections.map((collection) => ({
           collectionId: collection.id,
-          status: 'SETTLED_IN_CASH',
-        };
+          method: collection.method === 'CASH' ? ('CASH' as const) : ('ONLINE_QR' as const),
+          amountPaise: collection.amountPaise,
+          platformFeePaise: feeOnCollection(collection, onlineFee),
+        })),
+      );
+      const fields = {
+        ...base,
+        // Gross is what was collected: the fare, unless a drop ended undelivered and unpaid (N5).
+        ...breakdown(funding.grossPaise, funding.platformFeePaise),
+        settlement: funding.settlement,
+        collectionId: funding.collectionId,
+      };
+      if (funding.settlement === 'CASH') {
+        data = { ...fields, status: 'SETTLED_IN_CASH' };
       } else {
-        const disputed = await this.isDisputed(tx, collection.providerPaymentId);
-        const settlement = await tx.paymentSettlement.findUnique({
-          where: { collectionId: collection.id },
-        });
-        data = {
-          ...base,
-          ...breakdown(gross, onlineFee),
-          settlement: 'ONLINE',
-          collectionId: collection.id,
-          ...onlineStatus(disputed, settlement, completedAt),
-        };
+        const online = collections.filter((collection) => collection.method !== 'CASH');
+        let disputed = false;
+        for (const collection of online) {
+          disputed = disputed || (await this.isDisputed(tx, collection.providerPaymentId));
+        }
+        // One online collection: payable once its settlement is recorded, as before. Several
+        // (or online and cash mixed) stay AWAITING_SETTLEMENT: making them payable, one
+        // settlement per collection, with the payout amount for the online part, is Phase 5.
+        const [only] = online;
+        const settlement =
+          funding.collectionId !== null && only
+            ? await tx.paymentSettlement.findUnique({ where: { collectionId: only.id } })
+            : null;
+        data = { ...fields, ...onlineStatus(disputed, settlement, completedAt) };
       }
     }
 
     const earning = await tx.driverEarning.create({ data });
+    if (funding) {
+      // The source of every amount: one row per funding collection (deferred check at commit).
+      await tx.earningCollection.createMany({
+        data: funding.collections.map((collection) => ({
+          collectionId: collection.collectionId,
+          earningId: earning.id,
+          bookingId: booking.id,
+          method: collection.method,
+          amountPaise: collection.amountPaise,
+          platformFeePaise: collection.platformFeePaise,
+        })),
+      });
+    }
     this.logger.log(
       {
         earningId: earning.id,
@@ -326,6 +360,9 @@ export class EarningsService {
       return 'NO_EARNING_YET';
     }
     const earning = await tx.driverEarning.findUniqueOrThrow({ where: { id: row.id } });
+    if (earning.paymentId === null && earning.collectionId === null) {
+      return 'SEVERAL_COLLECTIONS';
+    }
     if (earning.settlement !== 'ONLINE') {
       return 'NOT_APPLICABLE';
     }
@@ -470,6 +507,25 @@ function onlineStatus(
     };
   }
   return { status: 'AWAITING_SETTLEMENT' };
+}
+
+/**
+ * The platform fee on one collection: the fee debited from the wallet for cash; for an online
+ * collection, the share owed on it (its drop's share, or the booking's whole fee).
+ */
+function feeOnCollection(
+  collection: Pick<PaymentCollection, 'id' | 'method' | 'platformFeePaise'> & {
+    readonly bookingStop: { readonly platformFeeSharePaise: bigint } | null;
+  },
+  bookingFee: bigint,
+): bigint {
+  if (collection.method === 'CASH') {
+    if (collection.platformFeePaise === null) {
+      throw new Error(`Cash collection ${collection.id} has no platform fee`);
+    }
+    return collection.platformFeePaise;
+  }
+  return collection.bookingStop?.platformFeeSharePaise ?? bookingFee;
 }
 
 /** An earning is eligible from the later of trip completion and merchant settlement. */

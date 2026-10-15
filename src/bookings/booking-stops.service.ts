@@ -193,7 +193,7 @@ export class BookingStopsService {
     const now = new Date();
     const moved = await tx.bookingStop.update({
       where: { id: stop.id },
-      data: stopUpdate(decision.to, now, facts),
+      data: stopUpdate(stop, decision.to, now, facts),
     });
     const stops = locked.stops.map((candidate) => (candidate.id === moved.id ? moved : candidate));
     let trip = locked.trip;
@@ -252,15 +252,23 @@ function stateOf(locked: LockedStops, stop: BookingStop): StopState {
 
 /** The row change for a move: the new status and the fact that records it. */
 function stopUpdate(
+  stop: Pick<BookingStop, 'paymentConfirmedAt'>,
   to: BookingStopStatus,
   now: Date,
   facts: StopFacts,
 ): Prisma.BookingStopUncheckedUpdateInput {
   switch (to) {
     case 'ARRIVED':
-    case 'PAYMENT_CONFIRMED':
-      // Reached, or reached again after a failed attempt (a paid drop stays paid).
+      // Reached, or reached again after a failed attempt.
       return { status: to, arrivedAt: now };
+    case 'PAYMENT_CONFIRMED':
+      // Reached again after a failed attempt, already paid: the drop stays paid. A payment that
+      // arrived while the attempt had failed is confirmed now (payment flow Phase 4).
+      return {
+        status: to,
+        arrivedAt: now,
+        ...(stop.paymentConfirmedAt ? {} : { paymentConfirmedAt: now }),
+      };
     case 'DELIVERED':
       return { status: to, deliveredAt: now };
     case 'DELIVERY_FAILED':

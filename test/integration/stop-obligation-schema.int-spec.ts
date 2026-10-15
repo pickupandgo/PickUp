@@ -305,16 +305,24 @@ describe('Per-stop obligation schema', () => {
       ).rejects.toThrow(
         /Only a drop of a pay-at-delivery booking priced per drop is collected on its own/,
       );
-      for (const stopId of [nth(delivery.stopIds, 0), null]) {
-        await expect(
-          insertQr(ctx.prisma, {
-            bookingId: delivery.bookingId,
-            tripId: delivery.tripId,
-            stopId,
-            amountPaise: 20_000n,
-          }),
-        ).rejects.toThrow(/Per-drop collections for pay-at-delivery bookings are not enabled yet/);
-      }
+      // Payment flow Phase 4: a drop is collected on its own, and only while the driver is at it
+      // (the trip has not even started here).
+      await expect(
+        insertQr(ctx.prisma, {
+          bookingId: delivery.bookingId,
+          tripId: delivery.tripId,
+          stopId: nth(delivery.stopIds, 0),
+          amountPaise: 20_000n,
+        }),
+      ).rejects.toThrow(/Only the drop the driver is at, before it is paid, is collected/);
+      await expect(
+        insertQr(ctx.prisma, {
+          bookingId: delivery.bookingId,
+          tripId: delivery.tripId,
+          stopId: null,
+          amountPaise: 20_000n,
+        }),
+      ).rejects.toThrow(/A pay-at-delivery booking priced per drop is collected drop by drop/);
       expect(
         await ctx.prisma.paymentCollection.count({
           where: { bookingId: { in: [pickup.bookingId, delivery.bookingId, legacy.bookingId] } },

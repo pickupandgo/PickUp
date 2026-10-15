@@ -13,6 +13,8 @@ import {
   Min,
 } from 'class-validator';
 import { AdminOnly } from '../auth/decorators';
+import { CollectionLinkGateway } from '../collections/collection-link.gateway';
+import { SimulatedCollectionLinkGateway } from '../collections/simulated-collection-link.gateway';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PayoutGateway } from '../payouts/payout.gateway';
@@ -55,6 +57,16 @@ export class SimulateValidationRequest {
   nameMatchScore?: number;
 }
 
+export class SimulateQrPaymentRequest {
+  /** What the customer pays; defaults to the QR's fixed amount. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(Number.MAX_SAFE_INTEGER)
+  amountPaise?: number;
+}
+
 export class SimulatePayoutRequest {
   @IsIn(['processed', 'reversed', 'failed'])
   status!: 'processed' | 'reversed' | 'failed';
@@ -79,6 +91,7 @@ export class DevSimulationController {
   constructor(
     private readonly settlements: SettlementGateway,
     private readonly payouts: PayoutGateway,
+    private readonly collections: CollectionLinkGateway,
   ) {}
 
   /** Razorpay settles a customer payment to Nikhil Enterprises (test mode never does). */
@@ -170,6 +183,29 @@ export class DevSimulationController {
         failure_reason: payout.failureReason,
       },
     };
+  }
+
+  /**
+   * The customer pays a collection QR code (Razorpay test mode can't pay one). Returns the
+   * qr_code and payment entities of the qr_code.credited webhook to deliver, signed, through
+   * /v1/webhooks/razorpay; the backend then reads the QR back from the provider, as always.
+   */
+  @Post('qr-codes/:qrCodeId/payments')
+  @HttpCode(HttpStatus.OK)
+  payQrCode(
+    @Param('qrCodeId') qrCodeId: string,
+    @Body() body: SimulateQrPaymentRequest,
+  ): Record<string, unknown> {
+    if (!(this.collections instanceof SimulatedCollectionLinkGateway)) {
+      throw notSimulated();
+    }
+    const paid = PROVIDER_ID.test(qrCodeId)
+      ? this.collections.pay(qrCodeId, body.amountPaise)
+      : null;
+    if (!paid) {
+      throw unknown('QR code, or it is no longer payable');
+    }
+    return { qrCode: paid.qrCode, payment: paid.payment };
   }
 
   private simulatedPayouts(): SimulatedPayoutGateway {

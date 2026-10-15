@@ -450,22 +450,29 @@ export class BookingsService {
     return this.feeRules.feeFor(rule, booking.finalFareMinor);
   }
 
-  /** How a paid booking was paid; null while unpaid. */
-  async paidWith(booking: Booking): Promise<'PREPAID_ONLINE' | 'CASH' | 'ONLINE_QR' | null> {
+  /**
+   * How a paid (or partly paid) booking was paid; null while unpaid. A booking paid drop by drop
+   * with both cash and online drops is MIXED.
+   */
+  async paidWith(
+    booking: Booking,
+  ): Promise<'PREPAID_ONLINE' | 'CASH' | 'ONLINE_QR' | 'MIXED' | null> {
     if (booking.paymentStatus === 'UNPAID') {
       return null;
     }
     if (booking.paymentMethod === 'PREPAID_UPI') {
       return 'PREPAID_ONLINE';
     }
-    const collection = await this.prisma.paymentCollection.findFirst({
+    const collections = await this.prisma.paymentCollection.findMany({
       where: { bookingId: booking.id, status: 'COMPLETED' },
       select: { method: true },
     });
-    if (!collection) {
-      return null;
+    const cash = collections.some((collection) => collection.method === 'CASH');
+    const online = collections.some((collection) => collection.method !== 'CASH');
+    if (cash && online) {
+      return 'MIXED';
     }
-    return collection.method === 'CASH' ? 'CASH' : 'ONLINE_QR';
+    return cash ? 'CASH' : online ? 'ONLINE_QR' : null;
   }
 
   private async complete(tx: Tx, booking: Booking, current: Trip): Promise<TripUpdateResult> {

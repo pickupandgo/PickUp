@@ -83,7 +83,11 @@ export const ErrorCode = {
   INVALID_STOP_TRANSITION: 'INVALID_STOP_TRANSITION',
   /** Priced per drop: the trip is delivered once every drop is finished. `details.pendingStops`. */
   STOPS_PENDING: 'STOPS_PENDING',
-  /** Priced per drop: report the drop's own status; the trip follows from its drops. */
+  /**
+   * Priced per drop: report the drop's own status, the trip follows from its drops (409). For a
+   * collection of a booking paid drop by drop: name the drop being paid for (422, payment flow
+   * Phase 4).
+   */
   STOP_REQUIRED: 'STOP_REQUIRED',
 
   // Fare (pricing versions and quotes)
@@ -105,6 +109,10 @@ export const ErrorCode = {
   TAX_NOT_SUPPORTED: 'TAX_NOT_SUPPORTED',
 
   // Collections (pickup / delivery payments)
+  /**
+   * Nothing is owed here now. `details.stage`; for a booking paid drop by drop also `reason`
+   * (STOP_ALREADY_PAID or NOT_CURRENT), `stopSequence`, `stopStatus` and `currentStop`.
+   */
   COLLECTION_NOT_ALLOWED: 'COLLECTION_NOT_ALLOWED',
   COLLECTION_NOT_FOUND: 'COLLECTION_NOT_FOUND',
   COLLECTION_AMOUNT_MISMATCH: 'COLLECTION_AMOUNT_MISMATCH',

@@ -1,6 +1,7 @@
 -- Read-only inventory before the PAY AT PICKUP / per-drop PAY AT DELIVERY migrations
 -- (20261015120000_booking_quote_snapshot, 20261016120000_per_stop_obligation_schema,
--- 20261017120000_payment_gate_stop_lifecycle, and later payment-flow migrations). Run it in every
+-- 20261017120000_payment_gate_stop_lifecycle, 20261018120000_partially_paid_mixed_enums,
+-- 20261018120100_obligation_collections, and later payment-flow migrations). Run it in every
 -- environment that holds data, and review the output before migrating:
 --   psql "$DATABASE_URL" -f prisma/sql/preflight-payment-flow.sql
 -- It only SELECTs; the transaction is READ ONLY so it cannot change anything by mistake. Every
@@ -112,5 +113,44 @@ SELECT CASE WHEN to_regclass('public.booking_stops') IS NULL THEN NULL
                         FROM (SELECT status::text AS status, count(*) AS n FROM booking_stops GROUP BY 1) per_status',
                      false, true, '')))[1]::text
        END AS stops_by_status;
+
+-- Payment flow Phase 4 (20261018120000_partially_paid_mixed_enums,
+-- 20261018120100_obligation_collections): one collection per obligation.
+
+\echo '== Phase 4 labels: PARTIALLY_PAID payment status and MIXED earning settlement (false: before 20261018120000) =='
+SELECT EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+               WHERE t.typname = 'booking_payment_status' AND e.enumlabel = 'PARTIALLY_PAID') AS partially_paid_label,
+       EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+               WHERE t.typname = 'earning_settlement' AND e.enumlabel = 'MIXED') AS mixed_label;
+
+\echo '== Bookings priced per drop by method, status and payment status: after 20261018120100 a pay-at-delivery one is PARTIALLY_PAID until its last drop is paid =='
+SELECT b.payment_method, b.status, b.payment_status, count(*) AS bookings
+FROM bookings b
+WHERE to_jsonb(b) ->> 'payment_model' = 'QUOTE_PER_STOP'
+GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;
+
+\echo '== Pending QR collections by booking model, method and stage: each pays only its own obligation (historical bookings: the whole booking) =='
+SELECT to_jsonb(b) ->> 'payment_model' AS payment_model, b.payment_method, c.stage::text AS stage,
+       count(*) AS pending_qrs, COALESCE(sum(c.amount_paise), 0) AS amount_paise
+FROM payment_collections c JOIN bookings b ON b.id = c.booking_id
+WHERE c.method::text = 'ONLINE_QR' AND c.status::text = 'PENDING'
+GROUP BY 1, 2, 3 ORDER BY 1 NULLS FIRST, 2, 3;
+
+\echo '== Earning sources (earning_collections, NULL: before 20261018120100) and earnings with no direct source (0 before it: one source each) =='
+SELECT to_regclass('public.earning_collections') IS NOT NULL AS earning_collections_present,
+       CASE WHEN to_regclass('public.earning_collections') IS NULL THEN NULL
+            ELSE (xpath('/row/n/text()', query_to_xml(
+                     'SELECT count(*) AS n FROM earning_collections', false, true, '')))[1]::text::bigint
+       END AS earning_collection_rows,
+       (SELECT count(*) FROM driver_earnings e
+         WHERE to_jsonb(e) ->> 'collection_id' IS NULL AND to_jsonb(e) ->> 'payment_id' IS NULL) AS earnings_without_a_direct_source;
+
+\echo '== Cash platform-fee debits by ledger key: per booking (historical bookings, and before Phase 4) or per collection (bookings priced per drop) =='
+SELECT CASE WHEN to_jsonb(t) ->> 'idempotency_key' LIKE 'cash-ride-fee:collection:%' THEN 'per collection'
+            ELSE 'per booking' END AS ledger_key,
+       count(*) AS debits, COALESCE(sum(t.amount_paise), 0) AS amount_paise
+FROM driver_wallet_transactions t
+WHERE t.type::text = 'CASH_RIDE_FEE'
+GROUP BY 1 ORDER BY 1;
 
 ROLLBACK;

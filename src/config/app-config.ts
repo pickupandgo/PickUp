@@ -43,6 +43,11 @@ export interface AppConfig {
   readonly collections: {
     /** Product used for new ONLINE_QR collections, or null when online collection is off. */
     readonly product: CollectionProductSetting | null;
+    /**
+     * True when QR codes are simulated in memory and paid through /v1/dev/simulate (local
+     * end-to-end runs; config validation refuses it in production and with live keys).
+     */
+    readonly simulated: boolean;
     readonly linkTtlMinutes: number;
   };
   readonly settlements: {
@@ -123,7 +128,11 @@ export function openReadinessItems(config: AppConfig): string[] {
     );
   }
   items.push('D-57: TDS policy DISABLED until the CA confirms the rule');
-  if (config.collections.product !== 'QR_CODE') {
+  if (config.collections.simulated) {
+    items.push(
+      'D-47: collection QR codes are simulated (local end-to-end runs only); live needs Razorpay QR Codes (UPI QR)',
+    );
+  } else if (config.collections.product !== 'QR_CODE') {
     items.push(
       config.collections.product === null
         ? 'D-47: Razorpay QR Codes (UPI QR) not enabled; drivers collect cash only'
@@ -204,6 +213,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     collections: {
       product: COLLECTION_PRODUCTS[env.COLLECTION_LINK_PROVIDER],
+      simulated: env.COLLECTION_LINK_PROVIDER === 'simulated',
       linkTtlMinutes: env.COLLECTION_LINK_TTL_MINUTES,
     },
     settlements: {
@@ -225,7 +235,10 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       settlementReconVerified: env.SETTLEMENT_RECON_VERIFIED,
     },
     simulation: {
-      enabled: env.SETTLEMENT_PROVIDER === 'simulated' || env.PAYOUT_PROVIDER === 'simulated',
+      enabled:
+        env.SETTLEMENT_PROVIDER === 'simulated' ||
+        env.PAYOUT_PROVIDER === 'simulated' ||
+        env.COLLECTION_LINK_PROVIDER === 'simulated',
     },
     payouts: {
       provider: env.PAYOUT_PROVIDER === 'disabled' ? null : env.PAYOUT_PROVIDER,
@@ -262,12 +275,14 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
 }
 
 const COLLECTION_PRODUCTS: Record<
-  'disabled' | 'razorpay_payment_link' | 'razorpay_qr_code',
+  'disabled' | 'razorpay_payment_link' | 'razorpay_qr_code' | 'simulated',
   CollectionProductSetting | null
 > = {
   disabled: null,
   razorpay_payment_link: 'PAYMENT_LINK',
   razorpay_qr_code: 'QR_CODE',
+  // Simulated Razorpay QR codes: the same rows and webhooks as QR_CODE.
+  simulated: 'QR_CODE',
 };
 
 function deepFreeze<T extends object>(value: T): T {

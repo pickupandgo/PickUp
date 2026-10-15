@@ -96,7 +96,16 @@ export class RazorpayCollectionHttpGateway extends CollectionLinkGateway {
     if (!Number.isSafeInteger(input.amountPaise) || input.amountPaise < 100) {
       throw new RangeError('Collection amount must be at least 100 paise');
     }
-    const notes = { collection_id: input.collectionId, booking_id: input.bookingId };
+    // Which obligation this pays for, so every payment can be traced back to it: the collection
+    // (the internal reference), its booking, the stage, and the drop if it is for one.
+    const notes: Record<string, string> = {
+      collection_id: input.collectionId,
+      booking_id: input.bookingId,
+      stage: input.stage,
+      ...(input.stop
+        ? { booking_stop_id: input.stop.id, stop_sequence: String(input.stop.sequence) }
+        : {}),
+    };
     assertNotes(notes);
     const expireBy = Math.floor(input.expiresAt.getTime() / 1000);
     const description = input.description.slice(0, 255);

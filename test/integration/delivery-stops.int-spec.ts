@@ -3,7 +3,6 @@ import request from 'supertest';
 import type { BookingStop, Prisma } from '../../src/generated/prisma/client';
 import {
   bearer,
-  confirmDropPaymentAsOwner,
   createAdmin,
   createCustomer,
   createDriver,
@@ -32,9 +31,8 @@ import { createTestApp, type TestContext } from '../helpers/test-app';
  * The drops of a booking priced per drop (payment flow Phase 3): the stop state machine, the
  * current drop, the trip's DROP_PROGRESS / DELIVERED rules and admin resolution. A pay-at-delivery
  * drop is handed over only once that drop is paid (ARRIVED -> paymentGate -> PAYMENT_REQUIRED, or
- * PAYMENT_CONFIRMED -> handover allowed -> DELIVERED). Collecting a drop's payment is Phase 4:
- * here a paid drop is written by the table owner exactly as that phase will record it
- * (confirmDropPaymentAsOwner), so the gate and the handover rules can be proven now.
+ * PAYMENT_CONFIRMED -> handover allowed -> DELIVERED). A drop is paid here through its own QR, the
+ * way per-drop collection (Phase 4, stop-collections) records it.
  */
 describe('Drops of a booking priced per drop', () => {
   let ctx: TestContext;
@@ -105,19 +103,29 @@ describe('Drops of a booking priced per drop', () => {
     return item;
   }
 
-  /** Pays a drop as per-drop collection (Phase 4) will: owner-written, see the fixture. */
-  const payDrop = (trip: UnderWay, index: number) => {
+  /** Pays a drop through its own QR: shown, paid at Razorpay, confirmed on the driver's refresh. */
+  async function payDrop(trip: UnderWay, index: number): Promise<string> {
     const stop = nth(trip.stops, index);
-    return confirmDropPaymentAsOwner(ctx.prisma, {
-      bookingId: trip.bookingId,
-      tripId: trip.tripId,
-      stopId: stop.id,
-      driverId: trip.driver.driverId,
-      amountPaise: stop.payablePaise,
-    });
-  };
+    const shown = await collect(ctx, trip.driver, trip.tripId, {
+      method: 'ONLINE_QR',
+      amountPaise: Number(stop.payablePaise),
+      stopSequence: stop.sequence,
+    }).expect(201);
+    const collectionId = shown.body.collectionId as string;
+    ctx.links.pay(ctx.links.byCollection(collectionId).referenceId);
+    const paid = await request(ctx.server)
+      .get(`/v1/trips/${trip.tripId}/collections/${collectionId}`)
+      .set(bearer(trip.driver.token))
+      .expect(200);
+    expect(paid.body).toMatchObject({ status: 'COMPLETED', stopSequence: stop.sequence });
+    return collectionId;
+  }
 
-  /** A completed collection for one drop, written by the owner with the insert guard off. */
+  /**
+   * A completed collection for one drop, written by the owner with the insert guard off. Only for
+   * a transaction that the database then refuses: the guard is switched back on by its rollback
+   * (a pending deferred check on the new row keeps ALTER TABLE from running before that).
+   */
   async function insertPaidDropCollection(
     tx: Prisma.TransactionClient,
     trip: UnderWay,
@@ -133,7 +141,6 @@ describe('Drops of a booking priced per drop', () => {
       VALUES (${trip.bookingId}::uuid, ${stop.id}::uuid, ${trip.tripId}::uuid, 'DELIVERY',
               'ONLINE_QR', ${stop.payablePaise}, ${trip.driver.driverId}::uuid, 'COMPLETED',
               'RAZORPAY', 'QR_CODE', ${`qr_${suffix}`}, ${`pay_${suffix}`}, ${randomUUID()}, now())`;
-    await tx.$executeRaw`ALTER TABLE payment_collections ENABLE TRIGGER trg_collections_insert_guard`;
   }
 
   describe('order and the current drop', () => {
@@ -326,7 +333,8 @@ describe('Drops of a booking priced per drop', () => {
       await setStopStatus(ctx, tripId, 2, 'DELIVERED').expect(409);
       await payDrop(trip, 1);
       const last = await setStopStatus(ctx, tripId, 2, 'DELIVERED').expect(200);
-      expect(last.body.trip.status).toBe('DELIVERED');
+      // Every drop is delivered and paid: the trip is delivered, and its payment confirmed with it.
+      expect(last.body.trip.status).toBe('PAYMENT_CONFIRMED');
       expect(await stopRows(bookingId)).toMatchObject([
         {
           status: 'DELIVERED',
@@ -339,12 +347,12 @@ describe('Drops of a booking priced per drop', () => {
           paymentConfirmedAt: expect.any(Date),
         },
       ]);
-      // An engine report after the backend delivered the trip changes nothing. The booking's own
-      // payment status follows per-drop collection (Phase 4); until then it can't complete.
+      expect(
+        (await ctx.prisma.booking.findUniqueOrThrow({ where: { id: bookingId } })).paymentStatus,
+      ).toBe('PAID');
+      // An engine report after the backend delivered the trip changes nothing.
       await setTripStatus(ctx, tripId, 'DELIVERED').expect(200);
-      expect((await setTripStatus(ctx, tripId, 'COMPLETED').expect(409)).body.error.code).toBe(
-        'PAYMENT_REQUIRED',
-      );
+      await setTripStatus(ctx, tripId, 'COMPLETED').expect(200);
     });
   });
 

@@ -36,6 +36,7 @@ export class BookingChainService {
               orderBy: { createdAt: 'asc' },
               include: { payout: { include: { batch: true } } },
             },
+            collectionLinks: { orderBy: { createdAt: 'asc' } },
           },
         },
       },
@@ -93,6 +94,10 @@ export class BookingChainService {
       collections: booking.collections.map((collection) => ({
         collectionId: collection.id,
         stage: collection.stage,
+        /** The drop it paid for (a booking paid drop by drop); null for the whole booking. */
+        stopSequence: collection.bookingStopId
+          ? (booking.stops.find((stop) => stop.id === collection.bookingStopId)?.sequence ?? null)
+          : null,
         method: collection.method,
         status: collection.status,
         amountPaise: paiseToNumber(collection.amountPaise),
@@ -147,6 +152,16 @@ export class BookingChainService {
             tdsPolicy: earning.tdsPolicy,
             taxRuleId: earning.taxRuleId,
             netAmountPaise: paiseToNumber(earning.netAmountPaise),
+            /**
+             * Every collection that funds the earning, with its method, amount and fee share (none
+             * for a prepaid earning, or one recorded before collections were linked).
+             */
+            collections: earning.collectionLinks.map((link) => ({
+              collectionId: link.collectionId,
+              method: link.method,
+              amountPaise: paiseToNumber(link.amountPaise),
+              platformFeePaise: paiseToNumber(link.platformFeePaise),
+            })),
             /** ONLINE: true once the customer payment's merchant settlement is recorded. */
             merchantSettled: earning.paymentSettlementId !== null,
             paymentSettlementId: earning.paymentSettlementId,

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import request from 'supertest';
 import { FareQuoteRedeemer } from '../../src/fare/fare-contract';
@@ -266,6 +267,62 @@ describe('Least-privilege database role', () => {
       .set(bearer(admin.token))
       .expect(200);
 
+    // Pay at delivery, priced per drop, paid drop by drop (payment flow Phase 4): drop 1 in cash
+    // (its fee share debited), drop 2 by QR. The booking goes PARTIALLY_PAID, then PAID, and the
+    // completed trip's earning is MIXED, funded by both collections (earning_collections).
+    await fundWallet(ctx, admin, driver.driverId, 10_000);
+    const mixed = await bookedTrip(ctx, customer, driver, {
+      paymentMethod: 'PAY_AT_DELIVERY',
+      model: 'QUOTE_PER_STOP',
+      farePaise: 50_000,
+      dropPaise: [20_000, 30_000],
+      category,
+      owner,
+    });
+    await advanceTrip(ctx, mixed.tripId, TO_IN_TRANSIT);
+    await setStopStatus(ctx, mixed.tripId, 1, 'ARRIVED').expect(200);
+    await collect(ctx, driver, mixed.tripId, {
+      method: 'CASH',
+      amountPaise: 20_000,
+      stopSequence: 1,
+    }).expect(201);
+    expect(
+      (await owner.booking.findUniqueOrThrow({ where: { id: mixed.bookingId } })).paymentStatus,
+    ).toBe('PARTIALLY_PAID');
+    await setStopStatus(ctx, mixed.tripId, 1, 'DELIVERED').expect(200);
+    await setStopStatus(ctx, mixed.tripId, 2, 'ARRIVED').expect(200);
+    const dropQr = await collect(ctx, driver, mixed.tripId, {
+      method: 'ONLINE_QR',
+      amountPaise: 30_000,
+      stopSequence: 2,
+    }).expect(201);
+    ctx.links.pay(ctx.links.byCollection(dropQr.body.collectionId as string).referenceId);
+    await request(ctx.server)
+      .get(`/v1/trips/${mixed.tripId}/collections/${dropQr.body.collectionId as string}`)
+      .set(bearer(driver.token))
+      .expect(200);
+    await setStopStatus(ctx, mixed.tripId, 2, 'DELIVERED').expect(200);
+    await setTripStatus(ctx, mixed.tripId, 'COMPLETED').expect(200);
+    const mixedEarning = await owner.driverEarning.findUniqueOrThrow({
+      where: { bookingId: mixed.bookingId },
+      include: { collectionLinks: true },
+    });
+    expect(mixedEarning).toMatchObject({
+      settlement: 'MIXED',
+      status: 'AWAITING_SETTLEMENT',
+      grossAmountPaise: 50_000n,
+      platformFeePaise: 5_000n,
+      collectionId: null,
+    });
+    expect(
+      mixedEarning.collectionLinks
+        .map((link) => [link.method, Number(link.amountPaise), Number(link.platformFeePaise)])
+        .sort(),
+    ).toEqual([
+      ['CASH', 20_000, 2_000],
+      ['ONLINE_QR', 30_000, 3_000],
+    ]);
+
     // Historical (legacy) cash trip at delivery: wallet fee debit, completion, cash earning.
     const cash = await bookedTrip(ctx, customer, driver, {
       paymentMethod: 'PAY_AT_DELIVERY',
@@ -434,12 +491,15 @@ describe('Least-privilege database role', () => {
     expect(
       (await owner.driverEarning.findUniqueOrThrow({ where: { id: earning.id } })).status,
     ).toBe('PAID');
-    // Funded 20,000; the two cash trips each debited their 10% fee: 4,000 frozen on the pickup
-    // booking, 5,000 from the legacy booking's pinned rule.
+    // Funded 20,000 and 10,000; each cash payment debited its 10% fee: 4,000 frozen on the pickup
+    // booking, 2,000 for the cash drop (that drop's share), 5,000 from the legacy booking's pinned
+    // rule.
     expect(
       (await owner.booking.findUniqueOrThrow({ where: { id: pickup.bookingId } })).platformFeePaise,
     ).toBe(4_000n);
-    expect(await walletBalance(ctx, driver.driverId)).toBe(20_000n - 4_000n - 5_000n);
+    expect(await walletBalance(ctx, driver.driverId)).toBe(
+      20_000n + 10_000n - 4_000n - 2_000n - 5_000n,
+    );
   });
 
   it.each([
@@ -539,12 +599,13 @@ describe('Least-privilege database role', () => {
       'move a booking stop to another booking',
       'UPDATE booking_stops SET booking_id = gen_random_uuid()',
     ],
-    // A drop's payment is confirmed only with per-drop collection (Phase 4): no grant yet.
-    ['confirm a drop payment', 'UPDATE booking_stops SET payment_confirmed_at = now()'],
     [
       'link a collection to a drop',
       'UPDATE payment_collections SET booking_stop_id = gen_random_uuid()',
     ],
+    // The collections that fund an earning are written once with it (payment flow Phase 4).
+    ['change the collections of an earning', 'UPDATE earning_collections SET amount_paise = 1'],
+    ['delete the collections of an earning', 'DELETE FROM earning_collections'],
     ['delete booking stops', 'DELETE FROM booking_stops'],
     ['change a booking fare snapshot', 'UPDATE bookings SET fare_paise = 1'],
     ['change a booking platform fee', 'UPDATE bookings SET platform_fee_paise = 0'],
@@ -637,6 +698,11 @@ describe('Least-privilege database role', () => {
           Prisma.sql`UPDATE booking_stops SET updated_at = now() WHERE id = ${stop.id}::uuid`,
           /A booking stop changes only through a lifecycle transition/,
         ],
+        // Granted since Phase 4 (per-drop collection), and still only with its transition.
+        [
+          Prisma.sql`UPDATE booking_stops SET payment_confirmed_at = now() WHERE id = ${stop.id}::uuid`,
+          /A drop's payment is recorded once, only when its payment is confirmed/,
+        ],
       ] as const) {
         await expect(client.$executeRaw(statement)).rejects.toThrow(refusal);
       }
@@ -652,6 +718,85 @@ describe('Least-privilege database role', () => {
     expect((await owner.trip.findUniqueOrThrow({ where: { id: pickup.tripId } })).status).toBe(
       'DRIVER_ARRIVED',
     );
+  });
+
+  // Collections and payment status can be written by the API role, so the database's own rules
+  // are what keep it to one obligation per collection (payment flow Phase 4, stop-collections).
+  it('collects and pays only the obligation owed now', async () => {
+    const customer = await createCustomer(deps);
+    const driver = await createDriver(deps);
+    const category = uniqueCategory();
+    await owner.feeRule.create({
+      data: {
+        category,
+        ruleType: 'PERCENTAGE',
+        value: '10',
+        roundingMode: 'HALF_UP',
+        effectiveFrom: new Date(Date.now() - 60_000),
+        reason: 'Least privilege collection fee rule',
+      },
+    });
+    const delivery = await bookedTrip(ctx, customer, driver, {
+      paymentMethod: 'PAY_AT_DELIVERY',
+      farePaise: 50_000,
+      dropPaise: [20_000, 30_000],
+      category,
+      model: 'QUOTE_PER_STOP',
+      owner,
+    });
+    await advanceTrip(ctx, delivery.tripId, ['DRIVER_ARRIVED', 'PICKUP_VERIFIED', 'IN_TRANSIT']);
+    await setStopStatus(ctx, delivery.tripId, 1, 'ARRIVED').expect(200);
+    const [first, second] = await owner.bookingStop.findMany({
+      where: { bookingId: delivery.bookingId },
+      orderBy: { sequence: 'asc' },
+    });
+    if (!first || !second) {
+      throw new Error('expected two stops');
+    }
+    const qrFor = (stopId: string, amount: number) => Prisma.sql`
+      INSERT INTO payment_collections (booking_id, booking_stop_id, trip_id, stage, method,
+                                       amount_paise, collected_by_driver_id, status, provider,
+                                       provider_product, provider_reference_id, idempotency_key)
+      VALUES (${delivery.bookingId}::uuid, ${stopId}::uuid, ${delivery.tripId}::uuid, 'DELIVERY',
+              'ONLINE_QR', ${amount}, ${driver.driverId}::uuid, 'PENDING', 'RAZORPAY', 'QR_CODE',
+              ${`qr_${randomUUID().replace(/-/g, '').slice(0, 14)}`}, ${randomUUID()})`;
+
+    const client = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: restrictedDatabaseUrl(), max: 1 }),
+    });
+    try {
+      for (const [statement, refusal] of [
+        [
+          qrFor(second.id, 30_000),
+          /Only the drop the driver is at, before it is paid, is collected/,
+        ],
+        [qrFor(first.id, 50_000), /A drop is collected for its own payable amount/],
+        [
+          Prisma.sql`UPDATE bookings SET payment_status = 'PARTIALLY_PAID'
+                      WHERE id = ${delivery.bookingId}::uuid`,
+          /payment status follows its completed collections/,
+        ],
+        [
+          Prisma.sql`UPDATE bookings SET payment_status = 'PAID' WHERE id = ${delivery.bookingId}::uuid`,
+          /payment status follows its completed collections/,
+        ],
+        [
+          Prisma.sql`UPDATE booking_stops SET status = 'PAYMENT_CONFIRMED', payment_confirmed_at = now()
+                      WHERE id = ${first.id}::uuid`,
+          /confirmed only by a completed collection for that drop/,
+        ],
+      ] as const) {
+        await expect(client.$executeRaw(statement)).rejects.toThrow(refusal);
+      }
+    } finally {
+      await client.$disconnect();
+    }
+    expect(await owner.paymentCollection.count({ where: { bookingId: delivery.bookingId } })).toBe(
+      0,
+    );
+    expect(
+      (await owner.booking.findUniqueOrThrow({ where: { id: delivery.bookingId } })).paymentStatus,
+    ).toBe('UNPAID');
   });
 
   // Turning a guard off is an ownership check, not a privilege check, so Postgres reports it
@@ -672,6 +817,18 @@ describe('Least-privilege database role', () => {
     [
       'the collection guard',
       'ALTER TABLE payment_collections DISABLE TRIGGER trg_collections_insert_guard',
+    ],
+    [
+      'the collection effects check',
+      'ALTER TABLE payment_collections DISABLE TRIGGER trg_collections_effects',
+    ],
+    [
+      'the earning sources check',
+      'ALTER TABLE driver_earnings DISABLE TRIGGER trg_earnings_sources',
+    ],
+    [
+      'the earning collections guard',
+      'ALTER TABLE earning_collections DISABLE TRIGGER trg_earning_collections_insert_guard',
     ],
   ])('the API role cannot disable %s', async (_label, sql) => {
     const client = new PrismaClient({

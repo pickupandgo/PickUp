@@ -1,4 +1,5 @@
-import { IsIn, IsInt, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { PaymentGateView } from '../bookings/bookings.dto';
 
 export const COLLECTION_METHODS = ['CASH', 'ONLINE_QR'] as const;
 export type CollectionMethodValue = (typeof COLLECTION_METHODS)[number];
@@ -9,8 +10,20 @@ export class CreateCollectionRequest {
   method!: CollectionMethodValue;
 
   /**
-   * The amount, in paise. Must equal the booking's confirmed fare; it is a confirmation only.
-   * The server never derives fees or earnings from it.
+   * The drop being paid for. Required for a booking paid drop by drop (pay at delivery, priced
+   * per drop): only the drop the driver is at, before it is paid. Refused for any other booking,
+   * which is collected for the whole booking.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(25)
+  stopSequence?: number;
+
+  /**
+   * The amount, in paise: a confirmation of what the trip view says is owed (the booking's
+   * payable amount, or the drop's). The server resolves the amount itself from the frozen fare and
+   * refuses a different one. It never derives fees or earnings from it.
    */
   @IsInt()
   @Min(1)
@@ -30,6 +43,8 @@ export class CollectionResponse {
   bookingId!: string;
   tripId!: string;
   stage!: string;
+  /** The drop this collection pays for; null for the whole booking. */
+  stopSequence!: number | null;
   method!: CollectionMethodValue;
   /** PENDING (QR shown, not paid yet), COMPLETED, FAILED (QR expired or cancelled), REVERSED. */
   status!: string;
@@ -45,6 +60,14 @@ export class CollectionResponse {
   createdAt!: string;
   /** True when this request was already processed and nothing new happened. */
   replayed!: boolean;
+}
+
+/** What the driver app gets back: the collection, and the booking's payment state right now. */
+export class DriverCollectionResponse extends CollectionResponse {
+  /** UNPAID, PARTIALLY_PAID (some drops paid) or PAID, as the server recorded it. */
+  bookingPaymentStatus!: string;
+  /** Whether the goods may be handed over now, and what is owed first. */
+  paymentGate!: PaymentGateView;
 }
 
 export class AdminCollectionResponse extends CollectionResponse {

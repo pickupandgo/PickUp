@@ -20,6 +20,7 @@ import {
   type PaymentModel,
   setStopStatus,
   setTripStatus,
+  settleAndSync,
 } from '../helpers/flows';
 import { createTestApp, type TestContext } from '../helpers/test-app';
 import { TEST_INTERNAL_API_KEY } from '../helpers/test-config';
@@ -410,6 +411,171 @@ describe('Pickup payment gate (PAY_AT_PICKUP)', () => {
       const verifiedAt = (await tripRow(tripId)).pickupVerifiedAt;
       await setTripStatus(ctx, tripId, 'PICKUP_VERIFIED').expect(200);
       expect((await tripRow(tripId)).pickupVerifiedAt).toEqual(verifiedAt);
+    });
+  });
+
+  describe('collecting the pickup obligation (payment flow Phase 4)', () => {
+    const feeDebits = (driverId: string) =>
+      ctx.prisma.driverWalletTransaction.findMany({
+        where: { wallet: { driverId }, type: 'CASH_RIDE_FEE' },
+      });
+
+    it('cash: one fee debit and the collection together, the booking PAID, the answer from the server', async () => {
+      const { driver, bookingId, tripId } = await arrivedAtPickup({ walletPaise: 10_000 });
+      const res = await collect(ctx, driver, tripId, {
+        method: 'CASH',
+        amountPaise: 50_000,
+      }).expect(201);
+      expect(res.body).toMatchObject({
+        stage: 'PICKUP',
+        stopSequence: null,
+        status: 'COMPLETED',
+        platformFeePaise: 5_000,
+        bookingPaymentStatus: 'PAID',
+        paymentGate: { stage: 'PICKUP', paymentState: 'PAYMENT_CONFIRMED', handoverAllowed: true },
+      });
+      // The fee frozen on the booking, debited once, keyed to this collection.
+      expect(
+        (await feeDebits(driver.driverId)).map((debit) => [
+          debit.idempotencyKey,
+          debit.amountPaise,
+        ]),
+      ).toEqual([[`cash-ride-fee:collection:${res.body.collectionId as string}`, 5_000n]]);
+      expect((await bookingRow(bookingId)).paymentStatus).toBe('PAID');
+      await setTripStatus(ctx, tripId, 'PICKUP_VERIFIED').expect(200);
+    });
+
+    it('a historical booking keeps its one fee debit per booking', async () => {
+      const { driver, bookingId, tripId } = await arrivedAtPickup({
+        walletPaise: 10_000,
+        model: 'LEGACY_BOOKING_LEVEL',
+      });
+      await collect(ctx, driver, tripId, { method: 'CASH', amountPaise: 50_000 }).expect(201);
+      expect((await feeDebits(driver.driverId)).map((debit) => debit.idempotencyKey)).toEqual([
+        `cash-ride-fee:${bookingId}`,
+      ]);
+    });
+
+    it('wallet shortfall, a drop named, or another amount: refused, nothing recorded', async () => {
+      const { driver, bookingId, tripId } = await arrivedAtPickup({ walletPaise: 1_000 });
+      const short = await collect(ctx, driver, tripId, {
+        method: 'CASH',
+        amountPaise: 50_000,
+      }).expect(409);
+      expect(short.body.error).toMatchObject({
+        code: 'INSUFFICIENT_BALANCE',
+        details: { requiredFeePaise: 5_000 },
+      });
+      const withDrop = await collect(ctx, driver, tripId, {
+        method: 'CASH',
+        amountPaise: 50_000,
+        stopSequence: 1,
+      }).expect(400);
+      expect(withDrop.body.error).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        details: { fields: [{ field: 'stopSequence' }] },
+      });
+      for (const amountPaise of [20_000, 49_999]) {
+        const wrong = await collect(ctx, driver, tripId, {
+          method: 'ONLINE_QR',
+          amountPaise,
+        }).expect(422);
+        expect(wrong.body.error).toMatchObject({
+          code: 'COLLECTION_AMOUNT_MISMATCH',
+          details: { expectedPaise: 50_000 },
+        });
+      }
+      expect(await ctx.prisma.paymentCollection.count({ where: { bookingId } })).toBe(0);
+      expect(await feeDebits(driver.driverId)).toEqual([]);
+      expect((await internalView(bookingId)).body.paymentGate).toMatchObject({
+        paymentState: 'PAYMENT_REQUIRED',
+        handoverAllowed: false,
+      });
+    });
+
+    it('duplicate cash (same key, concurrent, other keys): one collection, one debit', async () => {
+      const { driver, bookingId, tripId } = await arrivedAtPickup({ walletPaise: 10_000 });
+      const key = 'pickup-cash-duplicate';
+      const same = await Promise.all(
+        Array.from({ length: 4 }, () =>
+          collect(ctx, driver, tripId, { method: 'CASH', amountPaise: 50_000 }, key),
+        ),
+      );
+      expect(same.map((res) => res.status)).toEqual([201, 201, 201, 201]);
+      expect(new Set(same.map((res) => res.body.collectionId)).size).toBe(1);
+      const others = await Promise.all(
+        Array.from({ length: 3 }, () =>
+          collect(ctx, driver, tripId, { method: 'CASH', amountPaise: 50_000 }),
+        ),
+      );
+      for (const res of others) {
+        expect([res.status, res.body.error.code]).toEqual([409, 'BOOKING_ALREADY_PAID']);
+      }
+      expect(await ctx.prisma.paymentCollection.count({ where: { bookingId } })).toBe(1);
+      expect(await feeDebits(driver.driverId)).toHaveLength(1);
+    });
+
+    it('cash closes an open QR first, and a paid booking refuses any second collection', async () => {
+      const { driver, bookingId, tripId } = await arrivedAtPickup({ walletPaise: 10_000 });
+      const shown = await collect(ctx, driver, tripId, {
+        method: 'ONLINE_QR',
+        amountPaise: 50_000,
+      }).expect(201);
+      await collect(ctx, driver, tripId, { method: 'CASH', amountPaise: 50_000 }).expect(201);
+      expect(
+        await ctx.prisma.paymentCollection.findUniqueOrThrow({
+          where: { id: shown.body.collectionId as string },
+        }),
+      ).toMatchObject({ status: 'FAILED', failureReason: 'CANCELLED_FOR_CASH' });
+      expect(ctx.links.byCollection(shown.body.collectionId as string).status).toBe('CANCELLED');
+      for (const method of ['CASH', 'ONLINE_QR'] as const) {
+        const again = await collect(ctx, driver, tripId, { method, amountPaise: 50_000 }).expect(
+          409,
+        );
+        expect(again.body.error.code).toBe('BOOKING_ALREADY_PAID');
+      }
+      expect(
+        await ctx.prisma.paymentCollection.count({ where: { bookingId, status: 'COMPLETED' } }),
+      ).toBe(1);
+    });
+
+    it('QR: confirmed by Razorpay, the trip completes, and the earning is payable once settled', async () => {
+      const { driver, bookingId, tripId } = await arrivedAtPickup();
+      const shown = await collect(ctx, driver, tripId, {
+        method: 'ONLINE_QR',
+        amountPaise: 50_000,
+      }).expect(201);
+      const link = ctx.links.byCollection(shown.body.collectionId as string);
+      expect(link).toMatchObject({ stage: 'PICKUP', stopId: null, amount: 50_000 });
+      const payment = ctx.links.pay(link.referenceId);
+      const confirmed = await request(ctx.server)
+        .get(`/v1/trips/${tripId}/collections/${shown.body.collectionId as string}`)
+        .set(bearer(driver.token))
+        .expect(200);
+      expect(confirmed.body).toMatchObject({
+        status: 'COMPLETED',
+        bookingPaymentStatus: 'PAID',
+        paymentGate: { paymentState: 'PAYMENT_CONFIRMED', handoverAllowed: true },
+      });
+      await advanceTrip(ctx, tripId, ['PICKUP_VERIFIED', 'IN_TRANSIT']);
+      await deliverStops(ctx, tripId, [1, 2]);
+      await setTripStatus(ctx, tripId, 'COMPLETED').expect(200);
+      const earning = await ctx.prisma.driverEarning.findUniqueOrThrow({
+        where: { bookingId },
+        include: { collectionLinks: true },
+      });
+      expect(earning).toMatchObject({
+        settlement: 'ONLINE',
+        status: 'AWAITING_SETTLEMENT',
+        collectionId: shown.body.collectionId,
+        grossAmountPaise: 50_000n,
+        platformFeePaise: 5_000n,
+      });
+      expect(earning.collectionLinks).toHaveLength(1);
+      await settleAndSync(ctx, payment.id, 50_000);
+      expect(
+        (await ctx.prisma.driverEarning.findUniqueOrThrow({ where: { id: earning.id } })).status,
+      ).toBe('PAYABLE');
     });
   });
 

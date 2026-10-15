@@ -426,7 +426,7 @@ describe('Booking registration from fare quotes', () => {
     });
   });
 
-  describe('collection until per-drop collection is enabled', () => {
+  describe('collection of a booking paid drop by drop', () => {
     it('refuses a whole-booking delivery collection for a per-stop booking, in the API and the database', async () => {
       const customer = await createCustomer(ctx);
       const driver = await createDriver(ctx);
@@ -440,14 +440,15 @@ describe('Booking registration from fare quotes', () => {
       await advanceTrip(ctx, tripId, TO_IN_TRANSIT);
       await setStopStatus(ctx, tripId, 1, 'ARRIVED').expect(200);
 
-      // The driver app is never offered a collection the API would refuse.
+      // The driver app is offered the drop the driver is at (payment flow Phase 4), never the
+      // whole booking.
       const view = await request(ctx.server)
         .get(`/v1/trips/${tripId}`)
         .set(bearer(driver.token))
         .expect(200);
       expect(view.body.payment).toMatchObject({
         collectionStage: 'DELIVERY',
-        collectionOpen: false,
+        collectionOpen: true,
         paymentGate: {
           stage: 'DROP',
           stopSequence: 1,
@@ -458,11 +459,8 @@ describe('Booking registration from fare quotes', () => {
       });
 
       for (const method of ['CASH', 'ONLINE_QR'] as const) {
-        const res = await collect(ctx, driver, tripId, { method, amountPaise: 50_000 }).expect(409);
-        expect(res.body.error).toMatchObject({
-          code: 'COLLECTION_NOT_ALLOWED',
-          details: { stage: 'DELIVERY', perStop: true },
-        });
+        const res = await collect(ctx, driver, tripId, { method, amountPaise: 50_000 }).expect(422);
+        expect(res.body.error.code).toBe('STOP_REQUIRED');
       }
       expect(await ctx.prisma.paymentCollection.count({ where: { bookingId } })).toBe(0);
       expect([...ctx.links.links.values()].filter((link) => link.bookingId === bookingId)).toEqual(
@@ -491,7 +489,7 @@ describe('Booking registration from fare quotes', () => {
             idempotencyKey: randomUUID(),
           },
         }),
-      ).rejects.toThrow(/Per-drop collections for pay-at-delivery bookings are not enabled yet/);
+      ).rejects.toThrow(/A pay-at-delivery booking priced per drop is collected drop by drop/);
     });
 
     it('the database holds a pickup collection to the booking amount and its frozen fee', async () => {

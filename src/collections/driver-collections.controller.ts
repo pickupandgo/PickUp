@@ -5,8 +5,8 @@ import { CurrentPrincipal, DriverOnly } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
 import { numberToPaise } from '../common/money';
 import { IDEMPOTENCY_KEY_HEADER, IdempotencyKey } from '../common/http/idempotency-key.decorator';
-import { CollectionResponse, CreateCollectionRequest } from './collections.dto';
-import { toCollectionResponse } from './collections.mapper';
+import { CreateCollectionRequest, DriverCollectionResponse } from './collections.dto';
+import { toDriverCollectionResponse } from './collections.mapper';
 import { CollectionsService } from './collections.service';
 
 const uuid = new ParseUUIDPipe({ version: '4' });
@@ -21,7 +21,9 @@ export class DriverCollectionsController {
   /**
    * CASH: records the cash and debits the platform fee from the wallet in one step.
    * ONLINE_QR: returns a booking-linked Razorpay QR for the customer to scan.
-   * Retry with the same Idempotency-Key; it never records twice.
+   * For a booking paid drop by drop, `stopSequence` names the drop the driver is at.
+   * Retry with the same Idempotency-Key; it never records twice. The response carries the
+   * booking's payment state and payment gate as recorded by the server.
    */
   @Post()
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
@@ -31,12 +33,17 @@ export class DriverCollectionsController {
     @Param('tripId', uuid) tripId: string,
     @IdempotencyKey() idempotencyKey: string,
     @Body() body: CreateCollectionRequest,
-  ): Promise<CollectionResponse> {
+  ): Promise<DriverCollectionResponse> {
     const result = await this.collections.collect(principal, tripId, idempotencyKey, {
       method: body.method,
       amountPaise: numberToPaise(body.amountPaise),
+      stopSequence: body.stopSequence ?? null,
     });
-    return toCollectionResponse(result.collection, result.replayed);
+    return toDriverCollectionResponse(
+      result.collection,
+      await this.collections.driverView(result.collection),
+      result.replayed,
+    );
   }
 
   /** Current state. A pending QR is re-checked with Razorpay, so the app can poll this. */
@@ -46,9 +53,8 @@ export class DriverCollectionsController {
     @CurrentPrincipal() principal: Principal,
     @Param('tripId', uuid) tripId: string,
     @Param('collectionId', uuid) collectionId: string,
-  ): Promise<CollectionResponse> {
-    return toCollectionResponse(
-      await this.collections.getForDriver(principal, tripId, collectionId),
-    );
+  ): Promise<DriverCollectionResponse> {
+    const collection = await this.collections.getForDriver(principal, tripId, collectionId);
+    return toDriverCollectionResponse(collection, await this.collections.driverView(collection));
   }
 }

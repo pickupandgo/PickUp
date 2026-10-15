@@ -64,8 +64,9 @@ export interface BookingOptions {
   /**
    * Which model to create. Defaults to QUOTE_PER_STOP through the real registration API, except:
    *  - PREPAID_UPI only exists on historical bookings, so it is always LEGACY_BOOKING_LEVEL;
-   *  - PAY_AT_DELIVERY is LEGACY_BOOKING_LEVEL until per-drop collection exists, so tests of
-   *    today's whole-booking delivery collection keep running against the rows that still use it.
+   *  - PAY_AT_DELIVERY defaults to LEGACY_BOOKING_LEVEL, so the tests of whole-booking delivery
+   *    collection keep running against the historical rows that still use it. Tests of per-drop
+   *    collection (payment flow Phase 4) pass model: 'QUOTE_PER_STOP'.
    */
   readonly model?: PaymentModel;
   /** Client that may insert historical rows (the table owner). Defaults to ctx.prisma. */
@@ -205,7 +206,7 @@ export function collect(
   ctx: TestContext,
   driver: TestDriver,
   tripId: string,
-  body: { method: 'CASH' | 'ONLINE_QR'; amountPaise: number },
+  body: { method: 'CASH' | 'ONLINE_QR'; amountPaise: number; stopSequence?: number },
   key: string = idempotencyKey(),
 ): request.Test {
   return request(ctx.server)

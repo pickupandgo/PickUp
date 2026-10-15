@@ -125,12 +125,17 @@ GRANT SELECT, INSERT ON fare_quote_stops TO mr_app;
 
 -- Booking stops: written once at registration with amounts copied from the quote (triggers); the
 -- amounts never change (no column grant). The stop lifecycle writes the status and the facts of
--- each transition; guard_booking_stop_update checks every move. Confirming a drop's payment
--- (payment_confirmed_at) is not granted: it comes with per-drop collection (payment flow Phase 4).
+-- each transition; guard_booking_stop_update checks every move. A drop's payment is confirmed
+-- (payment_confirmed_at) only together with a completed collection for that drop (payment flow
+-- Phase 4: the stop guard and a deferred check on payment_collections).
 GRANT SELECT, INSERT ON booking_stops TO mr_app;
-GRANT UPDATE (status, arrived_at, delivered_at, failed_at, failure_reason, cancelled_at,
-              resolved_at, resolved_by_user_id, resolution_reason, updated_at)
+GRANT UPDATE (status, arrived_at, payment_confirmed_at, delivered_at, failed_at, failure_reason,
+              cancelled_at, resolved_at, resolved_by_user_id, resolution_reason, updated_at)
     ON booking_stops TO mr_app;
+
+-- Earning collections: the collections that fund each earning, written once with the earning
+-- (triggers check them against the collections and the earning); never updated or deleted.
+GRANT SELECT, INSERT ON earning_collections TO mr_app;
 
 -- Admin audit trail: append-only (a trigger also blocks UPDATE, DELETE and TRUNCATE).
 GRANT SELECT, INSERT ON admin_actions TO mr_app;

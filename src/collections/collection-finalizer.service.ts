@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { lockBooking, lockTripOfBooking } from '../bookings/booking-locks';
-import { applyBookingPaid } from '../bookings/booking-payment-state';
+import { lockBooking, lockStopsOfBooking, lockTripOfBooking } from '../bookings/booking-locks';
+import { applyCollectionCompleted } from '../bookings/booking-payment-state';
 import type { PaymentCollection } from '../generated/prisma/client';
 import {
   ANOMALY_OUTCOMES,
@@ -35,8 +35,11 @@ const CAPTURED = 'captured';
  * Applies the provider's state for an ONLINE_QR collection exactly once. The state always comes
  * from Razorpay (authenticated API response), never from the driver or customer app:
  *
- *   PAID              lock booking -> trip -> collection, check amount, collection COMPLETED,
- *                     booking PAID (and trip PAYMENT_CONFIRMED if delivered)
+ *   PAID              lock booking -> trip -> drops -> collection, check the amount against the
+ *                     collection's own obligation (the booking, or its drop), collection
+ *                     COMPLETED, then its effects: booking PAID, or the drop's payment confirmed
+ *                     and the booking PARTIALLY_PAID or PAID (and trip PAYMENT_CONFIRMED if
+ *                     delivered). Webhook, driver refresh and admin sync all end here.
  *   EXPIRED/CANCELLED collection FAILED, so a new QR or cash can be used
  *   ACTIVE            nothing to do yet
  */
@@ -93,7 +96,10 @@ export class CollectionFinalizerService {
       if (!booking) {
         throw new Error('Booking disappeared during collection finalization');
       }
+      // booking -> trip -> drops -> collection: the order every money path takes.
       const trip = await lockTripOfBooking(tx, located.bookingId);
+      const stops =
+        booking.paymentModel === 'QUOTE_PER_STOP' ? await lockStopsOfBooking(tx, booking.id) : [];
       const collection = await this.lockCollection(tx, collectionId);
       const payment = state.payments.find((candidate) => candidate.status === CAPTURED);
 
@@ -110,17 +116,28 @@ export class CollectionFinalizerService {
         // Money arrived for a collection we had already closed: refund review.
         return { collection, outcome: ConfirmationOutcome.PAYMENT_NOT_PENDING };
       }
+      // What this collection's obligation is owed, from the frozen snapshot: its drop's payable
+      // amount, or the whole booking's. A QR can only ever pay the obligation it was made for.
+      const stop = collection.bookingStopId
+        ? (stops.find((candidate) => candidate.id === collection.bookingStopId) ?? null)
+        : null;
+      const owed = collection.bookingStopId ? (stop?.payablePaise ?? null) : booking.finalFareMinor;
       if (
         state.status !== 'PAID' ||
         !payment ||
         state.referenceId !== collection.providerReferenceId ||
         payment.currency !== 'INR' ||
         BigInt(payment.amount) !== collection.amountPaise ||
-        collection.amountPaise !== booking.finalFareMinor
+        owed === null ||
+        collection.amountPaise !== owed
       ) {
         return { collection, outcome: ConfirmationOutcome.AMOUNT_MISMATCH };
       }
-      if (booking.paymentStatus !== 'UNPAID') {
+      if (
+        collection.bookingStopId === null
+          ? booking.paymentStatus !== 'UNPAID'
+          : await this.isStopPaid(tx, collection.bookingStopId, collectionId)
+      ) {
         return { collection, outcome: ConfirmationOutcome.DUPLICATE_BOOKING_PAYMENT };
       }
 
@@ -135,15 +152,26 @@ export class CollectionFinalizerService {
           completedAt: now,
         },
       });
-      await applyBookingPaid(tx, booking, trip, now);
+      const effects = await applyCollectionCompleted(tx, booking, trip, stops, completed, now);
       return {
         collection: completed,
         outcome:
           booking.status === 'CANCELLED'
             ? ConfirmationOutcome.PAID_AFTER_CANCELLATION
-            : ConfirmationOutcome.APPLIED,
+            : effects.stop?.status === 'UNDELIVERED' || effects.stop?.status === 'CANCELLED'
+              ? ConfirmationOutcome.PAID_FOR_CLOSED_DROP
+              : ConfirmationOutcome.APPLIED,
       };
     });
+  }
+
+  /** True when another collection already paid this drop (the live index makes it unreachable). */
+  private async isStopPaid(tx: Tx, bookingStopId: string, collectionId: string): Promise<boolean> {
+    const other = await tx.paymentCollection.findFirst({
+      where: { bookingStopId, status: 'COMPLETED', id: { not: collectionId } },
+      select: { id: true },
+    });
+    return other !== null;
   }
 
   private applyClosed(

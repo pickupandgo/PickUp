@@ -19,8 +19,9 @@
  * On throwaway databases it also proves that every down.sql works on an empty schema, lands on
  * the schema built from the earlier migration files alone, and refuses to run once the data it
  * would drop exists (a QUOTE_PER_STOP booking, a quote with more than 5 drops, a collection for a
- * single drop, a stop with lifecycle data). The stop lifecycle migration drops no data, so its
- * down.sql has nothing to refuse; the fresh install proves a drop is reached through it with
+ * single drop, a stop with lifecycle data, a drop with its own collection, a partially paid
+ * booking). The stop lifecycle migration drops no data, so its down.sql has nothing to refuse; the
+ * fresh install proves a drop is reached, collected and paid through the Phase 3 and 4 rules with
  * every guard on. It prints the read-only preflight inventory
  * (prisma/sql/preflight-payment-flow.sql) of every source before migrating it.
  *
@@ -47,6 +48,8 @@ const MIGRATIONS_DIR = path.join(ROOT, 'prisma', 'migrations');
 const SNAPSHOT_MIGRATION = '20261015120000_booking_quote_snapshot';
 const STOP_SCHEMA_MIGRATION = '20261016120000_per_stop_obligation_schema';
 const STOP_LIFECYCLE_MIGRATION = '20261017120000_payment_gate_stop_lifecycle';
+const ENUMS_MIGRATION = '20261018120000_partially_paid_mixed_enums';
+const OBLIGATION_MIGRATION = '20261018120100_obligation_collections';
 const PREFLIGHT_SQL = path.join(ROOT, 'prisma', 'sql', 'preflight-payment-flow.sql');
 const DEFAULT_SOURCES = [
   'multipleride_legacy_snapshot_test',
@@ -463,10 +466,11 @@ UPDATE trips SET status = 'DROP_PROGRESS'
  WHERE booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
 COMMIT;`;
 
-/** A QR shown for the first drop, as per-drop collection (Phase 4) will write it. */
+/**
+ * A QR shown for the drop the driver is at, as per-drop collection (Phase 4) writes it: every guard
+ * on (the current drop, its own payable amount, the booking's trip and driver).
+ */
 const DROP_COLLECTION_SQL = `
-BEGIN;
-ALTER TABLE payment_collections DISABLE TRIGGER trg_collections_insert_guard;
 INSERT INTO payment_collections (booking_id, booking_stop_id, trip_id, stage, method, amount_paise,
                                  collected_by_driver_id, status, provider, provider_product,
                                  provider_reference_id, idempotency_key)
@@ -475,8 +479,21 @@ SELECT b.id, s.id, t.id, 'DELIVERY', 'ONLINE_QR', s.payable_paise, t.driver_id, 
   FROM bookings b
   JOIN booking_stops s ON s.booking_id = b.id AND s.sequence = 1
   JOIN trips t ON t.booking_id = b.id
- WHERE b.external_ref = 'MIGCHECK-1';
-ALTER TABLE payment_collections ENABLE TRIGGER trg_collections_insert_guard;
+ WHERE b.external_ref = 'MIGCHECK-1';`;
+
+/**
+ * Razorpay reports that QR paid: the collection completes, the drop's payment is confirmed and the
+ * booking becomes PARTIALLY_PAID (one of its two drops), in one transaction, every guard on.
+ */
+const DROP_PAID_SQL = `
+BEGIN;
+UPDATE payment_collections
+   SET status = 'COMPLETED', provider_payment_id = 'pay_migcheckdrop1', payment_method = 'UPI',
+       completed_at = now()
+ WHERE idempotency_key = 'migcheck-drop-1';
+UPDATE booking_stops SET status = 'PAYMENT_CONFIRMED', payment_confirmed_at = now()
+ WHERE sequence = 1 AND booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
+UPDATE bookings SET payment_status = 'PARTIALLY_PAID' WHERE external_ref = 'MIGCHECK-1';
 COMMIT;`;
 
 /** A quote with 6 drops (allowed once FARE_MAX_DROPS is raised), never booked. */
@@ -572,6 +589,23 @@ async function freshReference(admin) {
       'a stop has lifecycle data',
     );
     await client.query(DROP_COLLECTION_SQL);
+    pass('a QR is shown for the drop the driver is at with every guard on');
+    await client.query(DROP_PAID_SQL);
+    pass('a paid drop confirms its payment and partly pays its booking with every guard on');
+    await expectRefused(
+      'fresh',
+      client,
+      OBLIGATION_MIGRATION,
+      /drops have their own collections/,
+      'a drop has its own collection',
+    );
+    await expectRefused(
+      'fresh',
+      client,
+      ENUMS_MIGRATION,
+      /some bookings are PARTIALLY_PAID/,
+      'a booking is partially paid',
+    );
     await expectRefused(
       'fresh',
       client,
@@ -606,7 +640,13 @@ async function levelReferences(admin, fresh) {
   console.log(`\n== Schema before each reversible migration (${LEVELS_DB})`);
   const names = migrationNames();
   const reversible = names.filter(hasDown);
-  for (const required of [SNAPSHOT_MIGRATION, STOP_SCHEMA_MIGRATION, STOP_LIFECYCLE_MIGRATION]) {
+  for (const required of [
+    SNAPSHOT_MIGRATION,
+    STOP_SCHEMA_MIGRATION,
+    STOP_LIFECYCLE_MIGRATION,
+    ENUMS_MIGRATION,
+    OBLIGATION_MIGRATION,
+  ]) {
     if (!reversible.includes(required)) {
       throw new Error(`Expected ${required} to have a down.sql`);
     }

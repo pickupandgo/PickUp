@@ -48,6 +48,11 @@ export interface CreateCollectionLinkInput {
   /** Our collection id: the provider reference_id and a note, so every event maps back to it. */
   readonly collectionId: string;
   readonly bookingId: string;
+  /** What the QR is for, kept in its notes: the pickup, or a delivery (one drop, or all). */
+  readonly stage: 'PICKUP' | 'DELIVERY';
+  /** The drop it pays for (a booking paid drop by drop); null for the whole booking. */
+  readonly stop: { readonly id: string; readonly sequence: number } | null;
+  /** The obligation's amount, resolved on the server. */
   readonly amountPaise: number;
   readonly expiresAt: Date;
   readonly description: string;

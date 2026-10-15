@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CollectionsModule } from '../collections/collections.module';
 import { PayoutsModule } from '../payouts/payouts.module';
 import { SettlementsModule } from '../settlements/settlements.module';
 import { DevSimulationController } from './dev-simulation.controller';
@@ -8,7 +9,7 @@ import { DevSimulationController } from './dev-simulation.controller';
  * which config validation refuses in production and with live Razorpay keys.
  */
 @Module({
-  imports: [PayoutsModule, SettlementsModule],
+  imports: [PayoutsModule, SettlementsModule, CollectionsModule],
   controllers: [DevSimulationController],
 })
 export class SimulationModule {}

@@ -170,15 +170,29 @@ export function collectionStageOf(booking: Booking): 'PICKUP' | 'DELIVERY' | nul
   }
 }
 
-/** Whether the driver may collect payment for this booking right now. */
-export function isCollectionOpen(booking: Booking, trip: Trip): boolean {
+/**
+ * Whether the driver may collect payment for this booking right now: the whole booking inside its
+ * collection window, or, for a booking paid drop by drop, the drop the driver is at (ARRIVED, not
+ * paid yet). The collection service resolves exactly what is owed (collection-obligation.ts).
+ */
+export function isCollectionOpen(
+  booking: Booking,
+  trip: Trip,
+  stops: readonly Pick<BookingStop, 'status'>[],
+): boolean {
   const stage = collectionStageOf(booking);
-  if (!stage || booking.paymentStatus !== 'UNPAID' || booking.status === 'CANCELLED') {
+  if (!stage || booking.status === 'CANCELLED' || booking.status === 'COMPLETED') {
     return false;
   }
   if (stage === 'DELIVERY' && booking.paymentModel === 'QUOTE_PER_STOP') {
-    // Collected per drop, which is not enabled yet (the API and the database refuse a
-    // whole-booking delivery collection), so the driver app is never offered one.
+    return (
+      (booking.paymentStatus === 'UNPAID' || booking.paymentStatus === 'PARTIALLY_PAID') &&
+      trip.status !== 'CANCELLED' &&
+      trip.status !== 'COMPLETED' &&
+      stops.some((stop) => stop.status === 'ARRIVED')
+    );
+  }
+  if (booking.paymentStatus !== 'UNPAID') {
     return false;
   }
   const window = stage === 'PICKUP' ? PICKUP_COLLECTION_WINDOW : DELIVERY_COLLECTION_WINDOW;
@@ -205,7 +219,7 @@ export function toDriverTripResponse(
       platformFeePaise: paiseToNumber(feePaise),
       driverSharePaise: paiseToNumber(booking.finalFareMinor - feePaise),
       collectionStage: collectionStageOf(booking),
-      collectionOpen: isCollectionOpen(booking, trip),
+      collectionOpen: isCollectionOpen(booking, trip, context.stops),
       paymentGate: toPaymentGateView(context.gate),
       stops: ordered(context.stops).map((stop) => ({
         sequence: stop.sequence,

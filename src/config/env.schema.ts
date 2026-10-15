@@ -63,9 +63,10 @@ export const envSchema = z
 
     // Pickup/delivery online collection (booking-linked QR). Live: razorpay_qr_code (a UPI QR any
     // UPI app can pay, D-47). razorpay_payment_link draws a QR of a payment link and is allowed
-    // only in test mode, where Razorpay QR codes can't be paid.
+    // only in test mode, where Razorpay QR codes can't be paid. simulated: in-memory QR codes paid
+    // through /v1/dev/simulate (local end-to-end runs only; non-production, test keys).
     COLLECTION_LINK_PROVIDER: z
-      .enum(['disabled', 'razorpay_payment_link', 'razorpay_qr_code'])
+      .enum(['disabled', 'razorpay_payment_link', 'razorpay_qr_code', 'simulated'])
       .default('disabled'),
     // How long a collection QR stays payable. Razorpay needs at least 15 minutes for payment links;
     // QR codes are capped at 120 minutes.
@@ -211,6 +212,7 @@ export const envSchema = z
     const simulated = [
       ['SETTLEMENT_PROVIDER', env.SETTLEMENT_PROVIDER],
       ['PAYOUT_PROVIDER', env.PAYOUT_PROVIDER],
+      ['COLLECTION_LINK_PROVIDER', env.COLLECTION_LINK_PROVIDER],
     ].filter(([, provider]) => provider === 'simulated');
     for (const [name] of simulated) {
       if (env.NODE_ENV === 'production' || !env.RAZORPAY_KEY_ID.startsWith('rzp_test_')) {

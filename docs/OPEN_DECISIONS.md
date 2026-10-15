@@ -1,6 +1,6 @@
 # Open Decisions: MultipleRide (Pick Up) V1 Backend
 
-Phase 0 audit, 2 Oct 2026. This file tracks only items the supplied sources leave unresolved or contradict. Source references point to [ARCHITECTURE_TRACEABILITY.md](./ARCHITECTURE_TRACEABILITY.md). [Section E](#e-payments--driver-wallet-slice-raj_backend) records how the payments + wallet slice applied these decisions, and the new ones it raised. [Section F](#f-approved-v1-payment-earnings-and-payout-rules-2-oct-2026) records the approved V1 money rules, what they settle, and what is still open. [Section G](#g-approved-decisions-second-set-6-oct-2026) records the second set of approved decisions (rounding, settlement-gated payouts, Monday payouts, bank validation, TDS readiness) and the items they leave open. [Section H](#h-approved-decisions-third-set-after-commit-f07ff5c) covers the bank-account step-up, and [section I](#i-payment-flow-phase-1-pay-at-pickup--per-drop-pay-at-delivery) the first phase of the PAY AT PICKUP / per-drop PAY AT DELIVERY flow, including the technical defaults it introduced.
+Phase 0 audit, 2 Oct 2026. This file tracks only items the supplied sources leave unresolved or contradict. Source references point to [ARCHITECTURE_TRACEABILITY.md](./ARCHITECTURE_TRACEABILITY.md). [Section E](#e-payments--driver-wallet-slice-raj_backend) records how the payments + wallet slice applied these decisions, and the new ones it raised. [Section F](#f-approved-v1-payment-earnings-and-payout-rules-2-oct-2026) records the approved V1 money rules, what they settle, and what is still open. [Section G](#g-approved-decisions-second-set-6-oct-2026) records the second set of approved decisions (rounding, settlement-gated payouts, Monday payouts, bank validation, TDS readiness) and the items they leave open. [Section H](#h-approved-decisions-third-set-after-commit-f07ff5c) covers the bank-account step-up, and [section I](#i-payment-flow-phase-1-pay-at-pickup--per-drop-pay-at-delivery) the PAY AT PICKUP / per-drop PAY AT DELIVERY flow phase by phase (Phases 1–4), including the technical defaults each phase introduced.
 
 How to read each entry:
 
@@ -439,6 +439,7 @@ Nikhil Enterprises approved the V1 money model. It is implemented as given; noth
 
 #### D-50 Collection windows
 - **Now:** PAY_AT_PICKUP can be collected from the driver's arrival until delivery; PAY_AT_DELIVERY only after the last drop (D-19). Only completion is blocked without payment.
+- **Since payment flow Phases 3–4 (section I):** a PAY_AT_PICKUP booking is collected at the pickup and must be paid before the handover (N2). A PAY_AT_DELIVERY booking priced per drop is collected at each drop, while the driver is there, before that drop's handover. Historical PAY_AT_DELIVERY bookings are still collected after the last drop.
 - **Owner:** Product. **Status:** Confirm.
 
 #### D-51 Trip engine integration
@@ -551,12 +552,12 @@ Raj approved the architecture in [PAYMENT_FLOW_FINAL_REVIEW.md](./PAYMENT_FLOW_F
 | **PREPAID_UPI is not offered to new bookings (N4).** | Registration answers `422 PAYMENT_METHOD_NOT_OFFERED`; the database refuses the row (insert guard and a CHECK). |
 | **Historical PREPAID_UPI bookings keep Checkout, and only they do (N4).** | Start, verify, the webhook and the admin sync apply a booking payment only to a `LEGACY_BOOKING_LEVEL` + `PREPAID_UPI` booking. The code checks it at start and verify, before capturing an authorized payment, and in the finalizer (`BOOKING_NOT_PAYABLE` otherwise, logged as a payment anomaly). The database refuses a booking payment row for any other booking. Ownership and signature checks are unchanged. |
 | **Pickup gate also for legacy PAY_AT_PICKUP bookings (N2).** | Done in Phase 3 (below). |
-| **Completion with undelivered drops (N5).** | Phases 4–5, not built yet. The financial treatment stays open. |
+| **Completion with undelivered drops (N5).** | Phase 4 (below): the trip completes PARTIALLY_PAID and earns what was collected. The driver-pay treatment of such a trip is Phase 5. |
 | **Failed payout → ON_HOLD, explicit release (N10).** | Phase 7, not built yet. |
 | **Removing the legacy code (L-22).** | Open. Only after no environment has unfinished legacy bookings. |
 | **Non-local databases (N1).** | Blocked until `prisma/sql/preflight-payment-flow.sql` has been run there and its output reviewed. Phase 1 is applied to the local dev database only. |
 
-**Temporary restriction until Phase 4 (technical, not policy).** Per-drop collection isn't built yet, so a new (`QUOTE_PER_STOP`) PAY_AT_DELIVERY booking can't be collected: the API answers `409 COLLECTION_NOT_ALLOWED` (`details: { stage: "DELIVERY", perStop: true }`), the database refuses the collection row, and the driver view shows `collectionOpen: false`. Such a booking registers and dispatches but can't complete (payment gate). Don't take real PAY_AT_DELIVERY bookings before Phase 4. New PAY_AT_PICKUP bookings work end to end.
+**Temporary restriction until Phase 4 (technical, not policy; replaced in Phase 4 by a narrower production restriction, below).** Per-drop collection isn't built yet, so a new (`QUOTE_PER_STOP`) PAY_AT_DELIVERY booking can't be collected: the API answers `409 COLLECTION_NOT_ALLOWED` (`details: { stage: "DELIVERY", perStop: true }`), the database refuses the collection row, and the driver view shows `collectionOpen: false`. Such a booking registers and dispatches but can't complete (payment gate). Don't take real PAY_AT_DELIVERY bookings before Phase 4. New PAY_AT_PICKUP bookings work end to end.
 
 **Technical defaults introduced in Phase 1.** Each is configurable or replaceable later; none is a business decision.
 
@@ -632,3 +633,48 @@ Raj approved and locked Phase 2, then asked for Phase 3 only. Phase 3 adds migra
 | Customers see a failed attempt that may still be retried as ARRIVED (or PAID), and NOT_DELIVERED only once an admin resolved it | `payment-gate.ts` | none |
 | Gate for historical PREPAID_UPI bookings: reports the in-app payment; their handovers stay ungated, as before | `payment-gate.ts` | L-22 |
 | The IN_TRANSIT payment check applies to bookings priced per drop only, so historical trips already past the pickup unpaid can carry on | `guard_trip_change` | N2 covers leaving DRIVER_ARRIVED only |
+
+### Phase 4: collections per obligation
+
+Raj approved and locked Phase 3, then asked for Phase 4 only. Phase 4 adds two migrations: `20261018120000_partially_paid_mixed_enums` (two enum values, nothing else) and `20261018120100_obligation_collections` (rules and one new table; no row touched). It also adds the code that enforces the same rules and one grant change. Upgrade steps: [DATABASE_SETUP.md](./DATABASE_SETUP.md#collections-per-obligation-payment-flow-phase-4).
+
+| Requirement | Implementation |
+|---|---|
+| **One obligation per collection, resolved on the server.** | PAY_AT_PICKUP: the booking, at the pickup. PAY_AT_DELIVERY priced per drop: the drop the driver is at (ARRIVED, not paid yet). `stopSequence` is required (`422 STOP_REQUIRED`) and checked against the current drop, never taken on trust. Historical bookings: the whole booking, as before. `resolveObligation` checks the booking, trip, method, stage, current drop, amount, state and ownership. |
+| **The amount comes from the frozen booking; the app's amount is only an echo.** | The pickup is owed the frozen payable, a drop its own frozen payable. Another amount is `422 COLLECTION_AMOUNT_MISMATCH { expectedPaise }`. Another drop or a future one is `409 COLLECTION_NOT_ALLOWED { reason: NOT_CURRENT \| STOP_ALREADY_PAID, stopSequence, currentStop, … }`, and a missing drop `404 STOP_NOT_FOUND`. A paid booking is `409 BOOKING_ALREADY_PAID`, a closed one `409 BOOKING_CLOSED`. `guard_collection_insert` refuses the same rows for every role, the table owner included. |
+| **Cash: idempotent, the wallet debited exactly once, never negative.** | `Idempotency-Key` is required; a retry returns the same collection (`replayed: true`). The obligation's frozen fee (the booking's fee at the pickup, the drop's fee share at a drop) is debited in the collection's own transaction. Locks follow the approved order: booking → trip → stops → collection → wallet. A shortfall is `409 INSUFFICIENT_BALANCE` and records nothing. Bookings priced per drop have one ledger key per collection; historical bookings keep one per booking. The database requires the debit to be the collecting driver's own CASH_RIDE_FEE of exactly that fee. No provider call is made inside the transaction. |
+| **QR: one live QR per obligation, confirmed by the provider.** | A QR is made for one obligation. Its reference is the collection id, and its notes carry `collection_id`, `booking_id`, `stage` and, for a drop, `booking_stop_id` and `stop_sequence`. Asking again shows the same open QR, and an expired one is replaced. Cash closes an open QR first, and a drop's open QR is closed when that delivery attempt fails. The webhook (`qr_code.credited`, `payment.captured`), the driver's refresh and the admin sync all re-read the QR from the provider and go through one finalizer, which locks booking → trip → stops → collection and checks what the obligation is owed. A repeat is `ALREADY_APPLIED`. A stale QR never pays another obligation: money on a closed QR is not applied and is flagged (`PAYMENT_NOT_PENDING`). |
+| **UNPAID → PARTIALLY_PAID → PAID, set only by financial finalization.** | `applyCollectionCompleted` confirms the drop's payment (ARRIVED → PAYMENT_CONFIRMED), and the booking takes the status its completed collections give it. The database enforces the same with `guard_booking_update` and the deferred `trg_collections_effects`, both using `booking_collected_status`. A booking priced per drop is PAID or PARTIALLY_PAID only when its collections say so, only such a booking can be PARTIALLY_PAID, and a completed drop collection confirms its drop in the same transaction. |
+| **An unpaid drop is never DELIVERED; one drop's payment never covers another.** | The Phase 3 gate, now reachable: DELIVERED needs a COMPLETED collection for that drop itself. |
+| **Earnings know their collections (any mix of cash and QR).** | New table `earning_collections` has one row per collection that funds an earning (method, amount, fee share). Rows are written with the earning in its transaction, never change and are never deleted. With one collection, the earning keeps its single source (`collection_id`) and gets one link row. With several, `collection_id` and `payment_id` are null. Gross is the sum collected and the fee the sum of the fee shares, checked at commit (`trg_earnings_sources`). The settlement is CASH (`SETTLED_IN_CASH`) when every drop was paid in cash, ONLINE when every drop was paid online, and MIXED otherwise. ONLINE and MIXED earnings start `AWAITING_SETTLEMENT`. |
+| **Payout scheduling and bank logic unchanged (Phase 5).** | An earning funded by several collections is never made payable in Phase 4. The settlement sync records each QR's settlement, but `applySettlement` answers `SEVERAL_COLLECTIONS`, and payout batches take only earnings their settlement made payable. |
+| **Historical bookings keep their behaviour (N3).** | They keep one collection for the whole booking, single-source earnings and the per-booking ledger key. No stops are invented. The migration check and the dev database show every row unchanged, `TAB-QR-001` included. |
+| **Least privilege.** | The API role gets UPDATE on `booking_stops.payment_confirmed_at`, which the stop guard allows only with that drop's COMPLETED collection. It also gets SELECT and INSERT on `earning_collections`. |
+| **Non-local databases (N1).** | Still blocked until their preflight has been run and reviewed. Phase 4 is applied to the local dev database only, after its preflight was reviewed. |
+
+**Production restriction until Phase 5 (technical, not policy).** It replaces the Phase 1 restriction above. New PAY_AT_DELIVERY bookings are collected drop by drop, in cash or by QR, and they complete, but they aren't all paid out yet:
+- All-cash multi-drop PAY_AT_DELIVERY bookings may work through the current backend flow. Each drop is collected in cash at the drop, and the earning is settled in cash.
+- Single-drop PAY_AT_DELIVERY bookings paid by QR work. They have one collection, so the ONLINE earning becomes payable once Razorpay settles the payment, as before. PAY_AT_PICKUP bookings (cash or QR) are also one collection and work.
+- Multi-drop PAY_AT_DELIVERY bookings containing a QR drop must stay blocked in production until Phase 5 makes earnings funded by several collections correctly payable and settleable. Today their earning (ONLINE or MIXED) is recorded with every source but never becomes payable. The backend doesn't refuse such a QR yet, so the restriction is operational: don't take these bookings for real.
+
+**Consequences of the approved rules (technical, not policy).**
+- A drop left undelivered and unpaid keeps the booking PARTIALLY_PAID. The trip still completes once every drop is finished (N5), and the earning counts only what was collected. A trip where nothing was collected still can't complete; an admin cancels it.
+- For an earning funded by several collections, the driver's summary shows the whole net as awaiting settlement, including the cash drops' share the driver already holds. Phase 5 splits it.
+- The admin booking chain's `merchantSettlement` shows the booking's first settlement only. Each collection's settlement is Phase 5.
+
+**Not in Phase 4.**
+- Phase 5: per-collection settlement gating, the payout amount of an earning funded by several collections, the split summary, and the driver's pay for a partly delivered trip.
+- Phase 6: refunds (paid then cancelled bookings, paid drops resolved as undelivered, money on closed QRs).
+- The apps, engine-v2 and the admin UI.
+
+**Technical defaults introduced in Phase 4.** None is a business decision.
+
+| Default | Where | Decision it waits for |
+|---|---|---|
+| Fee ledger key per collection for bookings priced per drop, `cash-ride-fee:collection:<collectionId>`; historical bookings keep `cash-ride-fee:<bookingId>`. `reference_type` stays BOOKING, and the metadata carries `collectionId` and `stopSequence` | `CollectionsService` | none |
+| A drop's open QR is closed (`DROP_DELIVERY_FAILED`) when its attempt fails. A payment that raced the close is recorded for that drop, and the paid retry confirms it | internal stop API, `BookingStopsService` | none |
+| Money for a drop resolved as undelivered meanwhile is recorded for that drop and flagged `PAID_FOR_CLOSED_DROP` | finalizer | Phase 6 (refunds) |
+| ONLINE and MIXED earnings funded by several collections stay `AWAITING_SETTLEMENT` | `EarningsService.applySettlement` | Phase 5 |
+| Gross is what was collected (an undelivered unpaid drop adds nothing), and the fee is the collected fee shares | `earningFunding`, `trg_earnings_sources`, `GROSS_NOT_BOOKING_FARE` | N5 driver-pay treatment (Phase 5) |
+| `stopSequence` missing for a booking paid drop by drop: `422 STOP_REQUIRED`. Sent for a whole-booking obligation: `400 VALIDATION_FAILED` | collections API | none |
+| Simulated QR codes for local end-to-end runs (`COLLECTION_LINK_PROVIDER=simulated`, `POST /v1/dev/simulate/qr-codes/:qrCodeId/payments`), refused in production and with live keys | config, `SimulatedCollectionLinkGateway` | none |

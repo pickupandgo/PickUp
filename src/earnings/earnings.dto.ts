@@ -49,8 +49,12 @@ export class EarningResponse {
   earningId!: string;
   bookingId!: string;
   tripId!: string;
-  /** ONLINE: paid to Nikhil Enterprises, net share paid out weekly. CASH: driver kept the cash. */
-  settlement!: 'ONLINE' | 'CASH';
+  /**
+   * ONLINE: paid to Nikhil Enterprises, net share paid out weekly. CASH: driver kept the cash.
+   * MIXED: a booking paid drop by drop, partly in cash and partly online (its online part is paid
+   * out once payment flow Phase 5 is in place; until then it stays AWAITING_SETTLEMENT).
+   */
+  settlement!: 'ONLINE' | 'CASH' | 'MIXED';
   status!: EarningStatusValue;
   /** Confirmed fare the customer paid, in paise. */
   grossAmountPaise!: number;

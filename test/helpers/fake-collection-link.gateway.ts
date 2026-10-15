@@ -14,6 +14,10 @@ interface StoredLink {
   referenceId: string;
   collectionId: string;
   bookingId: string;
+  /** The obligation, as the real gateway puts it in the provider notes. */
+  stage?: 'PICKUP' | 'DELIVERY';
+  stopId?: string | null;
+  stopSequence?: number | null;
   amount: number;
   status: CollectionLinkStatus;
   url: string;
@@ -48,6 +52,9 @@ export class FakeCollectionLinkGateway extends CollectionLinkGateway {
         referenceId,
         collectionId: input.collectionId,
         bookingId: input.bookingId,
+        stage: input.stage,
+        stopId: input.stop?.id ?? null,
+        stopSequence: input.stop?.sequence ?? null,
         amount: input.amountPaise,
         status: 'ACTIVE',
         url:

@@ -53,6 +53,8 @@ describe('RazorpayCollectionHttpGateway', () => {
     const state = await gateway.create('PAYMENT_LINK', {
       collectionId,
       bookingId,
+      stage: 'PICKUP',
+      stop: null,
       amountPaise: 50_000,
       expiresAt: new Date(1_900_000_000_000),
       description: 'PickUp booking ENG-1',
@@ -78,7 +80,7 @@ describe('RazorpayCollectionHttpGateway', () => {
       expire_by: 1_900_000_000,
       reminder_enable: false,
       notify: { sms: false, email: false },
-      notes: { collection_id: collectionId, booking_id: bookingId },
+      notes: { collection_id: collectionId, booking_id: bookingId, stage: 'PICKUP' },
     });
   });
 
@@ -138,9 +140,11 @@ describe('RazorpayCollectionHttpGateway', () => {
     const created = await gateway.create('QR_CODE', {
       collectionId,
       bookingId,
+      stage: 'DELIVERY',
+      stop: { id: 'b5f1c0de-0000-4000-8000-000000000002', sequence: 2 },
       amountPaise: 30_000,
       expiresAt: new Date(1_900_000_000_000),
-      description: 'PickUp booking ENG-2',
+      description: 'PickUp booking ENG-2, drop 2',
     });
     expect(created).toMatchObject({
       product: 'QR_CODE',
@@ -153,6 +157,14 @@ describe('RazorpayCollectionHttpGateway', () => {
       fixed_amount: true,
       payment_amount: 30_000,
       close_by: 1_900_000_000,
+      // The obligation it pays for: the collection, its booking, the stage and the drop.
+      notes: {
+        collection_id: collectionId,
+        booking_id: bookingId,
+        stage: 'DELIVERY',
+        booking_stop_id: 'b5f1c0de-0000-4000-8000-000000000002',
+        stop_sequence: '2',
+      },
     });
 
     fetchMock
