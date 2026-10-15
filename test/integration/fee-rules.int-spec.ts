@@ -15,7 +15,14 @@ import {
   uniquePhone,
   uniqueSubject,
 } from '../helpers/fixtures';
-import { advanceTrip, assignDriver, collect, engine, setTripStatus } from '../helpers/flows';
+import {
+  advanceTrip,
+  assignDriver,
+  collect,
+  deliverStops,
+  engine,
+  setTripStatus,
+} from '../helpers/flows';
 import { createTestApp, type TestContext } from '../helpers/test-app';
 import { TEST_DATABASE_URL } from '../setup/test-database';
 
@@ -95,7 +102,10 @@ describe('Platform fee rules', () => {
       .then((res) => ({ res, customer }));
   }
 
-  /** Collects at pickup by QR, delivers and completes a registered booking; returns its earning. */
+  /**
+   * Collects at pickup by QR, delivers its single drop and completes a registered booking;
+   * returns its earning.
+   */
   async function complete(bookingId: string, farePaise = 50_000) {
     const driver = await createDriver(ctx);
     const tripId = await assignDriver(ctx, bookingId, driver);
@@ -110,7 +120,8 @@ describe('Platform fee rules', () => {
       .get(`/v1/trips/${tripId}/collections/${collectionId}`)
       .set(bearer(driver.token))
       .expect(200);
-    await advanceTrip(ctx, tripId, ['PICKUP_VERIFIED', 'IN_TRANSIT', 'DROP_PROGRESS', 'DELIVERED']);
+    await advanceTrip(ctx, tripId, ['PICKUP_VERIFIED', 'IN_TRANSIT']);
+    await deliverStops(ctx, tripId, [1]);
     await setTripStatus(ctx, tripId, 'COMPLETED').expect(200);
     return ctx.prisma.driverEarning.findUniqueOrThrow({ where: { bookingId } });
   }

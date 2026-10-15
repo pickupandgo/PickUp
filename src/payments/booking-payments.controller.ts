@@ -14,6 +14,7 @@ import { Throttle } from '@nestjs/throttler';
 import { CurrentPrincipal, CustomerOnly } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
 import { toCustomerBookingResponse } from '../bookings/bookings.mapper';
+import { BookingsService } from '../bookings/bookings.service';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import { IDEMPOTENCY_KEY_HEADER, IdempotencyKey } from '../common/http/idempotency-key.decorator';
 import { BookingPaymentService } from './booking-payment.service';
@@ -34,6 +35,7 @@ const uuid = new ParseUUIDPipe({ version: '4' });
 export class BookingPaymentsController {
   constructor(
     private readonly payments: BookingPaymentService,
+    private readonly bookings: BookingsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -57,8 +59,13 @@ export class BookingPaymentsController {
     @Param('bookingId', uuid) bookingId: string,
   ): Promise<BookingPaymentStateResponse> {
     const state = await this.payments.getState(principal, bookingId);
+    const { trip, ...booking } = state.booking;
     return {
-      booking: toCustomerBookingResponse(state.booking, state.booking.trip),
+      booking: toCustomerBookingResponse(
+        booking,
+        trip,
+        await this.bookings.paymentContext(booking, trip),
+      ),
       payment: state.payment
         ? toBookingPaymentResponse(state.payment, this.config.razorpay.keyId)
         : null,
@@ -78,8 +85,13 @@ export class BookingPaymentsController {
     @Body() body: VerifyTopUpRequest,
   ): Promise<VerifyBookingPaymentResponse> {
     const result = await this.payments.verify(principal, bookingId, body);
+    const { trip, ...booking } = result.booking;
     return {
-      booking: toCustomerBookingResponse(result.booking, result.booking.trip),
+      booking: toCustomerBookingResponse(
+        booking,
+        trip,
+        await this.bookings.paymentContext(booking, trip),
+      ),
       payment: toBookingPaymentResponse(result.payment, this.config.razorpay.keyId),
       providerStatus: result.providerStatus,
     };

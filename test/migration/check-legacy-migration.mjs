@@ -19,7 +19,9 @@
  * On throwaway databases it also proves that every down.sql works on an empty schema, lands on
  * the schema built from the earlier migration files alone, and refuses to run once the data it
  * would drop exists (a QUOTE_PER_STOP booking, a quote with more than 5 drops, a collection for a
- * single drop, a stop with lifecycle data). It prints the read-only preflight inventory
+ * single drop, a stop with lifecycle data). The stop lifecycle migration drops no data, so its
+ * down.sql has nothing to refuse; the fresh install proves a drop is reached through it with
+ * every guard on. It prints the read-only preflight inventory
  * (prisma/sql/preflight-payment-flow.sql) of every source before migrating it.
  *
  * Sources are never written: each one is copied with CREATE DATABASE ... TEMPLATE (which needs no
@@ -44,6 +46,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const MIGRATIONS_DIR = path.join(ROOT, 'prisma', 'migrations');
 const SNAPSHOT_MIGRATION = '20261015120000_booking_quote_snapshot';
 const STOP_SCHEMA_MIGRATION = '20261016120000_per_stop_obligation_schema';
+const STOP_LIFECYCLE_MIGRATION = '20261017120000_payment_gate_stop_lifecycle';
 const PREFLIGHT_SQL = path.join(ROOT, 'prisma', 'sql', 'preflight-payment-flow.sql');
 const DEFAULT_SOURCES = [
   'multipleride_legacy_snapshot_test',
@@ -442,15 +445,22 @@ END;
 $$;`;
 
 /**
- * The first drop reached, as the stop lifecycle (Phase 3) will record it. Stops can't change yet,
- * so the table owner turns only the stop guard off, in one transaction.
+ * The first drop reached through the stop lifecycle (Phase 3), every guard on: the trip passes
+ * the pickup (pay at delivery: nothing owed there) and starts, the drop is reached, and the trip
+ * moves to DROP_PROGRESS with it.
  */
 const STOP_ARRIVED_SQL = `
 BEGIN;
-ALTER TABLE booking_stops DISABLE TRIGGER trg_booking_stops_guard;
+UPDATE trips SET status = 'DRIVER_ARRIVED', arrived_at = now()
+ WHERE booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
+UPDATE trips SET status = 'PICKUP_VERIFIED', pickup_verified_at = now()
+ WHERE booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
+UPDATE trips SET status = 'IN_TRANSIT', started_at = now()
+ WHERE booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
 UPDATE booking_stops SET status = 'ARRIVED', arrived_at = now()
  WHERE sequence = 1 AND booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
-ALTER TABLE booking_stops ENABLE TRIGGER trg_booking_stops_guard;
+UPDATE trips SET status = 'DROP_PROGRESS'
+ WHERE booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
 COMMIT;`;
 
 /** A QR shown for the first drop, as per-drop collection (Phase 4) will write it. */
@@ -553,6 +563,7 @@ async function freshReference(admin) {
     await client.query(PER_STOP_BOOKING_SQL);
     pass('a QUOTE_PER_STOP booking passes every guard when written like registration does');
     await client.query(STOP_ARRIVED_SQL);
+    pass('a drop is reached through the stop lifecycle with every guard on');
     await expectRefused(
       'fresh',
       client,
@@ -595,7 +606,7 @@ async function levelReferences(admin, fresh) {
   console.log(`\n== Schema before each reversible migration (${LEVELS_DB})`);
   const names = migrationNames();
   const reversible = names.filter(hasDown);
-  for (const required of [SNAPSHOT_MIGRATION, STOP_SCHEMA_MIGRATION]) {
+  for (const required of [SNAPSHOT_MIGRATION, STOP_SCHEMA_MIGRATION, STOP_LIFECYCLE_MIGRATION]) {
     if (!reversible.includes(required)) {
       throw new Error(`Expected ${required} to have a down.sql`);
     }

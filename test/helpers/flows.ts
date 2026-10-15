@@ -1,4 +1,5 @@
 import request from 'supertest';
+import type { EngineStopStatus, StopResolution } from '../../src/bookings/stop-lifecycle';
 import type { EngineTripStatus } from '../../src/bookings/trip-lifecycle';
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import {
@@ -22,12 +23,24 @@ import { TEST_INTERNAL_API_KEY } from './test-config';
 export type PaymentMethod = 'PREPAID_UPI' | 'PAY_AT_PICKUP' | 'PAY_AT_DELIVERY';
 export type PaymentModel = 'QUOTE_PER_STOP' | 'LEGACY_BOOKING_LEVEL';
 
+/**
+ * Historical bookings: the trip engine reports every status up to DELIVERED. A booking priced
+ * per drop reaches DROP_PROGRESS and DELIVERED through its drops instead (TO_IN_TRANSIT, then
+ * deliverStops).
+ */
 export const TO_DELIVERED: readonly EngineTripStatus[] = [
   'DRIVER_ARRIVED',
   'PICKUP_VERIFIED',
   'IN_TRANSIT',
   'DROP_PROGRESS',
   'DELIVERED',
+];
+
+/** Up to the start of the trip. A PAY_AT_PICKUP booking must be paid at DRIVER_ARRIVED first. */
+export const TO_IN_TRANSIT: readonly EngineTripStatus[] = [
+  'DRIVER_ARRIVED',
+  'PICKUP_VERIFIED',
+  'IN_TRANSIT',
 ];
 
 /** A request from the trip engine (server to server). */
@@ -132,6 +145,48 @@ export async function advanceTrip(
   for (const status of statuses) {
     await setTripStatus(ctx, tripId, status).expect(200);
   }
+}
+
+/** A drop of a booking priced per drop, as the trip engine reports it. */
+export function setStopStatus(
+  ctx: TestContext,
+  tripId: string,
+  sequence: number,
+  status: EngineStopStatus,
+  reason?: string,
+): request.Test {
+  return engine(ctx)
+    .post(`/v1/internal/trips/${tripId}/stops/${sequence}/status`)
+    .send(reason === undefined ? { status } : { status, reason });
+}
+
+/**
+ * Reaches and hands over each drop, in order. Each drop must be paid already (a pay-at-pickup
+ * booking is paid at the pickup); the last one moves the trip to DELIVERED.
+ */
+export async function deliverStops(
+  ctx: TestContext,
+  tripId: string,
+  sequences: readonly number[],
+): Promise<void> {
+  for (const sequence of sequences) {
+    await setStopStatus(ctx, tripId, sequence, 'ARRIVED').expect(200);
+    await setStopStatus(ctx, tripId, sequence, 'DELIVERED').expect(200);
+  }
+}
+
+/** An admin's decision on a failed delivery attempt. */
+export function resolveStop(
+  ctx: TestContext,
+  admin: { token: string },
+  bookingId: string,
+  sequence: number,
+  body: { resolution: StopResolution; reason: string },
+): request.Test {
+  return request(ctx.server)
+    .post(`/v1/admin/bookings/${bookingId}/stops/${sequence}/resolve`)
+    .set(bearer(admin.token))
+    .send(body);
 }
 
 /** Booking registered and assigned; the trip is at DRIVER_ASSIGNED. */

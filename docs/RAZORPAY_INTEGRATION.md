@@ -246,9 +246,28 @@ The engine (dispatch, stops, OTPs) reports what happens; this backend owns the m
    - Historical bookings (`paymentModel: LEGACY_BOOKING_LEVEL`, registered before quotes) show `quoteId: null` and `stops: []`.
 2. Optional: `POST /v1/internal/bookings/{id}/searching`.
 3. Driver accepts → `POST /v1/internal/bookings/{id}/assign` `{ driverSubject }` creates the trip.
-4. Each step → `POST /v1/internal/trips/{tripId}/status` `{ status }`, in this order: `DRIVER_ARRIVED`, `PICKUP_VERIFIED`, `IN_TRANSIT`, `DROP_PROGRESS`, `DELIVERED`, `COMPLETED`. Repeats are no-ops; skipping is `409 INVALID_TRIP_TRANSITION`.
+4. Each trip step → `POST /v1/internal/trips/{tripId}/status` `{ status }`, in this order: `DRIVER_ARRIVED`, `PICKUP_VERIFIED`, `IN_TRANSIT`, then `COMPLETED`. Repeats are no-ops; skipping is `409 INVALID_TRIP_TRANSITION`.
+   - **Pickup gate.** For a PAY_AT_PICKUP booking, read `paymentGate` once at DRIVER_ARRIVED and check the pickup OTP only when `handoverAllowed` is true. Until the booking is paid, `PICKUP_VERIFIED` (and anything later) is `409 PAYMENT_REQUIRED { stage: "PICKUP", amountPaise }`: refuse the OTP and commit nothing. This applies to historical bookings too.
+   - **Drops** (bookings with `stops`, i.e. priced per drop). After `IN_TRANSIT`, report each drop with `POST /v1/internal/trips/{tripId}/stops/{sequence}/status` `{ status: "ARRIVED" | "DELIVERED" | "DELIVERY_FAILED", reason? }`:
+     - Drops go in order, one at a time; ARRIVED on a failed drop is its retry.
+     - Read `paymentGate.handoverAllowed` before each drop OTP. DELIVERED on an unpaid pay-at-delivery drop is `409 PAYMENT_REQUIRED { stage: "DROP", stopSequence, amountPaise }`: keep the drop open.
+     - DELIVERY_FAILED needs a `reason` (3–200 characters), and only DELIVERY_FAILED takes one.
+     - Other errors: `404 STOP_NOT_FOUND`, `409 INVALID_STOP_TRANSITION { from, to, currentStop, tripStatus, reason }`, `409 BOOKING_CLOSED`.
+     - The trip follows its drops: `DROP_PROGRESS` when the first drop is reached, `DELIVERED` once every drop is delivered, undelivered or cancelled. Reporting those trip statuses yourself is `409 STOP_REQUIRED` / `409 STOPS_PENDING { pendingStops }`.
+     - A failed drop holds back the next one until it is retried or an admin resolves it (`POST /v1/admin/bookings/{id}/stops/{sequence}/resolve` `{ resolution: "RETRY" | "UNDELIVERED", reason }`).
+   - Historical bookings (`stops: []`) keep reporting `DROP_PROGRESS` and `DELIVERED` themselves.
 5. `PAYMENT_CONFIRMED` is set by this backend when the booking is paid and delivered. `COMPLETED` before that is `409 PAYMENT_REQUIRED`: the engine waits for payment and retries.
-6. Cancel → `POST /v1/internal/bookings/{id}/cancel` `{ reason }`. An open payment QR is closed at Razorpay.
+6. Cancel → `POST /v1/internal/bookings/{id}/cancel` `{ reason }`. An open payment QR is closed at Razorpay, and every drop not finished yet is cancelled.
+
+Every booking response carries `paymentGate`: `{ stage, stopSequence, paymentState, amountPaise, cashFeePaise, handoverAllowed, collectionId, lastFailure }`. `paymentState` is one of:
+- `NOT_REQUIRED`
+- `NOT_YET`
+- `PAYMENT_REQUIRED`
+- `PAYMENT_PROCESSING` (a QR is open)
+- `PAYMENT_FAILED` (the last QR expired)
+- `PAYMENT_CONFIRMED`
+
+It is derived on every read and never stored.
 
 `customerSubject` / `driverSubject` are Firebase UIDs of provisioned accounts (`npm run provision -- create-customer|create-driver`).
 

@@ -20,13 +20,17 @@ import {
   bookedTrip,
   changeBankAccount,
   collect,
+  deliverStops,
   engine,
   fundWallet,
   requestBankAccountChange,
+  resolveStop,
   sendPayoutWebhook,
+  setStopStatus,
   setTripStatus,
   startBookingPayment,
   TO_DELIVERED,
+  TO_IN_TRANSIT,
   verifyBookingPayment,
 } from '../helpers/flows';
 import { sendWebhook, startTopUp, verifyTopUp, walletBalance } from '../helpers/http';
@@ -212,14 +216,55 @@ describe('Least-privilege database role', () => {
     });
     expect(await owner.bookingStop.count({ where: { bookingId: pickup.bookingId } })).toBe(1);
     await advanceTrip(ctx, pickup.tripId, ['DRIVER_ARRIVED']);
+    // The pickup gate holds the unpaid trip at the pickup.
+    await setTripStatus(ctx, pickup.tripId, 'PICKUP_VERIFIED').expect(409);
     await collect(ctx, driver, pickup.tripId, { method: 'CASH', amountPaise: 40_000 }).expect(201);
-    await advanceTrip(ctx, pickup.tripId, [
-      'PICKUP_VERIFIED',
-      'IN_TRANSIT',
-      'DROP_PROGRESS',
-      'DELIVERED',
-    ]);
+    await advanceTrip(ctx, pickup.tripId, ['PICKUP_VERIFIED', 'IN_TRANSIT']);
+    // The drop moves the trip: DROP_PROGRESS, then DELIVERED and PAYMENT_CONFIRMED (paid).
+    await deliverStops(ctx, pickup.tripId, [1]);
     await setTripStatus(ctx, pickup.tripId, 'COMPLETED').expect(200);
+
+    // Pay at delivery, priced per drop: a failed attempt, an admin retry, a second failure
+    // resolved as undelivered (audited), then the booking cancelled, which cancels the other drop.
+    const perDrop = await bookedTrip(ctx, customer, driver, {
+      paymentMethod: 'PAY_AT_DELIVERY',
+      model: 'QUOTE_PER_STOP',
+      farePaise: 50_000,
+      dropPaise: [20_000, 30_000],
+      category,
+      owner,
+    });
+    await advanceTrip(ctx, perDrop.tripId, TO_IN_TRANSIT);
+    await setStopStatus(ctx, perDrop.tripId, 1, 'ARRIVED').expect(200);
+    await setStopStatus(ctx, perDrop.tripId, 1, 'DELIVERED').expect(409);
+    await setStopStatus(ctx, perDrop.tripId, 1, 'DELIVERY_FAILED', 'Receiver not at home').expect(
+      200,
+    );
+    await resolveStop(ctx, admin, perDrop.bookingId, 1, {
+      resolution: 'RETRY',
+      reason: 'Receiver is back',
+    }).expect(200);
+    await setStopStatus(ctx, perDrop.tripId, 1, 'DELIVERY_FAILED', 'Receiver refused').expect(200);
+    await resolveStop(ctx, admin, perDrop.bookingId, 1, {
+      resolution: 'UNDELIVERED',
+      reason: 'Customer agreed to skip this drop',
+    }).expect(200);
+    await engine(ctx)
+      .post(`/v1/internal/bookings/${perDrop.bookingId}/cancel`)
+      .send({ reason: 'Least privilege cancellation' })
+      .expect(200);
+    expect(
+      (
+        await owner.bookingStop.findMany({
+          where: { bookingId: perDrop.bookingId },
+          orderBy: { sequence: 'asc' },
+        })
+      ).map((stop) => stop.status),
+    ).toEqual(['UNDELIVERED', 'CANCELLED']);
+    await request(ctx.server)
+      .get(`/v1/admin/bookings/${perDrop.bookingId}`)
+      .set(bearer(admin.token))
+      .expect(200);
 
     // Historical (legacy) cash trip at delivery: wallet fee debit, completion, cash earning.
     const cash = await bookedTrip(ctx, customer, driver, {
@@ -489,13 +534,17 @@ describe('Least-privilege database role', () => {
     ['move a pricing version', 'UPDATE pricing_versions SET effective_from = now()'],
     ['delete pricing versions', 'DELETE FROM pricing_versions'],
     ['change a booking stop amount', 'UPDATE booking_stops SET payable_paise = 1'],
-    ['record a stop arrival', 'UPDATE booking_stops SET arrived_at = now()'],
-    ['resolve a failed stop', 'UPDATE booking_stops SET resolved_by_user_id = gen_random_uuid()'],
+    ['change a booking stop fee share', 'UPDATE booking_stops SET platform_fee_share_paise = 0'],
+    [
+      'move a booking stop to another booking',
+      'UPDATE booking_stops SET booking_id = gen_random_uuid()',
+    ],
+    // A drop's payment is confirmed only with per-drop collection (Phase 4): no grant yet.
+    ['confirm a drop payment', 'UPDATE booking_stops SET payment_confirmed_at = now()'],
     [
       'link a collection to a drop',
       'UPDATE payment_collections SET booking_stop_id = gen_random_uuid()',
     ],
-    ['move a booking stop', "UPDATE booking_stops SET status = 'DELIVERED'"],
     ['delete booking stops', 'DELETE FROM booking_stops'],
     ['change a booking fare snapshot', 'UPDATE bookings SET fare_paise = 1'],
     ['change a booking platform fee', 'UPDATE bookings SET platform_fee_paise = 0'],
@@ -519,12 +568,103 @@ describe('Least-privilege database role', () => {
     }
   });
 
+  // The stop lifecycle columns are granted (the API moves drops), so the database's own rules are
+  // what stops the API role from moving a drop or a trip out of order: the same guards as for the
+  // table owner (pickup-payment, delivery-stops).
+  it('moves drops and trips only through their lifecycle', async () => {
+    const customer = await createCustomer(deps);
+    const driver = await createDriver(deps);
+    const category = uniqueCategory();
+    await owner.feeRule.create({
+      data: {
+        category,
+        ruleType: 'PERCENTAGE',
+        value: '10',
+        roundingMode: 'HALF_UP',
+        effectiveFrom: new Date(Date.now() - 60_000),
+        reason: 'Least privilege lifecycle fee rule',
+      },
+    });
+    const pickup = await bookedTrip(ctx, customer, driver, {
+      paymentMethod: 'PAY_AT_PICKUP',
+      farePaise: 20_000,
+      category,
+      owner,
+    });
+    await advanceTrip(ctx, pickup.tripId, ['DRIVER_ARRIVED']);
+    const [stop] = await owner.bookingStop.findMany({ where: { bookingId: pickup.bookingId } });
+    if (!stop) {
+      throw new Error('expected a stop');
+    }
+    const admin = await createAdmin(deps);
+
+    const client = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: restrictedDatabaseUrl(), max: 1 }),
+    });
+    try {
+      for (const [statement, refusal] of [
+        [
+          Prisma.sql`UPDATE trips SET status = 'PICKUP_VERIFIED', pickup_verified_at = now()
+                      WHERE id = ${pickup.tripId}::uuid`,
+          /Payment is required before the pickup handover/,
+        ],
+        [
+          Prisma.sql`UPDATE booking_stops SET status = 'DELIVERED', delivered_at = now()
+                      WHERE id = ${stop.id}::uuid`,
+          /Invalid booking stop transition PENDING -> DELIVERED/,
+        ],
+        [
+          Prisma.sql`UPDATE booking_stops SET status = 'ARRIVED', arrived_at = now()
+                      WHERE id = ${stop.id}::uuid`,
+          /A drop is reached only while its trip is under way/,
+        ],
+        [
+          Prisma.sql`UPDATE booking_stops SET arrived_at = now() WHERE id = ${stop.id}::uuid`,
+          /arrival is recorded only when the drop is reached or retried/,
+        ],
+        [
+          Prisma.sql`UPDATE booking_stops SET resolved_at = now(),
+                        resolved_by_user_id = ${admin.userId}::uuid, resolution_reason = 'Skip'
+                      WHERE id = ${stop.id}::uuid`,
+          /resolution is recorded only when it is resolved as undelivered/,
+        ],
+        [
+          Prisma.sql`UPDATE booking_stops SET status = 'CANCELLED', cancelled_at = now()
+                      WHERE id = ${stop.id}::uuid`,
+          /A drop is cancelled only with its booking/,
+        ],
+        [
+          Prisma.sql`UPDATE booking_stops SET updated_at = now() WHERE id = ${stop.id}::uuid`,
+          /A booking stop changes only through a lifecycle transition/,
+        ],
+      ] as const) {
+        await expect(client.$executeRaw(statement)).rejects.toThrow(refusal);
+      }
+    } finally {
+      await client.$disconnect();
+    }
+    expect(await owner.bookingStop.findUniqueOrThrow({ where: { id: stop.id } })).toMatchObject({
+      status: 'PENDING',
+      arrivedAt: null,
+      deliveredAt: null,
+      resolvedAt: null,
+    });
+    expect((await owner.trip.findUniqueOrThrow({ where: { id: pickup.tripId } })).status).toBe(
+      'DRIVER_ARRIVED',
+    );
+  });
+
   // Turning a guard off is an ownership check, not a privilege check, so Postgres reports it
   // differently ("must be owner of table ..."). The API role owns no table.
   it.each([
     ['the booking insert guard', 'ALTER TABLE bookings DISABLE TRIGGER trg_bookings_insert_guard'],
     ['the booking terms guard', 'ALTER TABLE bookings DISABLE TRIGGER trg_bookings_guard'],
+    ['the trip guard and pickup gate', 'ALTER TABLE trips DISABLE TRIGGER trg_trips_guard'],
     ['the booking stop guard', 'ALTER TABLE booking_stops DISABLE TRIGGER trg_booking_stops_guard'],
+    [
+      'the undelivered-drop audit check',
+      'ALTER TABLE booking_stops DISABLE TRIGGER trg_booking_stops_resolution_audit',
+    ],
     [
       'the booking payment guard',
       'ALTER TABLE payments DISABLE TRIGGER trg_payments_booking_insert_guard',

@@ -1,15 +1,74 @@
 import { paiseToNumber } from '../common/money';
 import type { Booking, BookingStop, Trip } from '../generated/prisma/client';
 import type {
+  AdminBookingStopView,
   BookingStopView,
   CustomerBookingResponse,
+  CustomerPaymentGateView,
   DriverTripResponse,
   InternalBookingResponse,
+  PaymentGateView,
   TripResponse,
 } from './bookings.dto';
+import {
+  customerStopState,
+  type GateCollection,
+  isStopPaid,
+  type PaymentGate,
+  toCustomerPaymentGate,
+} from './payment-gate';
 import { DELIVERY_COLLECTION_WINDOW, PICKUP_COLLECTION_WINDOW } from './trip-lifecycle';
 
 const iso = (value: Date | null): string | null => (value ? value.toISOString() : null);
+const paiseOrNull = (value: bigint | null): number | null =>
+  value === null ? null : paiseToNumber(value);
+
+/** Everything the payment views of a booking need besides the booking and its trip. */
+export interface PaymentContext {
+  /** In delivery order; empty for a historical booking. */
+  readonly stops: readonly BookingStop[];
+  readonly collections: readonly GateCollection[];
+  /** The frozen fee, or the historical booking's pinned rule's fee. */
+  readonly platformFeePaise: bigint;
+  readonly gate: PaymentGate;
+}
+
+export function toPaymentGateView(gate: PaymentGate): PaymentGateView {
+  return {
+    stage: gate.stage,
+    stopSequence: gate.stopSequence,
+    paymentState: gate.paymentState,
+    amountPaise: paiseOrNull(gate.amountPaise),
+    cashFeePaise: paiseOrNull(gate.cashFeePaise),
+    handoverAllowed: gate.handoverAllowed,
+    collectionId: gate.collectionId,
+    lastFailure: gate.lastFailure,
+  };
+}
+
+export function toCustomerPaymentGateView(gate: PaymentGate): CustomerPaymentGateView {
+  const view = toCustomerPaymentGate(gate);
+  return { ...view, amountPaise: paiseOrNull(view.amountPaise) };
+}
+
+export function toAdminBookingStopView(stop: BookingStop): AdminBookingStopView {
+  return {
+    stopId: stop.id,
+    sequence: stop.sequence,
+    status: stop.status,
+    payablePaise: paiseToNumber(stop.payablePaise),
+    platformFeeSharePaise: paiseToNumber(stop.platformFeeSharePaise),
+    arrivedAt: iso(stop.arrivedAt),
+    paymentConfirmedAt: iso(stop.paymentConfirmedAt),
+    deliveredAt: iso(stop.deliveredAt),
+    failedAt: iso(stop.failedAt),
+    failureReason: stop.failureReason,
+    cancelledAt: iso(stop.cancelledAt),
+    resolvedAt: iso(stop.resolvedAt),
+    resolvedByUserId: stop.resolvedByUserId,
+    resolutionReason: stop.resolutionReason,
+  };
+}
 
 export function toTripResponse(trip: Trip): TripResponse {
   return {
@@ -39,11 +98,7 @@ export function toBookingStopView(stop: BookingStop): BookingStopView {
 export function toInternalBookingResponse(
   booking: Booking,
   trip: Trip | null,
-  extras: {
-    readonly paidWith: InternalBookingResponse['paidWith'];
-    readonly platformFeePaise: bigint;
-    readonly stops: readonly BookingStop[];
-  },
+  extras: PaymentContext & { readonly paidWith: InternalBookingResponse['paidWith'] },
 ): InternalBookingResponse {
   return {
     bookingId: booking.id,
@@ -61,6 +116,7 @@ export function toInternalBookingResponse(
     payablePaise: paiseToNumber(booking.finalFareMinor),
     platformFeePaise: paiseToNumber(extras.platformFeePaise),
     stops: [...extras.stops].sort((a, b) => a.sequence - b.sequence).map(toBookingStopView),
+    paymentGate: toPaymentGateView(extras.gate),
     vehicleCategory: booking.vehicleCategory,
     feeRuleId: booking.feeRuleId,
     confirmedAt: booking.confirmedAt.toISOString(),
@@ -74,6 +130,7 @@ export function toInternalBookingResponse(
 export function toCustomerBookingResponse(
   booking: Booking,
   trip: Trip | null,
+  context: PaymentContext,
 ): CustomerBookingResponse {
   return {
     bookingId: booking.id,
@@ -84,7 +141,21 @@ export function toCustomerBookingResponse(
     farePaise: paiseToNumber(booking.finalFareMinor),
     confirmedAt: booking.confirmedAt.toISOString(),
     tripStatus: trip ? trip.status : null,
+    stops: ordered(context.stops).map((stop) => ({
+      sequence: stop.sequence,
+      payablePaise: paiseToNumber(stop.payablePaise),
+      state: customerStopState(
+        booking.paymentMethod,
+        stop.status,
+        isStopPaid(booking, stop.id, context.collections),
+      ),
+    })),
+    paymentGate: toCustomerPaymentGateView(context.gate),
   };
+}
+
+function ordered(stops: readonly BookingStop[]): BookingStop[] {
+  return [...stops].sort((a, b) => a.sequence - b.sequence);
 }
 
 /** PICKUP or DELIVERY for pay-at-pickup / pay-at-delivery bookings (D-07: derived, not stored). */
@@ -117,8 +188,9 @@ export function isCollectionOpen(booking: Booking, trip: Trip): boolean {
 export function toDriverTripResponse(
   trip: Trip,
   booking: Booking,
-  feePaise: bigint,
+  context: PaymentContext,
 ): DriverTripResponse {
+  const feePaise = context.platformFeePaise;
   return {
     tripId: trip.id,
     bookingId: booking.id,
@@ -134,6 +206,13 @@ export function toDriverTripResponse(
       driverSharePaise: paiseToNumber(booking.finalFareMinor - feePaise),
       collectionStage: collectionStageOf(booking),
       collectionOpen: isCollectionOpen(booking, trip),
+      paymentGate: toPaymentGateView(context.gate),
+      stops: ordered(context.stops).map((stop) => ({
+        sequence: stop.sequence,
+        payablePaise: paiseToNumber(stop.payablePaise),
+        status: stop.status,
+        paid: isStopPaid(booking, stop.id, context.collections),
+      })),
     },
   };
 }

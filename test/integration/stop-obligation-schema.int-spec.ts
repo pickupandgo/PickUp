@@ -18,11 +18,12 @@ const ROLLED_BACK = 'rolled back on purpose';
 
 /**
  * The per-stop obligation schema (payment flow Phase 2, migration
- * 20261016120000_per_stop_obligation_schema). It only prepares the database: stops gain the facts
- * their lifecycle will record and collections can name the drop they are for, but stops still
- * can't change (Phase 3) and per-drop collection stays refused (Phase 4). Everything here is
- * checked from the table owner, so it holds even for a code path that forgot a rule; lifecycle
- * states are written with only the stop guard turned off, inside transactions that never commit.
+ * 20261016120000_per_stop_obligation_schema). It prepares the database: stops gain the facts
+ * their lifecycle records and collections can name the drop they are for, while per-drop
+ * collection stays refused (Phase 4). The stop lifecycle itself is Phase 3 (delivery-stops).
+ * Everything here is checked from the table owner, so it holds even for a code path that forgot a
+ * rule; lifecycle states are written with only the stop guard turned off, inside transactions that
+ * never commit, so the CHECKs are the only thing tested.
  */
 describe('Per-stop obligation schema', () => {
   let ctx: TestContext;
@@ -108,7 +109,7 @@ describe('Per-stop obligation schema', () => {
     ).rejects.toThrow(pattern);
   }
 
-  /** Stops can't change yet; only the stop guard is turned off, for this transaction. */
+  /** Only the stop guard (the lifecycle rules) is turned off, for this transaction. */
   const stopGuardOff = (tx: Prisma.TransactionClient) =>
     tx.$executeRaw`ALTER TABLE booking_stops DISABLE TRIGGER trg_booking_stops_guard`;
   const collectionGuardOff = (tx: Prisma.TransactionClient) =>
@@ -139,7 +140,7 @@ describe('Per-stop obligation schema', () => {
   }
 
   describe('booking stops', () => {
-    it('start PENDING with no lifecycle facts, and still cannot change', async () => {
+    it('start PENDING with no lifecycle facts, and move only through the stop lifecycle', async () => {
       const { stops } = await perStopBooking('PAY_AT_DELIVERY', [20_000, 30_000]);
       for (const stop of stops) {
         expect(stop).toMatchObject({
@@ -159,10 +160,11 @@ describe('Per-stop obligation schema', () => {
         stops.map((stop) => stop.id),
         0,
       );
+      // Phase 3's stop guard: the trip has not left the pickup, so no drop can be reached yet.
       await expect(
         ctx.prisma.$executeRaw`
           UPDATE booking_stops SET status = 'ARRIVED', arrived_at = now() WHERE id = ${first}::uuid`,
-      ).rejects.toThrow(/Booking stop lifecycle changes are not enabled yet/);
+      ).rejects.toThrow(/A drop is reached only while its trip is under way/);
     });
 
     // Constant SQL from the table below; no user input involved.

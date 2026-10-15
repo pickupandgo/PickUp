@@ -262,6 +262,48 @@ psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261016120000_
 psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261016120000_per_stop_obligation_schema';"
 ```
 
+### Payment gate and stop lifecycle (payment flow Phase 3)
+
+`20261017120000_payment_gate_stop_lifecycle` changes rules only: it adds no column and touches no row.
+
+- `guard_trip_change` gets the pickup gate: an unpaid PAY_AT_PICKUP trip can't leave DRIVER_ARRIVED, and a booking priced per drop can't start unpaid either. For bookings priced per drop it also allows DROP_PROGRESS only once a drop has been reached, and DELIVERED only once every drop is finished.
+- `guard_booking_stop_update` becomes the stop state machine:
+  - drops are reached in order, one at a time, only while the trip is under way
+  - a drop is handed over only once it is paid
+  - only an admin resolves a failed drop as undelivered
+  - drops are cancelled only with their booking
+  - each lifecycle fact is written only by its transition
+- New deferred trigger `trg_booking_stops_resolution_audit`: a drop resolved as undelivered needs its `admin_actions` record from the same transaction.
+
+Before migrating a database that holds data, the same rules as for Phase 1 apply (decision N1): run the preflight and have it reviewed, take a snapshot, rehearse with `npm run db:migration-check`, then deploy. The preflight now also lists:
+- unpaid PAY_AT_PICKUP trips waiting at DRIVER_ARRIVED: once migrated they must be paid before the handover, historical ones included (N2)
+- bookings priced per drop that are past the pickup: from now on the trip engine reports their drops
+- stops by status
+
+Deploy, then **re-run `02-app-grants.sql`**. Without it the API role can't move drops, and stop reports and admin resolutions fail with `permission denied`.
+
+Check after deploying:
+
+```sql
+SELECT count(*) FROM pg_trigger WHERE tgname = 'trg_booking_stops_resolution_audit';  -- 1
+SELECT count(*) FROM booking_stops WHERE status <> 'PENDING';                        -- 0 until a drop is reached
+```
+
+Connected as `mr_app`, these must still fail with `permission denied`. A drop's payment is confirmed only with per-drop collection (Phase 4):
+
+```sql
+UPDATE booking_stops SET payment_confirmed_at = now();
+UPDATE booking_stops SET payable_paise = 1;
+```
+
+**Rollback**, newest first. This `down.sql` drops no data and restores the previous trip and stop guards exactly. Roll the backend back to the previous release at the same time, and revoke the stop grant. Once a drop has moved, `20261016120000`'s `down.sql` refuses to run (lifecycle data).
+
+```bash
+psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261017120000_payment_gate_stop_lifecycle/down.sql
+psql "<mr_migrator url>" -c "REVOKE UPDATE ON booking_stops FROM mr_app;"
+psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261017120000_payment_gate_stop_lifecycle';"
+```
+
 ## Ongoing rules
 
 - **Schema changes:** only through new migration files. Re-run step 4 (migrate, then grants) on every release that adds one.

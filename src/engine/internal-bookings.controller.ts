@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Post,
   Res,
@@ -13,12 +14,14 @@ import { ApiExcludeController } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { InternalOnly } from '../auth/decorators';
+import { BookingStopsService } from '../bookings/booking-stops.service';
 import {
   AssignDriverRequest,
   CancelBookingRequest,
   EXTERNAL_REF_PATTERN,
   InternalBookingResponse,
   RegisterBookingRequest,
+  StopStatusRequest,
   TripStatusRequest,
 } from '../bookings/bookings.dto';
 import { toInternalBookingResponse } from '../bookings/bookings.mapper';
@@ -32,7 +35,9 @@ const uuid = new ParseUUIDPipe({ version: '4' });
 /**
  * Server-to-server API for the trip engine (dispatch and stop progression live there). The
  * engine reports what happens to a booking; this backend owns the money: confirmed fare, fee
- * rule, payment gate, collections, earnings. Authenticated with X-Internal-Api-Key.
+ * rule, payment gate, collections, earnings. Every booking view carries `paymentGate`, which the
+ * engine reads before the pickup OTP and before every drop OTP. Authenticated with
+ * X-Internal-Api-Key.
  */
 @ApiExcludeController()
 @InternalOnly()
@@ -41,6 +46,7 @@ const uuid = new ParseUUIDPipe({ version: '4' });
 export class InternalBookingsController {
   constructor(
     private readonly bookings: BookingsService,
+    private readonly stops: BookingStopsService,
     private readonly collections: CollectionsService,
   ) {}
 
@@ -111,6 +117,9 @@ export class InternalBookingsController {
   /**
    * Trip lifecycle update, strictly in M6 order. Repeats are no-ops. COMPLETED is refused with
    * PAYMENT_REQUIRED until the payment is confirmed, and creates the driver earning.
+   * PICKUP_VERIFIED of an unpaid PAY_AT_PICKUP booking is refused with PAYMENT_REQUIRED (pickup
+   * gate). A booking priced per drop moves through its drops instead: DROP_PROGRESS is refused
+   * with STOP_REQUIRED, DELIVERED with STOPS_PENDING until every drop is finished.
    */
   @Post('trips/:tripId/status')
   @HttpCode(HttpStatus.OK)
@@ -121,16 +130,47 @@ export class InternalBookingsController {
     return this.view(await this.bookings.updateTripStatus(tripId, body.status));
   }
 
+  /**
+   * A drop of a booking priced per drop: ARRIVED (also the retry of a failed attempt), DELIVERED
+   * (refused with PAYMENT_REQUIRED until what is owed for the drop is paid) or DELIVERY_FAILED
+   * (with a reason). Drops are handled in order, one at a time. Repeats are no-ops.
+   */
+  @Post('trips/:tripId/stops/:sequence/status')
+  @HttpCode(HttpStatus.OK)
+  async stopStatus(
+    @Param('tripId', uuid) tripId: string,
+    @Param('sequence', ParseIntPipe) sequence: number,
+    @Body() body: StopStatusRequest,
+  ): Promise<InternalBookingResponse> {
+    const failure = body.status === 'DELIVERY_FAILED';
+    if (failure !== (body.reason !== undefined)) {
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        HttpStatus.BAD_REQUEST,
+        'Request validation failed',
+        {
+          fields: [
+            {
+              field: 'reason',
+              issues: [
+                failure
+                  ? 'reason is required for DELIVERY_FAILED'
+                  : 'reason is only accepted with DELIVERY_FAILED',
+              ],
+            },
+          ],
+        },
+      );
+    }
+    const result = await this.stops.report(tripId, sequence, body.status, body.reason ?? null);
+    return this.view(result);
+  }
+
   private async view(result: BookingWithTrip): Promise<InternalBookingResponse> {
-    const [paidWith, platformFeePaise, stops] = await Promise.all([
+    const [paidWith, context] = await Promise.all([
       this.bookings.paidWith(result.booking),
-      this.bookings.feeFor(result.booking),
-      this.bookings.stopsOf(result.booking.id),
+      this.bookings.paymentContext(result.booking, result.trip),
     ]);
-    return toInternalBookingResponse(result.booking, result.trip, {
-      paidWith,
-      platformFeePaise,
-      stops,
-    });
+    return toInternalBookingResponse(result.booking, result.trip, { ...context, paidWith });
   }
 }

@@ -1,11 +1,11 @@
-import type { Booking, Trip } from '../generated/prisma/client';
+import type { Booking, BookingStop, Trip } from '../generated/prisma/client';
 import type { Tx } from '../prisma/prisma.service';
 
 /**
  * Row locks for booking-level money movements. Every code path takes them in the same order
- * (PW 3.3, D-07):
+ * (PW 3.3, D-07, payment flow review J):
  *
- *   booking -> trip -> driver wallet -> payment / collection / earning -> payout rows
+ *   booking -> trip -> stops -> driver wallet -> payment / collection / earning -> payout rows
  *
  * Each helper locks with SELECT ... FOR UPDATE, then reads the typed row; the lock is held until
  * the caller's transaction ends.
@@ -28,4 +28,14 @@ export async function lockTripOfBooking(tx: Tx, bookingId: string): Promise<Trip
     return null;
   }
   return tx.trip.findUniqueOrThrow({ where: { id: row.id } });
+}
+
+/**
+ * Locks the booking's stops in delivery order and returns them (none for a historical booking).
+ * Call after lockTripOfBooking.
+ */
+export async function lockStopsOfBooking(tx: Tx, bookingId: string): Promise<BookingStop[]> {
+  await tx.$queryRaw`
+    SELECT id FROM booking_stops WHERE booking_id = ${bookingId}::uuid ORDER BY sequence FOR UPDATE`;
+  return tx.bookingStop.findMany({ where: { bookingId }, orderBy: { sequence: 'asc' } });
 }

@@ -501,7 +501,7 @@ async function main() {
     return { bankAccountId, changeRequestId, providerValidationId: favId, nameMatch: 'MATCH' };
   });
 
-  await step('1a', 'New bookings: server fare quote, registered from the quote, PREPAID_UPI refused', async () => {
+  await step('1a', 'New bookings: server fare quote, registered from the quote, PREPAID_UPI refused, unpaid pickup handover refused', async () => {
     const route = {
       pickup: { latitude: 26.2389, longitude: 73.0243 },
       drops: [
@@ -557,8 +557,34 @@ async function main() {
       confirmedFarePaise: 1,
     }, [400]);
     check(engineFare.body.error.code === 'VALIDATION_FAILED', 'the engine cannot send a fare');
+
+    // Pickup gate (payment flow Phase 3): at the pickup the payment is required first; the
+    // handover and the start are refused until the booking is paid.
+    const assigned = await engine('POST', `/v1/internal/bookings/${registered.body.bookingId}/assign`, {
+      driverSubject: subjects.driver,
+    }, [200]);
+    const pickupTripId = assigned.body.trip.tripId;
+    const arrived = await engine('POST', `/v1/internal/trips/${pickupTripId}/status`, { status: 'DRIVER_ARRIVED' }, [200]);
+    const gate = arrived.body.paymentGate;
+    check(
+      gate.stage === 'PICKUP' && gate.paymentState === 'PAYMENT_REQUIRED' && gate.amountPaise === quote.payablePaise && !gate.handoverAllowed,
+      'payment required at the pickup, handover not allowed',
+    );
+    const handover = await engine('POST', `/v1/internal/trips/${pickupTripId}/status`, { status: 'PICKUP_VERIFIED' }, [409]);
+    check(
+      handover.body.error.code === 'PAYMENT_REQUIRED' && handover.body.error.details.stage === 'PICKUP',
+      'an unpaid pickup handover is refused',
+    );
+    const start = await engine('POST', `/v1/internal/trips/${pickupTripId}/status`, { status: 'IN_TRANSIT' }, [409]);
+    check(start.body.error.code === 'PAYMENT_REQUIRED', 'an unpaid trip cannot start');
     report.ids.pickupBookingId = registered.body.bookingId;
-    return { quoteId: quote.quoteId, bookingId: registered.body.bookingId, payablePaise: quote.payablePaise };
+    report.ids.pickupTripId = pickupTripId;
+    return {
+      quoteId: quote.quoteId,
+      bookingId: registered.body.bookingId,
+      payablePaise: quote.payablePaise,
+      paymentGate: gate,
+    };
   });
 
   await step(1, 'Payment created (historical prepaid booking): driver assigned, Razorpay order created', async () => {

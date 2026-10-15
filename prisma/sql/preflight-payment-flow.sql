@@ -1,7 +1,7 @@
 -- Read-only inventory before the PAY AT PICKUP / per-drop PAY AT DELIVERY migrations
--- (20261015120000_booking_quote_snapshot, 20261016120000_per_stop_obligation_schema, and later
--- payment-flow migrations). Run it in every environment that holds data, and review the output
--- before migrating:
+-- (20261015120000_booking_quote_snapshot, 20261016120000_per_stop_obligation_schema,
+-- 20261017120000_payment_gate_stop_lifecycle, and later payment-flow migrations). Run it in every
+-- environment that holds data, and review the output before migrating:
 --   psql "$DATABASE_URL" -f prisma/sql/preflight-payment-flow.sql
 -- It only SELECTs; the transaction is READ ONLY so it cannot change anything by mistake. Every
 -- query works at any schema level: columns and tables a migration adds show as NULL / false
@@ -89,5 +89,28 @@ SELECT to_regclass('public.booking_stops') IS NOT NULL AS booking_stops_present,
                      'SELECT count(*) AS n FROM payment_collections WHERE booking_stop_id IS NOT NULL',
                      false, true, '')))[1]::text::bigint
        END AS collections_for_one_drop;
+
+\echo '== Held at the pickup by the pickup gate (20261017120000): unpaid PAY_AT_PICKUP trips at DRIVER_ARRIVED, every model (NULL: before 20261015120000) =='
+SELECT to_jsonb(b) ->> 'payment_model' AS payment_model, count(*) AS bookings
+FROM bookings b JOIN trips t ON t.booking_id = b.id
+WHERE b.payment_method = 'PAY_AT_PICKUP' AND b.payment_status = 'UNPAID'
+  AND b.status NOT IN ('COMPLETED', 'CANCELLED') AND t.status = 'DRIVER_ARRIVED'
+GROUP BY 1 ORDER BY 1 NULLS FIRST;
+
+\echo '== Bookings priced per drop past the pickup: after 20261017120000 their trip moves through its drops, reported per drop =='
+SELECT b.payment_method, b.payment_status, t.status AS trip_status, count(*) AS bookings
+FROM bookings b JOIN trips t ON t.booking_id = b.id
+WHERE to_jsonb(b) ->> 'payment_model' = 'QUOTE_PER_STOP'
+  AND b.status NOT IN ('COMPLETED', 'CANCELLED')
+  AND t.status IN ('PICKUP_VERIFIED', 'IN_TRANSIT', 'DROP_PROGRESS', 'DELIVERED', 'PAYMENT_CONFIRMED')
+GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;
+
+\echo '== Booking stops by status (NULL: before the migration that adds them) =='
+SELECT CASE WHEN to_regclass('public.booking_stops') IS NULL THEN NULL
+            ELSE (xpath('/row/s/text()', query_to_xml(
+                     'SELECT COALESCE(string_agg(status || ''='' || n, '', '' ORDER BY status), ''(none)'') AS s
+                        FROM (SELECT status::text AS status, count(*) AS n FROM booking_stops GROUP BY 1) per_status',
+                     false, true, '')))[1]::text
+       END AS stops_by_status;
 
 ROLLBACK;

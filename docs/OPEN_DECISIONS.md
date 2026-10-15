@@ -550,7 +550,7 @@ Raj approved the architecture in [PAYMENT_FLOW_FINAL_REVIEW.md](./PAYMENT_FLOW_F
 | **New bookings are priced from a quote.** | `QUOTE_PER_STOP`. Registration redeems the quote once (unexpired, same customer) and freezes its fare, tax, payable amount, pricing version and the fee of the rule in effect, plus one `booking_stops` row per quoted drop with that drop's payable amount and its share of the fee. The database checks that the booking copies the quote and was redeemed for it at confirmation, that the fee is the pinned rule's fee, and (at commit) that the stops add up to the booking. None of it can change afterwards, even for the table owner. |
 | **PREPAID_UPI is not offered to new bookings (N4).** | Registration answers `422 PAYMENT_METHOD_NOT_OFFERED`; the database refuses the row (insert guard and a CHECK). |
 | **Historical PREPAID_UPI bookings keep Checkout, and only they do (N4).** | Start, verify, the webhook and the admin sync apply a booking payment only to a `LEGACY_BOOKING_LEVEL` + `PREPAID_UPI` booking. The code checks it at start and verify, before capturing an authorized payment, and in the finalizer (`BOOKING_NOT_PAYABLE` otherwise, logged as a payment anomaly). The database refuses a booking payment row for any other booking. Ownership and signature checks are unchanged. |
-| **Pickup gate also for legacy PAY_AT_PICKUP bookings (N2).** | Phase 3, not built yet. |
+| **Pickup gate also for legacy PAY_AT_PICKUP bookings (N2).** | Done in Phase 3 (below). |
 | **Completion with undelivered drops (N5).** | Phases 4–5, not built yet. The financial treatment stays open. |
 | **Failed payout → ON_HOLD, explicit release (N10).** | Phase 7, not built yet. |
 | **Removing the legacy code (L-22).** | Open. Only after no environment has unfinished legacy bookings. |
@@ -592,3 +592,43 @@ Raj approved and locked Phase 1, then asked for Phase 2 only. Migration `2026101
 | Failure and resolution reasons are 3–200 characters after trimming, the same rule as a booking cancellation reason and the approved stop API (review D) | CHECK `booking_stops_reasons_not_blank`, `VARCHAR(200)` | none; Phase 3 validates it in the API too |
 | No ordering between the stop timestamps in the database | — | Phase 3: a retry after a failed attempt records a later arrival. Whether a retry keeps the earlier failure facts is also Phase 3's choice; the CHECKs allow both. |
 | A booking's collections are all for the whole booking or all per drop | `guard_collection_insert` | implementation detail; keeps the old one-live-collection rule for every existing obligation |
+
+### Phase 3: payment gate and stop lifecycle
+
+Raj approved and locked Phase 2, then asked for Phase 3 only. Phase 3 adds migration `20261017120000_payment_gate_stop_lifecycle` (it changes rules only: no new column, no row touched) and the code that enforces the same rules. Upgrade steps: [DATABASE_SETUP.md](./DATABASE_SETUP.md#payment-gate-and-stop-lifecycle-payment-flow-phase-3).
+
+| Requirement | Implementation |
+|---|---|
+| **PAY_AT_PICKUP is paid before the pickup handover, for every booking model (N2).** | An unpaid trip at DRIVER_ARRIVED gets `409 PAYMENT_REQUIRED { stage: PICKUP, amountPaise }` for PICKUP_VERIFIED or anything later. A booking priced per drop can't start (IN_TRANSIT) unpaid either. `guard_trip_change` refuses the same moves for every role, the table owner included. A historical trip that passed the pickup unpaid before this phase carries on, and its collection window is unchanged. |
+| **paymentGate.** | Derived on every read, never stored, following the approved derivation table (review E). The engine view is on every internal booking response and the driver view on `/v1/trips`. The customer view, without ids or the fee, is on `/v1/bookings/:id`. |
+| **Stop state machine, current drop.** | `POST /v1/internal/trips/:tripId/stops/:sequence/status` takes ARRIVED (also the retry of a failed attempt), DELIVERED, or DELIVERY_FAILED with a reason. Drops are reached in order, only while the trip is under way, with at most one current drop. Repeats are no-ops. `guard_booking_stop_update` enforces the same rules, writes each fact only with its transition, and refuses any change that isn't a transition. `uq_booking_stops_current` backs the one-current-drop rule. |
+| **PAY_AT_DELIVERY: a drop is handed over only once it is paid.** | DELIVERED needs the drop to be PAYMENT_CONFIRMED, and the database allows that only with a COMPLETED collection for that drop. Otherwise the answer is `409 PAYMENT_REQUIRED { stage: DROP, stopSequence, amountPaise }`. Nothing in Phase 3 confirms a drop's payment: the API role has no grant on `payment_confirmed_at`, and per-drop collection is Phase 4. |
+| **Trip DROP_PROGRESS and DELIVERED for bookings priced per drop.** | The backend sets DROP_PROGRESS when the first drop is reached, and DELIVERED when every drop is delivered, undelivered or cancelled (then PAYMENT_CONFIRMED straight away if the booking is paid). An engine report of DROP_PROGRESS gets `409 STOP_REQUIRED`, and DELIVERED gets `409 STOPS_PENDING { pendingStops }` (a no-op once reached). The database enforces both. |
+| **Admin stop resolution.** | `POST /v1/admin/bookings/:id/stops/:sequence/resolve { resolution: RETRY \| UNDELIVERED, reason }` writes BOOKING_STOP_RETRY or BOOKING_STOP_UNDELIVERED to `admin_actions` in the same transaction. The database requires an active ADMIN as the resolver and, at commit, the UNDELIVERED audit record from that same transaction. |
+| **Cancellation.** | Cancelling a booking cancels its unfinished drops. Delivered and undelivered drops keep their outcome, and nothing moves afterwards. |
+| **Historical bookings keep their behaviour.** | Apart from N2: no stops, the engine-reported trip order, and the whole-booking collection after delivery. The migration check shows every row unchanged on four databases with data. On dev, every row is identical, `TAB-QR-001` included. |
+| **Least privilege.** | The API role gets UPDATE on the stop lifecycle columns only: status, arrival, delivery, failure, cancellation, resolution and `updated_at`. Amounts, references and `payment_confirmed_at` stay ungranted. The database's guards apply to the API role exactly as to the owner. |
+| **Non-local databases (N1).** | Still blocked until their preflight has been run and reviewed. Phase 3 is applied to the local dev database only, after its preflight was reviewed. |
+
+**Consequences of the approved rules (technical, not policy).**
+- A failed drop holds back the next one until it is retried or an admin resolves it: a drop is reached only once every earlier drop is finished.
+- A PAY_AT_DELIVERY booking priced per drop can't be paid until Phase 4, so its drops can't be delivered yet. The restriction above still applies: don't take real PAY_AT_DELIVERY bookings before Phase 4.
+- A trip whose drops all ended undelivered is DELIVERED but can't complete, because nothing was collected. An admin cancels it (N5).
+
+**Not in Phase 3.**
+- Phase 4: cash and QR collection per drop, the finalizer confirming a drop's payment, `PARTIALLY_PAID`, and fee debits per collection.
+- Phase 5: MIXED earnings and payout changes.
+- Phase 6: refunds.
+
+**Technical defaults introduced in Phase 3.** None is a business decision.
+
+| Default | Where | Decision it waits for |
+|---|---|---|
+| A retry records a new arrival time and keeps the last failure (time and reason); a second failure replaces it | stop guard, `BookingStopsService` | none (settles the Phase 2 open point) |
+| A repeated admin RETRY or UNDELIVERED changes nothing and writes no second audit record | admin API | none |
+| An admin's resolution reason is 3–200 characters, like a failure reason | DTO, CHECK `booking_stops_reasons_not_blank` | none |
+| The engine sends a reason only with DELIVERY_FAILED; anything else with a reason is `400` | internal API | none |
+| Gate for a failed drop: handover not allowed; NOT_YET while unpaid, PAYMENT_CONFIRMED if paid | `payment-gate.ts` | none |
+| Customers see a failed attempt that may still be retried as ARRIVED (or PAID), and NOT_DELIVERED only once an admin resolved it | `payment-gate.ts` | none |
+| Gate for historical PREPAID_UPI bookings: reports the in-app payment; their handovers stay ungated, as before | `payment-gate.ts` | L-22 |
+| The IN_TRANSIT payment check applies to bookings priced per drop only, so historical trips already past the pickup unpaid can carry on | `guard_trip_change` | N2 covers leaving DRIVER_ARRIVED only |

@@ -6,7 +6,7 @@ import { CustomerBookingResponse } from './bookings.dto';
 import { toCustomerBookingResponse } from './bookings.mapper';
 import { BookingsService } from './bookings.service';
 
-/** The signed-in customer's own bookings (payment view). */
+/** The signed-in customer's own bookings (payment view, with each drop and the payment gate). */
 @ApiTags('bookings')
 @CustomerOnly()
 @Controller({ path: 'bookings', version: '1' })
@@ -19,6 +19,10 @@ export class CustomerBookingsController {
     @Param('bookingId', new ParseUUIDPipe({ version: '4' })) bookingId: string,
   ): Promise<CustomerBookingResponse> {
     const { booking, trip } = await this.bookings.getForCustomer(principal, bookingId);
-    return toCustomerBookingResponse(booking, trip);
+    return toCustomerBookingResponse(
+      booking,
+      trip,
+      await this.bookings.paymentContext(booking, trip),
+    );
   }
 }

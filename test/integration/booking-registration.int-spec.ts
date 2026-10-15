@@ -19,8 +19,9 @@ import {
   assignDriver,
   collect,
   engine,
+  setStopStatus,
   setTripStatus,
-  TO_DELIVERED,
+  TO_IN_TRANSIT,
 } from '../helpers/flows';
 import { createTestApp, type TestContext } from '../helpers/test-app';
 
@@ -435,7 +436,9 @@ describe('Booking registration from fare quotes', () => {
       ).expect(201);
       const bookingId = booked.body.bookingId as string;
       const tripId = await assignDriver(ctx, bookingId, driver);
-      await advanceTrip(ctx, tripId, TO_DELIVERED);
+      // Delivered drop by drop: the driver is at the first drop, which is owed now.
+      await advanceTrip(ctx, tripId, TO_IN_TRANSIT);
+      await setStopStatus(ctx, tripId, 1, 'ARRIVED').expect(200);
 
       // The driver app is never offered a collection the API would refuse.
       const view = await request(ctx.server)
@@ -445,6 +448,13 @@ describe('Booking registration from fare quotes', () => {
       expect(view.body.payment).toMatchObject({
         collectionStage: 'DELIVERY',
         collectionOpen: false,
+        paymentGate: {
+          stage: 'DROP',
+          stopSequence: 1,
+          paymentState: 'PAYMENT_REQUIRED',
+          amountPaise: 20_000,
+          handoverAllowed: false,
+        },
       });
 
       for (const method of ['CASH', 'ONLINE_QR'] as const) {
@@ -458,7 +468,12 @@ describe('Booking registration from fare quotes', () => {
       expect([...ctx.links.links.values()].filter((link) => link.bookingId === bookingId)).toEqual(
         [],
       );
-      // Still unpaid, so the payment gate keeps it from completing.
+      // Still unpaid: the drop can't be handed over, and the trip can't complete.
+      const handover = await setStopStatus(ctx, tripId, 1, 'DELIVERED').expect(409);
+      expect(handover.body.error).toMatchObject({
+        code: 'PAYMENT_REQUIRED',
+        details: { stage: 'DROP', stopSequence: 1, amountPaise: 20_000 },
+      });
       const gate = await setTripStatus(ctx, tripId, 'COMPLETED').expect(409);
       expect(gate.body.error.code).toBe('PAYMENT_REQUIRED');
 
@@ -884,14 +899,16 @@ describe('Booking registration from fare quotes', () => {
       ]) {
         await expect(update).rejects.toThrow(/Booking stop amounts and references are immutable/);
       }
-      for (const update of [
+      // A stop moves only through its lifecycle (payment flow Phase 3): never on an unassigned
+      // booking, and never without a transition.
+      await expect(
         ctx.prisma
           .$executeRaw`UPDATE booking_stops SET status = 'DELIVERED' WHERE booking_id = ${id}::uuid`,
+      ).rejects.toThrow(/The drops of a closed or unassigned booking cannot move/);
+      await expect(
         ctx.prisma
           .$executeRaw`UPDATE booking_stops SET updated_at = now() WHERE booking_id = ${id}::uuid`,
-      ]) {
-        await expect(update).rejects.toThrow(/Booking stop lifecycle changes are not enabled yet/);
-      }
+      ).rejects.toThrow(/A booking stop changes only through a lifecycle transition/);
       await expect(
         ctx.prisma.$executeRaw`DELETE FROM booking_stops WHERE booking_id = ${id}::uuid`,
       ).rejects.toThrow(/booking_stops rows are permanent financial records and cannot be deleted/);

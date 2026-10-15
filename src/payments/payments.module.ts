@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { BookingsModule } from '../bookings/bookings.module';
 import { CollectionsModule } from '../collections/collections.module';
 import { EarningsModule } from '../earnings/earnings.module';
 import { RazorpayModule } from '../razorpay/razorpay.module';
@@ -19,7 +20,15 @@ import { TopUpService } from './top-up.service';
 import { WalletTopUpsController } from './wallet-topups.controller';
 
 @Module({
-  imports: [RazorpayModule, WalletModule, CollectionsModule, EarningsModule, SettlementsModule],
+  imports: [
+    RazorpayModule,
+    WalletModule,
+    CollectionsModule,
+    EarningsModule,
+    SettlementsModule,
+    // The customer booking view (with its payment gate) on the prepaid payment routes.
+    BookingsModule,
+  ],
   controllers: [
     WalletTopUpsController,
     BookingPaymentsController,

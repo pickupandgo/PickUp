@@ -1,5 +1,12 @@
 import { Transform } from 'class-transformer';
 import { IsIn, IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
+import type { CustomerStopState, GatePaymentState, GateStage } from './payment-gate';
+import {
+  ENGINE_STOP_STATUSES,
+  type EngineStopStatus,
+  STOP_RESOLUTIONS,
+  type StopResolution,
+} from './stop-lifecycle';
 import { ENGINE_TRIP_STATUSES, type EngineTripStatus } from './trip-lifecycle';
 
 /**
@@ -66,6 +73,36 @@ export class CancelBookingRequest {
   reason!: string;
 }
 
+/** A drop of a booking priced per drop, reported by the trip engine. */
+export class StopStatusRequest {
+  /**
+   * ARRIVED (reached; also the retry of a failed attempt), DELIVERED or DELIVERY_FAILED.
+   * PAYMENT_CONFIRMED is set by this backend when the drop is paid, never by the engine.
+   */
+  @IsIn(ENGINE_STOP_STATUSES)
+  status!: EngineStopStatus;
+
+  /** Why the delivery failed (3-200 characters). Required for DELIVERY_FAILED, refused otherwise. */
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Length(3, 200)
+  reason?: string;
+}
+
+/** An admin's decision on a failed delivery attempt. */
+export class ResolveStopRequest {
+  /** RETRY: the drop is attempted again. UNDELIVERED: the drop is closed without delivery. */
+  @IsIn(STOP_RESOLUTIONS)
+  resolution!: StopResolution;
+
+  /** Why (3-200 characters). Stored on the drop and in the audit trail. */
+  @Transform(trim)
+  @IsString()
+  @Length(3, 200)
+  reason!: string;
+}
+
 export class ListTripsQuery {
   /** "true" to list only trips that are still running. */
   @IsOptional()
@@ -95,6 +132,79 @@ export class BookingStopView {
   status!: string;
 }
 
+/**
+ * What must be paid at the handover point the trip is at now, and whether the goods may be
+ * handed over (pickup OTP / drop OTP). Derived on every read; the backend enforces it.
+ */
+export class PaymentGateView {
+  /** PICKUP, DROP, or null when nothing is owed anywhere now. */
+  stage!: GateStage | null;
+  /** The drop concerned (bookings priced per drop). */
+  stopSequence!: number | null;
+  paymentState!: GatePaymentState;
+  /** What is owed at this point, in paise. */
+  amountPaise!: number | null;
+  /** The platform fee debited from the driver's wallet if this is paid in cash. */
+  cashFeePaise!: number | null;
+  /** True when the goods may be handed over now. */
+  handoverAllowed!: boolean;
+  /** The collection behind paymentState (open, completed, or the last failed one). */
+  collectionId!: string | null;
+  /** Why the last collection attempt failed. */
+  lastFailure!: string | null;
+}
+
+/** The customer's view of the payment gate: no ids, no fee. */
+export class CustomerPaymentGateView {
+  stage!: GateStage | null;
+  stopSequence!: number | null;
+  paymentState!: GatePaymentState;
+  amountPaise!: number | null;
+  handoverAllowed!: boolean;
+}
+
+export class DriverStopView {
+  sequence!: number;
+  payablePaise!: number;
+  status!: string;
+  /** What is owed for this drop is paid (the booking at pickup, or the drop itself). */
+  paid!: boolean;
+}
+
+export class CustomerStopView {
+  sequence!: number;
+  payablePaise!: number;
+  state!: CustomerStopState;
+}
+
+/** A drop with every lifecycle fact, for admins. */
+export class AdminBookingStopView {
+  stopId!: string;
+  sequence!: number;
+  status!: string;
+  payablePaise!: number;
+  platformFeeSharePaise!: number;
+  arrivedAt!: string | null;
+  paymentConfirmedAt!: string | null;
+  deliveredAt!: string | null;
+  failedAt!: string | null;
+  failureReason!: string | null;
+  cancelledAt!: string | null;
+  resolvedAt!: string | null;
+  resolvedByUserId!: string | null;
+  resolutionReason!: string | null;
+}
+
+export class AdminStopResolutionResponse {
+  bookingId!: string;
+  bookingStatus!: string;
+  paymentStatus!: string;
+  tripStatus!: string | null;
+  /** False when the drop was already in the requested state (repeat). */
+  changed!: boolean;
+  stop!: AdminBookingStopView;
+}
+
 export class InternalBookingResponse {
   bookingId!: string;
   externalRef!: string;
@@ -118,6 +228,8 @@ export class InternalBookingResponse {
   platformFeePaise!: number;
   /** One per drop, in delivery order. Empty for historical bookings. */
   stops!: BookingStopView[];
+  /** Read before the pickup OTP and before every drop OTP. */
+  paymentGate!: PaymentGateView;
   vehicleCategory!: string | null;
   feeRuleId!: string;
   confirmedAt!: string;
@@ -137,6 +249,9 @@ export class CustomerBookingResponse {
   farePaise!: number;
   confirmedAt!: string;
   tripStatus!: string | null;
+  /** One per drop, in delivery order. Empty for historical bookings. */
+  stops!: CustomerStopView[];
+  paymentGate!: CustomerPaymentGateView;
 }
 
 export class TripPaymentView {
@@ -151,6 +266,10 @@ export class TripPaymentView {
   collectionStage!: 'PICKUP' | 'DELIVERY' | null;
   /** True when the driver can record cash or show a QR right now. */
   collectionOpen!: boolean;
+  /** Whether the goods may be handed over now, and what is owed first. */
+  paymentGate!: PaymentGateView;
+  /** One per drop, in delivery order. Empty for historical bookings. */
+  stops!: DriverStopView[];
 }
 
 export class DriverTripResponse {

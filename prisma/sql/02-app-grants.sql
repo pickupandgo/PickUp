@@ -123,9 +123,14 @@ GRANT SELECT, INSERT ON fare_quotes TO mr_app;
 GRANT UPDATE (redeemed_at) ON fare_quotes TO mr_app;
 GRANT SELECT, INSERT ON fare_quote_stops TO mr_app;
 
--- Booking stops: written once at registration with amounts copied from the quote (triggers). No
--- UPDATE grant until the stop lifecycle is enabled; the amounts never change.
+-- Booking stops: written once at registration with amounts copied from the quote (triggers); the
+-- amounts never change (no column grant). The stop lifecycle writes the status and the facts of
+-- each transition; guard_booking_stop_update checks every move. Confirming a drop's payment
+-- (payment_confirmed_at) is not granted: it comes with per-drop collection (payment flow Phase 4).
 GRANT SELECT, INSERT ON booking_stops TO mr_app;
+GRANT UPDATE (status, arrived_at, delivered_at, failed_at, failure_reason, cancelled_at,
+              resolved_at, resolved_by_user_id, resolution_reason, updated_at)
+    ON booking_stops TO mr_app;
 
 -- Admin audit trail: append-only (a trigger also blocks UPDATE, DELETE and TRUNCATE).
 GRANT SELECT, INSERT ON admin_actions TO mr_app;

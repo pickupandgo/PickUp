@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { toAdminBookingStopView } from '../bookings/bookings.mapper';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import { paiseToNumber } from '../common/money';
@@ -24,6 +25,7 @@ export class BookingChainService {
       include: {
         feeRule: true,
         trip: true,
+        stops: { orderBy: { sequence: 'asc' } },
         payments: { orderBy: { createdAt: 'asc' } },
         collections: { orderBy: { createdAt: 'asc' }, include: { walletTransaction: true } },
         disputes: true,
@@ -53,6 +55,7 @@ export class BookingChainService {
         status: booking.status,
         paymentMethod: booking.paymentMethod,
         paymentStatus: booking.paymentStatus,
+        paymentModel: booking.paymentModel,
         confirmedFarePaise: paiseToNumber(booking.fareEstimateMinor),
         finalFarePaise: paiseToNumber(booking.finalFareMinor),
         confirmedAt: booking.confirmedAt.toISOString(),
@@ -76,6 +79,8 @@ export class BookingChainService {
             completedAt: iso(booking.trip.completedAt),
           }
         : null,
+      /** Each drop with every lifecycle fact (bookings priced per drop; none for historical ones). */
+      stops: booking.stops.map(toAdminBookingStopView),
       customerPayments: booking.payments.map((payment) => ({
         paymentId: payment.id,
         status: payment.status,

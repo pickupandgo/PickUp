@@ -5,20 +5,26 @@ import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import { Clock } from '../common/clock';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
+import { paiseToNumber } from '../common/money';
 import { EarningsService } from '../earnings/earnings.service';
 import { type FrozenFare, FareQuoteRedeemer } from '../fare/fare-contract';
 import { FeeRulesService } from '../fees/fee-rules.service';
-import type { Booking, BookingStop, DriverEarning, Prisma, Trip } from '../generated/prisma/client';
+import type { Booking, BookingStop, DriverEarning, Trip } from '../generated/prisma/client';
 import type { BookingPaymentMethod, TripStatus } from '../generated/prisma/enums';
 import { isUniqueViolation } from '../prisma/prisma-errors';
 import { PrismaService, type Tx } from '../prisma/prisma.service';
-import { lockBooking, lockTripOfBooking } from './booking-locks';
+import { lockBooking, lockStopsOfBooking, lockTripOfBooking } from './booking-locks';
 import { isOfferedPaymentMethod, OFFERED_PAYMENT_METHODS } from './bookings.dto';
+import type { PaymentContext } from './bookings.mapper';
 import { allocatePlatformFee } from './fee-allocation';
+import { derivePaymentGate, type GateCollection } from './payment-gate';
+import { isFinalStop } from './stop-lifecycle';
 import {
+  checkTripRequest,
   type EngineTripStatus,
   FINAL_TRIP_STATUSES,
-  nextTripStatus,
+  type TripRefusal,
+  tripLifecycleUpdate,
   tripRank,
 } from './trip-lifecycle';
 
@@ -48,21 +54,15 @@ export interface TripUpdateResult extends BookingWithTrip {
   readonly earning: DriverEarning | null;
 }
 
-/** The status change plus the M6 lifecycle timestamp that goes with it. */
-function lifecycleUpdate(status: TripStatus, now: Date): Prisma.TripUncheckedUpdateInput {
-  switch (status) {
-    case 'DRIVER_ARRIVED':
-      return { status, arrivedAt: now };
-    case 'PICKUP_VERIFIED':
-      return { status, pickupVerifiedAt: now };
-    case 'IN_TRANSIT':
-      return { status, startedAt: now };
-    case 'DELIVERED':
-      return { status, deliveredAt: now };
-    default:
-      return { status };
-  }
-}
+/** Just what the payment gate reads from a collection. */
+const GATE_COLLECTION_FIELDS = {
+  id: true,
+  bookingId: true,
+  bookingStopId: true,
+  status: true,
+  failureReason: true,
+  createdAt: true,
+} as const;
 
 /**
  * Payment-side view of bookings and trips. The trip engine owns dispatch and stop progression
@@ -155,6 +155,53 @@ export class BookingsService {
     });
   }
 
+  /** Stops, collections, fee and the payment gate derived from them, for one booking. */
+  async paymentContext(booking: Booking, trip: Trip | null): Promise<PaymentContext> {
+    const [context] = await this.paymentContexts([{ booking, trip }]);
+    if (!context) {
+      throw new Error('Payment context missing for a booking');
+    }
+    return context;
+  }
+
+  /** The same for several bookings, with one query for all their stops and one for collections. */
+  async paymentContexts(rows: readonly BookingWithTrip[]): Promise<PaymentContext[]> {
+    const ids = rows.map((row) => row.booking.id);
+    if (ids.length === 0) {
+      return [];
+    }
+    const [stops, collections, fees] = await Promise.all([
+      this.prisma.bookingStop.findMany({
+        where: { bookingId: { in: ids } },
+        orderBy: { sequence: 'asc' },
+      }),
+      this.prisma.paymentCollection.findMany({
+        where: { bookingId: { in: ids } },
+        select: GATE_COLLECTION_FIELDS,
+      }),
+      Promise.all(rows.map((row) => this.feeFor(row.booking))),
+    ]);
+    return rows.map(({ booking, trip }, index) => {
+      const own = stops.filter((stop) => stop.bookingId === booking.id);
+      const ownCollections: GateCollection[] = collections.filter(
+        (collection) => collection.bookingId === booking.id,
+      );
+      const platformFeePaise = fees[index] ?? 0n;
+      return {
+        stops: own,
+        collections: ownCollections,
+        platformFeePaise,
+        gate: derivePaymentGate({
+          booking,
+          tripStatus: trip?.status ?? null,
+          stops: own,
+          collections: ownCollections,
+          platformFeePaise,
+        }),
+      };
+    });
+  }
+
   /** CREATED -> SEARCHING_DRIVER. Idempotent. */
   async markSearching(bookingId: string): Promise<BookingWithTrip> {
     return this.prisma.runInTransaction(async (tx) => {
@@ -210,6 +257,10 @@ export class BookingsService {
    * Applies a lifecycle update reported by the trip engine, strictly in M6 order. Repeating or
    * replaying an older status is a no-op, so engine retries are safe. COMPLETED is refused until
    * the payment is confirmed (M6 payment gate) and creates the driver earning atomically.
+   *
+   * Payment flow Phase 3: an unpaid PAY_AT_PICKUP trip never leaves DRIVER_ARRIVED (pickup gate,
+   * every booking model), and the trip of a booking priced per drop reaches DROP_PROGRESS and
+   * DELIVERED only through its drops (BookingStopsService), never from this report.
    */
   async updateTripStatus(tripId: string, requested: EngineTripStatus): Promise<TripUpdateResult> {
     const located = await this.prisma.trip.findUnique({
@@ -238,15 +289,27 @@ export class BookingsService {
       if (requested === 'COMPLETED') {
         return this.complete(tx, booking, trip);
       }
-      if (nextTripStatus(trip.status) !== requested) {
-        throw invalidTransition(trip.status, requested);
+      const stops =
+        booking.paymentModel === 'QUOTE_PER_STOP' ? await lockStopsOfBooking(tx, booking.id) : [];
+      const refusal = checkTripRequest(
+        {
+          paymentMethod: booking.paymentMethod,
+          paymentModel: booking.paymentModel,
+          bookingPaid: booking.paymentStatus !== 'UNPAID',
+          tripStatus: trip.status,
+          stops,
+        },
+        requested,
+      );
+      if (refusal) {
+        throw tripRefusalError(refusal, booking, trip.status, requested);
       }
 
       const now = new Date();
       const confirmPayment = requested === 'DELIVERED' && booking.paymentStatus !== 'UNPAID';
       const updated = await tx.trip.update({
         where: { id: tripId },
-        data: lifecycleUpdate(requested, now),
+        data: tripLifecycleUpdate(requested, now),
       });
       // Already paid (prepaid, or collected at pickup): delivery confirms the payment gate.
       const final = confirmPayment
@@ -273,6 +336,8 @@ export class BookingsService {
       if (booking.status === 'COMPLETED') {
         throw closed(booking);
       }
+      const stops =
+        booking.paymentModel === 'QUOTE_PER_STOP' ? await lockStopsOfBooking(tx, bookingId) : [];
       const now = new Date();
       const cancelledTrip =
         trip && !FINAL_TRIP_STATUSES.has(trip.status)
@@ -285,6 +350,15 @@ export class BookingsService {
         where: { id: bookingId },
         data: { status: 'CANCELLED', cancelledAt: now, cancellationReason: reason },
       });
+      // Every drop not finished yet is cancelled with the booking (after it: the database checks
+      // that the booking is cancelled). Delivered and undelivered drops keep their outcome.
+      const open = stops.filter((stop) => !isFinalStop(stop.status)).map((stop) => stop.id);
+      if (open.length > 0) {
+        await tx.bookingStop.updateMany({
+          where: { id: { in: open } },
+          data: { status: 'CANCELLED', cancelledAt: now },
+        });
+      }
       if (cancelled.paymentStatus !== 'UNPAID') {
         this.logger.error(
           { bookingId, paymentStatus: cancelled.paymentStatus, alert: 'PAYMENT_ANOMALY' },
@@ -624,4 +698,37 @@ function invalidTransition(from: TripStatus, to: TripStatus): AppError {
     `A trip cannot move from ${from} to ${to}`,
     { from, to },
   );
+}
+
+function tripRefusalError(
+  refusal: TripRefusal,
+  booking: Booking,
+  tripStatus: TripStatus,
+  requested: TripStatus,
+): AppError {
+  switch (refusal.kind) {
+    case 'PAYMENT_REQUIRED':
+      return new AppError(
+        ErrorCode.PAYMENT_REQUIRED,
+        HttpStatus.CONFLICT,
+        'Payment is required before the pickup handover',
+        { stage: 'PICKUP', amountPaise: paiseToNumber(booking.finalFareMinor), tripStatus },
+      );
+    case 'STOP_REQUIRED':
+      return new AppError(
+        ErrorCode.STOP_REQUIRED,
+        HttpStatus.CONFLICT,
+        'This booking is delivered drop by drop: report each drop, and the trip follows',
+        { tripStatus, requested },
+      );
+    case 'STOPS_PENDING':
+      return new AppError(
+        ErrorCode.STOPS_PENDING,
+        HttpStatus.CONFLICT,
+        'Every drop must be delivered, resolved or cancelled before the trip is delivered',
+        { pendingStops: [...refusal.pendingStops], tripStatus },
+      );
+    case 'INVALID_TRANSITION':
+      return invalidTransition(tripStatus, requested);
+  }
 }

@@ -69,7 +69,22 @@ export const ErrorCode = {
   TRIP_NOT_FOUND: 'TRIP_NOT_FOUND',
   TRIP_ALREADY_ASSIGNED: 'TRIP_ALREADY_ASSIGNED',
   INVALID_TRIP_TRANSITION: 'INVALID_TRIP_TRANSITION',
+  /**
+   * The goods can't be handed over (or the trip completed) before payment. `details.stage`:
+   * PICKUP (with `amountPaise`) or DROP (with `stopSequence` and `amountPaise`) for a handover.
+   */
   PAYMENT_REQUIRED: 'PAYMENT_REQUIRED',
+  /** The booking has no drop with this sequence (historical bookings have no drops). */
+  STOP_NOT_FOUND: 'STOP_NOT_FOUND',
+  /**
+   * The drop can't make this move now. `details`: from, to, currentStop (the drop that matters
+   * now, or null), tripStatus, and reason (TRIP_NOT_UNDER_WAY, OUT_OF_ORDER or INVALID_TRANSITION).
+   */
+  INVALID_STOP_TRANSITION: 'INVALID_STOP_TRANSITION',
+  /** Priced per drop: the trip is delivered once every drop is finished. `details.pendingStops`. */
+  STOPS_PENDING: 'STOPS_PENDING',
+  /** Priced per drop: report the drop's own status; the trip follows from its drops. */
+  STOP_REQUIRED: 'STOP_REQUIRED',
 
   // Fare (pricing versions and quotes)
   /** No pricing version is in effect, so no fare can be quoted. */

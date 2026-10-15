@@ -446,3 +446,41 @@ export async function createLegacyBooking(
     return booking;
   });
 }
+
+/**
+ * A drop paid the way per-drop collection (payment flow Phase 4) will record it: a completed QR
+ * collection for that drop, then the drop's payment confirmed. Per-drop collection isn't built
+ * yet, so the table owner writes the collection with only the collection insert guard off, in
+ * one transaction; the stop guard (on) checks that the collection exists before it lets the drop
+ * become PAYMENT_CONFIRMED. The API role can do neither. Test only. Returns the collection id.
+ */
+export async function confirmDropPaymentAsOwner(
+  owner: PrismaClient,
+  drop: {
+    bookingId: string;
+    tripId: string;
+    stopId: string;
+    driverId: string;
+    amountPaise: bigint;
+  },
+): Promise<string> {
+  const collectionId = randomUUID();
+  const suffix = randomUUID().replace(/-/g, '').slice(0, 14);
+  await owner.$transaction(async (tx) => {
+    await tx.$executeRaw`ALTER TABLE payment_collections DISABLE TRIGGER trg_collections_insert_guard`;
+    await tx.$executeRaw`
+      INSERT INTO payment_collections (id, booking_id, booking_stop_id, trip_id, stage, method,
+                                       amount_paise, collected_by_driver_id, status, provider,
+                                       provider_product, provider_reference_id,
+                                       provider_payment_id, idempotency_key, completed_at)
+      VALUES (${collectionId}::uuid, ${drop.bookingId}::uuid, ${drop.stopId}::uuid,
+              ${drop.tripId}::uuid, 'DELIVERY', 'ONLINE_QR', ${drop.amountPaise},
+              ${drop.driverId}::uuid, 'COMPLETED', 'RAZORPAY', 'QR_CODE', ${`qr_${suffix}`},
+              ${`pay_${suffix}`}, ${`fixture-drop-${collectionId}`}, now())`;
+    await tx.$executeRaw`ALTER TABLE payment_collections ENABLE TRIGGER trg_collections_insert_guard`;
+    await tx.$executeRaw`
+      UPDATE booking_stops SET status = 'PAYMENT_CONFIRMED', payment_confirmed_at = now()
+       WHERE id = ${drop.stopId}::uuid`;
+  });
+  return collectionId;
+}
