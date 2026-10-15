@@ -68,6 +68,27 @@ export class FakeCollectionLinkGateway extends CollectionLinkGateway {
     return this.run(() => toState(this.require(referenceId)));
   }
 
+  /**
+   * Registers an open link that was created before this fake existed, e.g. a QR the driver showed
+   * before a database upgrade, so a test can refresh and pay it like any other.
+   */
+  adopt(link: {
+    readonly product: CollectionProduct;
+    readonly referenceId: string;
+    readonly collectionId: string;
+    readonly bookingId: string;
+    readonly amount: number;
+    readonly url: string;
+    readonly expiresAt: Date;
+  }): void {
+    this.links.set(link.referenceId, {
+      ...link,
+      status: 'ACTIVE',
+      orderId: link.product === 'PAYMENT_LINK' ? newId('order_') : null,
+      payments: [],
+    });
+  }
+
   cancel(_product: CollectionProduct, referenceId: string): Promise<CollectionLinkState> {
     this.calls.cancel += 1;
     return this.run(() => {

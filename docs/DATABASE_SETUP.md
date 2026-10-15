@@ -231,6 +231,37 @@ psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261015120000_
 psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261015120000_booking_quote_snapshot';"
 ```
 
+### Per-stop obligation schema (payment flow Phase 2)
+
+`20261016120000_per_stop_obligation_schema` prepares the database for collecting a pay-at-delivery booking drop by drop. It enables nothing: the stop lifecycle arrives with Phase 3 and per-drop collection with Phase 4. It changes no existing row.
+
+- `booking_stops` gets the facts its lifecycle will record: arrival, payment confirmation, delivery, a failed attempt and its reason, cancellation, and an admin's resolution (who, when, why). CHECKs tie each status to its facts (a `PENDING` stop has none), and at most one stop per booking is current (`ARRIVED` or `PAYMENT_CONFIRMED`). Stops still can't change.
+- `payment_collections.booking_stop_id`: the drop a collection is for. A composite foreign key allows only a stop of the same booking, and a pickup collection never names one (CHECK). `uq_collection_booking_active` is replaced by `uq_collection_booking_level_active` (one live collection per booking for pickup and historical bookings, exactly the old rule) and `uq_collection_stop_active` (one per drop). The insert guard keeps a booking's collections all of one kind and still refuses per-drop collections; the stop of a collection can never change.
+- No grant changes. The API role still has no UPDATE on `booking_stops`, and `booking_stop_id` isn't among its updatable collection columns.
+
+Before migrating a database that holds data, the same rules as for Phase 1 apply (decision N1): run the preflight and have it reviewed, take a snapshot, rehearse with `npm run db:migration-check` (it covers every migration that has a `down.sql`), then deploy. The preflight now also lists bookings by payment model, the live collections per booking (at most 1 is expected, which the new booking-level index requires), and the stops and per-drop collections. Re-running `02-app-grants.sql` is harmless.
+
+Check after deploying:
+
+```sql
+SELECT count(*) FROM payment_collections WHERE booking_stop_id IS NOT NULL;  -- 0 until per-drop collection (Phase 4)
+SELECT count(*) FROM booking_stops WHERE status <> 'PENDING';               -- 0 until the stop lifecycle (Phase 3)
+```
+
+Connected as `mr_app`, these must fail with `permission denied`:
+
+```sql
+UPDATE payment_collections SET booking_stop_id = gen_random_uuid();
+UPDATE booking_stops SET arrived_at = now();
+```
+
+**Rollback**, newest migration first. This `down.sql` refuses to run once a collection names a drop or a stop has lifecycle data, and restores the previous guards and the old index exactly. Rolling back `20261015120000_booking_quote_snapshot` as well means running this one first.
+
+```bash
+psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261016120000_per_stop_obligation_schema/down.sql
+psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261016120000_per_stop_obligation_schema';"
+```
+
 ## Ongoing rules
 
 - **Schema changes:** only through new migration files. Re-run step 4 (migrate, then grants) on every release that adds one.

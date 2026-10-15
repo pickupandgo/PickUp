@@ -489,6 +489,12 @@ describe('Least-privilege database role', () => {
     ['move a pricing version', 'UPDATE pricing_versions SET effective_from = now()'],
     ['delete pricing versions', 'DELETE FROM pricing_versions'],
     ['change a booking stop amount', 'UPDATE booking_stops SET payable_paise = 1'],
+    ['record a stop arrival', 'UPDATE booking_stops SET arrived_at = now()'],
+    ['resolve a failed stop', 'UPDATE booking_stops SET resolved_by_user_id = gen_random_uuid()'],
+    [
+      'link a collection to a drop',
+      'UPDATE payment_collections SET booking_stop_id = gen_random_uuid()',
+    ],
     ['move a booking stop', "UPDATE booking_stops SET status = 'DELIVERED'"],
     ['delete booking stops', 'DELETE FROM booking_stops'],
     ['change a booking fare snapshot', 'UPDATE bookings SET fare_paise = 1'],

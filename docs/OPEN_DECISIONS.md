@@ -568,3 +568,27 @@ Raj approved the architecture in [PAYMENT_FLOW_FINAL_REVIEW.md](./PAYMENT_FLOW_F
 | The frozen fee is attributed to the drops by largest remainder of each drop's fare (ties to the lower sequence); the shares always add up to the fee, and the fee charged doesn't change | `src/bookings/fee-allocation.ts`, deferred database check | implementation detail |
 | `PROTOTYPE*` pricing versions refused in production by the admin API as well as the CLI | `createPricingVersionRecord` | L-1 |
 | No canonical vehicle category list; format check only | quotes, fee rules | D-28 / N6 |
+
+### Phase 2: per-stop obligation schema
+
+Raj approved and locked Phase 1, then asked for Phase 2 only. Migration `20261016120000_per_stop_obligation_schema` prepares the schema for collecting a PAY_AT_DELIVERY booking drop by drop. It enables nothing and changes no existing row. Upgrade steps: [DATABASE_SETUP.md](./DATABASE_SETUP.md#per-stop-obligation-schema-payment-flow-phase-2).
+
+| Requirement | Implementation |
+|---|---|
+| **Existing rows stay exactly as they are; historical bookings get no stops (N3).** | The migration adds nullable columns, constraints, indexes and guard rules. PostgreSQL validates each new constraint against the existing rows, and no row is updated. `npm run db:migration-check` proves it on copies of four databases with data: row fingerprints over every table, through up / down / down / up. |
+| **All new bookings are `QUOTE_PER_STOP`.** | Unchanged from Phase 1 (insert guard). The upgrade test checks it again on an upgraded database. |
+| **In-flight historical bookings still finish (`TAB-QR-001` style).** | `legacy-migration.int-spec.ts` builds a database at the level before Phase 1 and seeds bookings in flight: a pending QR, an expired QR, an unpaid cash delivery, an open Checkout order and a pickup booking at the pickup. It applies Phases 1 and 2, then finishes each booking through the API. On the dev database, `TAB-QR-001` and every other row are identical before and after the migration. |
+| **Stop lifecycle facts.** | `booking_stops` gets `arrived_at`, `payment_confirmed_at`, `delivered_at`, `failed_at` with `failure_reason`, `cancelled_at`, and an admin's resolution (`resolved_at`, `resolved_by_user_id`, `resolution_reason`). CHECKs tie each status to its facts, following the approved stop state machine (review E): a PENDING stop has none, UNDELIVERED needs a failed attempt and a complete resolution, and a stop can be CANCELLED without being reached. At most one stop per booking is current (ARRIVED or PAYMENT_CONFIRMED). Stops still can't change: `guard_booking_stop_update` stays as it is until Phase 3. |
+| **A collection is tied to its obligation.** | `payment_collections.booking_stop_id`, with a composite FK that allows only a stop of the same booking. A pickup collection never names a stop, and the stop of a collection never changes. Live collections: one per booking-level obligation (pickup and historical bookings, exactly the old rule) and one per drop. The insert guard keeps all of a booking's collections of one kind and still refuses per-drop collections. |
+| **Financial constraints and grants are not weakened.** | No CHECK, trigger rule or grant is removed or relaxed. The old live-collection index is dropped only after its replacement exists, and the replacement applies the old rule to every collection that can exist. The API role gets no new privilege; three new least-privilege refusals cover the new columns. |
+| **Non-local databases (N1).** | Still blocked until the preflight has been run there and its output reviewed. Phase 2 is applied to the local dev database only, after its preflight was reviewed. |
+
+**Not in Phase 2.** These are Phase 3: the stop transition guard, the pickup gate, `paymentGate`, the trip DELIVERED rule and admin stop resolution. Per-drop amounts and fee shares on collections, one ledger key per collection and `PARTIALLY_PAID` are Phase 4. MIXED earnings are Phase 5. The temporary restriction above still applies: a new PAY_AT_DELIVERY booking can't be collected until Phase 4.
+
+**Technical defaults introduced in Phase 2.** None is a business decision.
+
+| Default | Where | Decision it waits for |
+|---|---|---|
+| Failure and resolution reasons are 3–200 characters after trimming, the same rule as a booking cancellation reason and the approved stop API (review D) | CHECK `booking_stops_reasons_not_blank`, `VARCHAR(200)` | none; Phase 3 validates it in the API too |
+| No ordering between the stop timestamps in the database | — | Phase 3: a retry after a failed attempt records a later arrival. Whether a retry keeps the earlier failure facts is also Phase 3's choice; the CHECKs allow both. |
+| A booking's collections are all for the whole booking or all per drop | `guard_collection_insert` | implementation detail; keeps the old one-live-collection rule for every existing obligation |

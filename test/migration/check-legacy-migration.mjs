@@ -1,35 +1,41 @@
 #!/usr/bin/env node
 /**
- * Migration safety check (payment flow Phase 1, decisions N1 and N3).
+ * Migration safety check for the payment-flow migrations (decisions N1 and N3).
  *
  * Applies the pending migrations with `prisma migrate deploy` to throwaway copies of databases
  * that hold real-shaped data, and proves for each copy:
  *
  *   1. no pre-existing row changed: every table is fingerprinted over the columns it had before
  *      the migration (row count + hash of every row), and the fingerprints must be identical;
- *   2. every existing booking became LEGACY_BOOKING_LEVEL with no quote snapshot and no stops,
+ *   2. bookings registered before fare quotes became LEGACY_BOOKING_LEVEL with no quote snapshot,
+ *      no stop was invented, no existing collection names a stop, no stop has lifecycle data,
  *      and the applied-migrations history only gained rows;
  *   3. the migrated schema is identical to a fresh install (catalog fingerprint: tables, columns,
  *      constraints, indexes, triggers, functions, enums, comments);
- *   4. down.sql rolls the snapshot migration back to the previous schema without touching a row,
- *      and `migrate deploy` re-applies it to the same schema again (up / down / up).
+ *   4. each applied migration that has a down.sql rolls back, newest first, to exactly the schema
+ *      before it without touching a row, and `migrate deploy` re-applies them to the same schema
+ *      again (up / down / up).
  *
- * It also proves on throwaway databases that down.sql refuses to run once a QUOTE_PER_STOP booking
- * (or a quote with more than 5 drops) exists, and prints the read-only preflight inventory
+ * On throwaway databases it also proves that every down.sql works on an empty schema, lands on
+ * the schema built from the earlier migration files alone, and refuses to run once the data it
+ * would drop exists (a QUOTE_PER_STOP booking, a quote with more than 5 drops, a collection for a
+ * single drop, a stop with lifecycle data). It prints the read-only preflight inventory
  * (prisma/sql/preflight-payment-flow.sql) of every source before migrating it.
  *
  * Sources are never written: each one is copied with CREATE DATABASE ... TEMPLATE (which needs no
  * other connection to the source: stop the dev backend and Prisma Studio first). Every database
  * this script creates is named *_migcheck_test and is dropped at the end unless --keep is given.
- * Local Postgres only: it refuses any host other than localhost / 127.0.0.1.
+ * A source that has nothing pending is skipped. Local Postgres only: it refuses any host other
+ * than localhost / 127.0.0.1.
  *
  * Usage (from raj_backend, Docker Postgres running):
  *   node test/migration/check-legacy-migration.mjs [--keep] [source-db ...]
- * Default sources: multipleride_legacy_snapshot_test, multipleride, multipleride_e2e.
+ * Default sources: multipleride_legacy_snapshot_test, multipleride_phase1_snapshot_test,
+ * multipleride (dev), multipleride_e2e.
  * Server URL: MIGCHECK_SERVER_URL, else the integration-test server (database "postgres").
  */
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -37,17 +43,22 @@ import pg from 'pg';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MIGRATIONS_DIR = path.join(ROOT, 'prisma', 'migrations');
 const SNAPSHOT_MIGRATION = '20261015120000_booking_quote_snapshot';
-const DOWN_SQL = path.join(MIGRATIONS_DIR, SNAPSHOT_MIGRATION, 'down.sql');
+const STOP_SCHEMA_MIGRATION = '20261016120000_per_stop_obligation_schema';
 const PREFLIGHT_SQL = path.join(ROOT, 'prisma', 'sql', 'preflight-payment-flow.sql');
-const DEFAULT_SOURCES = ['multipleride_legacy_snapshot_test', 'multipleride', 'multipleride_e2e'];
+const DEFAULT_SOURCES = [
+  'multipleride_legacy_snapshot_test',
+  'multipleride_phase1_snapshot_test',
+  'multipleride',
+  'multipleride_e2e',
+];
 const FRESH_DB = 'multipleride_fresh_migcheck_test';
-const PREVIOUS_DB = 'multipleride_previous_migcheck_test';
+const LEVELS_DB = 'multipleride_levels_migcheck_test';
 const DEFAULT_SERVER_URL =
   'postgresql://multipleride:multipleride_dev_password@localhost:5433/postgres';
 
 const problems = [];
 const created = new Set();
-/** Sources the migration was proven on, and sources that were already migrated. */
+/** Sources the migrations were proven on, and sources that were already migrated. */
 const checked = new Set();
 const skipped = new Set();
 
@@ -129,6 +140,14 @@ function migrationNames() {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
+}
+
+function migrationSql(name, file = 'migration.sql') {
+  return readFileSync(path.join(MIGRATIONS_DIR, name, file), 'utf8');
+}
+
+function hasDown(name) {
+  return existsSync(path.join(MIGRATIONS_DIR, name, 'down.sql'));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -260,21 +279,70 @@ async function migrationHistory(client) {
   }));
 }
 
-/** Every existing booking is LEGACY_BOOKING_LEVEL, with no quote snapshot and no stops. */
-async function checkLegacyRows(scope, client) {
+/** What a source holds before it is migrated, for the checks that depend on its level. */
+async function sourceState(client) {
+  const { rows } = await client.query(`
+    SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'bookings'
+                      AND column_name = 'payment_model') AS has_payment_model,
+           CASE WHEN to_regclass('public.booking_stops') IS NULL THEN 0
+                ELSE (xpath('/row/n/text()', query_to_xml(
+                        'SELECT count(*) AS n FROM booking_stops', false, true, '')))[1]::text::int
+           END AS stops,
+           (SELECT count(*)::int FROM payment_collections
+             WHERE method = 'ONLINE_QR' AND status = 'PENDING') AS pending_qrs`);
+  return rows[0];
+}
+
+/** Bookings registered before fare quotes are LEGACY_BOOKING_LEVEL, with no quote snapshot. */
+async function checkLegacyMarking(scope, client) {
   const { rows } = await client.query(`
     SELECT count(*)::int AS bookings,
            count(*) FILTER (WHERE payment_model <> 'LEGACY_BOOKING_LEVEL')::int AS not_legacy,
            count(*) FILTER (WHERE fare_quote_id IS NOT NULL OR pricing_version_id IS NOT NULL
                                OR fare_paise IS NOT NULL OR tax_paise IS NOT NULL
-                               OR platform_fee_paise IS NOT NULL)::int AS with_snapshot,
-           (SELECT count(*)::int FROM booking_stops) AS stops
+                               OR platform_fee_paise IS NOT NULL)::int AS with_snapshot
       FROM bookings`);
   const [state] = rows;
-  if (state.not_legacy === 0 && state.with_snapshot === 0 && state.stops === 0) {
-    pass(`all ${state.bookings} bookings are LEGACY_BOOKING_LEVEL, no snapshot, no stops`);
+  if (state.not_legacy === 0 && state.with_snapshot === 0) {
+    pass(`all ${state.bookings} bookings are LEGACY_BOOKING_LEVEL, with no quote snapshot`);
   } else {
     fail(scope, `legacy marking: ${JSON.stringify(state)}`);
+  }
+}
+
+/**
+ * No stop was invented (the same number as before, all on QUOTE_PER_STOP bookings), no existing
+ * collection names a stop, and no stop has lifecycle data.
+ */
+async function checkStops(scope, client, before) {
+  const { rows } = await client.query(`
+    SELECT (SELECT count(*)::int FROM booking_stops) AS stops,
+           (SELECT count(*)::int FROM booking_stops s JOIN bookings b ON b.id = s.booking_id
+             WHERE b.payment_model <> 'QUOTE_PER_STOP') AS stops_on_legacy,
+           (SELECT count(*)::int FROM payment_collections
+             WHERE booking_stop_id IS NOT NULL) AS collections_for_one_drop,
+           (SELECT count(*)::int FROM booking_stops
+             WHERE status <> 'PENDING' OR arrived_at IS NOT NULL
+                OR payment_confirmed_at IS NOT NULL OR delivered_at IS NOT NULL
+                OR failed_at IS NOT NULL OR cancelled_at IS NOT NULL
+                OR resolved_at IS NOT NULL) AS stops_with_lifecycle,
+           (SELECT count(*)::int FROM payment_collections
+             WHERE method = 'ONLINE_QR' AND status = 'PENDING') AS pending_qrs`);
+  const [state] = rows;
+  if (
+    state.stops === before.stops &&
+    state.stops_on_legacy === 0 &&
+    state.collections_for_one_drop === 0 &&
+    state.stops_with_lifecycle === 0 &&
+    state.pending_qrs === before.pending_qrs
+  ) {
+    pass(
+      `stops: ${state.stops} (none invented, none on a legacy booking, no lifecycle data); ` +
+        `no collection names a stop; ${state.pending_qrs} in-flight QR collection(s) still PENDING`,
+    );
+  } else {
+    fail(scope, `stops and collections: ${JSON.stringify({ before, after: state })}`);
   }
 }
 
@@ -282,10 +350,10 @@ async function checkLegacyRows(scope, client) {
 // down.sql
 // ---------------------------------------------------------------------------------------------
 
-/** Runs down.sql. Resolves with null on success, or the database error message. */
-async function runDown(client) {
+/** Runs a migration's down.sql. Resolves with null on success, or the database error message. */
+async function runDown(client, name) {
   try {
-    await client.query(readFileSync(DOWN_SQL, 'utf8'));
+    await client.query(migrationSql(name, 'down.sql'));
   } catch (error) {
     await client.query('ROLLBACK');
     return error instanceof Error ? error.message : String(error);
@@ -295,28 +363,45 @@ async function runDown(client) {
     "SELECT to_regclass('public._prisma_migrations') IS NOT NULL AS present",
   );
   if (rows[0].present) {
-    await client.query('DELETE FROM _prisma_migrations WHERE migration_name = $1', [
-      SNAPSHOT_MIGRATION,
-    ]);
+    await client.query('DELETE FROM _prisma_migrations WHERE migration_name = $1', [name]);
   }
   return null;
 }
 
-/** A booking registered from a quote, written as registration writes it (all guards on). */
-const QUOTE_BOOKING_SQL = `
+async function expectRefused(scope, client, name, pattern, label) {
+  const refused = await runDown(client, name);
+  if (refused && pattern.test(refused)) {
+    pass(`${name} down.sql refuses to run once ${label}`);
+  } else {
+    fail(scope, `${name} down.sql with ${label}: ${refused ?? 'it ran'}`);
+  }
+}
+
+/**
+ * A QUOTE_PER_STOP PAY_AT_DELIVERY booking with two drops, assigned to a driver, written as
+ * registration and assignment write it (every guard on).
+ */
+const PER_STOP_BOOKING_SQL = `
 DO $$
 DECLARE
     v_now TIMESTAMPTZ := now();
     v_user UUID;
     v_customer UUID;
+    v_driver_user UUID;
+    v_driver UUID;
     v_version UUID;
     v_rule UUID;
     v_quote UUID;
-    v_stop UUID;
+    v_stop1 UUID;
+    v_stop2 UUID;
     v_booking UUID;
 BEGIN
     INSERT INTO users (phone, role) VALUES ('+919999900001', 'CUSTOMER') RETURNING id INTO v_user;
     INSERT INTO customers (user_id) VALUES (v_user) RETURNING id INTO v_customer;
+    INSERT INTO users (phone, role) VALUES ('+919999900003', 'DRIVER') RETURNING id INTO v_driver_user;
+    INSERT INTO drivers (user_id, approval_status, approved_at, legal_name)
+         VALUES (v_driver_user, 'APPROVED', v_now, 'Migration Check')
+      RETURNING id INTO v_driver;
     INSERT INTO pricing_versions (code, model, config, effective_from, active, reason,
                                   deactivated_at, deactivation_reason)
          VALUES ('MIGCHECK-1', 'LEG_DISTANCE_V1', '{}'::jsonb, v_now - interval '1 minute', FALSE,
@@ -329,26 +414,60 @@ BEGIN
     INSERT INTO fare_quotes (customer_id, pricing_version_id, vehicle_category, weight_grams,
                              pickup_latitude, pickup_longitude, distance_meters, fare_paise,
                              tax_paise, payable_paise, expires_at, created_at)
-         VALUES (v_customer, v_version, 'MIGCHECK', 1000, 26.2389, 73.0243, 1000, 50000, 0, 50000,
+         VALUES (v_customer, v_version, 'MIGCHECK', 1000, 26.2389, 73.0243, 2000, 50000, 0, 50000,
                  v_now + interval '10 minutes', v_now - interval '1 minute')
       RETURNING id INTO v_quote;
     INSERT INTO fare_quote_stops (quote_id, sequence, latitude, longitude, distance_meters,
                                   fare_paise, tax_paise, payable_paise)
-         VALUES (v_quote, 1, 26.3, 73.0458, 1000, 50000, 0, 50000)
-      RETURNING id INTO v_stop;
+         VALUES (v_quote, 1, 26.3, 73.0458, 1000, 20000, 0, 20000)
+      RETURNING id INTO v_stop1;
+    INSERT INTO fare_quote_stops (quote_id, sequence, latitude, longitude, distance_meters,
+                                  fare_paise, tax_paise, payable_paise)
+         VALUES (v_quote, 2, 26.31, 73.0458, 1000, 30000, 0, 30000)
+      RETURNING id INTO v_stop2;
     UPDATE fare_quotes SET redeemed_at = v_now WHERE id = v_quote;
     INSERT INTO bookings (external_ref, customer_id, vehicle_category, fare_estimate_minor,
                           final_fare_minor, payment_method, fee_rule_id, payment_model,
                           fare_quote_id, pricing_version_id, fare_paise, tax_paise,
                           platform_fee_paise, confirmed_at)
-         VALUES ('MIGCHECK-1', v_customer, 'MIGCHECK', 50000, 50000, 'PAY_AT_PICKUP', v_rule,
+         VALUES ('MIGCHECK-1', v_customer, 'MIGCHECK', 50000, 50000, 'PAY_AT_DELIVERY', v_rule,
                  'QUOTE_PER_STOP', v_quote, v_version, 50000, 0, 5000, v_now)
       RETURNING id INTO v_booking;
     INSERT INTO booking_stops (booking_id, fare_quote_stop_id, sequence, fare_paise, tax_paise,
                                payable_paise, platform_fee_share_paise)
-         VALUES (v_booking, v_stop, 1, 50000, 0, 50000, 5000);
+         VALUES (v_booking, v_stop1, 1, 20000, 0, 20000, 2000),
+                (v_booking, v_stop2, 2, 30000, 0, 30000, 3000);
+    INSERT INTO trips (booking_id, driver_id) VALUES (v_booking, v_driver);
 END;
 $$;`;
+
+/**
+ * The first drop reached, as the stop lifecycle (Phase 3) will record it. Stops can't change yet,
+ * so the table owner turns only the stop guard off, in one transaction.
+ */
+const STOP_ARRIVED_SQL = `
+BEGIN;
+ALTER TABLE booking_stops DISABLE TRIGGER trg_booking_stops_guard;
+UPDATE booking_stops SET status = 'ARRIVED', arrived_at = now()
+ WHERE sequence = 1 AND booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
+ALTER TABLE booking_stops ENABLE TRIGGER trg_booking_stops_guard;
+COMMIT;`;
+
+/** A QR shown for the first drop, as per-drop collection (Phase 4) will write it. */
+const DROP_COLLECTION_SQL = `
+BEGIN;
+ALTER TABLE payment_collections DISABLE TRIGGER trg_collections_insert_guard;
+INSERT INTO payment_collections (booking_id, booking_stop_id, trip_id, stage, method, amount_paise,
+                                 collected_by_driver_id, status, provider, provider_product,
+                                 provider_reference_id, idempotency_key)
+SELECT b.id, s.id, t.id, 'DELIVERY', 'ONLINE_QR', s.payable_paise, t.driver_id, 'PENDING',
+       'RAZORPAY', 'QR_CODE', 'qr_migcheck_drop_1', 'migcheck-drop-1'
+  FROM bookings b
+  JOIN booking_stops s ON s.booking_id = b.id AND s.sequence = 1
+  JOIN trips t ON t.booking_id = b.id
+ WHERE b.external_ref = 'MIGCHECK-1';
+ALTER TABLE payment_collections ENABLE TRIGGER trg_collections_insert_guard;
+COMMIT;`;
 
 /** A quote with 6 drops (allowed once FARE_MAX_DROPS is raised), never booked. */
 const SIX_DROP_QUOTE_SQL = `
@@ -431,17 +550,34 @@ async function freshReference(admin) {
   pass(`prisma migrate deploy from empty: ${reference.length} schema objects`);
 
   await withDatabase(FRESH_DB, async (client) => {
-    await client.query(QUOTE_BOOKING_SQL);
+    await client.query(PER_STOP_BOOKING_SQL);
     pass('a QUOTE_PER_STOP booking passes every guard when written like registration does');
-    const refused = await runDown(client);
-    if (refused && /QUOTE_PER_STOP bookings exist/.test(refused)) {
-      pass('down.sql refuses to run once a QUOTE_PER_STOP booking exists');
-    } else {
-      fail('fresh', `down.sql with a QUOTE_PER_STOP booking: ${refused ?? 'it ran'}`);
-    }
+    await client.query(STOP_ARRIVED_SQL);
+    await expectRefused(
+      'fresh',
+      client,
+      STOP_SCHEMA_MIGRATION,
+      /booking stops have lifecycle data/,
+      'a stop has lifecycle data',
+    );
+    await client.query(DROP_COLLECTION_SQL);
+    await expectRefused(
+      'fresh',
+      client,
+      STOP_SCHEMA_MIGRATION,
+      /collections for single drops exist/,
+      'a collection names a drop',
+    );
+    await expectRefused(
+      'fresh',
+      client,
+      SNAPSHOT_MIGRATION,
+      /QUOTE_PER_STOP bookings exist/,
+      'a QUOTE_PER_STOP booking exists',
+    );
     compareCatalogs(
       'fresh',
-      'schema unchanged after the refused rollback',
+      'schema unchanged after the refused rollbacks',
       await catalog(client),
       reference,
     );
@@ -450,42 +586,62 @@ async function freshReference(admin) {
 }
 
 /**
- * The schema before the snapshot migration, built by applying every earlier migration file
- * directly (independently of down.sql); then the snapshot migration itself is applied the same
- * way and must give the fresh-install schema.
+ * The schema before each migration that has a down.sql, built by applying the migration files
+ * directly, in order (independently of any down.sql). Applying all of them must give the
+ * fresh-install schema. Then each down.sql runs on that empty schema, newest first, and must land
+ * on the schema before its migration; and one refusal that needs the earlier schema is checked.
  */
-async function previousReference(admin, fresh) {
-  console.log(`\n== Previous schema (${PREVIOUS_DB})`);
+async function levelReferences(admin, fresh) {
+  console.log(`\n== Schema before each reversible migration (${LEVELS_DB})`);
   const names = migrationNames();
-  if (names.at(-1) !== SNAPSHOT_MIGRATION) {
-    throw new Error(`Expected ${SNAPSHOT_MIGRATION} to be the latest migration`);
-  }
-  await createDatabase(admin, PREVIOUS_DB);
-  return withDatabase(PREVIOUS_DB, async (client) => {
-    for (const name of names.slice(0, -1)) {
-      await client.query(readFileSync(path.join(MIGRATIONS_DIR, name, 'migration.sql'), 'utf8'));
+  const reversible = names.filter(hasDown);
+  for (const required of [SNAPSHOT_MIGRATION, STOP_SCHEMA_MIGRATION]) {
+    if (!reversible.includes(required)) {
+      throw new Error(`Expected ${required} to have a down.sql`);
     }
-    const previous = await catalog(client);
-    pass(`migrations up to ${names.at(-2)}: ${previous.length} schema objects`);
-
-    await client.query(
-      readFileSync(path.join(MIGRATIONS_DIR, SNAPSHOT_MIGRATION, 'migration.sql'), 'utf8'),
-    );
+  }
+  await createDatabase(admin, LEVELS_DB);
+  return withDatabase(LEVELS_DB, async (client) => {
+    const levels = new Map();
+    for (const name of names) {
+      if (hasDown(name)) {
+        levels.set(name, await catalog(client));
+        pass(`schema before ${name}: ${levels.get(name).length} schema objects`);
+      }
+      await client.query(migrationSql(name));
+    }
     compareCatalogs(
-      'previous',
-      'previous schema + snapshot migration = fresh install',
+      'levels',
+      'every migration file applied in order = fresh install',
       await catalog(client),
       fresh,
     );
 
-    await client.query(SIX_DROP_QUOTE_SQL);
-    const refused = await runDown(client);
-    if (refused && /more than 5 drops/.test(refused)) {
-      pass('down.sql refuses to run once a quote has more than 5 drops');
-    } else {
-      fail('previous', `down.sql with a 6-drop quote: ${refused ?? 'it ran'}`);
+    for (const name of [...reversible].reverse()) {
+      const refused = await runDown(client, name);
+      if (refused) {
+        fail('levels', `${name} down.sql on an empty schema: ${refused}`);
+        return levels;
+      }
+      compareCatalogs(
+        'levels',
+        `${name} down.sql = schema before it`,
+        await catalog(client),
+        levels.get(name),
+      );
     }
-    return previous;
+
+    // The snapshot migration again (the stop schema doesn't matter here), then a 6-drop quote.
+    await client.query(migrationSql(SNAPSHOT_MIGRATION));
+    await client.query(SIX_DROP_QUOTE_SQL);
+    await expectRefused(
+      'levels',
+      client,
+      SNAPSHOT_MIGRATION,
+      /more than 5 drops/,
+      'a quote has more than 5 drops',
+    );
+    return levels;
   });
 }
 
@@ -502,29 +658,44 @@ async function checkSource(admin, source, references) {
       columns,
       rows: await rowFingerprints(client, columns),
       history: await migrationHistory(client),
+      state: await sourceState(client),
     };
   });
   const pending = migrationNames().filter(
     (name) => !before.history.some((row) => row.name === name && row.finished),
   );
   console.log(`  pending migrations: ${pending.join(', ') || '(none)'}`);
-  if (!pending.includes(SNAPSHOT_MIGRATION)) {
-    // Nothing to prove on a database that is already migrated (e.g. dev after the upgrade).
-    console.log(`  skipped: ${SNAPSHOT_MIGRATION} is already applied here`);
+  if (pending.length === 0) {
+    // Nothing to prove on a database that is already migrated.
+    console.log('  skipped: nothing pending');
     skipped.add(source);
     return;
   }
   checked.add(source);
 
-  migrateDeploy(copy);
-  await withDatabase(copy, async (client) => {
+  /** The checks that hold after every successful deploy. */
+  const afterDeploy = async (client, label) => {
     compareRows(
       scope,
-      'up: pre-existing rows',
+      `${label}: pre-existing rows`,
       await rowFingerprints(client, before.columns),
       before.rows,
     );
-    await checkLegacyRows(scope, client);
+    if (!before.state.has_payment_model) {
+      await checkLegacyMarking(scope, client);
+    }
+    await checkStops(scope, client, before.state);
+    compareCatalogs(
+      scope,
+      `${label}: schema = fresh install`,
+      await catalog(client),
+      references.fresh,
+    );
+  };
+
+  migrateDeploy(copy);
+  await withDatabase(copy, async (client) => {
+    await afterDeploy(client, 'up');
     const history = await migrationHistory(client);
     const kept = before.history.every((row) => history.some((after) => after.line === row.line));
     const applied = pending.every((name) =>
@@ -535,45 +706,37 @@ async function checkSource(admin, source, references) {
     } else {
       fail(scope, 'migration history was rewritten or is incomplete');
     }
-    compareCatalogs(scope, 'up: schema = fresh install', await catalog(client), references.fresh);
   });
 
+  // Roll back what was applied, newest first, as far as down scripts go.
   await withDatabase(copy, async (client) => {
-    const refused = await runDown(client);
-    if (refused) {
-      fail(scope, `down.sql failed: ${refused}`);
-      return;
+    for (const name of [...pending].reverse()) {
+      if (!hasDown(name)) {
+        console.log(`  rollback stops at ${name} (it has no down.sql)`);
+        break;
+      }
+      const refused = await runDown(client, name);
+      if (refused) {
+        fail(scope, `${name} down.sql failed: ${refused}`);
+        return;
+      }
+      compareRows(
+        scope,
+        `down ${name}: pre-existing rows`,
+        await rowFingerprints(client, before.columns),
+        before.rows,
+      );
+      compareCatalogs(
+        scope,
+        `down ${name}: schema = schema before it`,
+        await catalog(client),
+        references.levels.get(name),
+      );
     }
-    compareRows(
-      scope,
-      'down: pre-existing rows',
-      await rowFingerprints(client, before.columns),
-      before.rows,
-    );
-    compareCatalogs(
-      scope,
-      'down: schema = previous schema',
-      await catalog(client),
-      references.previous,
-    );
   });
 
   migrateDeploy(copy);
-  await withDatabase(copy, async (client) => {
-    compareRows(
-      scope,
-      'up again: pre-existing rows',
-      await rowFingerprints(client, before.columns),
-      before.rows,
-    );
-    await checkLegacyRows(scope, client);
-    compareCatalogs(
-      scope,
-      'up again: schema = fresh install',
-      await catalog(client),
-      references.fresh,
-    );
-  });
+  await withDatabase(copy, (client) => afterDeploy(client, 'up again'));
 }
 
 async function main() {
@@ -584,10 +747,10 @@ async function main() {
   await admin.connect();
   try {
     const fresh = await freshReference(admin);
-    const previous = await previousReference(admin, fresh);
+    const levels = await levelReferences(admin, fresh);
     for (const source of sources.length > 0 ? sources : DEFAULT_SOURCES) {
       try {
-        await checkSource(admin, source, { fresh, previous });
+        await checkSource(admin, source, { fresh, levels });
       } catch (error) {
         fail(source, error instanceof Error ? error.message : String(error));
       }
@@ -602,7 +765,7 @@ async function main() {
   }
 
   if (checked.size === 0) {
-    problems.push('[sources] no source still needed the migration, so nothing was proven');
+    problems.push('[sources] no source had a pending migration, so nothing was proven');
   }
   console.log('');
   console.log(`Checked: ${[...checked].join(', ') || '(none)'}`);

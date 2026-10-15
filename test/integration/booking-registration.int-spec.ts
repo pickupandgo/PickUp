@@ -895,12 +895,20 @@ describe('Booking registration from fare quotes', () => {
       await expect(
         ctx.prisma.$executeRaw`DELETE FROM booking_stops WHERE booking_id = ${id}::uuid`,
       ).rejects.toThrow(/booking_stops rows are permanent financial records and cannot be deleted/);
+      // Collections reference stops (per-drop collections), so a plain TRUNCATE is refused by that
+      // foreign key; with CASCADE the no-truncate triggers refuse it.
       await expect(
         ctx.prisma.$transaction(async (tx) => {
           await tx.$executeRaw`TRUNCATE booking_stops`;
           throw new Error('TRUNCATE was not refused');
         }),
-      ).rejects.toThrow(/cannot be deleted/);
+      ).rejects.toThrow(/cannot truncate a table referenced in a foreign key constraint/);
+      await expect(
+        ctx.prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`TRUNCATE booking_stops CASCADE`;
+          throw new Error('TRUNCATE was not refused');
+        }),
+      ).rejects.toThrow(/permanent financial records and cannot be deleted/);
       expect(await feeShares(id)).toEqual([2_000n, 3_000n]);
     });
 

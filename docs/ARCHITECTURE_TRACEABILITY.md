@@ -431,3 +431,23 @@ Last full run: 203 unit tests and 227 integration tests passing against PostgreS
 | Migration safety and rollback (N1) | Done | `prisma/sql/preflight-payment-flow.sql`, `npm run db:migration-check`, `down.sql` (refuses once a new booking exists) | migration check: rows unchanged, all LEGACY, schema equal to a fresh install, up / down / up |
 
 Last full run: 290 unit tests and 323 integration tests passing against PostgreSQL 17, plus the end-to-end run (steps 0, 1a and 1–11) and the migration check on three databases. Lint, typecheck, build and the schema drift check are clean.
+
+## 10. Implementation status: payment flow Phase 2
+
+[PAYMENT_FLOW_FINAL_REVIEW.md](./PAYMENT_FLOW_FINAL_REVIEW.md) Phase 2 (the stop and collection parts of C.3, plus C.1, C.7 and C.8) and OPEN_DECISIONS section I. Migration `20261016120000_per_stop_obligation_schema`. Schema only: the stop transitions are Phase 3 and per-drop collection is Phase 4.
+
+| Requirement | Status | Implementation | Tests |
+|---|---|---|---|
+| Each stop status carries its facts; a PENDING stop carries none | Done (schema) | 9 columns on `booking_stops`; CHECKs `booking_stops_pending_is_untouched`, `_status_facts`, `_facts_follow_arrival`, `_failure_complete`, `_resolution_complete`, `_reasons_not_blank`; FK to the resolving admin | stop-obligation-schema ("start PENDING…", "records every status with its facts", 11 refusals) |
+| At most one current stop per booking | Done | partial unique `uq_booking_stops_current` (ARRIVED, PAYMENT_CONFIRMED) | stop-obligation-schema ("allows at most one current stop…") |
+| Stops still can't change before Phase 3 | Done (unchanged) | `guard_booking_stop_update`; no UPDATE grant on `booking_stops` | stop-obligation-schema; least-privilege ("record a stop arrival", "resolve a failed stop") |
+| A collection names only a drop of its own booking; a pickup collection names none | Done | `booking_stop_id`, composite FK `payment_collections_booking_id_booking_stop_id_fkey`, CHECK `collections_pickup_has_no_stop` | stop-obligation-schema ("keeps the shape even with the insert guard off…") |
+| One live collection per booking-level obligation and one per drop | Done | `uq_collection_booking_level_active` (built before `uq_collection_booking_active` is dropped), `uq_collection_stop_active` | stop-obligation-schema ("…exactly as before", "…once per-drop collection exists") |
+| A booking's collections are all of one kind; per-drop collection still refused | Done | `guard_collection_insert` | stop-obligation-schema ("only a drop of a pay-at-delivery booking…"); booking-registration |
+| The drop a collection is for never changes | Done | `guard_collection_update`; not an API-updatable column | stop-obligation-schema ("never changes the drop…"); least-privilege ("link a collection to a drop") |
+| Existing rows unchanged, no stops invented, every existing booking LEGACY (N3) | Done | additive migration; every new constraint validated against the existing rows | migration check on four databases (row fingerprints over every table); legacy-migration ("changes no stored value…") |
+| In-flight historical bookings still finish (C.8) | Done | — | legacy-migration: a `TAB-QR-001`-style QR refreshed, paid and completed; cash with the pinned fee; a Checkout order from before the upgrade; a pickup collection; an expired QR in reconciliation; new bookings priced per drop |
+| Preflight and rollback (N1, C.1, C.7) | Done | preflight sections for bookings by model, live collections per booking, and stops and per-drop collections (they run at any schema level); `down.sql` refuses once a collection names a drop or a stop has lifecycle data, and restores the Phase 1 guards and the old index exactly | migration check: up / down / down / up, both refusals, schema equal to a fresh install at each level |
+| Least-privilege grants unchanged | Done | no grant change | least-privilege (3 new refusals; every flow with the production grants) |
+
+Last full run: 290 unit tests and 352 integration tests passing against PostgreSQL 17, plus the end-to-end run (13 steps, 10 idempotency checks) and the migration check (fresh install, each migration level, and four databases with data). Lint, typecheck, build and the schema drift check are clean.

@@ -269,6 +269,7 @@ model User {
   bankValidationRequests   BankAccountVerification[] @relation("BankValidationRequestedBy")
   createdPricingVersions     PricingVersion[]        @relation("PricingVersionCreatedBy")
   deactivatedPricingVersions PricingVersion[]        @relation("PricingVersionDeactivatedBy")
+  resolvedBookingStops       BookingStop[]           @relation("BookingStopResolvedBy")
 
   @@map("users")
 }
@@ -526,15 +527,32 @@ model BookingStop {
   /// exactly to the booking's fee.
   platformFeeSharePaise BigInt            @map("platform_fee_share_paise")
   status                BookingStopStatus @default(PENDING)
+  /// Lifecycle facts, recorded by the stop lifecycle (payment flow Phase 3). CHECKs tie each
+  /// status to its facts; a PENDING stop has none of them.
+  arrivedAt             DateTime?         @map("arrived_at") @db.Timestamptz(6)
+  paymentConfirmedAt    DateTime?         @map("payment_confirmed_at") @db.Timestamptz(6)
+  deliveredAt           DateTime?         @map("delivered_at") @db.Timestamptz(6)
+  /// The last failed delivery attempt, with its reason (both or neither).
+  failedAt              DateTime?         @map("failed_at") @db.Timestamptz(6)
+  failureReason         String?           @map("failure_reason") @db.VarChar(200)
+  cancelledAt           DateTime?         @map("cancelled_at") @db.Timestamptz(6)
+  /// An admin's resolution of a failed delivery: who, when and why, recorded whole.
+  resolvedAt            DateTime?         @map("resolved_at") @db.Timestamptz(6)
+  resolvedByUserId      String?           @map("resolved_by_user_id") @db.Uuid
+  resolutionReason      String?           @map("resolution_reason") @db.VarChar(200)
   createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  booking       Booking       @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  fareQuoteStop FareQuoteStop @relation(fields: [fareQuoteStopId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  booking       Booking             @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  fareQuoteStop FareQuoteStop       @relation(fields: [fareQuoteStopId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  resolvedBy    User?               @relation("BookingStopResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  collections   PaymentCollection[]
 
   @@unique([bookingId, sequence], map: "uq_booking_stops_sequence")
   /// Target of the composite foreign key that ties a stop's collections to the same booking.
   @@unique([bookingId, id], map: "uq_booking_stops_booking_id")
+  /// At most one current (ARRIVED or PAYMENT_CONFIRMED) stop per booking.
+  @@unique([bookingId], map: "uq_booking_stops_current", where: raw("(status = ANY (ARRAY['ARRIVED'::booking_stop_status, 'PAYMENT_CONFIRMED'::booking_stop_status]))"))
   @@map("booking_stops")
 }
 
@@ -605,6 +623,9 @@ model FeeRule {
 model PaymentCollection {
   id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   bookingId           String    @map("booking_id") @db.Uuid
+  /// The drop this collection is for: only for a PAY_AT_DELIVERY booking priced per drop
+  /// (per-drop collection, payment flow Phase 4). NULL for pickup and historical bookings.
+  bookingStopId       String?   @map("booking_stop_id") @db.Uuid
   tripId              String    @map("trip_id") @db.Uuid
   /// PICKUP or DELIVERY (CHECK).
   stage               String    @db.VarChar(20)
@@ -638,6 +659,8 @@ model PaymentCollection {
   updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   booking           Booking                  @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// Composite key: a collection can only name a stop of its own booking.
+  bookingStop       BookingStop?             @relation(fields: [bookingId, bookingStopId], references: [bookingId, id], onDelete: Restrict, onUpdate: Restrict)
   trip              Trip                     @relation(fields: [tripId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   collectedBy       Driver                   @relation(fields: [collectedByDriverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   feeRule           FeeRule?                 @relation(fields: [feeRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
@@ -647,8 +670,11 @@ model PaymentCollection {
 
   @@unique([provider, providerPaymentId], map: "uq_collection_provider_payment", where: raw("(provider_payment_id IS NOT NULL)"))
   @@unique([provider, providerReferenceId], map: "uq_collection_provider_reference", where: raw("(provider_reference_id IS NOT NULL)"))
-  // One live collection per booking: a booking can never be collected twice.
-  @@unique([bookingId], map: "uq_collection_booking_active", where: raw("((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('COMPLETED'::character varying)::text]))"))
+  // One live collection per obligation, so nothing is ever collected twice: per booking for
+  // pickup and historical bookings, per drop for a pay-at-delivery booking priced per drop. A
+  // booking's collections are all of one kind (insert guard).
+  @@unique([bookingId], map: "uq_collection_booking_level_active", where: raw("((booking_stop_id IS NULL) AND ((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('COMPLETED'::character varying)::text])))"))
+  @@unique([bookingStopId], map: "uq_collection_stop_active", where: raw("((booking_stop_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('COMPLETED'::character varying)::text])))"))
   @@index([bookingId], map: "idx_collections_booking")
   @@index([tripId], map: "idx_collections_trip")
   @@index([status, createdAt], map: "idx_collections_status_created")
