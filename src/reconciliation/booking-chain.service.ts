@@ -14,9 +14,10 @@ const paise = (value: bigint | null | undefined): number | null =>
 
 /**
  * The whole money trail of one booking, for finance and support: confirmed fare and fee rule,
- * customer payment or collection, wallet fee debit, driver earning, and the payout that carried
- * it (batch, provider payout id, UTR, status). Answers "was the driver paid for this trip, how
- * much, when and through which transfer" from the database alone.
+ * customer payment or collection, wallet fee debit, driver earning, the payout that carried it
+ * (batch, provider payout id, UTR, status) and any refund. Answers "was the driver paid for this
+ * trip, how much, when and through which transfer, and was any money given back" from the
+ * database alone.
  */
 @Injectable()
 export class BookingChainService {
@@ -36,6 +37,10 @@ export class BookingChainService {
         },
         disputes: true,
         settlements: { orderBy: [{ settledAt: 'asc' }, { createdAt: 'asc' }] },
+        refunds: {
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          include: { walletTransaction: true },
+        },
         earning: {
           include: {
             payoutItems: {
@@ -107,6 +112,8 @@ export class BookingChainService {
         method: collection.method,
         status: collection.status,
         amountPaise: paiseToNumber(collection.amountPaise),
+        /** What completed refunds gave back of it (payment flow Phase 6). */
+        refundedPaise: paiseToNumber(collection.refundedPaise),
         platformFeePaise: paise(collection.platformFeePaise),
         providerProduct: collection.providerProduct,
         providerReferenceId: collection.providerReferenceId,
@@ -131,6 +138,42 @@ export class BookingChainService {
         providerPaymentId: dispute.providerPaymentId,
         status: dispute.status,
         amountPaise: paiseToNumber(dispute.amountPaise),
+      })),
+      /**
+       * Every refund an admin requested for the booking (payment flow Phase 6), oldest first: its
+       * source, amount, status, provider refund and, for a cash return, the fee decision and the
+       * wallet credit it made.
+       */
+      refunds: booking.refunds.map((refund) => ({
+        refundId: refund.id,
+        kind: refund.kind,
+        status: refund.status,
+        refundCase: refund.refundCase,
+        sourceCollectionId: refund.sourceCollectionId,
+        sourcePaymentId: refund.sourcePaymentId,
+        stopSequence: refund.bookingStopId
+          ? (booking.stops.find((stop) => stop.id === refund.bookingStopId)?.sequence ?? null)
+          : null,
+        amountPaise: paiseToNumber(refund.amountPaise),
+        reason: refund.reason,
+        requestedByUserId: refund.requestedByUserId,
+        providerRefundId: refund.providerRefundId,
+        providerStatus: refund.providerStatus,
+        providerReference: refund.providerReference,
+        feeTreatment: refund.feeTreatment,
+        walletCredit: refund.walletTransaction
+          ? {
+              walletTransactionId: refund.walletTransaction.id,
+              amountPaise: paiseToNumber(refund.walletTransaction.amountPaise),
+              balanceAfterPaise: paiseToNumber(refund.walletTransaction.balanceAfterPaise),
+              createdAt: refund.walletTransaction.createdAt.toISOString(),
+            }
+          : null,
+        failureReason: refund.failureReason,
+        createdAt: refund.createdAt.toISOString(),
+        completedAt: iso(refund.completedAt),
+        failedAt: iso(refund.failedAt),
+        cancelledAt: iso(refund.cancelledAt),
       })),
       /**
        * The booking's first merchant settlement, kept for older readers. A booking paid drop by

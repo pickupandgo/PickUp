@@ -29,6 +29,8 @@ export const EARNINGS_PAGE_SIZE = 20;
 /** Hold reason prefixes set by the system (an admin hold carries the admin's own reason). */
 export const HOLD_PAYMENT_DISPUTED = 'PAYMENT_DISPUTED';
 export const HOLD_UNDELIVERED_STOP_REVIEW = 'UNDELIVERED_STOP_REVIEW';
+/** A refund of the booking's money was requested (payment flow Phase 6). */
+export const HOLD_REFUND = 'REFUND';
 
 /** What applying a merchant settlement did to a booking's earning. */
 export type SettlementApplyOutcome =
@@ -95,6 +97,10 @@ export interface EarningSummary {
 /** Result of trying to hold an earning because its customer payment is disputed. */
 export type DisputeHoldOutcome =
   'HELD' | 'ALREADY_ON_HOLD' | 'NO_EARNING_YET' | 'CASH_EARNING' | 'IN_PAYOUT' | 'ALREADY_PAID';
+
+/** Result of trying to hold an earning because a refund of its booking's money was requested. */
+export type RefundHoldOutcome =
+  'HELD' | 'ALREADY_ON_HOLD' | 'NO_EARNING' | 'CASH_EARNING' | 'IN_PAYOUT' | 'ALREADY_PAID';
 
 /**
  * Driver earnings: what the driver earned on each completed trip (gross fare, platform fee, net
@@ -465,12 +471,34 @@ export class EarningsService {
    * are reported for manual review instead.
    */
   async holdForDispute(tx: Tx, bookingId: string, reason: string): Promise<DisputeHoldOutcome> {
+    // Earnings created later check payment_disputes and start ON_HOLD.
+    return (await this.holdForReview(tx, bookingId, reason)) ?? 'NO_EARNING_YET';
+  }
+
+  /**
+   * A refund of the booking's money was requested (payment flow Phase 6): its earning goes ON_HOLD
+   * (REFUND) so nothing is paid out on money being given back, until an admin decides. Runs inside
+   * the refund's transaction, after the booking lock. Nothing is clawed back: an earning already
+   * paid out (PAID) or kept in cash (SETTLED_IN_CASH) is left as it is and reported by
+   * reconciliation (L-21, open). IN_PAYOUT is returned for the caller to refuse the refund until
+   * that payout resolves. What the driver gets after a refund is an open business decision.
+   */
+  async holdForRefund(tx: Tx, bookingId: string, reason: string): Promise<RefundHoldOutcome> {
+    // Only cancelled or completed bookings are refunded; a cancelled one never has an earning.
+    return (await this.holdForReview(tx, bookingId, reason)) ?? 'NO_EARNING';
+  }
+
+  /** Puts the booking's earning ON_HOLD with a system reason when it can still be held. */
+  private async holdForReview(
+    tx: Tx,
+    bookingId: string,
+    reason: string,
+  ): Promise<Exclude<DisputeHoldOutcome, 'NO_EARNING_YET'> | null> {
     const rows = await tx.$queryRaw<{ id: string }[]>`
       SELECT id FROM driver_earnings WHERE booking_id = ${bookingId}::uuid FOR UPDATE`;
     const [row] = rows;
     if (!row) {
-      // Earnings created later check payment_disputes and start ON_HOLD.
-      return 'NO_EARNING_YET';
+      return null;
     }
     const earning = await tx.driverEarning.findUniqueOrThrow({ where: { id: row.id } });
     switch (earning.status) {
@@ -486,7 +514,12 @@ export class EarningsService {
       case 'PAYABLE':
         await tx.driverEarning.update({
           where: { id: earning.id },
-          data: { status: 'ON_HOLD', holdReason: reason, heldAt: new Date(), heldByUserId: null },
+          data: {
+            status: 'ON_HOLD',
+            holdReason: reason.slice(0, 500),
+            heldAt: new Date(),
+            heldByUserId: null,
+          },
         });
         return 'HELD';
     }

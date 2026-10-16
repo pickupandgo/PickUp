@@ -37,6 +37,7 @@ import {
 import { sendWebhook, startTopUp, verifyTopUp, walletBalance } from '../helpers/http';
 import {
   buildPayoutWebhook,
+  buildRefundWebhook,
   buildValidationWebhook,
   buildWebhook,
   checkoutSignature,
@@ -670,6 +671,30 @@ describe('Least-privilege database role', () => {
       'change a booking payment model',
       "UPDATE bookings SET payment_model = 'LEGACY_BOOKING_LEVEL'",
     ],
+    // Refunds (payment flow Phase 6): the source, amount and decisions are written once.
+    ['rewrite a refund amount', 'UPDATE payment_refunds SET amount_paise = 1'],
+    [
+      'move a refund to another collection',
+      'UPDATE payment_refunds SET source_collection_id = gen_random_uuid()',
+    ],
+    [
+      'move a refund to another booking',
+      'UPDATE payment_refunds SET booking_id = gen_random_uuid()',
+    ],
+    ['change a refund kind', "UPDATE payment_refunds SET kind = 'CASH_RETURNED'"],
+    ['rewrite a refund reason', "UPDATE payment_refunds SET reason = 'Rewritten reason'"],
+    ['change a cash fee decision', "UPDATE payment_refunds SET fee_treatment = 'KEPT'"],
+    [
+      'change who requested a refund',
+      'UPDATE payment_refunds SET requested_by_user_id = gen_random_uuid()',
+    ],
+    [
+      're-point a refund at another wallet credit',
+      'UPDATE payment_refunds SET wallet_transaction_id = gen_random_uuid()',
+    ],
+    ['write a collection refunded amount', 'UPDATE payment_collections SET refunded_paise = 1'],
+    ['delete refunds', 'DELETE FROM payment_refunds'],
+    ['truncate refunds', 'TRUNCATE payment_refunds'],
   ])('the API role cannot %s', async (_label, sql) => {
     const client = new PrismaClient({
       adapter: new PrismaPg({ connectionString: restrictedDatabaseUrl(), max: 1 }),
@@ -677,6 +702,179 @@ describe('Least-privilege database role', () => {
     try {
       // Constant SQL from the table above; no user input involved.
       await expect(client.$executeRaw(Prisma.raw(sql))).rejects.toThrow(/permission denied/i);
+    } finally {
+      await client.$disconnect();
+    }
+  });
+
+  // Refunds (payment flow Phase 6) run on the production grants. The API role has no privilege on
+  // payment_collections.refunded_paise: the database keeps it (a SECURITY DEFINER trigger), and
+  // its rules still hold on the refund columns the API role may write.
+  it('serves provider refunds and cash returns with production grants', async () => {
+    const admin = await createAdmin(deps);
+    const customer = await createCustomer(deps);
+    const driver = await createDriver(deps);
+    const category = uniqueCategory();
+    await request(ctx.server)
+      .post('/v1/admin/fee-rules')
+      .set(bearer(admin.token))
+      .send({
+        category,
+        ruleType: 'PERCENTAGE',
+        value: '10',
+        roundingMode: 'HALF_UP',
+        reason: 'Least privilege refund fee rule',
+      })
+      .expect(201);
+    const pickupBooking = () =>
+      bookedTrip(ctx, customer, driver, {
+        paymentMethod: 'PAY_AT_PICKUP',
+        farePaise: 40_000,
+        category,
+        owner,
+      });
+    const cancel = (bookingId: string) =>
+      engine(ctx)
+        .post(`/v1/internal/bookings/${bookingId}/cancel`)
+        .send({ reason: 'Least privilege refund check' })
+        .expect(200);
+    const requestRefund = (body: Record<string, unknown>) =>
+      request(ctx.server)
+        .post('/v1/admin/refunds')
+        .set(bearer(admin.token))
+        .set('Idempotency-Key', idempotencyKey())
+        .send({ reason: 'Least privilege refund request', ...body });
+    async function paidByQr() {
+      const trip = await pickupBooking();
+      await advanceTrip(ctx, trip.tripId, ['DRIVER_ARRIVED']);
+      const shown = await collect(ctx, driver, trip.tripId, {
+        method: 'ONLINE_QR',
+        amountPaise: 40_000,
+      }).expect(201);
+      const collectionId = shown.body.collectionId as string;
+      ctx.links.pay(ctx.links.byCollection(collectionId).referenceId);
+      await request(ctx.server)
+        .get(`/v1/trips/${trip.tripId}/collections/${collectionId}`)
+        .set(bearer(driver.token))
+        .expect(200);
+      await cancel(trip.bookingId);
+      return { ...trip, collectionId };
+    }
+
+    // A QR paid at the pickup, then cancelled: refunded through the provider.
+    const qr = await paidByQr();
+    const requested = await requestRefund({
+      bookingId: qr.bookingId,
+      sourceCollectionId: qr.collectionId,
+      kind: 'PROVIDER',
+    }).expect(201);
+    expect(requested.body.refund).toMatchObject({ status: 'PROCESSING', amountPaise: 40_000 });
+    const refundId = requested.body.refund.refundId as string;
+    const processed = ctx.refunds.setStatus(
+      requested.body.refund.providerRefundId as string,
+      'processed',
+    );
+    await sendWebhook(ctx, buildRefundWebhook('refund.processed', processed)).expect(200);
+    expect(await owner.paymentRefund.findUniqueOrThrow({ where: { id: refundId } })).toMatchObject({
+      status: 'COMPLETED',
+    });
+    expect(
+      (await owner.paymentCollection.findUniqueOrThrow({ where: { id: qr.collectionId } }))
+        .refundedPaise,
+    ).toBe(40_000n);
+    expect(
+      (await owner.booking.findUniqueOrThrow({ where: { id: qr.bookingId } })).paymentStatus,
+    ).toBe('REFUNDED');
+    await request(ctx.server)
+      .post(`/v1/admin/refunds/${refundId}/sync`)
+      .set(bearer(admin.token))
+      .send()
+      .expect(200);
+
+    // Cash taken at the pickup, then cancelled: handed back, the fee credited to the wallet.
+    await fundWallet(ctx, admin, driver.driverId, 10_000);
+    const cashTrip = await pickupBooking();
+    await advanceTrip(ctx, cashTrip.tripId, ['DRIVER_ARRIVED']);
+    const collected = await collect(ctx, driver, cashTrip.tripId, {
+      method: 'CASH',
+      amountPaise: 40_000,
+    }).expect(201);
+    const cashCollectionId = collected.body.collectionId as string;
+    await cancel(cashTrip.bookingId);
+    const balance = await walletBalance(ctx, driver.driverId);
+    const returned = await requestRefund({
+      bookingId: cashTrip.bookingId,
+      sourceCollectionId: cashCollectionId,
+      kind: 'CASH_RETURNED',
+      feeTreatment: 'CREDITED_TO_WALLET',
+    }).expect(201);
+    expect(returned.body.refund).toMatchObject({ status: 'COMPLETED', feeCreditPaise: 4_000 });
+    expect(await walletBalance(ctx, driver.driverId)).toBe(balance + 4_000n);
+
+    // Withdrawn before it reached the provider.
+    const withdrawn = await paidByQr();
+    ctx.refunds.unavailable = true;
+    let pendingId: string;
+    try {
+      const pending = await requestRefund({
+        bookingId: withdrawn.bookingId,
+        sourceCollectionId: withdrawn.collectionId,
+        kind: 'PROVIDER',
+      }).expect(201);
+      pendingId = pending.body.refund.refundId as string;
+    } finally {
+      ctx.refunds.unavailable = false;
+    }
+    await owner.$executeRaw`
+      UPDATE payment_refunds SET last_submitted_at = now() - interval '10 minutes'
+      WHERE id = ${pendingId}::uuid`;
+    const cancelled = await request(ctx.server)
+      .post(`/v1/admin/refunds/${pendingId}/cancel`)
+      .set(bearer(admin.token))
+      .send({ reason: 'Least privilege cancellation of a refund' })
+      .expect(200);
+    expect(cancelled.body.status).toBe('CANCELLED');
+
+    for (const report of ['refund-anomalies', 'paid-cancelled-bookings']) {
+      await request(ctx.server)
+        .get(`/v1/admin/reconciliation/${report}`)
+        .set(bearer(admin.token))
+        .expect(200);
+    }
+    await request(ctx.server)
+      .get(`/v1/admin/refunds?bookingId=${qr.bookingId}`)
+      .set(bearer(admin.token))
+      .expect(200);
+    await request(ctx.server)
+      .get(`/v1/admin/bookings/${cashTrip.bookingId}`)
+      .set(bearer(admin.token))
+      .expect(200);
+
+    // On the columns the API role may write, the database's rules still hold.
+    const client = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: restrictedDatabaseUrl(), max: 1 }),
+    });
+    try {
+      await expect(
+        client.$executeRaw`UPDATE payment_refunds SET status = 'PENDING' WHERE id = ${refundId}::uuid`,
+      ).rejects.toThrow(/Invalid refund transition COMPLETED -> PENDING/);
+      await expect(
+        client.$executeRaw`
+          UPDATE payment_refunds SET provider_refund_id = 'rfnd_Rewritten00001'
+          WHERE id = ${refundId}::uuid`,
+      ).rejects.toThrow(/immutable/);
+      await expect(
+        client.$executeRaw`UPDATE bookings SET payment_status = 'PAID' WHERE id = ${qr.bookingId}::uuid`,
+      ).rejects.toThrow(/Invalid booking payment transition REFUNDED -> PAID/);
+      await expect(
+        client.$executeRaw`
+          INSERT INTO payment_refunds (booking_id, source_collection_id, kind, status, refund_case,
+                                       amount_paise, reason, requested_by_user_id,
+                                       idempotency_key, fee_treatment, completed_at)
+          VALUES (${cashTrip.bookingId}::uuid, ${cashCollectionId}::uuid, 'CASH_RETURNED',
+                  'COMPLETED', 'CANCELLED_BEFORE_HANDOVER', 40000, 'A second cash return',
+                  ${admin.userId}::uuid, ${randomUUID()}, 'KEPT', now())`,
+      ).rejects.toThrow(/never exceed what was collected/);
     } finally {
       await client.$disconnect();
     }
@@ -895,6 +1093,25 @@ describe('Least-privilege database role', () => {
     [
       'the settlement findings delete guard',
       'ALTER TABLE settlement_findings DISABLE TRIGGER trg_settlement_findings_no_delete',
+    ],
+    // Payment flow Phase 6.
+    [
+      'the refund insert guard',
+      'ALTER TABLE payment_refunds DISABLE TRIGGER trg_refunds_insert_guard',
+    ],
+    ['the refund guard', 'ALTER TABLE payment_refunds DISABLE TRIGGER trg_refunds_guard'],
+    ['the refund effects check', 'ALTER TABLE payment_refunds DISABLE TRIGGER trg_refunds_effects'],
+    [
+      'the refunded-amount sync',
+      'ALTER TABLE payment_refunds DISABLE TRIGGER trg_refunds_sync_collection',
+    ],
+    [
+      'the refund delete guard',
+      'ALTER TABLE payment_refunds DISABLE TRIGGER trg_refunds_no_delete',
+    ],
+    [
+      'the fee-credit ledger check',
+      'ALTER TABLE driver_wallet_transactions DISABLE TRIGGER trg_wallet_refund_reversal',
     ],
   ])('the API role cannot disable %s', async (_label, sql) => {
     const client = new PrismaClient({

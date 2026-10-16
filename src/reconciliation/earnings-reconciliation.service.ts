@@ -302,20 +302,150 @@ export class EarningsReconciliationService {
     return rows.map(toFinding);
   }
 
-  /** Cancelled bookings the customer paid for: refund review (D-22). */
+  /**
+   * Cancelled bookings the customer paid for: refund review (D-22; refund policy is open, L-7 to
+   * L-10). One row per completed collection (a booking paid drop by drop lists each drop paid),
+   * or the prepaid payment, for what is not refunded yet; refunded money is shown, and a source
+   * refunded in full drops off the list (payment flow Phase 6).
+   */
   async findPaidCancelledBookings(): Promise<Finding[]> {
     const rows = await this.prisma.$queryRaw<FindingRow[]>`
-      SELECT 'PAID_BOOKING_CANCELLED' AS problem, b.id AS booking_id, NULL::uuid AS earning_id,
-             NULL::uuid AS payout_id, c.id AS collection_id,
-             -- One row per completed collection: a booking paid drop by drop lists each drop paid.
-             COALESCE(c.amount_paise, b.final_fare_minor) AS amount_paise,
-             b.payment_method::text || COALESCE(' via ' || c.method, '') AS detail
-      FROM bookings b
-      LEFT JOIN payment_collections c
-        ON c.booking_id = b.id AND c.status = 'COMPLETED'
-      WHERE b.status = 'CANCELLED'::booking_status
-        AND b.payment_status <> 'UNPAID'::booking_payment_status
-      ORDER BY b.cancelled_at DESC
+      SELECT problem, booking_id, earning_id, payout_id, collection_id, amount_paise, detail
+      FROM (
+        SELECT 'PAID_BOOKING_CANCELLED' AS problem, b.id AS booking_id, NULL::uuid AS earning_id,
+               NULL::uuid AS payout_id, c.id AS collection_id,
+               COALESCE(c.amount_paise, b.final_fare_minor) - rf.refunded AS amount_paise,
+               b.payment_method::text || COALESCE(' via ' || c.method, '')
+                 || CASE WHEN rf.refunded > 0 THEN ', ' || rf.refunded::text || ' paise refunded'
+                         ELSE '' END
+                 || CASE WHEN rf.live > 0 THEN ', refund in progress' ELSE '' END AS detail,
+               b.cancelled_at
+        FROM bookings b
+        LEFT JOIN payment_collections c
+          ON c.booking_id = b.id AND c.status = 'COMPLETED'
+        CROSS JOIN LATERAL (
+          SELECT COALESCE(sum(r.amount_paise) FILTER (WHERE r.status = 'COMPLETED'), 0) AS refunded,
+                 count(*) FILTER (WHERE r.status IN ('PENDING', 'PROCESSING')) AS live
+          FROM payment_refunds r
+          WHERE (c.id IS NOT NULL AND r.source_collection_id = c.id)
+             OR (c.id IS NULL AND r.booking_id = b.id AND r.source_payment_id IS NOT NULL)
+        ) rf
+        WHERE b.status = 'CANCELLED'::booking_status
+          AND b.payment_status <> 'UNPAID'::booking_payment_status
+      ) paid
+      WHERE paid.amount_paise > 0
+      ORDER BY paid.cancelled_at DESC
+      LIMIT ${ROW_LIMIT}`;
+    return rows.map(toFinding);
+  }
+
+  /**
+   * Refunds that need a human (payment flow Phase 6). Nothing here is fixed automatically: an
+   * admin syncs, cancels, or decides (OPEN_DECISIONS L-21 for money refunded after a payout).
+   *
+   *   STALE_PENDING_REFUND       a provider refund not accepted by Razorpay after 30 minutes
+   *   STALE_PROCESSING_REFUND    accepted, not processed after 10 days (normal is 5-7 days)
+   *   REFUND_AFTER_PAYOUT        refunded (or being refunded) after the earning was paid out
+   *   REFUND_ON_CASH_EARNING     refunded while the driver kept the cash share (SETTLED_IN_CASH)
+   *   REFUNDED_TOTAL_MISMATCH    a collection's refunded_paise is not its completed refunds
+   *   REFUNDS_EXCEED_SOURCE      a source's refunds add up to more than it collected
+   *   BOOKING_REFUND_STATUS_MISMATCH  the booking's payment status is not what its money says
+   *   FEE_CREDIT_MISMATCH        a cash fee credit that is not the collection's fee, once
+   */
+  async findRefundAnomalies(): Promise<Finding[]> {
+    const rows = await this.prisma.$queryRaw<FindingRow[]>`
+      SELECT * FROM (
+        SELECT 'STALE_PENDING_REFUND' AS problem, r.booking_id, NULL::uuid AS earning_id,
+               NULL::uuid AS payout_id, r.source_collection_id AS collection_id, r.amount_paise,
+               'refund ' || r.id::text || ', ' || r.submit_attempts::text || ' attempt(s), last '
+                 || COALESCE(r.last_submitted_at::text, 'never') AS detail
+        FROM payment_refunds r
+        WHERE r.status = 'PENDING' AND r.created_at < now() - interval '30 minutes'
+        UNION ALL
+        SELECT 'STALE_PROCESSING_REFUND', r.booking_id, NULL, NULL, r.source_collection_id,
+               r.amount_paise,
+               'refund ' || r.id::text || ' ' || COALESCE(r.provider_refund_id, '') || ' '
+                 || COALESCE(r.provider_status, 'unknown')
+        FROM payment_refunds r
+        WHERE r.status = 'PROCESSING' AND r.updated_at < now() - interval '10 days'
+        UNION ALL
+        SELECT 'REFUND_AFTER_PAYOUT', r.booking_id, e.id,
+               (SELECT i.payout_id FROM payout_items i
+                 WHERE i.earning_id = e.id AND i.status = 'PAID'::payout_item_status LIMIT 1),
+               r.source_collection_id, r.amount_paise,
+               'refund ' || r.id::text || ' ' || r.status || '; earning paid out '
+                 || e.payout_amount_paise::text || ' paise; nothing is recovered automatically (L-21)'
+        FROM payment_refunds r JOIN driver_earnings e ON e.booking_id = r.booking_id
+        WHERE r.status IN ('PENDING', 'PROCESSING', 'COMPLETED')
+          AND e.status = 'PAID'::earning_status
+        UNION ALL
+        SELECT 'REFUND_ON_CASH_EARNING', r.booking_id, e.id, NULL, r.source_collection_id,
+               r.amount_paise,
+               'refund ' || r.id::text || ' ' || r.kind || ' ' || r.status
+                 || '; the driver kept the cash share; nothing is recovered automatically (L-21)'
+        FROM payment_refunds r JOIN driver_earnings e ON e.booking_id = r.booking_id
+        WHERE r.status IN ('PENDING', 'PROCESSING', 'COMPLETED')
+          AND e.status = 'SETTLED_IN_CASH'::earning_status
+        UNION ALL
+        SELECT 'REFUNDED_TOTAL_MISMATCH', c.booking_id, NULL, NULL, c.id, c.refunded_paise,
+               'completed refunds ' || COALESCE(s.total, 0)::text
+        FROM payment_collections c
+        LEFT JOIN (SELECT source_collection_id, sum(amount_paise) AS total
+                   FROM payment_refunds
+                   WHERE status = 'COMPLETED' AND source_collection_id IS NOT NULL
+                   GROUP BY source_collection_id) s ON s.source_collection_id = c.id
+        WHERE c.refunded_paise <> COALESCE(s.total, 0)
+        UNION ALL
+        SELECT 'REFUNDS_EXCEED_SOURCE', c.booking_id, NULL, NULL, c.id, s.total,
+               'collected ' || c.amount_paise::text
+        FROM payment_collections c
+        JOIN (SELECT source_collection_id, sum(amount_paise) AS total
+              FROM payment_refunds
+              WHERE status IN ('PENDING', 'PROCESSING', 'COMPLETED')
+                AND source_collection_id IS NOT NULL
+              GROUP BY source_collection_id) s ON s.source_collection_id = c.id
+        WHERE s.total > c.amount_paise
+        UNION ALL
+        SELECT 'REFUNDS_EXCEED_SOURCE', p.booking_id, NULL, NULL, NULL, s.total,
+               'payment ' || p.id::text || ' collected ' || p.amount_paise::text
+        FROM payments p
+        JOIN (SELECT source_payment_id, sum(amount_paise) AS total
+              FROM payment_refunds
+              WHERE status IN ('PENDING', 'PROCESSING', 'COMPLETED')
+                AND source_payment_id IS NOT NULL
+              GROUP BY source_payment_id) s ON s.source_payment_id = p.id
+        WHERE s.total > p.amount_paise
+        UNION ALL
+        SELECT 'BOOKING_REFUND_STATUS_MISMATCH', b.id, NULL, NULL, NULL, NULL,
+               b.payment_status::text || ', but its money says ' || booking_money_status(b.id)
+        FROM bookings b
+        WHERE (EXISTS (SELECT 1 FROM payment_refunds r WHERE r.booking_id = b.id)
+               OR b.payment_status IN ('REFUND_PENDING'::booking_payment_status,
+                                       'PARTIALLY_REFUNDED'::booking_payment_status,
+                                       'REFUNDED'::booking_payment_status))
+          AND b.payment_status::text <> booking_money_status(b.id)
+        UNION ALL
+        SELECT 'FEE_CREDIT_MISMATCH', r.booking_id, NULL, NULL, r.source_collection_id,
+               r.fee_credit_paise,
+               'ledger ' || COALESCE(t.type::text || ' ' || t.direction::text || ' '
+                                     || t.amount_paise::text, 'missing')
+                 || ', collection fee ' || COALESCE(c.platform_fee_paise::text, 'none')
+        FROM payment_refunds r
+        LEFT JOIN driver_wallet_transactions t ON t.id = r.wallet_transaction_id
+        LEFT JOIN payment_collections c ON c.id = r.source_collection_id
+        WHERE r.fee_treatment = 'CREDITED_TO_WALLET'
+          AND (t.id IS NULL OR t.type <> 'REFUND_REVERSAL'::wallet_entry_type
+               OR t.direction <> 'CREDIT'::ledger_direction
+               OR t.amount_paise IS DISTINCT FROM r.fee_credit_paise
+               OR r.fee_credit_paise IS DISTINCT FROM c.platform_fee_paise)
+        UNION ALL
+        SELECT 'FEE_CREDIT_MISMATCH', NULL, NULL, NULL, NULL, t.amount_paise,
+               'REFUND_REVERSAL ' || t.id::text || ' without its cash return'
+        FROM driver_wallet_transactions t
+        LEFT JOIN payment_refunds r ON r.wallet_transaction_id = t.id
+        WHERE t.type = 'REFUND_REVERSAL'::wallet_entry_type AND r.id IS NULL
+      ) findings
+      ORDER BY problem, booking_id
       LIMIT ${ROW_LIMIT}`;
     return rows.map(toFinding);
   }

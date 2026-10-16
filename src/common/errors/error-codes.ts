@@ -155,6 +155,39 @@ export const ErrorCode = {
   // Merchant settlements
   SETTLEMENT_TRACKING_DISABLED: 'SETTLEMENT_TRACKING_DISABLED',
 
+  // Refunds (admin only, payment flow Phase 6)
+  REFUND_NOT_FOUND: 'REFUND_NOT_FOUND',
+  /**
+   * The named source can't be refunded this way: not a collection or booking payment of this
+   * booking (and drop), or not the means it was paid by (cash returns only for cash). 422.
+   */
+  REFUND_SOURCE_INVALID: 'REFUND_SOURCE_INVALID',
+  /**
+   * Nothing is refundable here now: the booking is still live (only a cancelled or completed
+   * booking is refunded), the source isn't completed/paid, or it was already refunded in full.
+   * `details.reason`, and `refundablePaise` when it applies. 409.
+   */
+  REFUND_SOURCE_NOT_REFUNDABLE: 'REFUND_SOURCE_NOT_REFUNDABLE',
+  /** A refund of this source is already PENDING or PROCESSING. `details.refundId`. 409. */
+  REFUND_IN_PROGRESS: 'REFUND_IN_PROGRESS',
+  /**
+   * The amount isn't allowed: partial refunds are off (REFUND_PARTIAL_ALLOWED=false) and it
+   * differs from what is left, or it exceeds what is left. `details.refundablePaise`. 422.
+   */
+  REFUND_AMOUNT_NOT_ALLOWED: 'REFUND_AMOUNT_NOT_ALLOWED',
+  /** The booking's refund case is not allowed by configuration (L-7). `details.refundCase`. 409. */
+  REFUND_CASE_NOT_ALLOWED: 'REFUND_CASE_NOT_ALLOWED',
+  /** A cash return needs the admin's decision on the cash platform fee (feeTreatment). 422. */
+  REFUND_FEE_TREATMENT_REQUIRED: 'REFUND_FEE_TREATMENT_REQUIRED',
+  /** The booking's earning is in a payout being executed; retry once that payout resolves. 409. */
+  REFUND_EARNING_IN_PAYOUT: 'REFUND_EARNING_IN_PAYOUT',
+  /** The refund can't make this move now (e.g. cancel a refund already sent). `details.status`. 409. */
+  REFUND_INVALID_STATE: 'REFUND_INVALID_STATE',
+  /** Provider refunds are off on this server (REFUND_PROVIDER=disabled). 503. */
+  REFUND_PROVIDER_NOT_CONFIGURED: 'REFUND_PROVIDER_NOT_CONFIGURED',
+  /** Razorpay refused or could not be asked; the refund stays as recorded. 502. */
+  REFUND_PROVIDER_ERROR: 'REFUND_PROVIDER_ERROR',
+
   // Platform
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
   INTERNAL_ERROR: 'INTERNAL_ERROR',

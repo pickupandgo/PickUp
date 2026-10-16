@@ -38,6 +38,8 @@ export function buildTestConfig(overrides: Record<string, string> = {}): AppConf
     // Settlements come from the in-memory gateway and are synced explicitly by each test.
     SETTLEMENT_PROVIDER: 'razorpay',
     SETTLEMENT_SYNC_INTERVAL_MINUTES: '0',
+    // Razorpay refunds in test mode; the gateway is the in-memory fake (test-app.ts).
+    REFUND_PROVIDER: 'razorpay',
     ...overrides,
   });
 }

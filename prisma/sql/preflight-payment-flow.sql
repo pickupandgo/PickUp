@@ -1,8 +1,9 @@
 -- Read-only inventory before the PAY AT PICKUP / per-drop PAY AT DELIVERY migrations
 -- (20261015120000_booking_quote_snapshot, 20261016120000_per_stop_obligation_schema,
 -- 20261017120000_payment_gate_stop_lifecycle, 20261018120000_partially_paid_mixed_enums,
--- 20261018120100_obligation_collections, 20261019120000_mixed_earnings_payout_hold, and later
--- payment-flow migrations). Run it in every
+-- 20261018120100_obligation_collections, 20261019120000_mixed_earnings_payout_hold,
+-- 20261020120000_partially_refunded_enum, 20261020120100_refunds, and later payment-flow
+-- migrations). Run it in every
 -- environment that holds data, and review the output before migrating:
 --   psql "$DATABASE_URL" -f prisma/sql/preflight-payment-flow.sql
 -- It only SELECTs; the transaction is READ ONLY so it cannot change anything by mistake. Every
@@ -229,5 +230,54 @@ SELECT CASE WHEN to_regclass('public.settlement_findings') IS NULL THEN NULL
                         FROM (SELECT kind, count(*) AS n FROM settlement_findings GROUP BY 1) per_kind',
                      false, true, '')))[1]::text
        END AS settlement_findings_by_kind;
+
+-- Payment flow Phase 6 (20261020120000_partially_refunded_enum, 20261020120100_refunds): admin-
+-- requested refunds. Nothing is refunded by the migration; refund policy stays open.
+
+\echo '== Phase 6 schema: PARTIALLY_REFUNDED label, payment_refunds and refunded_paise (false: before 20261020120000 / 20261020120100) =='
+SELECT EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+               WHERE t.typname = 'booking_payment_status' AND e.enumlabel = 'PARTIALLY_REFUNDED') AS partially_refunded_label,
+       to_regclass('public.payment_refunds') IS NOT NULL AS payment_refunds_present,
+       EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = 'public' AND table_name = 'payment_collections'
+                 AND column_name = 'refunded_paise') AS refunded_paise_present;
+
+\echo '== Bookings already in a refund payment status (REFUND_PENDING / REFUNDED existed before Phase 6 but nothing set them: any row here was set by hand and needs review before refunds go live) =='
+SELECT payment_method, status, payment_status, count(*) AS bookings
+FROM bookings WHERE payment_status::text IN ('REFUND_PENDING', 'REFUNDED', 'PARTIALLY_REFUNDED')
+GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;
+
+\echo '== Customer payments in a refund status (Phase 6 leaves payments.status as it is: a refunded prepaid payment stays PAID; the refund is its own row) =='
+SELECT purpose, status, count(*) AS payments, COALESCE(sum(amount_paise), 0) AS amount_paise
+FROM payments WHERE status::text IN ('REFUND_PENDING', 'REFUNDED')
+GROUP BY 1, 2 ORDER BY 1, 2;
+
+\echo '== REFUND_REVERSAL ledger entries (unused before Phase 6; after it, only a cash fee credited back with a cash return): must be 0 before 20261020120100 =='
+SELECT count(*) AS refund_reversal_entries, COALESCE(sum(amount_paise), 0) AS amount_paise
+FROM driver_wallet_transactions WHERE type::text = 'REFUND_REVERSAL';
+
+\echo '== Paid and cancelled bookings, the refund review list: completed money per method (before Phase 6 none of it is refunded) =='
+SELECT b.payment_method, COALESCE(c.method::text, 'PREPAID') AS paid_by, count(DISTINCT b.id) AS bookings,
+       COALESCE(sum(c.amount_paise), 0) AS collected_paise
+FROM bookings b
+LEFT JOIN payment_collections c ON c.booking_id = b.id AND c.status::text = 'COMPLETED'
+WHERE b.status = 'CANCELLED' AND b.payment_status <> 'UNPAID'
+GROUP BY 1, 2 ORDER BY 1, 2;
+
+\echo '== Refunds by kind and status, and refunded_paise in total (NULL: before 20261020120100) =='
+SELECT CASE WHEN to_regclass('public.payment_refunds') IS NULL THEN NULL
+            ELSE (xpath('/row/s/text()', query_to_xml(
+                     'SELECT COALESCE(string_agg(k || ''='' || n || '' ('' || p || '' paise)'', '', '' ORDER BY k), ''(none)'') AS s
+                        FROM (SELECT kind || ''/'' || status AS k, count(*) AS n, sum(amount_paise) AS p
+                                FROM payment_refunds GROUP BY 1) per_kind',
+                     false, true, '')))[1]::text
+       END AS refunds_by_kind_and_status,
+       CASE WHEN NOT EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_schema = 'public' AND table_name = 'payment_collections'
+                               AND column_name = 'refunded_paise') THEN NULL
+            ELSE (xpath('/row/n/text()', query_to_xml(
+                     'SELECT COALESCE(sum(refunded_paise), 0) AS n FROM payment_collections',
+                     false, true, '')))[1]::text::bigint
+       END AS collections_refunded_paise;
 
 ROLLBACK;

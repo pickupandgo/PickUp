@@ -117,7 +117,81 @@ describe('loadConfig', () => {
       expect(config.readiness).toEqual({
         razorpayxCapabilitiesConfirmed: false,
         settlementReconVerified: false,
+        refundsProviderVerified: false,
       });
+      // Razorpay refunds in test mode are not gated either.
+      expect(loadConfig(validEnv({ REFUND_PROVIDER: 'razorpay' })).refunds.provider).toBe(
+        'razorpay',
+      );
+    });
+
+    it('never sends live refunds through Razorpay until they are verified (D-72)', () => {
+      const refused = problemsFor(validEnv({ ...production, REFUND_PROVIDER: 'razorpay' })).join(
+        '\n',
+      );
+      expect(refused).toMatch(/REFUND_PROVIDER: .*REFUNDS_PROVIDER_VERIFIED=true/);
+      expect(
+        problemsFor(
+          validEnv({
+            RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456',
+            SETTLEMENT_PROVIDER: 'disabled',
+            REFUND_PROVIDER: 'razorpay',
+          }),
+        ).join(),
+      ).toMatch(/REFUNDS_PROVIDER_VERIFIED/);
+
+      const verified = loadConfig(
+        validEnv({ ...production, REFUND_PROVIDER: 'razorpay', REFUNDS_PROVIDER_VERIFIED: 'true' }),
+      );
+      expect(verified.refunds.provider).toBe('razorpay');
+      expect(verified.readiness.refundsProviderVerified).toBe(true);
+      // Provider refunds off is always allowed, and is the default.
+      const off = loadConfig(validEnv(production));
+      expect(off.refunds.provider).toBeNull();
+      expect(openReadinessItems(off).join('\n')).toMatch(/D-72: .*provider refunds are off/);
+    });
+
+    it('keeps the refund policy open with safe defaults (L-7 to L-10, L-21)', () => {
+      const config = loadConfig(validEnv());
+      expect(config.refunds).toEqual({
+        provider: null,
+        partialAllowed: false,
+        autoOnCancel: false,
+        allowedCases: [
+          'CANCELLED_BEFORE_HANDOVER',
+          'CANCELLED_AFTER_HANDOVER',
+          'UNDELIVERED_DROP',
+          'COMPLETED_BOOKING',
+        ],
+      });
+      expect(openReadinessItems(config).join('\n')).toMatch(
+        /L-7 to L-10, L-21 .*admin-initiated only.*nothing is refunded, debited or recovered automatically; a refund returns all that is left of its source/,
+      );
+      // Automatic refunds on cancellation are not implemented.
+      expect(problemsFor(validEnv({ REFUND_AUTO_ON_CANCEL: 'true' })).join()).toMatch(
+        /REFUND_AUTO_ON_CANCEL/,
+      );
+      // The cases and partial refunds are configuration.
+      const narrowed = loadConfig(
+        validEnv({
+          REFUND_ALLOWED_CASES: 'cancelled_before_handover, UNDELIVERED_DROP',
+          REFUND_PARTIAL_ALLOWED: 'true',
+        }),
+      );
+      expect(narrowed.refunds.allowedCases).toEqual([
+        'CANCELLED_BEFORE_HANDOVER',
+        'UNDELIVERED_DROP',
+      ]);
+      expect(narrowed.refunds.partialAllowed).toBe(true);
+      expect(openReadinessItems(narrowed).join('\n')).toMatch(
+        /partial refunds allowed .*cases: CANCELLED_BEFORE_HANDOVER, UNDELIVERED_DROP/,
+      );
+      expect(loadConfig(validEnv({ REFUND_ALLOWED_CASES: 'NONE' })).refunds.allowedCases).toEqual(
+        [],
+      );
+      expect(problemsFor(validEnv({ REFUND_ALLOWED_CASES: 'ANY_TIME' })).join()).toMatch(
+        /REFUND_ALLOWED_CASES/,
+      );
     });
 
     it('lists the open items for the startup log', () => {
@@ -134,6 +208,8 @@ describe('loadConfig', () => {
             SETTLEMENT_PROVIDER: 'razorpay',
             SETTLEMENT_RECON_VERIFIED: 'true',
             COLLECTION_LINK_PROVIDER: 'razorpay_qr_code',
+            REFUND_PROVIDER: 'razorpay',
+            REFUNDS_PROVIDER_VERIFIED: 'true',
           }),
         ),
       );
@@ -143,6 +219,7 @@ describe('loadConfig', () => {
         expect.stringMatching(/^D-57/),
         expect.stringMatching(/^L-11\/D-70 .*held for admin review \(technical safe default\)/),
         expect.stringMatching(/^N5 driver pay .*nothing is refunded, compensated or recovered/),
+        expect.stringMatching(/^L-7 to L-10, L-21 .*admin-initiated only/),
       ]);
     });
 
@@ -386,6 +463,20 @@ describe('loadConfig', () => {
     expect(
       problemsFor(validEnv({ ...qr, RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456' })).join(),
     ).toMatch(/COLLECTION_LINK_PROVIDER/);
+
+    // Simulated refunds (Phase 6 local end-to-end runs): same rule.
+    const refunds = loadConfig(validEnv({ REFUND_PROVIDER: 'simulated' }));
+    expect(refunds.simulation.enabled).toBe(true);
+    expect(refunds.refunds.provider).toBe('simulated');
+    expect(openReadinessItems(refunds).join('\n')).toMatch(/D-72: provider refunds are simulated/);
+    expect(
+      problemsFor(validEnv({ REFUND_PROVIDER: 'simulated', NODE_ENV: 'production' })).join(),
+    ).toMatch(/REFUND_PROVIDER/);
+    expect(
+      problemsFor(
+        validEnv({ REFUND_PROVIDER: 'simulated', RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456' }),
+      ).join(),
+    ).toMatch(/REFUND_PROVIDER/);
   });
 
   it('rejects weak internal API keys without echoing them', () => {

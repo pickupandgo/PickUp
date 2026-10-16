@@ -150,8 +150,11 @@ enum BookingPaymentStatus {
   /// Pay at delivery, priced per drop: some but not all drops are paid (payment flow Phase 4).
   PARTIALLY_PAID
   PAID
+  /// A refund of the booking's money is requested and not finished (payment flow Phase 6).
   REFUND_PENDING
   REFUNDED
+  /// Some, but not all, of the money collected for the booking was refunded (payment flow Phase 6).
+  PARTIALLY_REFUNDED
 
   @@map("booking_payment_status")
 }
@@ -275,6 +278,8 @@ model User {
   createdPricingVersions     PricingVersion[]          @relation("PricingVersionCreatedBy")
   deactivatedPricingVersions PricingVersion[]          @relation("PricingVersionDeactivatedBy")
   resolvedBookingStops       BookingStop[]             @relation("BookingStopResolvedBy")
+  requestedRefunds           PaymentRefund[]           @relation("RefundRequestedBy")
+  cancelledRefunds           PaymentRefund[]           @relation("RefundCancelledBy")
 
   @@map("users")
 }
@@ -368,6 +373,8 @@ model DriverWalletTransaction {
   wallet      DriverWallet       @relation(fields: [walletId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   performedBy User?              @relation(fields: [performedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   collection  PaymentCollection?
+  /// The cash return whose platform fee this REFUND_REVERSAL credit gives back.
+  refund      PaymentRefund?
 
   @@unique([walletId, walletVersion], map: "uq_wallet_tx_wallet_version")
   @@unique([provider, providerEventId], map: "uq_wallet_tx_provider_event")
@@ -404,6 +411,7 @@ model Payment {
   earning            DriverEarning?
   settlement         PaymentSettlement?
   settlementFindings SettlementFinding[]
+  refunds            PaymentRefund[]
 
   @@unique([userId, idempotencyKey], map: "uq_payments_user_idempotency")
   // At most one live payment per booking, so a booking can never be charged twice. A FAILED
@@ -509,6 +517,7 @@ model Booking {
   disputes           PaymentDispute[]
   settlements        PaymentSettlement[]
   settlementFindings SettlementFinding[]
+  refunds            PaymentRefund[]
 
   @@index([customerId, createdAt(sort: Desc)], map: "idx_bookings_customer_created")
   @@index([status, createdAt], map: "idx_bookings_status_created")
@@ -555,6 +564,7 @@ model BookingStop {
   fareQuoteStop FareQuoteStop       @relation(fields: [fareQuoteStopId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   resolvedBy    User?               @relation("BookingStopResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   collections   PaymentCollection[]
+  refunds       PaymentRefund[]
 
   @@unique([bookingId, sequence], map: "uq_booking_stops_sequence")
   /// Target of the composite foreign key that ties a stop's collections to the same booking.
@@ -640,6 +650,9 @@ model PaymentCollection {
   /// CASH or ONLINE_QR (CHECK).
   method              String    @db.VarChar(20)
   amountPaise         BigInt    @map("amount_paise")
+  /// Sum of this collection's completed refunds (payment flow Phase 6). Kept by a trigger from
+  /// payment_refunds; the API role cannot write it.
+  refundedPaise       BigInt    @default(0) @map("refunded_paise")
   collectedByDriverId String    @map("collected_by_driver_id") @db.Uuid
   /// PENDING, COMPLETED, FAILED or REVERSED (CHECK).
   status              String    @default("COMPLETED") @db.VarChar(20)
@@ -678,6 +691,7 @@ model PaymentCollection {
   earningLink        EarningCollection?
   settlement         PaymentSettlement?
   settlementFindings SettlementFinding[]
+  refunds            PaymentRefund[]
 
   @@unique([provider, providerPaymentId], map: "uq_collection_provider_payment", where: raw("(provider_payment_id IS NOT NULL)"))
   @@unique([provider, providerReferenceId], map: "uq_collection_provider_reference", where: raw("(provider_reference_id IS NOT NULL)"))
@@ -1170,6 +1184,81 @@ model PaymentDispute {
   @@index([providerPaymentId], map: "idx_disputes_provider_payment")
   @@index([bookingId], map: "idx_disputes_booking")
   @@map("payment_disputes")
+}
+
+/// A refund an admin requested (payment flow Phase 6): a provider refund of an online payment
+/// through Razorpay, or a cash return of a cash collection. Each names exactly one source, a
+/// completed collection or a paid historical prepaid payment, of its own booking and drop. The
+/// source, amount, reason and decisions are immutable and the status only moves forward
+/// (triggers). Nothing creates one automatically: refund policy is open (OPEN_DECISIONS L-7 to
+/// L-10, L-21).
+model PaymentRefund {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bookingId           String    @map("booking_id") @db.Uuid
+  /// The drop the source collection was for (per-drop collections only), else NULL.
+  bookingStopId       String?   @map("booking_stop_id") @db.Uuid
+  /// The source: a completed collection, or (below) a paid prepaid booking payment. Exactly one.
+  sourceCollectionId  String?   @map("source_collection_id") @db.Uuid
+  sourcePaymentId     String?   @map("source_payment_id") @db.Uuid
+  /// PROVIDER or CASH_RETURNED (CHECK).
+  kind                String    @db.VarChar(20)
+  /// PENDING, PROCESSING, COMPLETED, FAILED, REFUSED or CANCELLED (CHECK, forward only).
+  status              String    @db.VarChar(20)
+  /// What the booking's facts showed when it was requested (CANCELLED_BEFORE_HANDOVER,
+  /// CANCELLED_AFTER_HANDOVER, UNDELIVERED_DROP, COMPLETED_BOOKING). For review; decides nothing.
+  refundCase          String    @map("refund_case") @db.VarChar(40)
+  amountPaise         BigInt    @map("amount_paise")
+  currency            String    @default("INR") @db.Char(3)
+  reason              String    @db.VarChar(500)
+  requestedByUserId   String    @map("requested_by_user_id") @db.Uuid
+  /// admin:<user>:<Idempotency-Key>, so a retried request never creates a second refund.
+  idempotencyKey      String    @unique(map: "uq_refunds_idempotency_key") @map("idempotency_key") @db.VarChar(150)
+  /// PROVIDER only: RAZORPAY.
+  provider            String?   @db.VarChar(40)
+  /// PROVIDER only: the source's own Razorpay payment (pay_...).
+  providerPaymentId   String?   @map("provider_payment_id") @db.VarChar(100)
+  /// PROVIDER only: the Razorpay refund (rfnd_...), recorded once.
+  providerRefundId    String?   @map("provider_refund_id") @db.VarChar(100)
+  /// The last refund status Razorpay reported (pending, processed, failed).
+  providerStatus      String?   @map("provider_status") @db.VarChar(30)
+  /// The bank reference (ARN / RRN) Razorpay reports for a processed refund.
+  providerReference   String?   @map("provider_reference") @db.VarChar(100)
+  /// CASH_RETURNED only: KEPT or CREDITED_TO_WALLET, as the admin stated.
+  feeTreatment        String?   @map("fee_treatment") @db.VarChar(30)
+  /// CREDITED_TO_WALLET only: the collection's platform fee, credited back once.
+  feeCreditPaise      BigInt?   @map("fee_credit_paise")
+  /// CREDITED_TO_WALLET only: the REFUND_REVERSAL ledger credit.
+  walletTransactionId String?   @unique(map: "uq_refunds_wallet_tx") @map("wallet_transaction_id") @db.Uuid
+  failureReason       String?   @map("failure_reason") @db.VarChar(200)
+  /// Provider submissions claimed (a lease: two workers never submit the same refund at once).
+  submitAttempts      Int       @default(0) @map("submit_attempts")
+  lastSubmittedAt     DateTime? @map("last_submitted_at") @db.Timestamptz(6)
+  completedAt         DateTime? @map("completed_at") @db.Timestamptz(6)
+  failedAt            DateTime? @map("failed_at") @db.Timestamptz(6)
+  cancelledAt         DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  cancelledByUserId   String?   @map("cancelled_by_user_id") @db.Uuid
+  cancellationReason  String?   @map("cancellation_reason") @db.VarChar(500)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking           Booking                  @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// Composite key: a refund can only name a drop of its own booking.
+  bookingStop       BookingStop?             @relation(fields: [bookingId, bookingStopId], references: [bookingId, id], onDelete: Restrict, onUpdate: Restrict)
+  sourceCollection  PaymentCollection?       @relation(fields: [sourceCollectionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourcePayment     Payment?                 @relation(fields: [sourcePaymentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  requestedBy       User                     @relation("RefundRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cancelledBy       User?                    @relation("RefundCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  walletTransaction DriverWalletTransaction? @relation(fields: [walletTransactionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([provider, providerRefundId], map: "uq_refunds_provider_refund", where: raw("(provider_refund_id IS NOT NULL)"))
+  // One live (PENDING or PROCESSING) refund per source at a time.
+  @@unique([sourceCollectionId], map: "uq_refunds_collection_live", where: raw("((source_collection_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['PENDING'::character varying, 'PROCESSING'::character varying])::text[])))"))
+  @@unique([sourcePaymentId], map: "uq_refunds_payment_live", where: raw("((source_payment_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['PENDING'::character varying, 'PROCESSING'::character varying])::text[])))"))
+  @@index([bookingId], map: "idx_refunds_booking")
+  @@index([sourceCollectionId], map: "idx_refunds_collection")
+  @@index([sourcePaymentId], map: "idx_refunds_payment")
+  @@index([status, createdAt], map: "idx_refunds_status_created")
+  @@map("payment_refunds")
 }
 
 /// M1 admin_actions: append-only audit of admin and ops-CLI actions on financial records

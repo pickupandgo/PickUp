@@ -792,6 +792,7 @@ describe('Fare quotes and pricing versions', () => {
           COLLECTION_LINK_PROVIDER: 'razorpay_qr_code',
           SETTLEMENT_PROVIDER: 'disabled',
           PAYOUT_PROVIDER: 'disabled',
+          REFUND_PROVIDER: 'disabled',
         },
       });
       try {

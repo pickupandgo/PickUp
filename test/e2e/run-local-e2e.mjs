@@ -14,13 +14,19 @@
  *   - Razorpay merchant settlement: SETTLEMENT_PROVIDER=simulated + a signed settlement.processed;
  *   - RazorpayX bank validation and payouts: PAYOUT_PROVIDER=simulated + signed webhooks;
  *   - the customer paying a pickup or drop QR (Razorpay test mode can't pay a QR code):
- *     COLLECTION_LINK_PROVIDER=simulated + a signed qr_code.credited (payment flow Phase 4).
+ *     COLLECTION_LINK_PROVIDER=simulated + a signed qr_code.credited (payment flow Phase 4);
+ *   - Razorpay processing a refund: REFUND_PROVIDER=simulated + a signed refund.processed
+ *     (payment flow Phase 6; live refunds stay off until verified, OPEN_DECISIONS D-72).
  * Simulated providers are refused by config validation in production and with live keys.
  *
  * Payment flow Phase 5 (steps 12-19): every earning records its cash and online parts and its
  * payout amount; an earning funded by several collections is payable only once every online
  * collection is settled; a payout carries exactly the payout amounts; a failed payout puts its
  * earnings ON_HOLD until an admin releases them (N10).
+ *
+ * Payment flow Phase 6 (steps 20-23): admin-requested refunds. A cancelled QR booking refunded
+ * through the provider, a cash return with the platform fee credited back to the wallet once,
+ * a refund after the earning was paid out (no clawback, reported), and the audit.
  *
  * Isolation: a separate database (multipleride_e2e, dropped and recreated each run), a separate
  * port (3100), freshly generated secrets and signing key. The dev database and backend are not
@@ -417,6 +423,7 @@ async function main() {
     SETTLEMENT_SYNC_INTERVAL_MINUTES: '0',
     COLLECTION_LINK_PROVIDER: 'simulated',
     PAYOUT_PROVIDER: 'simulated',
+    REFUND_PROVIDER: 'simulated',
     RAZORPAYX_ACCOUNT_NUMBER: '',
     RAZORPAYX_KEY_ID: '',
     RAZORPAYX_KEY_SECRET: '',
@@ -1909,6 +1916,272 @@ async function main() {
     check((await walletNow()).balancePaise === WALLET_FLOAT_PAISE - ledger.rows[0].total, 'wallet = float - the cash fees');
     report.ids.phase5 = { splitBookingId: split.bookingId, splitEarningId: split.earningId };
     return { summary, processedPayoutsPaise: processedTotal, payoutItems: itemState, cashFeeDebits: ledger.rows[0] };
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Payment flow Phase 6: refunds. The technical system only: every refund is requested by an
+  // admin with a reason, for an amount the server computes; a provider refund is completed only
+  // by what Razorpay reports (REFUND_PROVIDER=simulated + a signed refund.processed here); a cash
+  // return is recorded with the admin's explicit fee decision. The refund policy stays open
+  // (OPEN_DECISIONS L-7 to L-10, L-21): nothing is refunded, debited or recovered on its own.
+  // -------------------------------------------------------------------------------------------
+  const refundEvents = [];
+  const refundIds = [];
+  const refundAt = (body, key = randomUUID(), expect = [201]) =>
+    call('POST', '/v1/admin/refunds', {
+      as: opsAdmin,
+      headers: { 'Idempotency-Key': { value: key, shown: key } },
+      body: { reason: 'E2E run: refund requested by ops, ticket E2E-6006', ...body },
+      expect,
+    });
+  /** Razorpay processes a refund and says so through the signed refund.processed webhook. */
+  async function refundProcessed(providerRefundId) {
+    const moved = await call('POST', `/v1/dev/simulate/refunds/${providerRefundId}`, {
+      as: admin,
+      body: { status: 'processed' },
+      expect: [200],
+    });
+    const webhook = signedEvent(secrets.razorpayWebhook, 'refund.processed', {
+      refund: { entity: moved.body.entity },
+    });
+    refundEvents.push(webhook.eventId);
+    await sendWebhook('/v1/webhooks/razorpay', webhook, 'RAZORPAY_SIGNATURE');
+    return { webhook, entity: moved.body.entity, ...(await webhookEvent('payment_events', webhook.eventId)) };
+  }
+  const reviewList = async () =>
+    (await call('GET', '/v1/admin/reconciliation/paid-cancelled-bookings', { as: admin, expect: [200] })).body;
+  const refundAnomalies = async () =>
+    (await call('GET', '/v1/admin/reconciliation/refund-anomalies', { as: admin, expect: [200] })).body;
+  let refundedQr;
+
+  await step(20, 'Provider refund of a cancelled PAY_AT_PICKUP QR booking: admin request, Razorpay refund (X-Refund-Idempotency), signed refund.processed, REFUNDED once', async () => {
+    const { booking, bookingId: qrBookingId, tripId: qrTripId } = await bookFromQuote('REFUND-QR', 'PAY_AT_PICKUP', [
+      { latitude: 26.2967, longitude: 73.0351 },
+    ]);
+    const owed = booking.payablePaise;
+    await tripStatus(qrTripId, 'DRIVER_ARRIVED');
+    const shown = await collectAt(qrTripId, { method: 'ONLINE_QR', amountPaise: owed }, [201]);
+    const collectionId = shown.body.collectionId;
+    const paid = await customerPaysQr(collectionId);
+    const credited = await deliverQrEvent('qr_code.credited', paid);
+    check(credited.outcome === 'APPLIED' && !credited.problem, 'the QR payment applied: booking PAID');
+    const cancelled = await engine('POST', `/v1/internal/bookings/${qrBookingId}/cancel`, {
+      reason: 'E2E run: customer cancelled before pickup',
+    }, [200]);
+    check(cancelled.body.status === 'CANCELLED' && cancelled.body.paymentStatus === 'PAID', 'cancelled, still PAID: nothing refunded on its own');
+    check(
+      (await reviewList()).some((finding) => finding.bookingId === qrBookingId && finding.amountPaise === owed),
+      'listed for refund review for the whole amount',
+    );
+
+    const key = randomUUID();
+    const requested = await refundAt({ bookingId: qrBookingId, sourceCollectionId: collectionId, kind: 'PROVIDER' }, key);
+    const refund = requested.body.refund;
+    check(
+      requested.body.created === true && requested.body.submission === 'PROCESSING' && refund.status === 'PROCESSING' &&
+        refund.kind === 'PROVIDER' && refund.amountPaise === owed && refund.refundCase === 'CANCELLED_BEFORE_HANDOVER' &&
+        refund.providerPaymentId === paid.payment.id && /^rfnd_/.test(refund.providerRefundId ?? ''),
+      'the server computed the amount from the collection and Razorpay accepted the refund',
+    );
+    refundIds.push(refund.refundId);
+    const replay = await refundAt({ bookingId: qrBookingId, sourceCollectionId: collectionId, kind: 'PROVIDER' }, key, [200]);
+    idempotent(
+      'refund retried with the same Idempotency-Key returns the same refund',
+      replay.body.created === false && replay.body.refund.refundId === refund.refundId,
+    );
+    const second = await refundAt({ bookingId: qrBookingId, sourceCollectionId: collectionId, kind: 'PROVIDER' }, randomUUID(), [409]);
+    idempotent('a second refund of the same collection is refused while one is in progress', second.body.error.code === 'REFUND_IN_PROGRESS');
+    let chain = await call('GET', `/v1/admin/bookings/${qrBookingId}`, { as: admin, expect: [200] });
+    check(chain.body.booking.paymentStatus === 'REFUND_PENDING', 'booking REFUND_PENDING while Razorpay processes it');
+
+    const processed = await refundProcessed(refund.providerRefundId);
+    check(processed.outcome === 'REFUND_APPLIED' && !processed.problem, 'refund.processed applied');
+    await sendWebhook('/v1/webhooks/razorpay', processed.webhook, 'RAZORPAY_SIGNATURE');
+    idempotent('repeated refund.processed delivery is stored and applied once', (await webhookEvent('payment_events', processed.webhook.eventId)).rows === 1);
+    const again = signedEvent(secrets.razorpayWebhook, 'refund.processed', { refund: { entity: processed.entity } });
+    refundEvents.push(again.eventId);
+    await sendWebhook('/v1/webhooks/razorpay', again, 'RAZORPAY_SIGNATURE');
+    idempotent('the same refund state in a new event changes nothing', (await webhookEvent('payment_events', again.eventId)).outcome === 'REFUND_ALREADY_APPLIED');
+    const synced = await call('POST', `/v1/admin/refunds/${refund.refundId}/sync`, { as: admin, expect: [200] });
+    idempotent('an admin sync after the webhook finds it already applied', synced.body.outcome === 'REFUND_ALREADY_APPLIED');
+
+    const completed = (await call('GET', `/v1/admin/refunds/${refund.refundId}`, { as: admin, expect: [200] })).body;
+    check(completed.status === 'COMPLETED' && completed.completedAt && completed.providerReference, 'refund COMPLETED, with the bank reference');
+    chain = await call('GET', `/v1/admin/bookings/${qrBookingId}`, { as: admin, expect: [200] });
+    check(chain.body.booking.paymentStatus === 'REFUNDED', 'booking REFUNDED');
+    check(
+      chain.body.collections.length === 1 && chain.body.collections[0].status === 'COMPLETED' &&
+        chain.body.collections[0].amountPaise === owed && chain.body.collections[0].refundedPaise === owed,
+      'the collection keeps its facts and shows what was refunded of it',
+    );
+    check(chain.body.refunds.length === 1 && chain.body.refunds[0].status === 'COMPLETED', 'the money trail lists the refund');
+    check(!(await reviewList()).some((finding) => finding.bookingId === qrBookingId), 'off the refund review list');
+    const more = await refundAt({ bookingId: qrBookingId, sourceCollectionId: collectionId, kind: 'PROVIDER' }, randomUUID(), [409]);
+    check(more.body.error.code === 'REFUND_SOURCE_NOT_REFUNDABLE', 'nothing is left to refund');
+    refundedQr = { bookingId: qrBookingId, collectionId, refundId: refund.refundId, amountPaise: owed };
+    return {
+      bookingId: qrBookingId,
+      collectionId,
+      refundId: refund.refundId,
+      providerRefundId: refund.providerRefundId,
+      amountPaise: owed,
+      bookingPaymentStatus: chain.body.booking.paymentStatus,
+    };
+  });
+
+  await step(21, 'Cash returned on the completed step 12 cash trip: explicit fee decision, platform fee credited back to the wallet once, earning untouched and reported (L-21)', async () => {
+    const walletBefore = (await walletNow()).balancePaise;
+    const earningBefore = (await call('GET', `/v1/admin/earnings/${pickupCash.earningId}`, { as: admin, expect: [200] })).body;
+    const body = { bookingId: pickupCash.bookingId, sourceCollectionId: pickupCash.collectionId, kind: 'CASH_RETURNED' };
+    const undecided = await refundAt(body, randomUUID(), [422]);
+    check(undecided.body.error.code === 'REFUND_FEE_TREATMENT_REQUIRED', 'a cash return needs the admin decision on the cash fee');
+    const online = await refundAt({ ...body, kind: 'PROVIDER' }, randomUUID(), [422]);
+    check(online.body.error.code === 'REFUND_SOURCE_INVALID', 'cash is never refunded through Razorpay');
+
+    const key = randomUUID();
+    const recorded = await refundAt({ ...body, feeTreatment: 'CREDITED_TO_WALLET' }, key);
+    const refund = recorded.body.refund;
+    check(
+      recorded.body.created === true && recorded.body.submission === null && refund.status === 'COMPLETED' &&
+        refund.kind === 'CASH_RETURNED' && refund.refundCase === 'COMPLETED_BOOKING' &&
+        refund.feeTreatment === 'CREDITED_TO_WALLET' && refund.feeCreditPaise === pickupCash.feePaise &&
+        refund.walletTransactionId,
+      'cash return recorded COMPLETED; the platform fee credited back, as decided',
+    );
+    refundIds.push(refund.refundId);
+    const replay = await refundAt({ ...body, feeTreatment: 'CREDITED_TO_WALLET' }, key, [200]);
+    const walletAfter = (await walletNow()).balancePaise;
+    idempotent(
+      'cash return retried with the same Idempotency-Key: same refund, the fee credited once',
+      replay.body.created === false && replay.body.refund.refundId === refund.refundId &&
+        walletAfter === walletBefore + pickupCash.feePaise,
+    );
+    const transactions = (await call('GET', '/v1/wallet/transactions', { as: driver, expect: [200] })).body.items;
+    const credits = transactions.filter((entry) => entry.type === 'REFUND_REVERSAL');
+    check(
+      credits.length === 1 && credits[0].direction === 'CREDIT' && credits[0].amountPaise === pickupCash.feePaise &&
+        credits[0].referenceType === 'REFUND' && credits[0].referenceId === refund.refundId,
+      'one REFUND_REVERSAL credit in the ledger, for this cash return',
+    );
+    const earningAfter = (await call('GET', `/v1/admin/earnings/${pickupCash.earningId}`, { as: admin, expect: [200] })).body;
+    check(
+      earningAfter.status === 'SETTLED_IN_CASH' && earningAfter.netAmountPaise === earningBefore.netAmountPaise,
+      'the cash earning keeps its financial truth: nothing is clawed back',
+    );
+    check(
+      (await refundAnomalies()).some(
+        (finding) => finding.problem === 'REFUND_ON_CASH_EARNING' && finding.bookingId === pickupCash.bookingId,
+      ),
+      'reconciliation reports it for a decision (L-21)',
+    );
+    const chain = await call('GET', `/v1/admin/bookings/${pickupCash.bookingId}`, { as: admin, expect: [200] });
+    check(chain.body.booking.paymentStatus === 'REFUNDED', 'booking REFUNDED');
+    return {
+      bookingId: pickupCash.bookingId,
+      refundId: refund.refundId,
+      feeCreditPaise: refund.feeCreditPaise,
+      walletBalancePaise: walletAfter,
+    };
+  });
+
+  await step(22, 'Refund of a step 17 QR drop after its earning was paid out: the earning stays PAID (no clawback), the booking PARTIALLY_REFUNDED, reported (L-21)', async () => {
+    const chainBefore = await call('GET', `/v1/admin/bookings/${split.bookingId}`, { as: admin, expect: [200] });
+    const drop1 = chainBefore.body.collections.find((entry) => entry.stopSequence === 1 && entry.status === 'COMPLETED');
+    check(drop1 && drop1.method === 'ONLINE_QR', "drop 1's QR collection");
+    const walletBefore = (await walletNow()).balancePaise;
+    const requested = await refundAt({
+      bookingId: split.bookingId,
+      sourceCollectionId: drop1.collectionId,
+      stopSequence: 1,
+      kind: 'PROVIDER',
+    });
+    const refund = requested.body.refund;
+    check(
+      refund.status === 'PROCESSING' && refund.stopSequence === 1 && refund.amountPaise === drop1.amountPaise &&
+        refund.refundCase === 'COMPLETED_BOOKING',
+      "a refund of drop 1's money only, computed from that drop's collection",
+    );
+    refundIds.push(refund.refundId);
+    const processed = await refundProcessed(refund.providerRefundId);
+    check(processed.outcome === 'REFUND_APPLIED', 'refund.processed applied');
+    const earning = (await call('GET', `/v1/admin/earnings/${split.earningId}`, { as: admin, expect: [200] })).body;
+    check(earning.status === 'PAID' && earning.paidAt, 'the earning paid out stays PAID: nothing recovered automatically');
+    const chain = await call('GET', `/v1/admin/bookings/${split.bookingId}`, { as: admin, expect: [200] });
+    check(chain.body.booking.paymentStatus === 'PARTIALLY_REFUNDED', 'booking PARTIALLY_REFUNDED: drops 2 and 3 not refunded');
+    check(
+      (await refundAnomalies()).some(
+        (finding) => finding.problem === 'REFUND_AFTER_PAYOUT' && finding.bookingId === split.bookingId &&
+          finding.earningId === split.earningId && finding.payoutId,
+      ),
+      'reconciliation reports the refund after the payout, with the payout (L-21)',
+    );
+    check((await walletNow()).balancePaise === walletBefore, 'a provider refund never touches the driver wallet');
+    return {
+      bookingId: split.bookingId,
+      refundId: refund.refundId,
+      amountPaise: refund.amountPaise,
+      earningStatus: earning.status,
+      bookingPaymentStatus: chain.body.booking.paymentStatus,
+    };
+  });
+
+  await step(23, 'Phase 6 audit: refunds, refunded amounts, booking statuses, the fee credit and the audit trail reconcile', async () => {
+    const bookingIds = [refundedQr.bookingId, pickupCash.bookingId, split.bookingId];
+    const integrity = (await refundAnomalies()).filter((finding) =>
+      ['REFUNDED_TOTAL_MISMATCH', 'REFUNDS_EXCEED_SOURCE', 'BOOKING_REFUND_STATUS_MISMATCH', 'FEE_CREDIT_MISMATCH',
+        'STALE_PENDING_REFUND', 'STALE_PROCESSING_REFUND'].includes(finding.problem),
+    );
+    check(integrity.length === 0, 'refund-anomalies: no integrity finding (only the L-21 flags for a decision)');
+    for (const reportName of ['wallet-mismatches', 'webhook-anomalies', 'unprocessed-webhooks']) {
+      const findings = await call('GET', `/v1/admin/reconciliation/${reportName}`, { as: admin, expect: [200] });
+      const text = JSON.stringify(findings.body);
+      check(
+        [walletId, ...refundEvents].every((id) => !text.includes(id)),
+        `${reportName}: nothing for the wallet or this run's refund webhooks`,
+      );
+    }
+    const rows = await db.query(
+      `SELECT r.kind, r.status, r.amount_paise::int AS amount, r.booking_id::text AS booking_id,
+              b.payment_status::text AS booking_status, booking_money_status(b.id) AS money_status
+         FROM payment_refunds r JOIN bookings b ON b.id = r.booking_id
+        ORDER BY r.created_at`,
+    );
+    check(rows.rows.length === 3 && rows.rows.every((row) => row.status === 'COMPLETED'), 'three refunds, all COMPLETED');
+    check(rows.rows.every((row) => row.booking_status === row.money_status), "every booking's payment status is what its money says");
+    const collections = await db.query(
+      `SELECT COUNT(*) FILTER (WHERE c.refunded_paise <> COALESCE(s.total, 0))::int AS mismatched,
+              COALESCE(SUM(c.refunded_paise), 0)::int AS refunded
+         FROM payment_collections c
+         LEFT JOIN (SELECT source_collection_id, SUM(amount_paise) AS total FROM payment_refunds
+                     WHERE status = 'COMPLETED' GROUP BY 1) s ON s.source_collection_id = c.id`,
+    );
+    check(
+      collections.rows[0].mismatched === 0 &&
+        collections.rows[0].refunded === rows.rows.reduce((sum, row) => sum + row.amount, 0),
+      'refunded_paise is exactly the completed refunds, collection by collection',
+    );
+    const audit = await db.query(
+      `SELECT action, COUNT(*)::int AS n FROM admin_actions
+        WHERE target_type = 'PAYMENT_REFUND' GROUP BY 1 ORDER BY 1`,
+    );
+    const actions = Object.fromEntries(audit.rows.map((row) => [row.action, row.n]));
+    check(
+      actions.REFUND_REQUESTED === 2 && actions.CASH_RETURN_RECORDED === 1 && actions.REFUND_COMPLETED === 2,
+      'audit trail: two provider refunds requested and completed, one cash return recorded',
+    );
+    const ledger = await db.query(
+      `SELECT COUNT(*)::int AS entries, COALESCE(SUM(amount_paise), 0)::int AS total
+         FROM driver_wallet_transactions WHERE type = 'REFUND_REVERSAL'`,
+    );
+    check(
+      ledger.rows[0].entries === 1 && ledger.rows[0].total === pickupCash.feePaise,
+      'one REFUND_REVERSAL ledger credit: the cash fee credited back with the cash return',
+    );
+    const summary = (await call('GET', '/v1/earnings/summary', { as: driver, expect: [200] })).body;
+    const paidOut = NET_PAISE + pickupQr.netPaise + delivery.payoutPaise + split.payoutPaise;
+    check(summary.paidPaise === paidOut, 'driver summary: what was paid out is unchanged (no clawback)');
+    report.ids.phase6 = { refundIds, bookingIds };
+    return { refunds: rows.rows.length, auditActions: actions, refundReversal: ledger.rows[0] };
   });
 }
 

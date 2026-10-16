@@ -20,6 +20,8 @@ import { ErrorCode } from '../common/errors/error-codes';
 import { PayoutGateway } from '../payouts/payout.gateway';
 import { SimulatedPayoutGateway } from '../payouts/simulated-payout.gateway';
 import { RAZORPAY_PAYMENT_ID_PATTERN } from '../razorpay/razorpay.types';
+import { RefundGateway } from '../refunds/refund.gateway';
+import { refundEntity, SimulatedRefundGateway } from '../refunds/simulated-refund.gateway';
 import { SettlementGateway } from '../settlements/settlement.gateway';
 import { SimulatedSettlementGateway } from '../settlements/simulated-settlement.gateway';
 
@@ -77,6 +79,11 @@ export class SimulatePayoutRequest {
   failureReason?: string;
 }
 
+export class SimulateRefundRequest {
+  @IsIn(['processed', 'failed'])
+  status!: 'processed' | 'failed';
+}
+
 /**
  * NON-PRODUCTION ONLY. Mounted only when a simulated provider is configured, which config
  * validation allows only outside production with Razorpay test keys; admin authentication still
@@ -92,6 +99,7 @@ export class DevSimulationController {
     private readonly settlements: SettlementGateway,
     private readonly payouts: PayoutGateway,
     private readonly collections: CollectionLinkGateway,
+    private readonly refunds: RefundGateway,
   ) {}
 
   /** Razorpay settles a customer payment to Nikhil Enterprises (test mode never does). */
@@ -206,6 +214,28 @@ export class DevSimulationController {
       throw unknown('QR code, or it is no longer payable');
     }
     return { qrCode: paid.qrCode, payment: paid.payment };
+  }
+
+  /**
+   * Razorpay processes or fails a refund (payment flow Phase 6). Returns the refund entity of the
+   * refund.processed / refund.failed webhook to deliver, signed, through /v1/webhooks/razorpay.
+   */
+  @Post('refunds/:providerRefundId')
+  @HttpCode(HttpStatus.OK)
+  moveRefund(
+    @Param('providerRefundId') providerRefundId: string,
+    @Body() body: SimulateRefundRequest,
+  ): Record<string, unknown> {
+    if (!(this.refunds instanceof SimulatedRefundGateway)) {
+      throw notSimulated();
+    }
+    const refund = PROVIDER_ID.test(providerRefundId)
+      ? this.refunds.setRefundStatus(providerRefundId, body.status)
+      : null;
+    if (!refund) {
+      throw unknown('refund');
+    }
+    return { entity: refundEntity(refund) };
   }
 
   private simulatedPayouts(): SimulatedPayoutGateway {

@@ -10,12 +10,14 @@ import type { AppConfig } from '../../src/config/app-config';
 import { PayoutGateway } from '../../src/payouts/payout.gateway';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { RazorpayGateway } from '../../src/razorpay/razorpay.gateway';
+import { RefundGateway } from '../../src/refunds/refund.gateway';
 import { SettlementGateway } from '../../src/settlements/settlement.gateway';
 import { SimulatedSettlementGateway } from '../../src/settlements/simulated-settlement.gateway';
 import { FakeClock } from './fake-clock';
 import { FakeCollectionLinkGateway } from './fake-collection-link.gateway';
 import { FakePayoutGateway } from './fake-payout.gateway';
 import { FakeRazorpayGateway } from './fake-razorpay.gateway';
+import { FakeRefundGateway } from './fake-refund.gateway';
 import { buildTestConfig } from './test-config';
 import { StaticSigningKeyProvider, TestTokenIssuer } from './test-tokens';
 
@@ -28,6 +30,8 @@ export interface TestContext {
   readonly payouts: FakePayoutGateway;
   /** Razorpay settlement data: tests record a merchant settlement here, then run the sync. */
   readonly settlements: SimulatedSettlementGateway;
+  /** Razorpay refunds (payment flow Phase 6). */
+  readonly refunds: FakeRefundGateway;
   readonly clock: FakeClock;
   readonly tokens: TestTokenIssuer;
   readonly config: AppConfig;
@@ -42,8 +46,8 @@ export interface TestAppOptions {
 /**
  * Boots the real application (same modules, guards, pipes and filters as production) against
  * the test database. Only the external seams are replaced: Razorpay, Razorpay collection links,
- * Razorpay settlement data and RazorpayX (in-memory fakes), the identity provider's public keys,
- * and the clock used for business schedules.
+ * Razorpay settlement data, Razorpay refunds and RazorpayX (in-memory fakes), the identity
+ * provider's public keys, and the clock used for business schedules.
  */
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestContext> {
   const config = buildTestConfig({
@@ -55,6 +59,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestC
   const links = new FakeCollectionLinkGateway();
   const payouts = new FakePayoutGateway();
   const settlements = new SimulatedSettlementGateway();
+  const refunds = new FakeRefundGateway();
   const clock = new FakeClock();
 
   const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(config)] })
@@ -68,6 +73,8 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestC
     .useValue(payouts)
     .overrideProvider(SettlementGateway)
     .useValue(settlements)
+    .overrideProvider(RefundGateway)
+    .useValue(refunds)
     .overrideProvider(Clock)
     .useValue(clock)
     .compile();
@@ -87,6 +94,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestC
     links,
     payouts,
     settlements,
+    refunds,
     clock,
     tokens,
     config,

@@ -324,7 +324,9 @@ export class BookingsService {
 
   /**
    * Cancels a booking and its trip. A booking that was already paid is cancelled too, but it is
-   * flagged for refund review (refund policy is D-22; nothing is refunded automatically).
+   * flagged for refund review: nothing is refunded automatically (refund policy is open, D-22 and
+   * OPEN_DECISIONS L-8; REFUND_AUTO_ON_CANCEL is refused). An admin refunds through
+   * /v1/admin/refunds if and when that is decided.
    */
   async cancel(bookingId: string, reason: string): Promise<BookingWithTrip> {
     return this.prisma.runInTransaction(async (tx) => {
@@ -362,7 +364,7 @@ export class BookingsService {
       if (cancelled.paymentStatus !== 'UNPAID') {
         this.logger.error(
           { bookingId, paymentStatus: cancelled.paymentStatus, alert: 'PAYMENT_ANOMALY' },
-          'A paid booking was cancelled; refund review needed (D-22)',
+          'A paid booking was cancelled; refund review needed (D-22, L-8): nothing is refunded automatically',
         );
       }
       return { booking: cancelled, trip: cancelledTrip };

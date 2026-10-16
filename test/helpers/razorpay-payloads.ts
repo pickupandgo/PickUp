@@ -3,6 +3,7 @@ import type { CollectionLinkPayment } from '../../src/collections/collection-lin
 import type { ProviderBankValidation, ProviderPayout } from '../../src/payouts/payout.gateway';
 import { hmacSha256Hex } from '../../src/razorpay/razorpay-signatures';
 import type { RazorpayPayment } from '../../src/razorpay/razorpay.types';
+import type { ProviderRefund } from '../../src/refunds/refund.gateway';
 import {
   TEST_RAZORPAY_KEY_SECRET,
   TEST_RAZORPAYX_WEBHOOK_SECRET,
@@ -258,6 +259,51 @@ export function buildSettlementWebhook(
           tax: 0,
           utr: 'SETLUTR0001',
           created_at: Math.floor(createdAt.getTime() / 1000),
+        },
+      },
+    },
+    options,
+    TEST_WEBHOOK_SECRET,
+  );
+}
+
+/**
+ * Razorpay refund.created / processed / failed / speed_changed, in the documented shape (the
+ * refund entity, with the refunded payment alongside), signed with the webhook secret.
+ */
+export function buildRefundWebhook(
+  event: string,
+  refund: ProviderRefund,
+  options: WebhookOptions = {},
+): SignedWebhook {
+  return signedEvent(
+    event,
+    {
+      refund: {
+        entity: {
+          id: refund.id,
+          entity: 'refund',
+          amount: refund.amount,
+          currency: refund.currency,
+          payment_id: refund.paymentId,
+          notes: Object.keys(refund.notes).length > 0 ? refund.notes : [],
+          receipt: refund.receipt,
+          acquirer_data: { arn: refund.reference },
+          created_at: Math.floor(Date.now() / 1000),
+          batch_id: null,
+          status: refund.status,
+          speed_processed: 'normal',
+          speed_requested: 'normal',
+        },
+      },
+      payment: {
+        entity: {
+          id: refund.paymentId,
+          entity: 'payment',
+          amount: refund.amount,
+          currency: refund.currency,
+          status: 'refunded',
+          amount_refunded: refund.status === 'processed' ? refund.amount : 0,
         },
       },
     },

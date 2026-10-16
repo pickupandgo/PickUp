@@ -85,10 +85,19 @@ export class ReconciliationController {
     return this.earnings.findFailedPayouts();
   }
 
-  /** Cancelled bookings that were paid: refund review. */
+  /** Cancelled bookings that were paid, for what is not refunded yet: refund review. */
   @Get('reconciliation/paid-cancelled-bookings')
   paidCancelledBookings(): Promise<Finding[]> {
     return this.earnings.findPaidCancelledBookings();
+  }
+
+  /**
+   * Refunds that need a human: stuck at the provider, refunded after a payout or on a cash
+   * earning (L-21, nothing recovered automatically), or totals that disagree (Phase 6).
+   */
+  @Get('reconciliation/refund-anomalies')
+  refundAnomalies(): Promise<Finding[]> {
+    return this.earnings.findRefundAnomalies();
   }
 
   /** Cash collections whose platform fee and wallet debit disagree. */

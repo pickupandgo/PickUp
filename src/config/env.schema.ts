@@ -9,6 +9,29 @@ export const RAZORPAY_MAX_ORDER_PAISE = 50_000_000;
 /** Razorpay's documented minimum for an INR order (Rs 1). */
 export const RAZORPAY_MIN_ORDER_PAISE = 100;
 
+/**
+ * What a booking's facts show when a refund is requested (payment flow Phase 6). Recorded on the
+ * refund for review; which of them may be refunded is configuration (REFUND_ALLOWED_CASES), the
+ * policy itself is open (OPEN_DECISIONS L-7).
+ */
+export const REFUND_CASES = [
+  'CANCELLED_BEFORE_HANDOVER',
+  'CANCELLED_AFTER_HANDOVER',
+  'UNDELIVERED_DROP',
+  'COMPLETED_BOOKING',
+] as const;
+export type RefundCase = (typeof REFUND_CASES)[number];
+
+/** REFUND_ALLOWED_CASES: comma-separated cases, or NONE. Unknown names are left for validation. */
+export function parseRefundCases(value: string): string[] {
+  const entries = parseCsv(value).map((entry) => entry.toUpperCase());
+  return entries.length === 1 && entries[0] === 'NONE' ? [] : entries;
+}
+
+export function isRefundCase(value: string): value is RefundCase {
+  return (REFUND_CASES as readonly string[]).includes(value);
+}
+
 const booleanString = z.enum(['true', 'false']).transform((value) => value === 'true');
 
 const httpsOrHttpUrl = z.url({ protocol: /^https?$/ });
@@ -103,6 +126,28 @@ export const envSchema = z
     // settled). Either way the earning carries only the money actually collected, and nothing
     // moves on its own: no refund, no wallet debit or credit.
     EARNINGS_UNDELIVERED_DROP_HOLD: booleanString.default(true),
+
+    // Refunds (payment flow Phase 6). Refund policy is an open business decision
+    // (OPEN_DECISIONS L-7 to L-10, L-21): every refund is requested by an admin, with a reason,
+    // and audited; nothing is refunded, debited or recovered automatically.
+    //   razorpay   Razorpay refunds API for online payments (test mode, or live once verified)
+    //   simulated  in-memory refunds moved through /v1/dev/simulate (non-production, test keys)
+    //   disabled   provider refunds are refused; a cash return can still be recorded
+    REFUND_PROVIDER: z.enum(['disabled', 'razorpay', 'simulated']).default('disabled'),
+    // Production-readiness gate (OPEN_DECISIONS D-72). Set to true only after Razorpay refunds
+    // (creation with X-Refund-Idempotency, fetch, the refund.* webhooks and the statuses they
+    // report) were verified on Nikhil Enterprises' live account. Until then
+    // REFUND_PROVIDER=razorpay is refused in production and with live keys.
+    REFUNDS_PROVIDER_VERIFIED: booleanString.default(false),
+    // L-9 (open): may an admin refund part of what a source collected? false (technical
+    // default): a refund returns everything still refundable of its source.
+    REFUND_PARTIAL_ALLOWED: booleanString.default(false),
+    // L-8 (open): automatic refunds when a paid booking is cancelled. Not implemented: true is
+    // refused, so a cancellation never refunds on its own.
+    REFUND_AUTO_ON_CANCEL: booleanString.default(false),
+    // L-7 (open): the refund cases an admin may refund, comma-separated, or NONE. Default: all
+    // four, each still admin-initiated with a reason.
+    REFUND_ALLOWED_CASES: z.string().default(REFUND_CASES.join(',')),
 
     // How long a fare quote can be booked (seconds). After that the app must ask for a new
     // quote, so a customer always pays a price calculated by the current pricing version.
@@ -216,11 +261,28 @@ export const envSchema = z
           'TDS is not implemented until a CA confirms the rule (OPEN_DECISIONS D-57); keep it false',
       });
     }
+    if (env.REFUND_AUTO_ON_CANCEL) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['REFUND_AUTO_ON_CANCEL'],
+        message:
+          'automatic refunds are not implemented while the refund policy is open (OPEN_DECISIONS L-8); keep it false and refund through an admin',
+      });
+    }
+    const refundCases = parseRefundCases(env.REFUND_ALLOWED_CASES);
+    if (refundCases.some((entry) => !isRefundCase(entry))) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['REFUND_ALLOWED_CASES'],
+        message: `must be NONE or a comma-separated list of ${REFUND_CASES.join(', ')}`,
+      });
+    }
     // Simulated providers fake money movement, so they never run in production or with live keys.
     const simulated = [
       ['SETTLEMENT_PROVIDER', env.SETTLEMENT_PROVIDER],
       ['PAYOUT_PROVIDER', env.PAYOUT_PROVIDER],
       ['COLLECTION_LINK_PROVIDER', env.COLLECTION_LINK_PROVIDER],
+      ['REFUND_PROVIDER', env.REFUND_PROVIDER],
     ].filter(([, provider]) => provider === 'simulated');
     for (const [name] of simulated) {
       if (env.NODE_ENV === 'production' || !env.RAZORPAY_KEY_ID.startsWith('rzp_test_')) {
@@ -266,6 +328,14 @@ export const envSchema = z
         path: ['SETTLEMENT_PROVIDER'],
         message:
           'razorpay needs SETTLEMENT_RECON_VERIFIED=true once settlement reconciliation is verified on the live account (OPEN_DECISIONS D-56); use SETTLEMENT_PROVIDER=disabled until then',
+      });
+    }
+    if (env.REFUND_PROVIDER === 'razorpay' && liveRazorpay && !env.REFUNDS_PROVIDER_VERIFIED) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['REFUND_PROVIDER'],
+        message:
+          'razorpay needs REFUNDS_PROVIDER_VERIFIED=true once Razorpay refunds (creation, fetch, refund.* webhooks) are verified on the live account (OPEN_DECISIONS D-72); use REFUND_PROVIDER=disabled until then',
       });
     }
     if (env.PAYOUT_AUTO_EXECUTE && !env.PAYOUT_SCHEDULE_ENABLED) {

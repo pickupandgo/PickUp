@@ -15,8 +15,15 @@ import {
   RAZORPAY_ORDER_ID_PATTERN,
   RAZORPAY_PAYMENT_ID_PATTERN,
   razorpayPaymentSchema,
+  razorpayRefundSchema,
   toRazorpayPayment,
 } from '../razorpay/razorpay.types';
+import { toProviderRefund } from '../refunds/refund.gateway';
+import {
+  REFUND_ANOMALIES,
+  RefundFinalizerService,
+  RefundOutcome,
+} from '../refunds/refund-finalizer.service';
 import { DisputesService } from './disputes.service';
 import {
   ANOMALY_OUTCOMES,
@@ -41,6 +48,7 @@ const webhookEnvelopeSchema = z.looseObject({
     qr_code: wrapped,
     dispute: wrapped,
     settlement: wrapped,
+    refund: wrapped,
   }),
 });
 type WebhookEnvelope = z.infer<typeof webhookEnvelopeSchema>;
@@ -92,7 +100,7 @@ interface Decision {
  *   4. record the outcome. Temporary failures return 5xx so Razorpay retries.
  *
  * Handles wallet top-ups and booking payments (orders), pickup/delivery QR collections
- * (payment links and QR codes) and disputes.
+ * (payment links and QR codes), disputes and refunds (refund.*, payment flow Phase 6).
  */
 @Injectable()
 export class RazorpayWebhookService {
@@ -105,6 +113,7 @@ export class RazorpayWebhookService {
     private readonly disputes: DisputesService,
     private readonly settlements: MerchantSettlementsService,
     private readonly gateway: RazorpayGateway,
+    private readonly refunds: RefundFinalizerService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -197,9 +206,12 @@ export class RazorpayWebhookService {
       paymentId: decision.paymentId ?? null,
       processingError: decision.problem ?? null,
     };
-    if (decision.outcome === ConfirmationOutcome.APPLIED) {
-      // APPLIED happens at most once per payment, so it may overwrite a concurrent duplicate's
-      // ALREADY_APPLIED that finished first.
+    if (
+      decision.outcome === ConfirmationOutcome.APPLIED ||
+      decision.outcome === RefundOutcome.APPLIED
+    ) {
+      // APPLIED happens at most once per payment (or refund state), so it may overwrite a
+      // concurrent duplicate's ALREADY_APPLIED that finished first.
       await this.prisma.paymentEvent.update({ where: { eventId }, data });
     } else {
       await this.prisma.paymentEvent.updateMany({ where: { eventId, processedAt: null }, data });
@@ -228,6 +240,10 @@ export class RazorpayWebhookService {
     }
     if (envelope.event.startsWith('payment.dispute.')) {
       return this.decideDispute(envelope);
+    }
+    if (envelope.event.startsWith('refund.')) {
+      // refund.created / processed / failed / speed_changed (payment flow Phase 6).
+      return this.decideRefund(envelope);
     }
     if (COLLECTION_EVENTS.has(envelope.event)) {
       return this.decideCollectionEvent(eventId, envelope);
@@ -391,6 +407,31 @@ export class RazorpayWebhookService {
     return {
       outcome: WebhookOutcome.DISPUTE_RECORDED,
       problem: `DISPUTE_${dispute.data.status.toUpperCase()}:${result.hold}`.slice(0, 200),
+    };
+  }
+
+  /**
+   * A refund state from Razorpay. The signed payload is trusted provider state; the refund
+   * finalizer checks it is exactly one of ours (payment, amount, currency, ids) and applies it
+   * forward only, the same way as the submission reply and admin syncs.
+   */
+  private async decideRefund(envelope: WebhookEnvelope): Promise<Decision> {
+    const entity = razorpayRefundSchema.safeParse(envelope.payload.refund?.entity);
+    if (!entity.success) {
+      return {
+        outcome: WebhookOutcome.UNSUPPORTED_PAYLOAD,
+        problem: 'Refund entity missing or malformed',
+      };
+    }
+    const result = await this.refunds.applyWebhook(toProviderRefund(entity.data));
+    return {
+      outcome: result.outcome,
+      paymentId: result.refund?.sourcePaymentId ?? undefined,
+      problem: REFUND_ANOMALIES.has(result.outcome)
+        ? result.outcome === RefundOutcome.UNKNOWN
+          ? `${result.outcome}: a Razorpay refund this service did not request`
+          : result.outcome
+        : undefined,
     };
   }
 

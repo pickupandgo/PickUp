@@ -20,6 +20,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { PayoutsModule } from './payouts/payouts.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
+import { RefundsModule } from './refunds/refunds.module';
 import { SettlementsModule } from './settlements/settlements.module';
 import { SimulationModule } from './simulation/simulation.module';
 import { WalletModule } from './wallet/wallet.module';
@@ -49,6 +50,7 @@ export class AppModule {
         CollectionsModule,
         PaymentsModule,
         PayoutsModule,
+        RefundsModule,
         EngineModule,
         ReconciliationModule,
         // Non-production only: /v1/dev/simulate, mounted when a simulated provider is configured.

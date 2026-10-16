@@ -54,6 +54,8 @@ const STOP_LIFECYCLE_MIGRATION = '20261017120000_payment_gate_stop_lifecycle';
 const ENUMS_MIGRATION = '20261018120000_partially_paid_mixed_enums';
 const OBLIGATION_MIGRATION = '20261018120100_obligation_collections';
 const MIXED_EARNINGS_MIGRATION = '20261019120000_mixed_earnings_payout_hold';
+const REFUND_ENUM_MIGRATION = '20261020120000_partially_refunded_enum';
+const REFUNDS_MIGRATION = '20261020120100_refunds';
 const PREFLIGHT_SQL = path.join(ROOT, 'prisma', 'sql', 'preflight-payment-flow.sql');
 const DEFAULT_SOURCES = [
   'multipleride_legacy_snapshot_test',
@@ -660,6 +662,72 @@ const MULTI_COLLECTION_PAYABLE_SQL = `
 UPDATE driver_earnings SET status = 'PAYABLE', payable_at = now()
  WHERE booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');`;
 
+/**
+ * Payment flow Phase 6: an admin's provider refund of drop 1's QR payment on the completed
+ * booking, written as the refunds service writes it (every guard on): recorded PENDING with the
+ * booking REFUND_PENDING, accepted by the provider (PROCESSING), then processed (COMPLETED) with
+ * the booking PARTIALLY_REFUNDED. The collection's refunded amount is kept by the database.
+ */
+const REFUND_SQL = `
+INSERT INTO users (phone, role) VALUES ('+919999900004', 'ADMIN');
+BEGIN;
+INSERT INTO payment_refunds (booking_id, booking_stop_id, source_collection_id, kind, status,
+                             refund_case, amount_paise, reason, requested_by_user_id,
+                             idempotency_key, provider, provider_payment_id)
+SELECT c.booking_id, c.booking_stop_id, c.id, 'PROVIDER', 'PENDING', 'COMPLETED_BOOKING',
+       c.amount_paise, 'Migration check refund', u.id, 'migcheck-refund-1', 'RAZORPAY',
+       c.provider_payment_id
+  FROM payment_collections c, users u
+ WHERE c.idempotency_key = 'migcheck-drop-1' AND u.phone = '+919999900004';
+UPDATE bookings SET payment_status = 'REFUND_PENDING' WHERE external_ref = 'MIGCHECK-1';
+COMMIT;
+UPDATE payment_refunds
+   SET status = 'PROCESSING', provider_refund_id = 'rfnd_migcheck00001', provider_status = 'pending'
+ WHERE idempotency_key = 'migcheck-refund-1';
+BEGIN;
+UPDATE payment_refunds
+   SET status = 'COMPLETED', provider_status = 'processed', completed_at = now()
+ WHERE idempotency_key = 'migcheck-refund-1';
+UPDATE bookings SET payment_status = 'PARTIALLY_REFUNDED' WHERE external_ref = 'MIGCHECK-1';
+COMMIT;`;
+
+/** A second refund of drop 1, already refunded in full: the database refuses it. */
+const OVER_REFUND_SQL = `
+INSERT INTO payment_refunds (booking_id, booking_stop_id, source_collection_id, kind, status,
+                             refund_case, amount_paise, reason, requested_by_user_id,
+                             idempotency_key, provider, provider_payment_id)
+SELECT c.booking_id, c.booking_stop_id, c.id, 'PROVIDER', 'PENDING', 'COMPLETED_BOOKING', 1,
+       'Migration check over-refund', u.id, 'migcheck-refund-2', 'RAZORPAY', c.provider_payment_id
+  FROM payment_collections c, users u
+ WHERE c.idempotency_key = 'migcheck-drop-1' AND u.phone = '+919999900004';`;
+
+/**
+ * Phase 6, after every deploy: no collection shows a refund it never had, no refund was invented,
+ * and (reported, not failed) every booking's payment status is what its money says.
+ */
+async function checkRefunds(scope, client, before) {
+  const { rows } = await client.query(`
+    SELECT (SELECT count(*)::int FROM payment_refunds) AS refunds,
+           (SELECT count(*)::int FROM payment_collections WHERE refunded_paise <> 0) AS refunded,
+           (SELECT count(*)::int FROM bookings
+             WHERE payment_status::text <> booking_money_status(id)) AS mismatched`);
+  const [row] = rows;
+  if (row.refunds === before.refunds) {
+    pass(`refunds unchanged by the migration (${row.refunds})`);
+  } else {
+    fail(scope, `refunds went from ${before.refunds} to ${row.refunds}`);
+  }
+  if (row.refunded === 0 || before.refunds > 0) {
+    pass('no collection shows a refunded amount it never had');
+  } else {
+    fail(scope, `${row.refunded} collection(s) show a refunded amount without any refund`);
+  }
+  console.log(
+    `  info ${row.mismatched} booking(s) whose payment status differs from booking_money_status` +
+      (row.mismatched > 0 ? ' (review before refunding them)' : ''),
+  );
+}
+
 /** A quote with 6 drops (allowed once FARE_MAX_DROPS is raised), never booked. */
 const SIX_DROP_QUOTE_SQL = `
 DO $$
@@ -818,6 +886,41 @@ async function freshReference(admin) {
       /earnings funded by several collections have been made payable/,
       'an earning funded by several collections is payable',
     );
+
+    // Payment flow Phase 6: a provider refund of drop 1, recorded, accepted and processed.
+    await client.query(REFUND_SQL);
+    const refunded = await client.query(`
+      SELECT c.refunded_paise::text AS refunded, b.payment_status::text AS status
+        FROM payment_collections c JOIN bookings b ON b.id = c.booking_id
+       WHERE c.idempotency_key = 'migcheck-drop-1'`);
+    if (refunded.rows[0]?.refunded === '20000' && refunded.rows[0]?.status === 'PARTIALLY_REFUNDED') {
+      pass('a provider refund of one drop completes with every guard on: refunded_paise kept, booking PARTIALLY_REFUNDED');
+    } else {
+      fail('fresh', `refund effects: ${JSON.stringify(refunded.rows[0] ?? null)}`);
+    }
+    const over = await client.query(OVER_REFUND_SQL).then(
+      () => null,
+      (error) => (error instanceof Error ? error.message : String(error)),
+    );
+    if (over && /never exceed what was collected/.test(over)) {
+      pass('a refund beyond what the drop collected is refused');
+    } else {
+      fail('fresh', `over-refund: ${over ?? 'it was allowed'}`);
+    }
+    await expectRefused(
+      'fresh',
+      client,
+      REFUNDS_MIGRATION,
+      /refunds are recorded/,
+      'a refund is recorded',
+    );
+    await expectRefused(
+      'fresh',
+      client,
+      REFUND_ENUM_MIGRATION,
+      /some bookings are PARTIALLY_REFUNDED/,
+      'a booking is partially refunded',
+    );
     compareCatalogs(
       'fresh',
       'schema unchanged after the refused rollbacks',
@@ -845,6 +948,8 @@ async function levelReferences(admin, fresh) {
     ENUMS_MIGRATION,
     OBLIGATION_MIGRATION,
     MIXED_EARNINGS_MIGRATION,
+    REFUND_ENUM_MIGRATION,
+    REFUNDS_MIGRATION,
   ]) {
     if (!reversible.includes(required)) {
       throw new Error(`Expected ${required} to have a down.sql`);
@@ -904,11 +1009,17 @@ async function checkSource(admin, source, references) {
   const before = await withDatabase(copy, async (client) => {
     await printPreflight(client);
     const columns = await tableColumns(client);
+    const refundsTable = await client.query(
+      "SELECT to_regclass('public.payment_refunds') IS NOT NULL AS present",
+    );
     return {
       columns,
       rows: await rowFingerprints(client, columns),
       history: await migrationHistory(client),
       state: await sourceState(client),
+      refunds: refundsTable.rows[0].present
+        ? (await client.query('SELECT count(*)::int AS n FROM payment_refunds')).rows[0].n
+        : 0,
     };
   });
   const pending = migrationNames().filter(
@@ -936,6 +1047,7 @@ async function checkSource(admin, source, references) {
     }
     await checkStops(scope, client, before.state);
     await checkEarningSplit(scope, client);
+    await checkRefunds(scope, client, before);
     compareCatalogs(
       scope,
       `${label}: schema = fresh install`,

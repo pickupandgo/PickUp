@@ -1,4 +1,4 @@
-import { envSchema, parseCsv } from './env.schema';
+import { envSchema, isRefundCase, parseCsv, parseRefundCases, type RefundCase } from './env.schema';
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
 
@@ -70,6 +70,21 @@ export interface AppConfig {
      */
     readonly undeliveredDropHold: boolean;
   };
+  /**
+   * Refunds (payment flow Phase 6). The refund policy is open (OPEN_DECISIONS L-7 to L-10,
+   * L-21); these are its technical safe defaults. Every refund is admin-initiated, with a reason,
+   * and audited; nothing is refunded, debited or recovered automatically.
+   */
+  readonly refunds: {
+    /** Where provider refunds go, or null when they are off (cash returns can still be recorded). */
+    readonly provider: 'razorpay' | 'simulated' | null;
+    /** REFUND_PARTIAL_ALLOWED (L-9). Default false: a refund returns all that is left of its source. */
+    readonly partialAllowed: boolean;
+    /** Always false: automatic refunds on cancellation are not implemented (L-8). */
+    readonly autoOnCancel: false;
+    /** REFUND_ALLOWED_CASES (L-7). Default: every case, each still admin-initiated. */
+    readonly allowedCases: readonly RefundCase[];
+  };
   readonly fare: {
     /** Seconds a fare quote stays bookable. */
     readonly quoteTtlSeconds: number;
@@ -85,6 +100,8 @@ export interface AppConfig {
     readonly razorpayxCapabilitiesConfirmed: boolean;
     /** SETTLEMENT_RECON_VERIFIED (D-56). */
     readonly settlementReconVerified: boolean;
+    /** REFUNDS_PROVIDER_VERIFIED (D-72). */
+    readonly refundsProviderVerified: boolean;
   };
   /** True when any simulated provider is active (non-production, test keys only). */
   readonly simulation: {
@@ -144,6 +161,24 @@ export function openReadinessItems(config: AppConfig): string[] {
   );
   items.push(
     'N5 driver pay (open business decision): a partly paid trip pays out only what was collected and settled; nothing is refunded, compensated or recovered automatically',
+  );
+  // Refunds (payment flow Phase 6): the provider gate, then the open refund policy.
+  if (config.refunds.provider !== 'razorpay' || !config.readiness.refundsProviderVerified) {
+    items.push(
+      config.refunds.provider === 'simulated'
+        ? 'D-72: provider refunds are simulated (local end-to-end runs only); Razorpay refunds are not verified on the live account'
+        : config.refunds.provider === 'razorpay'
+          ? 'D-72: Razorpay refunds are not verified on the live account (test mode only)'
+          : 'D-72: Razorpay refunds not verified on the live account; provider refunds are off (cash returns can still be recorded)',
+    );
+  }
+  const cases = config.refunds.allowedCases;
+  items.push(
+    `L-7 to L-10, L-21 (open business decisions): refunds are admin-initiated only, with a reason and an audit record; nothing is refunded, debited or recovered automatically; ${
+      config.refunds.partialAllowed
+        ? 'partial refunds allowed (REFUND_PARTIAL_ALLOWED=true)'
+        : 'a refund returns all that is left of its source'
+    }; cases: ${cases.length > 0 ? cases.join(', ') : 'NONE'}`,
   );
   if (config.collections.simulated) {
     items.push(
@@ -246,6 +281,13 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     earnings: {
       undeliveredDropHold: env.EARNINGS_UNDELIVERED_DROP_HOLD,
     },
+    refunds: {
+      provider: env.REFUND_PROVIDER === 'disabled' ? null : env.REFUND_PROVIDER,
+      partialAllowed: env.REFUND_PARTIAL_ALLOWED,
+      // The schema refuses REFUND_AUTO_ON_CANCEL=true (L-8 is open).
+      autoOnCancel: false,
+      allowedCases: parseRefundCases(env.REFUND_ALLOWED_CASES).filter(isRefundCase),
+    },
     fare: {
       quoteTtlSeconds: env.FARE_QUOTE_TTL_SECONDS,
       maxDrops: env.FARE_MAX_DROPS,
@@ -253,12 +295,14 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     readiness: {
       razorpayxCapabilitiesConfirmed: env.RAZORPAYX_CAPABILITIES_CONFIRMED,
       settlementReconVerified: env.SETTLEMENT_RECON_VERIFIED,
+      refundsProviderVerified: env.REFUNDS_PROVIDER_VERIFIED,
     },
     simulation: {
       enabled:
         env.SETTLEMENT_PROVIDER === 'simulated' ||
         env.PAYOUT_PROVIDER === 'simulated' ||
-        env.COLLECTION_LINK_PROVIDER === 'simulated',
+        env.COLLECTION_LINK_PROVIDER === 'simulated' ||
+        env.REFUND_PROVIDER === 'simulated',
     },
     payouts: {
       provider: env.PAYOUT_PROVIDER === 'disabled' ? null : env.PAYOUT_PROVIDER,

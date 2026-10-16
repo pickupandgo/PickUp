@@ -1,6 +1,6 @@
 # Open Decisions: MultipleRide (Pick Up) V1 Backend
 
-Phase 0 audit, 2 Oct 2026. This file tracks only items the supplied sources leave unresolved or contradict. Source references point to [ARCHITECTURE_TRACEABILITY.md](./ARCHITECTURE_TRACEABILITY.md). [Section E](#e-payments--driver-wallet-slice-raj_backend) records how the payments + wallet slice applied these decisions, and the new ones it raised. [Section F](#f-approved-v1-payment-earnings-and-payout-rules-2-oct-2026) records the approved V1 money rules, what they settle, and what is still open. [Section G](#g-approved-decisions-second-set-6-oct-2026) records the second set of approved decisions (rounding, settlement-gated payouts, Monday payouts, bank validation, TDS readiness) and the items they leave open. [Section H](#h-approved-decisions-third-set-after-commit-f07ff5c) covers the bank-account step-up, and [section I](#i-payment-flow-phase-1-pay-at-pickup--per-drop-pay-at-delivery) the PAY AT PICKUP / per-drop PAY AT DELIVERY flow phase by phase (Phases 1–4), including the technical defaults each phase introduced.
+Phase 0 audit, 2 Oct 2026. This file tracks only items the supplied sources leave unresolved or contradict. Source references point to [ARCHITECTURE_TRACEABILITY.md](./ARCHITECTURE_TRACEABILITY.md). [Section E](#e-payments--driver-wallet-slice-raj_backend) records how the payments + wallet slice applied these decisions, and the new ones it raised. [Section F](#f-approved-v1-payment-earnings-and-payout-rules-2-oct-2026) records the approved V1 money rules, what they settle, and what is still open. [Section G](#g-approved-decisions-second-set-6-oct-2026) records the second set of approved decisions (rounding, settlement-gated payouts, Monday payouts, bank validation, TDS readiness) and the items they leave open. [Section H](#h-approved-decisions-third-set-after-commit-f07ff5c) covers the bank-account step-up, and [section I](#i-payment-flow-phase-1-pay-at-pickup--per-drop-pay-at-delivery) the PAY AT PICKUP / per-drop PAY AT DELIVERY flow phase by phase (Phases 1–6, Phase 6 being the refund infrastructure with the refund policy kept open), including the technical defaults each phase introduced.
 
 How to read each entry:
 
@@ -178,6 +178,7 @@ I won't choose these rules. Owner for all: Nikhil Enterprises (business/finance/
 ### D-22 Refund policy
 - **Context:** PW leaves this open: refund to the original method, wallet reversal, or a mix.
 - **Safe default:** the refund-ready schema (REFUND_PENDING, compensating entries) exists, but there's no automatic refund. Refunds are admin-initiated only.
+- **Since payment flow Phase 6:** the technical refund system exists: admin-requested provider refunds and recorded cash returns. The policy itself is still open, split into L-7 to L-10 and L-21 with their safe defaults ([section I, Phase 6](#phase-6-refund-infrastructure)).
 - **Status:** Open.
 
 ### D-23 Cancellation charge policy
@@ -750,3 +751,104 @@ Both are pinned by tests: `multi-collection-earnings.int-spec.ts`, "undelivered 
 | `merchantSettlement` in the booking chain is kept (first settlement) next to the new `merchantSettlements` | booking chain | removal once no reader uses it |
 | The release of an earning on hold is idempotent: releasing a PAYABLE or AWAITING_SETTLEMENT earning changes nothing and writes no second audit record | `EarningsService.release` | none |
 | `down.sql` refuses once a payable or paid-out earning funded by several collections, or a settlement finding, exists | migration | none |
+
+### Phase 6: refund infrastructure
+
+Raj approved and locked Phase 5 (local commit `a4c55f1`), then asked for Phase 6 only: the technical refund system, with refund eligibility and every business policy kept **OPEN**. Phase 6 adds two migrations: `20261020120000_partially_refunded_enum` (one enum value, nothing else) and `20261020120100_refunds` (one table, one column, rules; no existing row changes). It also adds the code that enforces the same rules and one grant. Upgrade steps: [DATABASE_SETUP.md](./DATABASE_SETUP.md#refunds-payment-flow-phase-6).
+
+| Requirement | Implementation |
+|---|---|
+| **Refund model and state machine.** | `payment_refunds`, one row per refund an admin requested. A **PROVIDER** refund starts `PENDING`. Razorpay accepting it makes it `PROCESSING`; processed makes it `COMPLETED`, failed makes it `FAILED`. An outright rejection with no record at Razorpay makes it `REFUSED`, and an admin withdrawing it before it reached Razorpay makes it `CANCELLED`. A **CASH_RETURNED** refund is recorded `COMPLETED`. Moves are forward only (`guard_refund_update`). CHECKs tie every status to its facts (provider refund id, completion, failure or cancellation time, reason). |
+| **Immutable source linkage.** | Exactly one source: a completed collection, or a paid historical prepaid payment (`refunds_one_source`). It is of the same booking and drop: the insert guard checks it, and a composite foreign key makes a refund name only a drop of its own booking. The source, amount, reason, requester, kind and fee decision never change; nobody, the table owner included, can rewrite them. |
+| **Provider refunds (Razorpay).** | `POST /v1/payments/:id/refund` with `X-Refund-Idempotency` = our refund id, `receipt` = our refund id, notes with our refund, booking and source ids, and speed `normal`. Every response is checked (zod) before use: refund id `rfnd_`, entity, payment, amount, currency, status. Then the finalizer checks it is exactly ours: same payment, amount, currency, receipt and notes, and a Razorpay refund id never recorded for another refund. Otherwise the result is `REFUND_MISMATCH` and nothing is applied. Calls never happen inside a database transaction. |
+| **Webhooks.** | `refund.created`, `refund.processed`, `refund.failed` and `refund.speed_changed` arrive on the existing signed Razorpay webhook. A refund is matched by its Razorpay id, or by our receipt or notes when the submission reply was lost. A refund this service never requested (one made on the dashboard) is `REFUND_UNKNOWN`. It is recorded as a webhook problem and never applied. |
+| **API + webhook convergence, re-fetch, idempotency.** | The submission reply, webhooks and `POST /v1/admin/refunds/:id/sync` (a fetch, or a lookup of the payment's refunds) all go through one finalizer: booking lock, then refund lock. Repeated states are `REFUND_ALREADY_APPLIED` and older ones `REFUND_STALE_UPDATE`. A state our record rules out (for example a refund Razorpay reports for one we refused or cancelled) is `REFUND_CONFLICTING_STATE`, reported and not applied. Submissions are claimed with a 120 s lease, so two workers never send one refund at once. A retry first looks for the refund at Razorpay, and only resends (with the same key) when Razorpay has no record of it. A request is idempotent on the admin's `Idempotency-Key`: 201 when created, 200 with the original refund on a retry, 409 `IDEMPOTENCY_KEY_REUSED` for a different request. |
+| **Cash returns.** | `kind: CASH_RETURNED`, from a cash collection only. It is recorded `COMPLETED` and audited as `CASH_RETURN_RECORDED`, for the exact amount the server computes, linked to its collection. The admin must state the fee decision each time (`feeTreatment`), and there is no default. `KEPT`: no wallet movement at all. `CREDITED_TO_WALLET`: a `REFUND_REVERSAL` ledger credit of exactly the collection's platform fee, to the collecting driver, written in the same transaction and keyed `refund-fee-credit:<refund id>`. It is allowed only with the cash return of everything left of the collection, and only once per collection. The database refuses any REFUND_REVERSAL credit no cash return decided. |
+| **Ownership and integrity.** | The database enforces these, as well as the service:<ul><li>only an active admin requests or cancels a refund;</li><li>only a cancelled or completed booking is refunded;</li><li>the source is of the booking and drop, and completed or paid;</li><li>a provider refund refunds the source's own payment, and a cash return needs cash;</li><li>refunds of a source never exceed what it collected (the source row is locked, so concurrent requests are checked one after the other);</li><li>one live refund per source (partial unique index), and a Razorpay refund id is recorded once.</li></ul>`payment_collections.refunded_paise` is kept by a SECURITY DEFINER trigger; the API role has no privilege on it, and the collection guard accepts only the right sum. The booking's payment status is what `booking_money_status` says: REFUND_PENDING while a refund is live, then REFUNDED or PARTIALLY_REFUNDED. It is checked at commit after every refund change. |
+| **Earnings (no new payout rule).** | In the refund's transaction, an AWAITING_SETTLEMENT or PAYABLE earning goes ON_HOLD (`REFUND: refund <id> requested (<case>); an admin decides what the driver is paid`). An earning already ON_HOLD stays held. If the earning is IN_PAYOUT, the refund is refused with `REFUND_EARNING_IN_PAYOUT`: retry once that payout is processed or has failed. A PAID earning, or one SETTLED_IN_CASH, is left as it is: nothing is clawed back. Reconciliation reports it (`REFUND_AFTER_PAYOUT`, `REFUND_ON_CASH_EARNING`). A refunded booking is never paid out: batches still take only PAID or PARTIALLY_PAID bookings. A failed refund releases nothing on its own. |
+| **Security.** | Admin only, with a throttle of 10 requests a minute per admin. A client can't choose an amount the server didn't compute, and the request body can't carry a status, provider id, case or fee credit. Unknown fields are refused. A client can't refund another booking's or drop's money (service and database). There is no route that sets a status: only Razorpay's signed webhook, the sync and the admin cancel move a refund. A forged webhook is rejected before anything is read. |
+| **Legacy.** | A historical PREPAID_UPI booking is refunded from its `payments` row (`sourcePaymentId`). The payment row is not rewritten: `payments.status` stays PAID, and the refund is its own row. Historical whole-booking collections are refunded like any other. The migration changes no row; the migration check proves it on four real-shaped databases. |
+| **Reconciliation and money trail.** | `GET /v1/admin/reconciliation/refund-anomalies` lists:<ul><li>`STALE_PENDING_REFUND` (over 30 min) and `STALE_PROCESSING_REFUND` (over 10 days);</li><li>`REFUND_AFTER_PAYOUT` and `REFUND_ON_CASH_EARNING`;</li><li>`REFUNDED_TOTAL_MISMATCH`, `REFUNDS_EXCEED_SOURCE`, `BOOKING_REFUND_STATUS_MISMATCH` and `FEE_CREDIT_MISMATCH`.</li></ul>`paid-cancelled-bookings` now shows what is not refunded yet, notes what was refunded or is in progress, and drops a source refunded in full. The booking chain lists every refund (with its wallet credit) and each collection's `refundedPaise`. |
+| **Least privilege.** | The API role gets SELECT and INSERT on `payment_refunds`, and UPDATE of its lifecycle columns only. It has no UPDATE of the amount, source, booking, kind, reason, requester or fee decision, none of `refunded_paise`, no DELETE or TRUNCATE, and it can't disable any refund trigger. The least-privilege suite runs a provider refund, a cash return with a fee credit and a cancellation on production grants. |
+| **Non-local databases (N1).** | Still blocked until their preflight has been run and reviewed. Phase 6 is applied to the local dev database only. |
+
+**Production restriction (technical, not policy): unchanged.** Phase 6 does not lift the multi-drop PAY_AT_DELIVERY + QR operational restriction from Phase 4; the six conditions listed under Phase 5 still apply. **Live provider refunds are not production-ready** until D-72 below is verified: `REFUND_PROVIDER=razorpay` is refused in production and with live keys unless `REFUNDS_PROVIDER_VERIFIED=true`. The safe value is `REFUND_PROVIDER=disabled`: provider refunds are refused with 503 `REFUND_PROVIDER_NOT_CONFIGURED`, and cash returns can still be recorded.
+
+#### D-72 Razorpay refunds on the live account
+- **Context:** the refund calls, entity fields, statuses and `refund.*` webhooks follow Razorpay's documentation. Local runs and tests use an in-memory stand-in; nothing has been checked against Nikhil Enterprises' live account.
+- **Verify before setting `REFUNDS_PROVIDER_VERIFIED=true`:**
+  1. A real refund of a UPI QR payment and of a Checkout payment.
+  2. `X-Refund-Idempotency` returns the original refund on a retry.
+  3. The receipt and notes come back on the refund.
+  4. The statuses reported: `pending`, `processed`, `failed`.
+  5. The `refund.*` webhooks are enabled on the account and delivered signed.
+  6. `GET /v1/refunds/:id` and `GET /v1/payments/:id/refunds` work.
+  7. Where the bank reference (ARN) appears.
+  8. The normal-speed timing.
+  9. The account's refund balance or charges.
+- **Safe default:** `REFUND_PROVIDER=disabled` in production.
+- **Owner:** Nikhil Enterprises (Razorpay account) + tech lead. **Status:** Open.
+
+**Open business decisions: technical safe defaults, not final policy.** None of these is a business rule. Each is a temporary safe value that a decision may replace (review section L). The startup log lists them as open items.
+
+**OPEN: refund eligibility (L-7; also D-22).**
+- **Status:** OPEN business decision.
+- **Technical safe default:** no refund is automatic. Every refund is admin-initiated, with a reason (10–500 characters), and audited. The case the booking's facts show is recorded on each refund for review, and it decides nothing:
+  - `CANCELLED_BEFORE_HANDOVER`
+  - `CANCELLED_AFTER_HANDOVER` (the goods were picked up, or for a drop, delivered)
+  - `UNDELIVERED_DROP`
+  - `COMPLETED_BOOKING`
+- **Configurable:** `REFUND_ALLOWED_CASES` (comma-separated, or `NONE`; default all four) narrows which cases an admin may refund.
+- **Decision needed (Raj):** which cases are refunded, before or after the handover, for an undelivered drop, after a driver failure.
+
+**OPEN: automatic vs manual refunds (L-8).**
+- **Status:** OPEN business decision.
+- **Technical safe default:** manual only. Cancelling a paid booking refunds nothing; it is listed for review. `REFUND_AUTO_ON_CANCEL=true` is refused at startup: there is no automatic path.
+- **Decision needed (Raj):** whether any refund happens without an admin.
+
+**OPEN: partial refunds (L-9).**
+- **Status:** OPEN business decision.
+- **Technical safe default:** off (`REFUND_PARTIAL_ALLOWED=false`). A refund returns everything left of its source; an admin may confirm that amount but never choose another (422 `REFUND_AMOUNT_NOT_ALLOWED`, with `refundablePaise`).
+- **Configurable:** `REFUND_PARTIAL_ALLOWED=true` allows 1 paisa up to what is left, one live refund at a time per source.
+- **Decision needed (Raj):** whether and when part of a payment is refunded.
+
+**OPEN: platform fee when cash is returned or money refunded (L-10).**
+- **Status:** OPEN business decision.
+- **Technical safe default:** no automatic wallet movement. On every cash return the admin states `KEPT` or `CREDITED_TO_WALLET`, and the choice is recorded and audited. A provider refund never touches the driver wallet; the online fee was never debited from it.
+- **Decision needed (Raj):** what happens to the platform fee on a refund, and whether the online fee changes.
+
+**OPEN: money already paid out when a refund comes later (L-21).**
+- **Status:** OPEN business decision.
+- **Technical safe default:** no automatic debit or recovery. The earning keeps its status and amounts, and the refund is reported (`REFUND_AFTER_PAYOUT`, `REFUND_ON_CASH_EARNING`).
+- **Decision needed (Raj):** whether and how money is recovered from a driver, and what the driver is paid for a refunded trip. The latter is also open for held earnings: an admin may release one, but a refunded booking is never paid out (batches take PAID or PARTIALLY_PAID bookings only).
+
+These are pinned by tests: `refunds.int-spec.ts` ("policy stays open", the partial-refund and narrowed-cases app, "earnings") and `app-config.spec.ts`.
+
+**Technical defaults introduced in Phase 6.** The first five are the open business decisions above.
+
+| Default | Where | Decision it waits for |
+|---|---|---|
+| No automatic refund; admin-initiated, reason required, audited; cases recorded, configurable (`REFUND_ALLOWED_CASES`, default all) | refunds API, config | **OPEN:** L-7 / D-22 |
+| Manual only; `REFUND_AUTO_ON_CANCEL=true` refused | config | **OPEN:** L-8 |
+| Full refund of what is left (`REFUND_PARTIAL_ALLOWED=false`) | `resolveRefundAmount`, config | **OPEN:** L-9 |
+| The admin states the cash fee decision every time; nothing moves without it | refunds API | **OPEN:** L-10 |
+| No recovery after a payout; reported | reconciliation | **OPEN:** L-21 |
+| Only a cancelled or completed booking is refunded (a live trip's money can't be refunded mid-trip) | service, `guard_refund_insert` | none |
+| An earning IN_PAYOUT refuses the refund until the payout resolves | `EarningsService.holdForRefund` | none |
+| The refund hold reason starts `REFUND:`; a failed refund releases nothing | earnings | L-21 |
+| Razorpay refund speed `normal` (no instant-refund charges) | `RazorpayRefundHttpGateway` | business, if faster refunds are wanted |
+| Submission lease 120 s; definitive rejections are HTTP 400, 401, 403, 404 and 422 (after checking Razorpay has no record) | `RefundsService` | none |
+| Stale thresholds: PENDING over 30 min, PROCESSING over 10 days | `findRefundAnomalies` | ops |
+| `payments.status` of a refunded prepaid payment stays PAID; the refund is its own row | refunds | none |
+| `down.sql` refuses once a refund is recorded, a booking is in a refund status, or (enum) a booking is PARTIALLY_REFUNDED | migrations | none |
+
+**Remaining gaps (not refundable through the API yet).**
+- **Money on a closed QR (`PAYMENT_NOT_PENDING`).** A payment that arrives for a collection already closed is not recorded as a collection, so there is no source to refund. It shows as a webhook anomaly, and refunding it needs a Razorpay dashboard refund, which this service then reports as `REFUND_UNKNOWN`. A recorded source for such money is a later change.
+- **Dashboard refunds** are reported, never recorded.
+- **No admin UI or customer notification**, and the apps aren't changed.
+
+**Not in Phase 6.**
+- Phase 7: the financial event log, the audit endpoint and the stuck-collection recovery job.
+- The apps, engine-v2 and the admin UI.
+- Pricing, tax and TDS.
+- Any refund policy (above).

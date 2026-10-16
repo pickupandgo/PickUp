@@ -144,3 +144,14 @@ GRANT UPDATE (occurrences, last_seen_at) ON settlement_findings TO mr_app;
 
 -- Admin audit trail: append-only (a trigger also blocks UPDATE, DELETE and TRUNCATE).
 GRANT SELECT, INSERT ON admin_actions TO mr_app;
+
+-- Refunds (payment flow Phase 6): requested by an admin through the API. The booking, source,
+-- kind, amount, reason, requester and fee decision are immutable (no column grant, and a trigger
+-- as a second line of defence); only the provider lifecycle and an admin's cancellation are
+-- written. payment_collections.refunded_paise has no grant: a SECURITY DEFINER trigger keeps it
+-- equal to the collection's completed refunds.
+GRANT SELECT, INSERT ON payment_refunds TO mr_app;
+GRANT UPDATE (status, provider_refund_id, provider_status, provider_reference, failure_reason,
+              submit_attempts, last_submitted_at, completed_at, failed_at, cancelled_at,
+              cancelled_by_user_id, cancellation_reason, updated_at)
+    ON payment_refunds TO mr_app;

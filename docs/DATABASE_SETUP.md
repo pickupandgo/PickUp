@@ -412,6 +412,74 @@ psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261019120000_
 psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261019120000_mixed_earnings_payout_hold';"
 ```
 
+### Refunds (payment flow Phase 6)
+
+Two migrations, applied in order by `prisma migrate deploy`. Neither changes an existing row.
+- `20261020120000_partially_refunded_enum` adds `PARTIALLY_REFUNDED` to `booking_payment_status` (last), and nothing else. PostgreSQL can't use an enum value in the transaction that added it, so the rules that use it come in the next migration.
+- `20261020120100_refunds` adds one table, one column and rules:
+  - New table `payment_refunds`: one row per refund an admin requested. Either a provider refund (Razorpay refunds an online payment) or a cash return (the cash was handed back). Each names exactly one source: a completed collection, or a paid historical prepaid payment, of its own booking and drop. CHECKs tie every status to its facts. Rows can't be deleted or truncated.
+  - `guard_refund_insert` (for every role, the table owner included):
+    - an active admin requests it;
+    - only a cancelled or completed booking is refunded;
+    - the source belongs to the booking (and drop) and is completed;
+    - a provider refund refunds the source's own Razorpay payment, and a cash return needs a cash collection;
+    - refunds of a source never exceed what it collected. The source row is locked, so concurrent requests are checked one after the other.
+  - A partial unique index allows one live (PENDING or PROCESSING) refund per source, and a Razorpay refund id is recorded once.
+  - `guard_refund_update`: the source, amount, reason and decisions are immutable, and the provider refund id and each outcome time are set once. The status moves forward only: PENDING → PROCESSING → COMPLETED or FAILED; PENDING → REFUSED or CANCELLED. Only an active admin cancels a refund.
+  - `payment_collections.refunded_paise` (default 0): the sum of the collection's completed refunds. A SECURITY DEFINER trigger keeps it, and `guard_collection_update` v3 refuses any other value.
+  - `booking_money_status(booking)` says what a booking's collections and refunds make its payment status: REFUND_PENDING while a refund is live, REFUNDED or PARTIALLY_REFUNDED once refunds completed, otherwise what its collections (or its prepaid payment) say. `guard_booking_update` v4 and `check_collection_effects` v2 hold the refund statuses to it. The deferred `trg_refunds_effects` checks it at commit after every refund change.
+  - `REFUND_REVERSAL` (a wallet entry type unused until now) is the credit of a cash ride fee given back with a cash return. A CHECK makes it always a CREDIT, referenced to the refund, with the admin and a reason. The deferred `trg_wallet_refund_reversal` refuses one that no cash return decided. The insert guard requires exactly the collection's fee, credited to the collecting driver's wallet, once.
+
+Nothing here refunds anything. The refund policy stays open (OPEN_DECISIONS section I, Phase 6).
+
+Before migrating a database that holds data, the same rules as for Phase 1 apply (decision N1): run the preflight and have it reviewed, take a snapshot, rehearse with `npm run db:migration-check`, then deploy. The preflight now also lists:
+- whether the Phase 6 objects exist
+- bookings already in a refund status. REFUND_PENDING and REFUNDED existed before but nothing set them, so any row here was set by hand and needs review before refunds go live.
+- customer payments in a refund status
+- REFUND_REVERSAL ledger entries (must be 0 before this migration)
+- the paid-and-cancelled refund review list, by method
+- refunds by kind and status, and the total refunded, once migrated
+
+Deploy, then **re-run `02-app-grants.sql`**. The API role needs SELECT and INSERT on `payment_refunds`, and UPDATE of the lifecycle columns only: `status`, `provider_refund_id`, `provider_status`, `provider_reference`, `failure_reason`, `submit_attempts`, `last_submitted_at`, `completed_at`, `failed_at`, `cancelled_at`, `cancelled_by_user_id`, `cancellation_reason` and `updated_at`. It gets no privilege on `refunded_paise`. Without the grants, every refund request fails with `permission denied`.
+
+Check after deploying:
+
+```sql
+SELECT count(*) FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+ WHERE t.typname = 'booking_payment_status' AND e.enumlabel = 'PARTIALLY_REFUNDED';   -- 1
+SELECT count(*) FROM pg_trigger
+ WHERE tgname IN ('trg_refunds_insert_guard', 'trg_refunds_guard', 'trg_refunds_no_delete',
+                  'trg_refunds_no_truncate', 'trg_refunds_sync_collection', 'trg_refunds_effects',
+                  'trg_wallet_refund_reversal');                                    -- 7
+SELECT count(*) FROM payment_refunds;                                               -- 0
+SELECT count(*) FROM payment_collections WHERE refunded_paise <> 0;                 -- 0
+SELECT count(*) FROM bookings WHERE payment_status::text <> booking_money_status(id);  -- 0 expected
+```
+
+The last query is a report, not a migration check: a booking whose status was set by hand shows up here, and a refund of it would be refused at commit until it is corrected.
+
+Connected as `mr_app`, these must still fail with `permission denied`:
+
+```sql
+UPDATE payment_refunds SET amount_paise = 1;
+UPDATE payment_refunds SET source_collection_id = gen_random_uuid();
+UPDATE payment_refunds SET fee_treatment = 'KEPT';
+UPDATE payment_collections SET refunded_paise = 1;
+DELETE FROM payment_refunds;
+TRUNCATE payment_refunds;
+```
+
+**Rollback**, newest first. Roll the backend back to the Phase 5 release at the same time. Neither `down.sql` drops data the previous rules can't rebuild:
+- `20261020120100`'s refuses once any refund is recorded, or any booking is in a refund status. Otherwise it restores the previous booking guard, collection effects check and collection guard exactly, and drops `payment_refunds` (its grants go with it), its functions and triggers, the REFUND_REVERSAL rule and `refunded_paise`.
+- `20261020120000`'s refuses while any booking is PARTIALLY_REFUNDED. PostgreSQL can't drop an enum value, so it recreates `booking_payment_status`, which **rewrites `bookings`** under an exclusive lock (every value stays the same). Run it in a maintenance window.
+
+```bash
+psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261020120100_refunds/down.sql
+psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261020120100_refunds';"
+psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261020120000_partially_refunded_enum/down.sql
+psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261020120000_partially_refunded_enum';"
+```
+
 ## Ongoing rules
 
 - **Schema changes:** only through new migration files. Re-run step 4 (migrate, then grants) on every release that adds one.

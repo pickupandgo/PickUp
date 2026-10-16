@@ -1,6 +1,49 @@
 import type { Booking, BookingStop, PaymentCollection, Trip } from '../generated/prisma/client';
+import type { BookingPaymentStatus } from '../generated/prisma/enums';
 import type { Tx } from '../prisma/prisma.service';
 import { collectedPaymentStatus } from './booking-payment-status';
+
+/** Payment statuses set by refunds (payment flow Phase 6). */
+const REFUND_STATUSES: ReadonlySet<BookingPaymentStatus> = new Set([
+  'REFUND_PENDING',
+  'PARTIALLY_REFUNDED',
+  'REFUNDED',
+]);
+
+export function isRefundStatus(status: BookingPaymentStatus): boolean {
+  return REFUND_STATUSES.has(status);
+}
+
+/**
+ * What a booking's money says its payment status is: REFUND_PENDING while a refund is live,
+ * otherwise what its collections (or its prepaid payment) say, unless refunds completed: then
+ * REFUNDED or PARTIALLY_REFUNDED. Computed by the database function the booking guard and the
+ * refund checks use (booking_money_status), so the API and the database never disagree.
+ */
+export async function bookingMoneyStatus(tx: Tx, bookingId: string): Promise<BookingPaymentStatus> {
+  const rows = await tx.$queryRaw<{ status: string }[]>`
+    SELECT booking_money_status(${bookingId}::uuid) AS status`;
+  const status = rows[0]?.status;
+  if (!status) {
+    throw new Error(`Booking ${bookingId} has no money status`);
+  }
+  return status as BookingPaymentStatus;
+}
+
+/**
+ * Moves a booking's payment status to what its money says, after a refund changed. The caller
+ * holds the booking lock. Returns the status the booking has afterwards.
+ */
+export async function syncBookingMoneyStatus(
+  tx: Tx,
+  booking: Pick<Booking, 'id' | 'paymentStatus'>,
+): Promise<BookingPaymentStatus> {
+  const status = await bookingMoneyStatus(tx, booking.id);
+  if (status !== booking.paymentStatus) {
+    await tx.booking.update({ where: { id: booking.id }, data: { paymentStatus: status } });
+  }
+  return status;
+}
 
 export interface BookingPaidResult {
   /** True when this call moved the trip from DELIVERED to PAYMENT_CONFIRMED. */
@@ -97,7 +140,11 @@ export async function applyCollectionCompleted(
     stopIds: stops.map((candidate) => candidate.id),
     completed,
   });
-  if (
+  if (isRefundStatus(booking.paymentStatus)) {
+    // Money for another drop arrived after a refund of this booking (payment flow Phase 6): the
+    // status follows its collections and refunds together (e.g. REFUNDED -> PARTIALLY_REFUNDED).
+    await syncBookingMoneyStatus(tx, booking);
+  } else if (
     status !== booking.paymentStatus &&
     (booking.paymentStatus === 'UNPAID' || booking.paymentStatus === 'PARTIALLY_PAID')
   ) {

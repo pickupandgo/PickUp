@@ -3,6 +3,7 @@ import { BookingsModule } from '../bookings/bookings.module';
 import { CollectionsModule } from '../collections/collections.module';
 import { EarningsModule } from '../earnings/earnings.module';
 import { RazorpayModule } from '../razorpay/razorpay.module';
+import { RefundsModule } from '../refunds/refunds.module';
 import { SettlementsModule } from '../settlements/settlements.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { AdminPaymentsController } from './admin-payments.controller';
@@ -28,6 +29,8 @@ import { WalletTopUpsController } from './wallet-topups.controller';
     SettlementsModule,
     // The customer booking view (with its payment gate) on the prepaid payment routes.
     BookingsModule,
+    // refund.* webhooks go to the refund finalizer.
+    RefundsModule,
   ],
   controllers: [
     WalletTopUpsController,

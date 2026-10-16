@@ -20,8 +20,9 @@ Amounts are always integer paise (₹1 = 100 paise), rounded HALF_UP where a per
 - **Bookings and earnings:** the trip engine registers bookings (fare and fee rule fixed at confirmation); the customer pays in the app or at pickup/delivery; completing a trip creates its earning once. An ONLINE earning becomes payable only after Razorpay settles the customer payment to Nikhil Enterprises.
 - **Payouts:** every Monday at 11:00 IST the scheduler prepares one batch of settled earnings for drivers with an admin-approved, bank-validated account; an admin executes it; a payout is PAID only when RazorpayX confirms it. TDS fields exist but stay 0 until a CA-approved rule exists.
 - **Bank accounts:** adding or changing one needs a step-up phone OTP re-authentication after the change request (a stolen session can't redirect payouts), then a bank validation and an admin approval.
+- **Refunds (admin only):** an admin requests a Razorpay refund of an online payment or records cash handed back, with a reason, for an amount the server computes. Nothing is refunded, debited or recovered automatically: the refund policy is still open (OPEN_DECISIONS L-7 to L-10, L-21). See [docs/RAZORPAY_INTEGRATION.md §17](docs/RAZORPAY_INTEGRATION.md).
 
-Not in this slice: a refunds API, customer features beyond booking payment, dispatch.
+Not in this slice: customer features beyond booking payment, dispatch.
 
 ## Run locally
 
@@ -76,5 +77,5 @@ Run the migrate image with the migrator connection string, and the API image wit
 ## Known limitations
 
 - Rate limits live in memory, so run a single instance until they move to a shared store such as Redis.
-- Refunds for payments that can't be applied automatically are done by hand in the Razorpay Dashboard (OPEN_DECISIONS D-22, D-43).
-- Production-readiness items still open (each keeps a money path off instead of assuming it works; the startup log lists them): RazorpayX activation and capabilities (D-46, D-58, `RAZORPAYX_CAPABILITIES_CONFIRMED`), live settlement reconciliation (D-56, `SETTLEMENT_RECON_VERIFIED`), TDS (D-57).
+- Money that can't be applied automatically (for example a payment on a QR that was already closed) has no source the refunds API can refund; it is refunded by hand in the Razorpay Dashboard (OPEN_DECISIONS D-22, D-43, section I Phase 6). So is every provider refund while `REFUND_PROVIDER=disabled`.
+- Production-readiness items still open (each keeps a money path off instead of assuming it works; the startup log lists them): RazorpayX activation and capabilities (D-46, D-58, `RAZORPAYX_CAPABILITIES_CONFIRMED`), live settlement reconciliation (D-56, `SETTLEMENT_RECON_VERIFIED`), live Razorpay refunds (D-72, `REFUNDS_PROVIDER_VERIFIED`), TDS (D-57).

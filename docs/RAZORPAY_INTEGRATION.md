@@ -2,7 +2,7 @@
 
 For whoever wires the apps and the trip engine to this backend and runs the Razorpay tests. All amounts are integer paise (₹1 = 100 paise).
 
-Sections 1–8 cover driver wallet top-ups. Sections 9–15 cover the V1 money model: customer booking payments, pickup/delivery collections (cash and QR), driver earnings and weekly payouts.
+Sections 1–8 cover driver wallet top-ups. Sections 9–15 cover the V1 money model: customer booking payments, pickup/delivery collections (cash and QR), driver earnings and weekly payouts. Section 16 runs the whole flow end to end, and section 17 covers refunds.
 
 ```
 ONLINE  customer → Razorpay → Nikhil Enterprises → driver earning → weekly payout → driver's verified bank
@@ -344,7 +344,7 @@ Never show a driver's personal UPI id. Payments only go to Nikhil Enterprises' R
 - The full trail of one trip: `GET /v1/admin/bookings/{bookingId}`. It shows the fare, fee rule, payment or collections, wallet debits, the earning with its deductions, split and payout amount, each payout with its item amount, the batch, the provider payout id and the UTR. Each collection shows its own merchant settlement and the earning it funds, and `merchantSettlements` lists every settlement of the booking (`merchantSettlement` is the first, kept for older readers).
 - Settlement anomalies: `GET /v1/admin/reconciliation/settlement-anomalies` lists settled payments that match none of our payments (`SETTLEMENT_UNKNOWN_PAYMENT`) or match one with another amount (`SETTLEMENT_AMOUNT_MISMATCH`), with both amounts and how often they were seen. They are never applied to an earning.
 
-Earning states: `AWAITING_SETTLEMENT` → `PAYABLE` → `IN_PAYOUT` → `PAID`. `ON_HOLD` comes from a dispute, an admin, or a failed or returned payout. It also comes from a drop left undelivered on a trip with an online part (`UNDELIVERED_STOP_REVIEW`). That is a technical safe default (`EARNINGS_UNDELIVERED_DROP_HOLD`, default true), and the business rule is still open (L-11 / D-70). A trip left partly paid pays out only what was collected and settled, and nothing is refunded or debited on its own (N5 driver pay, open). Payout states: `PREPARED` → `SUBMITTING` → `SUBMITTED` → `PROCESSED`.
+Earning states: `AWAITING_SETTLEMENT` → `PAYABLE` → `IN_PAYOUT` → `PAID`. `ON_HOLD` comes from a dispute, an admin, a failed or returned payout, or a refund request (`REFUND: …`, section 17). It also comes from a drop left undelivered on a trip with an online part (`UNDELIVERED_STOP_REVIEW`). That is a technical safe default (`EARNINGS_UNDELIVERED_DROP_HOLD`, default true), and the business rule is still open (L-11 / D-70). A trip left partly paid pays out only what was collected and settled, and nothing is refunded or debited on its own (N5 driver pay, open). Payout states: `PREPARED` → `SUBMITTING` → `SUBMITTED` → `PROCESSED`.
 - `FAILED` (payment flow Phase 5, N10): its items are released and its earnings go `ON_HOLD` (`PAYOUT_FAILED: payout … failed (…)`). Nothing is re-queued on its own. An admin releases each earning, and a later batch pays it with a new payout, for the same payout amount.
 - `REVERSED` (money returned by the bank) puts the earnings ON_HOLD for an admin and suspends the bank account. It is never retried automatically.
 
@@ -352,7 +352,7 @@ Earning states: `AWAITING_SETTLEMENT` → `PAYABLE` → `IN_PAYOUT` → `PAID`. 
 
 | Dashboard | URL | Secret | Events |
 |---|---|---|---|
-| Razorpay | `/v1/webhooks/razorpay` | `RAZORPAY_WEBHOOK_SECRET` | `payment.authorized`, `payment.captured`, `payment.failed`, `order.paid`, `payment_link.paid`, `payment_link.partially_paid`, `payment_link.expired`, `payment_link.cancelled`, `qr_code.credited`, `qr_code.closed`, `payment.dispute.created`, `payment.dispute.won`, `payment.dispute.lost`, `payment.dispute.closed`, `payment.dispute.under_review`, `payment.dispute.action_required`, `settlement.processed` |
+| Razorpay | `/v1/webhooks/razorpay` | `RAZORPAY_WEBHOOK_SECRET` | `payment.authorized`, `payment.captured`, `payment.failed`, `order.paid`, `payment_link.paid`, `payment_link.partially_paid`, `payment_link.expired`, `payment_link.cancelled`, `qr_code.credited`, `qr_code.closed`, `payment.dispute.created`, `payment.dispute.won`, `payment.dispute.lost`, `payment.dispute.closed`, `payment.dispute.under_review`, `payment.dispute.action_required`, `settlement.processed`, `refund.created`, `refund.processed`, `refund.failed`, `refund.speed_changed` |
 | RazorpayX | `/v1/webhooks/razorpayx` | `RAZORPAYX_WEBHOOK_SECRET` | all `payout.*` events (`payout.failed` is mandatory in RazorpayX), `fund_account.validation.completed`, `fund_account.validation.failed` |
 
 `settlement.processed` carries no list of payments: it only triggers a pull of the settlement reconciliation data for the dates around it.
@@ -369,7 +369,9 @@ Every path (webhook, the driver app's polling, `POST /v1/admin/collections/{id}/
 
 **Settlements per collection** (payment flow Phase 5). Each QR payment's settlement is recorded against its own collection. An earning funded by several QR drops becomes payable when the last of them is settled, whichever webhook or sync records it. A repeated `settlement.processed` or a repeated sync records nothing twice. A settled payment that matches none of ours, or another amount, is recorded as a settlement finding for review (section 13), never applied.
 
-**Testing without webhooks:** booking payments complete through verify, QR collections through the driver app's polling, settlements through the periodic pull or `POST /v1/admin/settlements/sync`, bank validations through the admin refresh, and payouts through admin sync.
+**Refunds** (payment flow Phase 6). A `refund.*` event is matched to our refund by its Razorpay id, or by our receipt or `refund_id` note when the submission reply was lost. It must be exactly ours (payment, amount, currency, receipt, notes) and is applied forward only, through the same finalizer as the submission reply and `POST /v1/admin/refunds/{id}/sync`. A repeat is `REFUND_ALREADY_APPLIED`, and an older state after a newer one is `REFUND_STALE_UPDATE`. A different amount or payment is `REFUND_MISMATCH`, never applied. A refund this service never requested (made on the Dashboard) is `REFUND_UNKNOWN`. A refund Razorpay reports for one we refused or cancelled is `REFUND_CONFLICTING_STATE`. All three show in `webhook-anomalies` for review. Section 17 has the details.
+
+**Testing without webhooks:** booking payments complete through verify, QR collections through the driver app's polling, settlements through the periodic pull or `POST /v1/admin/settlements/sync`, bank validations through the admin refresh, payouts through admin sync, and refunds through `POST /v1/admin/refunds/{id}/sync`.
 
 **Test mode limits** (Razorpay docs and a probe on 6 Oct 2026): QR codes can't be paid in test mode; payment links can. Test payments are not settled (the settlement and recon endpoints answer 200 with empty lists), so in test mode an ONLINE earning stays `AWAITING_SETTLEMENT` unless the simulator is used (section 16). Fund Account Validation is not available in test mode. RazorpayX test payouts stay in `processing` until moved in the RazorpayX dashboard, and test mode sends only some payout events.
 
@@ -380,18 +382,21 @@ Every path (webhook, the driver app's polling, `POST /v1/admin/collections/{id}/
 - [ ] Razorpay QR Codes enabled on the live account and `COLLECTION_LINK_PROVIDER=razorpay_qr_code` (UPI QR, D-47; the payment-link QR is refused with live keys); tested with a ₹1 fare from GPay, PhonePe and Paytm; `qr_code.credited` and `qr_code.closed` webhooks on; automatic capture on.
 - [ ] **Open, blocks real payouts:** RazorpayX activated on Nikhil Enterprises' account: business account number, payout IP allowlist, webhook with its own secret, balance funded (D-46); Payouts and Fund Account Validation confirmed available on that account and the validation fee known (D-58). Only then set `RAZORPAYX_CAPABILITIES_CONFIRMED=true` and `PAYOUT_PROVIDER=razorpayx`; the server refuses `razorpayx` in production or with live keys without it. Until then `PAYOUT_PROVIDER=disabled`.
 - [ ] **Open, blocks payable ONLINE earnings:** settlement reconciliation verified on the live account (D-56); `settlement.processed` webhook on. Only then set `SETTLEMENT_RECON_VERIFIED=true` with `SETTLEMENT_PROVIDER=razorpay`; the server refuses `razorpay` in production or with live keys without it. Until then `SETTLEMENT_PROVIDER=disabled` (earnings stay `AWAITING_SETTLEMENT`; nothing is paid).
-- [ ] The startup log lists the production-readiness items still open (`Open production-readiness items`). At go-live it should show only D-57 (TDS), plus D-47 if launching with cash collection only. It also shows the open business decisions with a technical safe default, until Raj decides them: L-11 / D-70 (undelivered drop) and N5 driver pay (partly paid trip).
+- [ ] The startup log lists the production-readiness items still open (`Open production-readiness items`). At go-live it should show only D-57 (TDS), plus D-47 if launching with cash collection only and D-72 if launching without provider refunds. It also shows the open business decisions with a technical safe default, until Raj decides them: L-11 / D-70 (undelivered drop), N5 driver pay (partly paid trip) and L-7 to L-10, L-21 (refund policy).
 - [ ] The Driver App implements the bank-account step-up (Firebase phone re-authentication before `confirm`).
 - [ ] Every driver's KYC legal name recorded (`provision.js set-legal-name`, D-59) before bank accounts are approved.
 - [ ] `PAYOUT_SCHEDULE_ENABLED=true` (Monday 11:00 IST); `PAYOUT_AUTO_EXECUTE` stays false until finance decides otherwise.
-- [ ] `SETTLEMENT_PROVIDER`, `PAYOUT_PROVIDER` and `COLLECTION_LINK_PROVIDER` are never `simulated` (the server refuses it in production and with live keys).
-- [ ] **Production restriction, still in force after payment flow Phase 5** (OPEN_DECISIONS section I, Phases 4 and 5):
+- [ ] `SETTLEMENT_PROVIDER`, `PAYOUT_PROVIDER`, `COLLECTION_LINK_PROVIDER` and `REFUND_PROVIDER` are never `simulated` (the server refuses it in production and with live keys).
+- [ ] **Production restriction, still in force after payment flow Phase 6** (OPEN_DECISIONS section I, Phases 4 to 6):
   - All-cash multi-drop PAY_AT_DELIVERY may work through the current backend flow.
   - Single-drop QR works (one collection, paid out once settled).
   - Multi-drop PAY_AT_DELIVERY containing a QR drop stays blocked operationally. Phase 5 makes these earnings payable and settleable in the backend, proven with simulated providers only. The backend doesn't refuse such a QR, so keep these bookings off until every go-live condition in OPEN_DECISIONS section I, Phase 5 is met. In short: live QR Codes, live settlement reconciliation with one real two-QR booking, live RazorpayX payouts with the failure path run once, the ops reviews in place, the production preflight reviewed, and Raj's written approval.
 - [ ] Someone owns the daily reports: `earning-mismatches`, `payout-mismatches`, `failed-payouts`, `paid-cancelled-bookings`, `cash-fee-mismatches`, `stale-collections`, `payable-without-bank-account`, `unprocessed-payout-webhooks`, `payout-webhook-anomalies`, `settlement-anomalies`, and `GET /v1/admin/settlements/overdue-earnings`. Alerts on `"alert":"PAYOUT_ANOMALY"`, `"alert":"PAYMENT_DISPUTE"` and `"alert":"SETTLEMENT_ANOMALY"`.
 - [ ] Someone reviews ON_HOLD earnings (`GET /v1/admin/earnings?status=ON_HOLD`) every day. Each failed payout (`PAYOUT_FAILED`) and each trip with a drop left undelivered (`UNDELIVERED_STOP_REVIEW`) waits there for an admin release (N10, L-11).
 - [ ] TDS on driver payouts confirmed with a CA (D-57). `TDS_ENABLED` stays false until a rule is implemented.
+- [ ] **Open, blocks live provider refunds:** Razorpay refunds verified on the live account (D-72; the checklist is in OPEN_DECISIONS section I, Phase 6) and the `refund.*` webhooks on. Only then set `REFUNDS_PROVIDER_VERIFIED=true` with `REFUND_PROVIDER=razorpay`; the server refuses `razorpay` in production or with live keys without it. Until then `REFUND_PROVIDER=disabled`: provider refunds are refused (503 `REFUND_PROVIDER_NOT_CONFIGURED`), cash returns can still be recorded, and any customer refund is done by hand on the Dashboard (it then shows as `REFUND_UNKNOWN` for review).
+- [ ] The refund policy stays open until Raj decides it (L-7 to L-10, L-21). Keep the safe defaults: `REFUND_AUTO_ON_CANCEL=false` (true is refused), `REFUND_PARTIAL_ALLOWED=false`, and `REFUND_ALLOWED_CASES` left at all cases. Every refund is requested by an admin with a reason.
+- [ ] Someone owns `refund-anomalies` daily: stale refunds, refunds after a payout or on a cash earning (nothing is recovered from the driver automatically, L-21), and any total that disagrees. Alerts on `"alert":"REFUND_ANOMALY"`.
 
 ### New error codes
 
@@ -409,8 +414,11 @@ Every path (webhook, the driver app's polling, `POST /v1/admin/collections/{id}/
 | `BOOKING_NOT_FOUND`, `TRIP_NOT_FOUND`, `COLLECTION_NOT_FOUND`, `EARNING_NOT_FOUND`, `BANK_ACCOUNT_NOT_FOUND`, `BANK_CHANGE_REQUEST_NOT_FOUND`, `PAYOUT_NOT_FOUND`, `PAYOUT_BATCH_NOT_FOUND`, `FEE_RULE_NOT_FOUND` | 404 |
 | `BOOKING_REF_CONFLICT`, `BOOKING_NOT_PAYABLE`, `BOOKING_ALREADY_PAID`, `BOOKING_CLOSED`, `TRIP_ALREADY_ASSIGNED`, `INVALID_TRIP_TRANSITION`, `PAYMENT_REQUIRED`, `COLLECTION_NOT_ALLOWED`, `COLLECTION_IN_PROGRESS`, `FEE_RULE_NOT_CONFIGURED`, `FEE_RULE_AMBIGUOUS`, `FEE_RULE_OVERLAP`, `EARNING_INVALID_STATE`, `BANK_ACCOUNT_EXISTS`, `BANK_ACCOUNT_INVALID_STATE`, `BANK_ACCOUNT_CHANGE_PENDING`, `BANK_CHANGE_REQUEST_EXPIRED`, `BANK_CHANGE_REQUEST_CLOSED`, `BANK_VALIDATION_NOT_FOUND`, `BANK_VALIDATION_NOT_ACCEPTABLE`, `BANK_NAME_MISMATCH_UNRESOLVED`, `DRIVER_KYC_NAME_MISSING` | 409 |
 | `FEE_RULE_INVALID` | 400 (creating a rule) or 409 (applying one) |
-| `PAYOUT_PROVIDER_ERROR` | 502 |
-| `INTERNAL_API_DISABLED`, `COLLECTION_PROVIDER_NOT_CONFIGURED`, `PAYOUT_PROVIDER_NOT_CONFIGURED`, `PAYOUT_PROVIDER_UNAVAILABLE`, `SETTLEMENT_TRACKING_DISABLED` | 503 |
+| `PAYOUT_PROVIDER_ERROR`, `REFUND_PROVIDER_ERROR` | 502 |
+| `INTERNAL_API_DISABLED`, `COLLECTION_PROVIDER_NOT_CONFIGURED`, `PAYOUT_PROVIDER_NOT_CONFIGURED`, `PAYOUT_PROVIDER_UNAVAILABLE`, `SETTLEMENT_TRACKING_DISABLED`, `REFUND_PROVIDER_NOT_CONFIGURED` | 503 |
+| `REFUND_NOT_FOUND` | 404 |
+| `REFUND_SOURCE_NOT_REFUNDABLE` (`details.reason`), `REFUND_IN_PROGRESS` (`details.refundId`), `REFUND_CASE_NOT_ALLOWED` (`details.refundCase`), `REFUND_EARNING_IN_PAYOUT`, `REFUND_INVALID_STATE` (`details.status`, `details.reason`) | 409 |
+| `REFUND_SOURCE_INVALID` (`details.reason`), `REFUND_AMOUNT_NOT_ALLOWED` (`details.refundablePaise`, `details.reason`), `REFUND_FEE_TREATMENT_REQUIRED` (`details.reason`) | 422 |
 
 ## 16. End-to-end run with API calls (`npm run e2e:local`)
 
@@ -446,6 +454,10 @@ The runner creates a separate database (`multipleride_e2e`, dropped and recreate
 | 17. PAY_AT_DELIVERY, QR + cash + QR | Drop 1 by QR (signed `qr_code.credited`), drop 2 in cash, drop 3 by QR (driver's poll). One MIXED earning with a payout amount of ₹359.10, the two QR nets. Drop 1 is settled first, and the earning stays `AWAITING_SETTLEMENT` with each source's settlement state. A repeated `settlement.processed` and two concurrent admin syncs record nothing. Drop 3 is settled next, and the earning becomes `PAYABLE`, with one settlement per QR drop. |
 | 18. Failed payout | A batch carries the step 17 earning (₹359.10). Simulated RazorpayX fails it, and a signed `payout.failed` (delivered twice) puts the earning `ON_HOLD` (`PAYOUT_FAILED`) and releases the item. The next batch doesn't carry it. An admin releases it (twice: one audit record). A new batch pays it with a new transfer for the same amount, and a duplicate `payout.processed` changes nothing: `PAID` once. The booking chain shows both payouts. |
 | 19. Phase 5 audit | Reconciliation reports, including `settlement-anomalies`, clean for every booking paid by collection, its payments and the wallet; no webhook of the run in the anomaly or unprocessed lists. Paid out = the processed payouts; kept in cash = every cash part; nothing payable, in payout or on hold. Every payout item is its earning's payout amount, no earning is in two live items, no cash earning is in a payout, and there are four cash fee debits. |
+| 20. Provider refund | A new PAY_AT_PICKUP booking paid by QR is cancelled: it stays PAID and is listed for refund review. An admin requests a refund without an amount, and the server computes the whole collection. Razorpay (simulated) accepts it: `PROCESSING`, booking `REFUND_PENDING`. The same `Idempotency-Key` returns the same refund, and a second request is refused (`REFUND_IN_PROGRESS`). `/v1/dev/simulate/refunds/{id}` processes it; a signed `refund.processed` (delivered twice, then again as a new event) and an admin sync complete it once. The refund is `COMPLETED` with the bank reference, and the booking `REFUNDED`. The collection keeps its facts and shows `refundedPaise`, and the booking leaves the review list. |
+| 21. Cash returned | The step 12 cash trip. A cash return with no fee decision and a provider refund of cash are refused. With `CREDITED_TO_WALLET`, the cash return is recorded `COMPLETED` and the platform fee is credited back to the wallet once, as a `REFUND_REVERSAL` entry (replay: same refund, one credit). The cash earning is untouched and reported (`REFUND_ON_CASH_EARNING`), and the booking is `REFUNDED`. |
+| 22. Refund after payout | Drop 1 of the step 17 booking, whose earning was paid out in step 18. Only that drop's money is refunded. The earning stays `PAID` (no clawback), the booking is `PARTIALLY_REFUNDED`, and `refund-anomalies` reports `REFUND_AFTER_PAYOUT` with the payout. The wallet is not touched. |
+| 23. Phase 6 audit | No refund integrity finding. The wallet and this run's refund webhooks are absent from the mismatch, anomaly and unprocessed reports. Three refunds are all `COMPLETED`, and every booking's status is what its money says. `refunded_paise` is exactly the completed refunds. The audit trail has two provider refunds requested and completed and one cash return. There is one `REFUND_REVERSAL` credit, and the driver's paid-out total is unchanged. |
 
 Idempotency checks: a used bank change request confirmed again, repeated booking registration, payment start with the same `Idempotency-Key`, duplicate `payment.captured`, settlement re-sync, repeated `COMPLETED`, re-running the weekly schedule, re-executing the batch, duplicate `payout.processed`. Phase 4 adds:
 - pickup cash and drop cash replayed with the same key (one collection, one fee debit)
@@ -463,6 +475,103 @@ Phase 5 adds:
 - a second release
 - a duplicate `payout.processed` for the new payout
 
+Phase 6 adds:
+- a refund request replayed with the same key
+- a second refund of the same collection while one is in progress
+- a duplicate `refund.processed`, the same state in a new event, and an admin sync after the webhook
+- a cash return replayed with the same key (one fee credit)
+
 Each must change nothing.
 
-`SETTLEMENT_PROVIDER=simulated`, `PAYOUT_PROVIDER=simulated` and `COLLECTION_LINK_PROVIDER=simulated` mount `/v1/dev/simulate/*` (admin-only). Config validation refuses all three in production and with live keys. The simulators only change the fake provider's state; the backend learns about it only through the signed webhooks and syncs it uses in production (for a QR: it re-reads the QR from the simulated provider, as it would from Razorpay).
+`SETTLEMENT_PROVIDER=simulated`, `PAYOUT_PROVIDER=simulated`, `COLLECTION_LINK_PROVIDER=simulated` and `REFUND_PROVIDER=simulated` mount `/v1/dev/simulate/*` (admin-only). Config validation refuses all four in production and with live keys. The simulators only change the fake provider's state; the backend learns about it only through the signed webhooks and syncs it uses in production (for a QR: it re-reads the QR from the simulated provider, as it would from Razorpay).
+
+## 17. Refunds (payment flow Phase 6)
+
+The technical refund system, for admins only. The refund policy is still open (OPEN_DECISIONS L-7 to L-10, L-21), so nothing is refunded automatically: every refund is requested by an admin, with a reason, and audited. Cancelling a paid booking refunds nothing; it is listed in `paid-cancelled-bookings` for review. The apps don't change.
+
+Two kinds:
+- `PROVIDER`: money paid online (a QR collection, or the payment of a historical `PREPAID_UPI` booking) goes back through Razorpay to where it came from.
+- `CASH_RETURNED`: the driver handed the cash back. The backend records it and sends nothing.
+
+**Admin API**
+
+| Method and path | Body | Returns |
+|---|---|---|
+| `POST /v1/admin/refunds` (`Idempotency-Key` required, 10 a minute) | `{ bookingId, sourceCollectionId \| sourcePaymentId, stopSequence?, kind, amountPaise?, reason, feeTreatment? }` | `201 { refund, created: true, submission }`, or `200` with the original refund (`created: false`) when the key was already used for the same request |
+| `GET /v1/admin/refunds?bookingId=&status=&limit=` | – | refunds, newest first (50 by default, at most 100) |
+| `GET /v1/admin/refunds/{refundId}` | – | refund |
+| `POST /v1/admin/refunds/{refundId}/sync` (30 a minute) | – | `{ refund, outcome }` |
+| `POST /v1/admin/refunds/{refundId}/cancel` (10 a minute) | `{ reason }` | refund |
+| `GET /v1/admin/reconciliation/refund-anomalies` | – | findings (below) |
+
+The request:
+- **One source** of this booking: `sourceCollectionId` (a completed collection: a QR for `PROVIDER`, cash for `CASH_RETURNED`) or `sourcePaymentId` (the paid payment of a historical prepaid booking, `PROVIDER` only). `stopSequence` is an optional cross-check of the collection's drop.
+- **The server computes the amount:** what the source collected minus what was already refunded. `amountPaise` is optional. While partial refunds are off (`REFUND_PARTIAL_ALLOWED=false`, the default) it can only confirm that amount; any other is `422 REFUND_AMOUNT_NOT_ALLOWED` with `details.refundablePaise`. With partial refunds on, it may be 1 paisa up to what is left.
+- **`reason`:** 10–500 characters, stored on the refund and in the audit trail.
+- **`feeTreatment`:** cash returns only, and required there (below).
+- The body can't carry a status, a provider id, a case or a fee credit (`400 VALIDATION_FAILED`). Reusing the key for a different request is `409 IDEMPOTENCY_KEY_REUSED`.
+- `submission` says what sending a provider refund did on this request: `PROCESSING`, `COMPLETED`, `FAILED`, `REFUSED`, `PENDING_RETRY` (unknown outcome, retried with the same key) or `SKIPPED` (a submission is already in flight). It is `null` for a cash return.
+
+What is checked, by the service and again by the database:
+- Only a `CANCELLED` or `COMPLETED` booking is refunded, so a trip in progress keeps its money (`409 REFUND_SOURCE_NOT_REFUNDABLE`, `details.reason: BOOKING_NOT_CLOSED`).
+- The source is this booking's (and this drop's), completed or paid, and of the right kind. Otherwise: `422 REFUND_SOURCE_INVALID` (`ONE_SOURCE`, `NOT_THIS_BOOKING`, `STOP_MISMATCH`, `NOT_ONLINE`, `NOT_CASH`) or `409 REFUND_SOURCE_NOT_REFUNDABLE` (`SOURCE_NOT_COMPLETED`, `ALREADY_REFUNDED`).
+- One live refund per source at a time (`409 REFUND_IN_PROGRESS`, `details.refundId`). The refunds of a source never add up to more than it collected.
+- The case the booking's facts show is recorded on the refund as `refundCase`: `CANCELLED_BEFORE_HANDOVER`, `CANCELLED_AFTER_HANDOVER` (picked up; for a drop's money, delivered), `UNDELIVERED_DROP` or `COMPLETED_BOOKING`. It decides nothing. `REFUND_ALLOWED_CASES` can narrow the cases an admin may refund (`409 REFUND_CASE_NOT_ALLOWED`, `details.refundCase`).
+
+**States.** A provider refund is recorded `PENDING`, then:
+- Razorpay accepts it (`pending`): `PROCESSING`. Processed: `COMPLETED`, with the bank reference (ARN, RRN or UTR from `acquirer_data`) in `providerReference` once Razorpay reports it. Failed: `FAILED`.
+- Razorpay rejects it outright and has no record of it: `REFUSED`. An admin withdraws it before it reached Razorpay: `CANCELLED`.
+
+A cash return is recorded `COMPLETED`. States only move forward. A `FAILED`, `REFUSED` or `CANCELLED` refund moved no money, and the source can be refunded with a new request.
+
+The booking's payment status follows its money: `REFUND_PENDING` while a refund is `PENDING` or `PROCESSING`, then `REFUNDED` once everything it collected was refunded, or `PARTIALLY_REFUNDED` before that. If nothing was refunded in the end, it goes back to `PAID` or `PARTIALLY_PAID`. A collection keeps its own facts and shows `refundedPaise`. A refunded prepaid payment stays `PAID` in `payments`; the refund is its own row.
+
+**Sending a refund to Razorpay.** The refund is recorded first and sent after that transaction commits, never inside one:
+- `POST /v1/payments/{pay_id}/refund` with the amount, `speed: normal`, `receipt` = our refund id, notes (`refund_id`, `booking_id`, and `collection_id` or `payment_id`) and the header `X-Refund-Idempotency: <our refund id>`.
+- Each submission is claimed for 120 seconds, so two workers never send the same refund at once.
+- A retry (the same request again, or a sync) first looks for our refund in `GET /v1/payments/{pay_id}/refunds`. It sends the refund again, with the same key, only if Razorpay has no record of it.
+- Razorpay unavailable (timeout, network, 5xx): the refund stays `PENDING` (`PENDING_RETRY`).
+- Razorpay answers with an error: if our refund is found there anyway, its state is applied. If not, HTTP 400, 401, 403, 404 or 422 makes it `REFUSED` (`failureReason: PROVIDER_REJECTED:<code>`). Anything else, an unreadable reply included, leaves it `PENDING`.
+- Every reply, webhook and sync result is validated, then must be exactly ours: the same payment, amount, currency, receipt and notes, and a Razorpay refund id not recorded for another refund. Otherwise it is `REFUND_MISMATCH`, and nothing is applied.
+
+The webhooks (`refund.created`, `refund.processed`, `refund.failed`, `refund.speed_changed`), the submission reply and the sync all go through the same finalizer, so they converge (section 14 lists the outcomes). The sync adds `RESUBMITTED_<result>` (a pending refund Razorpay had no record of, sent again), `NOT_FOUND_AT_PROVIDER` and `NOT_A_PROVIDER_REFUND`.
+
+**Cancelling** works only for a provider refund still `PENDING` with no Razorpay id; anything else is `409 REFUND_INVALID_STATE` (`details.reason: NOT_PENDING`). A refund that was ever sent is looked up at Razorpay first. Found there, its state is applied and the cancel is refused (`REACHED_PROVIDER`). A submission less than 120 seconds old can't be cancelled (`SUBMISSION_IN_PROGRESS`).
+
+**Cash returns.** `kind: CASH_RETURNED`, from a completed cash collection, for the amount the server computes. It is recorded `COMPLETED` and audited as `CASH_RETURN_RECORDED`. The admin states the platform fee decision each time, and there is no default (`422 REFUND_FEE_TREATMENT_REQUIRED`, `details.reason: MISSING`):
+- `KEPT`: the fee stays debited. No wallet movement.
+- `CREDITED_TO_WALLET`: the collection's platform fee is credited back to the collecting driver's wallet in the same transaction, as one `REFUND_REVERSAL` entry keyed `refund-fee-credit:<refundId>`. It needs the return of everything left of the collection (`NEEDS_FULL_RETURN`) and a collection that had a fee (`NO_FEE_TO_CREDIT`), and happens once per collection.
+
+A provider refund never touches the wallet; a fee decision sent with one is refused (`NOT_A_CASH_RETURN`).
+
+**Earnings.** In the refund request's transaction:
+- An `AWAITING_SETTLEMENT` or `PAYABLE` earning goes `ON_HOLD` (`REFUND: refund <id> requested (<case>); an admin decides what the driver is paid (OPEN_DECISIONS L-21)`). One already `ON_HOLD` stays held.
+- An earning `IN_PAYOUT` refuses the refund (`409 REFUND_EARNING_IN_PAYOUT`). Retry once that payout is processed or has failed.
+- A `PAID` or `SETTLED_IN_CASH` earning is left as it is. Nothing is debited or recovered from the driver, and `refund-anomalies` reports it (`REFUND_AFTER_PAYOUT`, `REFUND_ON_CASH_EARNING`).
+- A failed refund releases nothing. An admin may release a held earning, but a refunded booking is never paid out: payout batches take only `PAID` or `PARTIALLY_PAID` bookings.
+
+**Reports.** `GET /v1/admin/reconciliation/refund-anomalies` lists:
+- `STALE_PENDING_REFUND` (over 30 minutes) and `STALE_PROCESSING_REFUND` (over 10 days);
+- `REFUND_AFTER_PAYOUT` and `REFUND_ON_CASH_EARNING`;
+- `REFUNDED_TOTAL_MISMATCH`, `REFUNDS_EXCEED_SOURCE`, `BOOKING_REFUND_STATUS_MISMATCH` and `FEE_CREDIT_MISMATCH`.
+
+`paid-cancelled-bookings` shows what is not refunded yet and leaves out a source refunded in full. The booking chain (`GET /v1/admin/bookings/{bookingId}`) lists every refund with its wallet credit. Anomalies are logged with `"alert":"REFUND_ANOMALY"`.
+
+**Configuration** (safe defaults while the policy is open):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `REFUND_PROVIDER` | `disabled` | `razorpay`, `simulated` (local runs only) or `disabled`. Disabled refuses provider refunds (`503 REFUND_PROVIDER_NOT_CONFIGURED`); cash returns can still be recorded |
+| `REFUNDS_PROVIDER_VERIFIED` | `false` | D-72 gate: `razorpay` is refused in production and with live keys until it is true |
+| `REFUND_PARTIAL_ALLOWED` | `false` | L-9: a refund returns everything left of its source |
+| `REFUND_AUTO_ON_CANCEL` | `false` | L-8: `true` is refused at startup; there is no automatic refund |
+| `REFUND_ALLOWED_CASES` | all four cases | L-7: comma-separated cases, or `NONE` |
+
+The startup log lists D-72 until provider refunds are verified, and the open refund policy with the values in force.
+
+**Testing.** `REFUND_PROVIDER=simulated` (test keys, outside production) mounts `POST /v1/dev/simulate/refunds/{providerRefundId}` `{ status: processed | failed }`. It returns the refund entity to deliver as a signed `refund.processed` or `refund.failed` webhook. Steps 20–23 of the end-to-end run (section 16) use it. None of this has been run against Razorpay itself, in test or live mode (D-72).
+
+**Not covered yet:**
+- Money that reached a QR after it was closed (`PAYMENT_NOT_PENDING` in `webhook-anomalies`) is not recorded as a collection, so there is no source to refund through the API. Refund it on the Dashboard; it then shows as `REFUND_UNKNOWN`.
+- Refunds made on the Dashboard are reported, never recorded.
+- No admin UI and no customer notification.

@@ -193,9 +193,17 @@ describe('Razorpay webhooks', () => {
 
   it('acknowledges and ignores event types it does not handle', async () => {
     const { payment } = await paidTopUp(10_000);
-    const webhook = buildWebhook('refund.created', payment);
+    const webhook = buildWebhook('invoice.paid', payment);
     await sendWebhook(ctx, webhook).expect(200);
     expect(await storedEvent(webhook.eventId)).toMatchObject({ outcome: 'IGNORED_EVENT_TYPE' });
+
+    // refund.* is handled since payment flow Phase 6 (refunds.int-spec.ts): one without a refund
+    // entity is malformed, recorded for review and never applied.
+    const refundWithoutEntity = buildWebhook('refund.created', payment);
+    await sendWebhook(ctx, refundWithoutEntity).expect(200);
+    expect(await storedEvent(refundWithoutEntity.eventId)).toMatchObject({
+      outcome: 'UNSUPPORTED_PAYLOAD',
+    });
   });
 
   it('accepts the previous webhook secret during a rotation', async () => {

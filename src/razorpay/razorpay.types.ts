@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const RAZORPAY_ORDER_ID_PATTERN = /^order_[A-Za-z0-9]{6,40}$/;
 export const RAZORPAY_PAYMENT_ID_PATTERN = /^pay_[A-Za-z0-9]{6,40}$/;
+export const RAZORPAY_REFUND_ID_PATTERN = /^rfnd_[A-Za-z0-9]{6,40}$/;
 
 /** Razorpay payment states that matter to us. Unknown future states are treated as "not paid". */
 export const RazorpayPaymentState = {
@@ -57,6 +58,31 @@ export const razorpayPaymentSchema = z.looseObject({
   status: z.string(),
   order_id: z.string().nullable().optional(),
   method: z.string().nullable().optional(),
+});
+
+/**
+ * Refund entity as returned by the refunds API and inside refund.* webhook payloads. The fields
+ * money depends on (id, payment, amount, currency, status) are strict; notes and acquirer_data
+ * are read leniently (Razorpay sends [] for empty notes).
+ */
+export const razorpayRefundSchema = z.looseObject({
+  id: z.string().regex(RAZORPAY_REFUND_ID_PATTERN),
+  entity: z.literal('refund'),
+  amount: z.number().int().positive(),
+  currency: z.string().length(3),
+  payment_id: z.string().regex(RAZORPAY_PAYMENT_ID_PATTERN),
+  /** pending | processed | failed */
+  status: z.string().min(1).max(30),
+  receipt: z.string().max(100).nullish(),
+  notes: z.unknown().optional(),
+  acquirer_data: z.unknown().optional(),
+  speed_processed: z.string().max(20).nullish(),
+  created_at: z.number().int().nonnegative().nullish(),
+});
+
+export const razorpayRefundCollectionSchema = z.looseObject({
+  entity: z.literal('collection'),
+  items: z.array(razorpayRefundSchema),
 });
 
 export const razorpayOrderCollectionSchema = z.looseObject({
