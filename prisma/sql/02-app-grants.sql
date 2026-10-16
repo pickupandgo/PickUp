@@ -137,5 +137,10 @@ GRANT UPDATE (status, arrived_at, payment_confirmed_at, delivered_at, failed_at,
 -- (triggers check them against the collections and the earning); never updated or deleted.
 GRANT SELECT, INSERT ON earning_collections TO mr_app;
 
+-- Settlement findings: settled payments that matched nothing of ours, or another amount. Recorded
+-- once; seeing one again only counts it (a trigger refuses any other change); never deleted.
+GRANT SELECT, INSERT ON settlement_findings TO mr_app;
+GRANT UPDATE (occurrences, last_seen_at) ON settlement_findings TO mr_app;
+
 -- Admin audit trail: append-only (a trigger also blocks UPDATE, DELETE and TRUNCATE).
 GRANT SELECT, INSERT ON admin_actions TO mr_app;

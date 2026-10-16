@@ -51,8 +51,8 @@ export class EarningResponse {
   tripId!: string;
   /**
    * ONLINE: paid to Nikhil Enterprises, net share paid out weekly. CASH: driver kept the cash.
-   * MIXED: a booking paid drop by drop, partly in cash and partly online (its online part is paid
-   * out once payment flow Phase 5 is in place; until then it stays AWAITING_SETTLEMENT).
+   * MIXED: a booking paid drop by drop, partly in cash (already with the driver) and partly online
+   * (its net paid out once every online drop is settled).
    */
   settlement!: 'ONLINE' | 'CASH' | 'MIXED';
   status!: EarningStatusValue;
@@ -66,13 +66,46 @@ export class EarningResponse {
   tdsPolicy!: string;
   /** gross - fee - other deductions - TDS. */
   netAmountPaise!: number;
-  /** ONLINE only: true once Razorpay has settled the customer payment to Nikhil Enterprises. */
+  /** Collected in cash: already in the driver's hand. cash + online = gross. */
+  cashCollectedPaise!: number;
+  /** Collected online (prepaid or QR): with Nikhil Enterprises until paid out. */
+  onlineCollectedPaise!: number;
+  /** Platform fee on the cash part, already debited from the wallet. */
+  cashFeePaise!: number;
+  /** Platform fee on the online part, kept from the payout. */
+  onlineFeePaise!: number;
+  /** Cash collected minus its fee: the driver's share already kept. */
+  netCashPaise!: number;
+  /** Online collected minus its fee. */
+  netOnlinePaise!: number;
+  /** What a payout carries for this earning: 0 for CASH, the online net otherwise. */
+  payoutAmountPaise!: number;
+  /** Online money Razorpay has already settled to Nikhil Enterprises. */
+  onlineSettledPaise!: number;
+  /** True once every online payment of the earning is settled (never for CASH). */
   merchantSettled!: boolean;
-  /** When the earning became eligible for a payout (ONLINE, after settlement). */
+  /** When the earning became eligible for a payout (after every online settlement). */
   payableAt!: string | null;
   paidAt!: string | null;
   holdReason!: string | null;
   createdAt!: string;
+}
+
+/** One collection funding an earning, and its merchant settlement (online only). */
+export class EarningSourceView {
+  collectionId!: string;
+  /** The drop it paid for (a booking paid drop by drop); null for the whole booking. */
+  stopSequence!: number | null;
+  method!: string;
+  amountPaise!: number;
+  platformFeePaise!: number;
+  /** amount - platform fee: what this collection contributes to the earning. */
+  netAmountPaise!: number;
+  /** Online only: settled to Nikhil Enterprises (cash needs no settlement). */
+  settled!: boolean;
+  settlementId!: string | null;
+  providerSettlementId!: string | null;
+  settledAt!: string | null;
 }
 
 export class AdminEarningResponse extends EarningResponse {
@@ -84,6 +117,8 @@ export class AdminEarningResponse extends EarningResponse {
   paymentSettlementId!: string | null;
   heldAt!: string | null;
   heldByUserId!: string | null;
+  /** Every collection funding the earning (none for a prepaid or a pre-Phase 4 earning). */
+  sources!: EarningSourceView[];
 }
 
 export class EarningPageResponse {
@@ -96,15 +131,20 @@ export class AdminEarningPageResponse {
   nextCursor!: string | null;
 }
 
-/** Totals per state, in paise. The wallet balance is not part of this and never was. */
+/**
+ * Totals per state, in paise. The wallet balance is not part of this and never was. A MIXED
+ * earning counts its cash part (already kept) under settledInCashPaise and its payout amount under
+ * its status.
+ */
 export class EarningSummaryResponse {
-  /** ONLINE earnings whose customer payment is not settled yet. Not payable until it is. */
+  /** Payout amounts whose online payments are not all settled yet. Not payable until they are. */
   awaitingSettlementPaise!: number;
-  /** Settled ONLINE earnings waiting for the next Monday payout. */
+  /** Settled payout amounts waiting for the next Monday payout. */
   payablePaise!: number;
   inPayoutPaise!: number;
   onHoldPaise!: number;
   paidPaise!: number;
+  /** The driver's share of cash already kept (cash collected minus its fee). */
   settledInCashPaise!: number;
   grossPaise!: number;
   platformFeePaise!: number;

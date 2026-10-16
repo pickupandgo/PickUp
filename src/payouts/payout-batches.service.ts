@@ -32,17 +32,18 @@ export interface PrepareResult {
 interface EligibleEarningRow {
   readonly id: string;
   readonly driver_id: string;
-  readonly net_amount_paise: bigint;
+  readonly payout_amount_paise: bigint;
   readonly bank_account_id: string;
 }
 
 /**
- * Prepares a payout batch: every ONLINE earning that is PAYABLE up to the cutoff, grouped into
- * one payout per driver with a VERIFIED bank account. PAYABLE already means the customer payment
- * was settled to Nikhil Enterprises and the earning is not held or disputed; the query checks the
- * settlement link again anyway. Excluded: unsettled (AWAITING_SETTLEMENT), held or disputed
- * (ON_HOLD), already in a payout (IN_PAYOUT) or paid (PAID) earnings, and drivers whose account
- * is pending, rejected or suspended.
+ * Prepares a payout batch: every ONLINE or MIXED earning that is PAYABLE up to the cutoff, for its
+ * payout amount, grouped into one payout per driver with a VERIFIED bank account. PAYABLE already
+ * means every online payment of the earning was settled to Nikhil Enterprises and the earning is
+ * not held or disputed; the query checks the settlements again anyway. Excluded: unsettled
+ * (AWAITING_SETTLEMENT), held, disputed or failed (ON_HOLD), already in a payout (IN_PAYOUT) or
+ * paid (PAID) earnings, cash earnings (nothing to pay out), and drivers whose account is pending,
+ * rejected or suspended.
  *
  * One transaction locks the earnings, creates the payouts and items and moves the earnings to
  * IN_PAYOUT, so an earning can never land in two batches (also a partial unique index).
@@ -79,18 +80,30 @@ export class PayoutBatchesService {
     try {
       const batch = await this.prisma.runInTransaction(
         async (tx) => {
+          // PAYABLE online or mixed earnings, for their payout amount (the online net; a mixed
+          // earning's cash part is already with the driver). Settled: the single settlement link,
+          // or every online collection of an earning funded by several (the database refuses
+          // anything else at commit). A booking paid drop by drop with a drop left undelivered is
+          // PARTIALLY_PAID; one being refunded is never paid out.
           const rows = await tx.$queryRaw<EligibleEarningRow[]>`
-            SELECT e.id, e.driver_id, e.net_amount_paise, a.id AS bank_account_id
+            SELECT e.id, e.driver_id, e.payout_amount_paise, a.id AS bank_account_id
             FROM driver_earnings e
             JOIN bookings b ON b.id = e.booking_id
             JOIN driver_bank_accounts a
               ON a.driver_id = e.driver_id AND a.status = 'VERIFIED'::bank_account_status
             WHERE e.status = 'PAYABLE'::earning_status
-              AND e.settlement = 'ONLINE'::earning_settlement
-              AND e.payment_settlement_id IS NOT NULL
+              AND e.settlement IN ('ONLINE'::earning_settlement, 'MIXED'::earning_settlement)
+              AND (e.payment_settlement_id IS NOT NULL
+                   OR (e.payment_id IS NULL AND e.collection_id IS NULL
+                       AND NOT EXISTS (
+                             SELECT 1 FROM earning_collections l
+                             WHERE l.earning_id = e.id AND l.method = 'ONLINE_QR'
+                               AND NOT EXISTS (SELECT 1 FROM payment_settlements s
+                                               WHERE s.collection_id = l.collection_id))))
               AND e.payable_at <= ${input.cutoffAt}
-              AND e.net_amount_paise > 0
-              AND b.payment_status = 'PAID'::booking_payment_status
+              AND e.payout_amount_paise > 0
+              AND b.payment_status IN ('PAID'::booking_payment_status,
+                                       'PARTIALLY_PAID'::booking_payment_status)
             ORDER BY e.id
             FOR UPDATE OF e`;
 
@@ -99,7 +112,7 @@ export class PayoutBatchesService {
             { bankAccountId: string; total: bigint; earnings: { id: string; amount: bigint }[] }
           >();
           for (const row of rows) {
-            const amount = BigInt(row.net_amount_paise);
+            const amount = BigInt(row.payout_amount_paise);
             const group = byDriver.get(row.driver_id) ?? {
               bankAccountId: row.bank_account_id,
               total: 0n,

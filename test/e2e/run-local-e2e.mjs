@@ -17,6 +17,11 @@
  *     COLLECTION_LINK_PROVIDER=simulated + a signed qr_code.credited (payment flow Phase 4).
  * Simulated providers are refused by config validation in production and with live keys.
  *
+ * Payment flow Phase 5 (steps 12-19): every earning records its cash and online parts and its
+ * payout amount; an earning funded by several collections is payable only once every online
+ * collection is settled; a payout carries exactly the payout amounts; a failed payout puts its
+ * earnings ON_HOLD until an admin releases them (N10).
+ *
  * Isolation: a separate database (multipleride_e2e, dropped and recreated each run), a separate
  * port (3100), freshly generated secrets and signing key. The dev database and backend are not
  * touched. Every request is printed as an equivalent curl command (secrets as placeholders).
@@ -361,11 +366,15 @@ async function main() {
 
   const subjects = {
     admin: `adm_e2e_${randomBytes(6).toString('hex')}`,
+    opsAdmin: `adm_e2e_ops_${randomBytes(6).toString('hex')}`,
     driver: `drv_e2e_${randomBytes(6).toString('hex')}`,
     customer: `cus_e2e_${randomBytes(6).toString('hex')}`,
   };
-  console.log('Provisioning admin, driver (KYC name Ramesh Kumar), customer and the 10% fee rule');
+  console.log('Provisioning two admins, driver (KYC name Ramesh Kumar), customer and the 10% fee rule');
   provision(e2eUrl, ['create-admin', '--phone', phone(), '--subject', subjects.admin]);
+  // A second admin for the Phase 5 payout steps (admin batch and settlement actions are rate
+  // limited per admin).
+  provision(e2eUrl, ['create-admin', '--phone', phone(), '--subject', subjects.opsAdmin]);
   const driverPhone = phone();
   const driverAccount = provision(e2eUrl, [
     'create-driver', '--phone', driverPhone, '--subject', subjects.driver, '--approve', '--name', 'Ramesh Kumar',
@@ -422,10 +431,12 @@ async function main() {
     SWAGGER_ENABLED: 'false',
   });
   console.log(`Backend on ${BASE} (log: ${logFile}); weekly run set to weekday ${schedule.weekday} ${schedule.time} IST`);
-  console.log('Shell variables in the commands below: BASE, ADMIN_TOKEN, DRIVER_TOKEN, CUSTOMER_TOKEN,');
-  console.log('INTERNAL_API_KEY and the webhook signatures (HMAC-SHA256 of the body with the webhook secret).');
+  console.log('Shell variables in the commands below: BASE, ADMIN_TOKEN, OPS_ADMIN_TOKEN, DRIVER_TOKEN,');
+  console.log('CUSTOMER_TOKEN, INTERNAL_API_KEY and the webhook signatures (HMAC-SHA256 of the body with');
+  console.log('the webhook secret).');
 
   const admin = { name: 'ADMIN_TOKEN', token: idp.sign(subjects.admin) };
+  const opsAdmin = { name: 'OPS_ADMIN_TOKEN', token: idp.sign(subjects.opsAdmin) };
   const driver = { name: 'DRIVER_TOKEN', token: idp.sign(subjects.driver, { phoneNumber: driverPhone }) };
   const customer = { name: 'CUSTOMER_TOKEN', token: idp.sign(subjects.customer) };
   const engineKey = { 'X-Internal-Api-Key': { value: secrets.internalApiKey, shown: '$INTERNAL_API_KEY' } };
@@ -1022,7 +1033,7 @@ async function main() {
     await sendWebhook('/v1/webhooks/razorpay', webhook, 'RAZORPAY_SIGNATURE');
     const event = await webhookEvent('payment_events', webhook.eventId);
     check(event.outcome === 'SETTLEMENT_SYNCED' && !event.problem, 'webhook pulled the settlement data');
-    return settled.body.settledPayment;
+    return { ...settled.body.settledPayment, webhook };
   }
 
   await step(12, 'PAY_AT_PICKUP in cash: amount from the frozen booking, fee debited from the wallet once, handover after payment, earning settled in cash', async () => {
@@ -1095,6 +1106,11 @@ async function main() {
       'gross = collected, fee = frozen fee',
     );
     check(earning.collectionId === collection.collectionId, 'the earning names its cash collection');
+    check(
+      earning.cashCollectedPaise === owed && earning.onlineCollectedPaise === 0 && earning.cashFeePaise === fee &&
+        earning.netCashPaise === owed - fee && earning.payoutAmountPaise === 0,
+      'all of it is cash, already with the driver: payout amount 0 (Phase 5)',
+    );
     pickupCash = { bookingId: atBookingId, collectionId: collection.collectionId, earningId: earning.earningId, netPaise: owed - fee, feePaise: fee };
     return {
       bookingId: atBookingId,
@@ -1172,6 +1188,11 @@ async function main() {
     check(
       earning.grossAmountPaise === owed && earning.platformFeePaise === fee && earning.netAmountPaise === owed - fee,
       'gross = collected, fee = frozen fee',
+    );
+    check(
+      earning.onlineCollectedPaise === owed && earning.cashCollectedPaise === 0 && earning.onlineFeePaise === fee &&
+        earning.payoutAmountPaise === owed - fee,
+      'all of it online: the payout amount is the net (Phase 5)',
     );
     const settledPayment = await settle(paid.payment.id, owed);
     const settlements = await call('GET', `/v1/admin/settlements?bookingId=${qrBookingId}`, { as: admin, expect: [200] });
@@ -1332,16 +1353,59 @@ async function main() {
       'the earning keeps every source: method, amount and fee share of each drop',
     );
 
-    // Razorpay settles the QR drop. Recorded, but a MIXED earning stays AWAITING_SETTLEMENT:
-    // per-collection settlement and the payout of mixed earnings are payment flow Phase 5.
+    // Payment flow Phase 5: the cash drops are already with the driver; only drop 2's QR net is
+    // owed through a payout, once Razorpay settles drop 2.
+    const cashPaise = owed[1] + owed[3];
+    const cashFeePaise = share[1] + share[3];
+    const payoutPaise = owed[2] - share[2];
+    check(
+      earning.cashCollectedPaise === cashPaise && earning.onlineCollectedPaise === owed[2] &&
+        earning.cashFeePaise === cashFeePaise && earning.onlineFeePaise === share[2],
+      'the split: cash = drops 1 and 3, online = drop 2, each with its own fee share',
+    );
+    check(
+      earning.netCashPaise === cashPaise - cashFeePaise && earning.payoutAmountPaise === payoutPaise &&
+        earning.netCashPaise + earning.payoutAmountPaise === earning.netAmountPaise,
+      "payout amount = drop 2's QR net; the cash part (net of its fees) is not paid out",
+    );
+    const summaryBefore = await call('GET', '/v1/earnings/summary', { as: driver, expect: [200] });
+    check(
+      summaryBefore.body.awaitingSettlementPaise === 27_000 + payoutPaise,
+      'driver summary: only the QR part of the MIXED earning awaits a settlement',
+    );
+    check(
+      summaryBefore.body.settledInCashPaise === pickupCash.netPaise + cashPaise - cashFeePaise,
+      'driver summary: the cash drops count as already settled in cash',
+    );
+
+    // Razorpay settles the QR drop: the MIXED earning's only online collection, so it is payable.
     await settle(paid.payment.id, owed[2]);
     const settled = await call('GET', `/v1/admin/bookings/${dropsBookingId}`, { as: admin, expect: [200] });
-    check(settled.body.merchantSettlement?.providerPaymentId === paid.payment.id, "the QR drop's settlement is recorded against the booking");
-    check(settled.body.earning.status === 'AWAITING_SETTLEMENT' && settled.body.earning.merchantSettled === false, 'the MIXED earning is not made payable (Phase 5)');
+    check(
+      settled.body.merchantSettlements.length === 1 &&
+        settled.body.merchantSettlements[0].providerPaymentId === paid.payment.id &&
+        settled.body.merchantSettlements[0].collectionId === shown.body.collectionId,
+      "the QR drop's settlement is recorded against its own collection",
+    );
+    check(
+      settled.body.collections
+        .filter((entry) => entry.status === 'COMPLETED')
+        .map((entry) => `${entry.stopSequence}:${entry.settlement ? 'settled' : '-'}:${entry.earningId === earning.earningId}`)
+        .join() === '1:-:true,2:settled:true,3:-:true',
+      'the money trail shows each drop, its settlement state and the earning it funds',
+    );
+    check(
+      settled.body.earning.status === 'PAYABLE' && settled.body.earning.merchantSettled === true &&
+        settled.body.earning.onlineSettledPaise === owed[2] && settled.body.earning.payableAt,
+      'the MIXED earning is PAYABLE once its QR drop is settled (Phase 5)',
+    );
     delivery = {
       bookingId: dropsBookingId,
       earningId: earning.earningId,
       netPaise: earning.netAmountPaise,
+      netCashPaise: cashPaise - cashFeePaise,
+      payoutPaise,
+      providerPaymentId: paid.payment.id,
       collectionIds: completedCollections.map((entry) => entry.collectionId),
     };
     return {
@@ -1354,11 +1418,20 @@ async function main() {
       })),
       paymentStatusAfterDrop: { 1: first.body.bookingPaymentStatus, 2: polled.body.bookingPaymentStatus, 3: third.body.bookingPaymentStatus },
       walletDebitedPaise: walletBefore - walletAfter,
-      earning: { earningId: earning.earningId, settlement: earning.settlement, status: settled.body.earning.status, sources: sources.size },
+      earning: {
+        earningId: earning.earningId,
+        settlement: earning.settlement,
+        status: settled.body.earning.status,
+        sources: sources.size,
+        cashCollectedPaise: cashPaise,
+        onlineCollectedPaise: owed[2],
+        netCashPaise: cashPaise - cashFeePaise,
+        payoutAmountPaise: payoutPaise,
+      },
     };
   });
 
-  await step(15, 'Payout of the QR-collected pickup earning; the cash and MIXED earnings stay out', async () => {
+  await step(15, 'Payout of the pickup QR and MIXED earnings, each for its payout amount; the cash earning stays out', async () => {
     const key = randomUUID();
     const prepared = await call('POST', '/v1/admin/payout-batches', {
       as: admin,
@@ -1371,9 +1444,18 @@ async function main() {
     const payout = detail.body.payouts.find((candidate) => candidate.driverId === driverAccount.driverId);
     check(payout, 'a payout for the driver');
     const full = await call('GET', `/v1/admin/payouts/${payout.payoutId}`, { as: admin, expect: [200] });
-    const items = full.body.items.map((item) => item.earningId);
-    check(items.length === 1 && items[0] === pickupQr.earningId, 'only the settled QR earning is in the payout');
-    check(full.body.amountPaise === pickupQr.netPaise && full.body.tdsAmountPaise === 0, "transfer = the QR earning's net, TDS 0");
+    const items = new Map(full.body.items.map((item) => [item.earningId, item.amountPaise]));
+    check(
+      items.size === 2 && items.get(pickupQr.earningId) === pickupQr.netPaise &&
+        items.get(delivery.earningId) === delivery.payoutPaise,
+      "the settled QR earning for its net, the MIXED earning for its QR drop's net only",
+    );
+    check(!items.has(pickupCash.earningId), 'the pickup cash earning (payout amount 0) is not in the payout');
+    check(
+      full.body.amountPaise === pickupQr.netPaise + delivery.payoutPaise &&
+        full.body.grossAmountPaise === full.body.amountPaise && full.body.tdsAmountPaise === 0,
+      'transfer = the sum of the payout amounts, TDS 0',
+    );
     const executed = await call('POST', `/v1/admin/payout-batches/${qrBatchId}/execute`, { as: admin, expect: [200] });
     check(executed.body.results.find((entry) => entry.payoutId === payout.payoutId)?.result === 'SUBMITTED', 'payout accepted by the provider');
     const sent = await call('GET', `/v1/admin/payouts/${payout.payoutId}`, { as: admin, expect: [200] });
@@ -1386,15 +1468,15 @@ async function main() {
     const webhook = signedEvent(secrets.razorpayxWebhook, 'payout.processed', { payout: { entity: moved.body.entity } });
     await sendWebhook('/v1/webhooks/razorpayx', webhook, 'RAZORPAYX_SIGNATURE');
     check((await webhookEvent('payout_events', webhook.eventId)).outcome === 'APPLIED', 'payout.processed applied');
-    const paidEarning = await call('GET', `/v1/admin/earnings/${pickupQr.earningId}`, { as: admin, expect: [200] });
-    check(paidEarning.body.status === 'PAID' && paidEarning.body.paidAt, 'QR earning PAID after the provider confirmed the payout');
-    for (const [label, id, status] of [
-      ['pickup cash', pickupCash.earningId, 'SETTLED_IN_CASH'],
-      ['MIXED', delivery.earningId, 'AWAITING_SETTLEMENT'],
+    for (const [label, id] of [
+      ['pickup QR', pickupQr.earningId],
+      ['MIXED', delivery.earningId],
     ]) {
-      const other = await call('GET', `/v1/admin/earnings/${id}`, { as: admin, expect: [200] });
-      check(other.body.status === status, `${label} earning stays ${status}`);
+      const paidEarning = await call('GET', `/v1/admin/earnings/${id}`, { as: admin, expect: [200] });
+      check(paidEarning.body.status === 'PAID' && paidEarning.body.paidAt, `${label} earning PAID after the provider confirmed the payout`);
     }
+    const cashEarning = await call('GET', `/v1/admin/earnings/${pickupCash.earningId}`, { as: admin, expect: [200] });
+    check(cashEarning.body.status === 'SETTLED_IN_CASH', 'pickup cash earning stays SETTLED_IN_CASH');
     const chain = await call('GET', `/v1/admin/bookings/${pickupQr.bookingId}`, { as: admin, expect: [200] });
     check(
       chain.body.collections.length === 1 && chain.body.collections[0].providerPaymentId === pickupQr.providerPaymentId &&
@@ -1402,7 +1484,20 @@ async function main() {
         chain.body.earning.paidOut === true && chain.body.earning.payoutHistory[0]?.utr,
       'money trail: QR collection, merchant settlement, payout with UTR',
     );
-    return { batchId: qrBatchId, payoutId: payout.payoutId, amountPaise: full.body.amountPaise, utr: moved.body.entity.utr };
+    const mixedChain = await call('GET', `/v1/admin/bookings/${delivery.bookingId}`, { as: admin, expect: [200] });
+    check(
+      mixedChain.body.earning.paidOut === true && mixedChain.body.earning.payoutHistory.length === 1 &&
+        mixedChain.body.earning.payoutHistory[0].payoutItemAmountPaise === delivery.payoutPaise &&
+        mixedChain.body.earning.payoutHistory[0].utr,
+      "money trail of the MIXED booking: its payout carried the QR drop's net, with UTR",
+    );
+    return {
+      batchId: qrBatchId,
+      payoutId: payout.payoutId,
+      amountPaise: full.body.amountPaise,
+      items: Object.fromEntries(items),
+      utr: moved.body.entity.utr,
+    };
   });
 
   await step(16, 'Phase 4 audit: collections, wallet fee debits and earning sources reconcile', async () => {
@@ -1418,9 +1513,15 @@ async function main() {
       check(phase4Events.every((eventId) => !text.includes(eventId)), `${reportName}: none of the Phase 4 webhooks`);
     }
     const summary = await call('GET', '/v1/earnings/summary', { as: driver, expect: [200] });
-    check(summary.body.paidPaise === NET_PAISE + pickupQr.netPaise, 'driver summary: both paid-out earnings');
-    check(summary.body.settledInCashPaise === pickupCash.netPaise, 'driver summary: the pickup cash trip, kept as cash');
-    check(summary.body.awaitingSettlementPaise === 27_000 + delivery.netPaise, 'driver summary: the unsettled control trip and the MIXED earning');
+    check(
+      summary.body.paidPaise === NET_PAISE + pickupQr.netPaise + delivery.payoutPaise,
+      'driver summary: paid out = the prepaid and QR nets and the MIXED earning\'s QR net',
+    );
+    check(
+      summary.body.settledInCashPaise === pickupCash.netPaise + delivery.netCashPaise,
+      'driver summary: kept as cash = the pickup cash trip and the cash drops of the MIXED trip',
+    );
+    check(summary.body.awaitingSettlementPaise === 27_000, 'driver summary: only the unsettled control trip awaits a settlement');
     // Read-only queries on the e2e database: one row per source, one fee debit per cash collection.
     const sources = await db.query(
       `SELECT c.booking_id::text AS booking_id, s.sequence, c.method::text AS method, c.status::text AS status,
@@ -1476,6 +1577,338 @@ async function main() {
       })),
       cashFeeDebits: ledger.rows[0],
     };
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Payment flow Phase 5: an earning funded by several online collections is payable only once
+  // every one of them is settled, and a failed payout holds its earnings for an admin (N10).
+  // Admin actions here use a second admin (batch and sync actions are rate limited per admin).
+  // -------------------------------------------------------------------------------------------
+  const payoutEvents = [];
+  let split;
+
+  await step(17, 'PAY_AT_DELIVERY, three drops paid QR, cash, QR: one MIXED earning, payable only once both QR drops are settled; repeated and concurrent settlement deliveries change nothing', async () => {
+    const { booking, bookingId: splitBookingId, tripId: splitTripId } = await bookFromQuote('DELIVERY-SPLIT', 'PAY_AT_DELIVERY', [
+      { latitude: 26.2967, longitude: 73.0351 },
+      { latitude: 26.3448, longitude: 73.0458 },
+      { latitude: 26.3448, longitude: 73.0858 },
+    ]);
+    const owed = Object.fromEntries(booking.stops.map((stop) => [stop.sequence, stop.payablePaise]));
+    const before = await call('GET', `/v1/admin/bookings/${splitBookingId}`, { as: admin, expect: [200] });
+    const share = Object.fromEntries(before.body.stops.map((stop) => [stop.sequence, stop.platformFeeSharePaise]));
+    for (const status of ['DRIVER_ARRIVED', 'PICKUP_VERIFIED', 'IN_TRANSIT']) {
+      await tripStatus(splitTripId, status);
+    }
+    const walletBefore = (await walletNow()).balancePaise;
+
+    // Drop 1: QR, confirmed by Razorpay's signed qr_code.credited.
+    await stopStatus(splitTripId, 1, 'ARRIVED');
+    const firstQr = await collectAt(splitTripId, { method: 'ONLINE_QR', amountPaise: owed[1], stopSequence: 1 }, [201]);
+    const firstPaid = await customerPaysQr(firstQr.body.collectionId);
+    const credited = await deliverQrEvent('qr_code.credited', firstPaid);
+    check(credited.outcome === 'APPLIED' && !credited.problem, "drop 1's QR payment applied from the signed webhook");
+    await stopStatus(splitTripId, 1, 'DELIVERED');
+
+    // Drop 2: cash, its fee share debited from the wallet.
+    await stopStatus(splitTripId, 2, 'ARRIVED');
+    const cash = await collectAt(splitTripId, { method: 'CASH', amountPaise: owed[2], stopSequence: 2 }, [201]);
+    check(cash.body.status === 'COMPLETED' && cash.body.platformFeePaise === share[2], "drop 2 paid in cash; drop 2's fee share debited");
+    await stopStatus(splitTripId, 2, 'DELIVERED');
+
+    // Drop 3: QR, confirmed by the driver app's refresh.
+    await stopStatus(splitTripId, 3, 'ARRIVED');
+    const thirdQr = await collectAt(splitTripId, { method: 'ONLINE_QR', amountPaise: owed[3], stopSequence: 3 }, [201]);
+    const thirdPaid = await customerPaysQr(thirdQr.body.collectionId);
+    const polled = await call('GET', `/v1/trips/${splitTripId}/collections/${thirdQr.body.collectionId}`, { as: driver, expect: [200] });
+    check(polled.body.status === 'COMPLETED' && polled.body.bookingPaymentStatus === 'PAID', "drop 3's QR paid: booking PAID");
+    await stopStatus(splitTripId, 3, 'DELIVERED');
+    const completed = await tripStatus(splitTripId, 'COMPLETED');
+    check(completed.body.status === 'COMPLETED' && completed.body.paymentStatus === 'PAID', 'booking COMPLETED and PAID');
+    check((await walletNow()).balancePaise === walletBefore - share[2], "the wallet paid only the cash drop's fee share");
+
+    const onlinePaise = owed[1] + owed[3];
+    const onlineFeePaise = share[1] + share[3];
+    const payoutPaise = onlinePaise - onlineFeePaise;
+    const listed = await earningOf(splitBookingId);
+    check(
+      listed.settlement === 'MIXED' && listed.status === 'AWAITING_SETTLEMENT' && listed.cashCollectedPaise === owed[2] &&
+        listed.onlineCollectedPaise === onlinePaise && listed.cashFeePaise === share[2] &&
+        listed.onlineFeePaise === onlineFeePaise && listed.payoutAmountPaise === payoutPaise,
+      'one MIXED earning: cash = drop 2, online = drops 1 and 3; payout amount = the two QR nets',
+    );
+    const earningId = listed.earningId;
+    const earningNow = async () => (await call('GET', `/v1/admin/earnings/${earningId}`, { as: admin, expect: [200] })).body;
+    const settlementsOfBooking = async () =>
+      (await call('GET', `/v1/admin/settlements?bookingId=${splitBookingId}`, { as: admin, expect: [200] })).body;
+
+    // Razorpay settles drop 1 first: drop 3 is still unsettled, so the earning keeps waiting.
+    const firstSettlement = await settle(firstPaid.payment.id, owed[1]);
+    let earning = await earningNow();
+    check(
+      earning.status === 'AWAITING_SETTLEMENT' && earning.merchantSettled === false && earning.onlineSettledPaise === owed[1],
+      'drop 1 settled, drop 3 not: still AWAITING_SETTLEMENT, with what is settled so far',
+    );
+    check(
+      earning.sources.map((source) => `${source.stopSequence}:${source.method}:${source.settled}`).join() ===
+        '1:ONLINE_QR:true,2:CASH:false,3:ONLINE_QR:false',
+      'each source shows its own settlement state',
+    );
+
+    // The same settlement.processed delivered again, then two admin syncs at once: nothing new.
+    await sendWebhook('/v1/webhooks/razorpay', firstSettlement.webhook, 'RAZORPAY_SIGNATURE');
+    const replayed = await webhookEvent('payment_events', firstSettlement.webhook.eventId);
+    idempotent('repeated settlement.processed delivery is stored once', replayed.rows === 1);
+    const syncs = await Promise.all([
+      call('POST', '/v1/admin/settlements/sync', { as: opsAdmin, body: {}, expect: [200] }),
+      call('POST', '/v1/admin/settlements/sync', { as: opsAdmin, body: {}, expect: [200] }),
+    ]);
+    const settledOnce = await settlementsOfBooking();
+    idempotent(
+      'two admin settlement syncs at once record nothing again and promote nothing',
+      syncs.every((sync) => sync.body.recorded === 0 && sync.body.earningsPromoted === 0) && settledOnce.length === 1,
+    );
+    check((await earningNow()).status === 'AWAITING_SETTLEMENT', 'still waiting for drop 3');
+
+    // Razorpay settles drop 3: every online collection is settled, the earning is payable.
+    await settle(thirdPaid.payment.id, owed[3]);
+    earning = await earningNow();
+    check(
+      earning.status === 'PAYABLE' && earning.merchantSettled === true && earning.onlineSettledPaise === onlinePaise &&
+        earning.payableAt,
+      'PAYABLE once drop 3 is settled too',
+    );
+    const chain = await call('GET', `/v1/admin/bookings/${splitBookingId}`, { as: admin, expect: [200] });
+    check(
+      chain.body.merchantSettlements.length === 2 &&
+        chain.body.merchantSettlements.map((entry) => entry.collectionId).sort().join() ===
+          [firstQr.body.collectionId, thirdQr.body.collectionId].sort().join(),
+      'two merchant settlements, one per QR drop',
+    );
+    check(
+      chain.body.collections
+        .filter((entry) => entry.status === 'COMPLETED')
+        .map((entry) => `${entry.stopSequence}:${entry.method}:${entry.settlement ? 'settled' : '-'}`)
+        .join() === '1:ONLINE_QR:settled,2:CASH:-,3:ONLINE_QR:settled',
+      'the money trail shows every drop and its settlement state',
+    );
+    check((await settlementsOfBooking()).length === 2, 'exactly two settlements for the booking');
+    split = {
+      bookingId: splitBookingId,
+      earningId,
+      netCashPaise: owed[2] - share[2],
+      payoutPaise,
+      providerPaymentIds: [firstPaid.payment.id, thirdPaid.payment.id],
+    };
+    return {
+      bookingId: splitBookingId,
+      earningId,
+      drops: { 1: 'ONLINE_QR', 2: 'CASH', 3: 'ONLINE_QR' },
+      cashCollectedPaise: owed[2],
+      onlineCollectedPaise: onlinePaise,
+      payoutAmountPaise: payoutPaise,
+      statusAfterFirstSettlement: 'AWAITING_SETTLEMENT',
+      statusAfterSecondSettlement: earning.status,
+    };
+  });
+
+  await step(18, 'RazorpayX fails the payout: the earning goes ON_HOLD (N10), nothing re-queued on its own; an admin releases it and a new payout pays it once', async () => {
+    const prepare = async () => {
+      const key = randomUUID();
+      const prepared = await call('POST', '/v1/admin/payout-batches', {
+        as: opsAdmin,
+        headers: { 'Idempotency-Key': { value: key, shown: key } },
+        body: {},
+        expect: [201],
+      });
+      const batch = prepared.body.batch;
+      const detail = await call('GET', `/v1/admin/payout-batches/${batch.batchId}`, { as: opsAdmin, expect: [200] });
+      const mine = detail.body.payouts.find((candidate) => candidate.driverId === driverAccount.driverId);
+      return { batchId: batch.batchId, payout: mine ?? null };
+    };
+    const payoutView = async (id) => (await call('GET', `/v1/admin/payouts/${id}`, { as: opsAdmin, expect: [200] })).body;
+    const earningNow = async () => (await call('GET', `/v1/admin/earnings/${split.earningId}`, { as: opsAdmin, expect: [200] })).body;
+    const deliver = async (event, entity) => {
+      const webhook = signedEvent(secrets.razorpayxWebhook, event, { payout: { entity } });
+      payoutEvents.push(webhook.eventId);
+      await sendWebhook('/v1/webhooks/razorpayx', webhook, 'RAZORPAYX_SIGNATURE');
+      await sendWebhook('/v1/webhooks/razorpayx', webhook, 'RAZORPAYX_SIGNATURE');
+      return webhookEvent('payout_events', webhook.eventId);
+    };
+
+    const first = await prepare();
+    check(first.payout, 'a payout for the driver');
+    const firstView = await payoutView(first.payout.payoutId);
+    check(
+      firstView.items.length === 1 && firstView.items[0].earningId === split.earningId &&
+        firstView.items[0].amountPaise === split.payoutPaise && firstView.amountPaise === split.payoutPaise,
+      "only the MIXED earning, for its two QR drops' net",
+    );
+    await call('POST', `/v1/admin/payout-batches/${first.batchId}/execute`, { as: opsAdmin, expect: [200] });
+    const sent = await payoutView(first.payout.payoutId);
+    check(sent.status === 'SUBMITTED' && sent.providerPayoutId, 'payout accepted by the provider');
+    const failed = await call('POST', `/v1/dev/simulate/payouts/${sent.providerPayoutId}`, {
+      as: opsAdmin,
+      body: { status: 'failed', failureReason: 'E2E run: beneficiary bank offline' },
+      expect: [200],
+    });
+    const failedEvent = await deliver('payout.failed', failed.body.entity);
+    check(failedEvent.outcome === 'APPLIED', 'payout.failed applied');
+    idempotent('repeated payout.failed delivery is stored and applied once', failedEvent.rows === 1);
+    const failedView = await payoutView(first.payout.payoutId);
+    check(failedView.status === 'FAILED' && failedView.items[0].status === 'RELEASED', 'payout FAILED; its item released');
+    let earning = await earningNow();
+    check(
+      earning.status === 'ON_HOLD' && /^PAYOUT_FAILED: /.test(earning.holdReason) && earning.paidAt === null,
+      'the earning is ON_HOLD for an admin and never marked paid',
+    );
+    const next = await prepare();
+    idempotent('the next batch does not re-queue the held earning on its own', next.payout === null);
+
+    const reason = 'E2E run: bank back online, ticket E2E-5150';
+    const released = await call('POST', `/v1/admin/earnings/${split.earningId}/release`, {
+      as: opsAdmin,
+      body: { reason },
+      expect: [200],
+    });
+    check(released.body.status === 'PAYABLE', 'an admin releases it: PAYABLE again (both QR drops are settled)');
+    const releasedAgain = await call('POST', `/v1/admin/earnings/${split.earningId}/release`, {
+      as: opsAdmin,
+      body: { reason },
+      expect: [200],
+    });
+    const releases = await db.query(
+      `SELECT COUNT(*)::int AS n FROM admin_actions WHERE action = 'EARNING_RELEASED' AND target_id = $1`,
+      [split.earningId],
+    );
+    idempotent(
+      'releasing it again changes nothing (one release recorded)',
+      releasedAgain.body.status === 'PAYABLE' && releases.rows[0].n === 1,
+    );
+
+    const retry = await prepare();
+    check(retry.payout && retry.payout.payoutId !== first.payout.payoutId, 'a new payout carries the released earning');
+    const retryView = await payoutView(retry.payout.payoutId);
+    check(
+      retryView.amountPaise === split.payoutPaise && retryView.items.length === 1 &&
+        retryView.items[0].earningId === split.earningId && retryView.items[0].amountPaise === split.payoutPaise,
+      'for the same payout amount',
+    );
+    await call('POST', `/v1/admin/payout-batches/${retry.batchId}/execute`, { as: opsAdmin, expect: [200] });
+    const resent = await payoutView(retry.payout.payoutId);
+    check(
+      resent.status === 'SUBMITTED' && resent.providerPayoutId && resent.providerPayoutId !== sent.providerPayoutId,
+      'a new transfer, not the failed one',
+    );
+    const processed = await call('POST', `/v1/dev/simulate/payouts/${resent.providerPayoutId}`, {
+      as: opsAdmin,
+      body: { status: 'processed' },
+      expect: [200],
+    });
+    const processedEvent = await deliver('payout.processed', processed.body.entity);
+    idempotent(
+      'repeated payout.processed delivery is stored and applied once',
+      processedEvent.outcome === 'APPLIED' && processedEvent.rows === 1,
+    );
+    earning = await earningNow();
+    check(earning.status === 'PAID' && earning.paidAt, 'PAID, by the new payout');
+    const chain = await call('GET', `/v1/admin/bookings/${split.bookingId}`, { as: opsAdmin, expect: [200] });
+    check(
+      chain.body.earning.payoutHistory
+        .map((entry) => `${entry.payoutStatus}:${entry.payoutItemStatus}:${entry.payoutItemAmountPaise}`)
+        .join() === `FAILED:RELEASED:${split.payoutPaise},PROCESSED:PAID:${split.payoutPaise}`,
+      'money trail: the failed payout and the paid one, each for the payout amount',
+    );
+    const audit = await db.query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM payout_items WHERE earning_id = $1::uuid AND status = 'PAID') AS paid_items,
+         (SELECT COUNT(*)::int FROM admin_actions
+           WHERE action = 'PAYOUT_FAILED_EARNINGS_HELD' AND target_id = $2) AS holds`,
+      [split.earningId, first.payout.payoutId],
+    );
+    check(audit.rows[0].paid_items === 1, 'one paid payout item: the earning is paid once');
+    check(audit.rows[0].holds === 1, 'the hold is audited once, against the failed payout');
+    return {
+      failedPayoutId: first.payout.payoutId,
+      failureReason: failedView.failureReason,
+      holdReason: 'PAYOUT_FAILED',
+      paidPayoutId: retry.payout.payoutId,
+      amountPaise: retryView.amountPaise,
+      utr: processed.body.entity.utr,
+    };
+  });
+
+  await step(19, 'Phase 5 audit: reconciliation clean for every booking paid by collection; payouts, summary and wallet add up', async () => {
+    const bookingIds = [pickupCash.bookingId, pickupQr.bookingId, delivery.bookingId, split.bookingId];
+    const earningIds = [pickupCash.earningId, pickupQr.earningId, delivery.earningId, split.earningId];
+    const paymentIds = [pickupQr.providerPaymentId, delivery.providerPaymentId, ...split.providerPaymentIds];
+    for (const reportName of [
+      'earning-mismatches',
+      'payout-mismatches',
+      'cash-fee-mismatches',
+      'stale-collections',
+      'wallet-mismatches',
+      'payable-without-bank-account',
+      'settlement-anomalies',
+    ]) {
+      const findings = await call('GET', `/v1/admin/reconciliation/${reportName}`, { as: admin, expect: [200] });
+      const text = JSON.stringify(findings.body);
+      check(
+        [...bookingIds, ...earningIds, ...paymentIds, walletId].every((id) => !text.includes(id)),
+        `${reportName}: nothing for the bookings paid by collection, their payments or the wallet`,
+      );
+    }
+    for (const [reportName, events] of [
+      ['webhook-anomalies', phase4Events],
+      ['unprocessed-webhooks', phase4Events],
+      ['payout-webhook-anomalies', payoutEvents],
+      ['unprocessed-payout-webhooks', payoutEvents],
+    ]) {
+      const findings = await call('GET', `/v1/admin/reconciliation/${reportName}`, { as: admin, expect: [200] });
+      const text = JSON.stringify(findings.body);
+      check(events.every((eventId) => !text.includes(eventId)), `${reportName}: none of this run's webhooks`);
+    }
+
+    const summary = (await call('GET', '/v1/earnings/summary', { as: driver, expect: [200] })).body;
+    const paidOut = NET_PAISE + pickupQr.netPaise + delivery.payoutPaise + split.payoutPaise;
+    check(summary.paidPaise === paidOut, 'driver summary: paid out = every online part, once');
+    check(
+      summary.settledInCashPaise === pickupCash.netPaise + delivery.netCashPaise + split.netCashPaise,
+      'driver summary: kept as cash = every cash part (net of its fee), never paid out',
+    );
+    check(
+      summary.awaitingSettlementPaise === 27_000 && summary.payablePaise === 0 && summary.inPayoutPaise === 0 &&
+        summary.onHoldPaise === 0,
+      'driver summary: nothing payable, in payout or on hold; only the unsettled control trip waits',
+    );
+    const payouts = (await call('GET', '/v1/payouts', { as: driver, expect: [200] })).body;
+    const processedTotal = payouts
+      .filter((payout) => payout.status === 'PROCESSED')
+      .reduce((sum, payout) => sum + payout.amountPaise, 0);
+    check(processedTotal === paidOut, 'the processed payouts add up to what the summary shows as paid');
+    check(payouts.filter((payout) => payout.status === 'FAILED').length === 1, 'one failed payout, kept in the history');
+
+    const items = await db.query(
+      `SELECT COUNT(*) FILTER (WHERE i.amount_paise <> e.payout_amount_paise)::int AS wrong_amounts,
+              COUNT(*) FILTER (WHERE i.status IN ('INCLUDED', 'PAID'))::int AS live_items,
+              COUNT(DISTINCT e.id) FILTER (WHERE i.status IN ('INCLUDED', 'PAID'))::int AS live_earnings,
+              COUNT(*) FILTER (WHERE e.settlement = 'CASH')::int AS cash_items
+       FROM payout_items i JOIN driver_earnings e ON e.id = i.earning_id
+       WHERE e.driver_id = $1::uuid`,
+      [driverAccount.driverId],
+    );
+    const [itemState] = items.rows;
+    check(itemState.wrong_amounts === 0, "every payout item carries exactly its earning's payout amount");
+    check(itemState.live_items === itemState.live_earnings, 'no earning is carried by two live payout items');
+    check(itemState.cash_items === 0, 'no cash earning was ever put in a payout');
+    const ledger = await db.query(
+      `SELECT COUNT(*)::int AS debits, COALESCE(SUM(amount_paise), 0)::int AS total
+       FROM driver_wallet_transactions WHERE wallet_id = $1::uuid AND type = 'CASH_RIDE_FEE'`,
+      [walletId],
+    );
+    check(ledger.rows[0].debits === 4, 'four cash fee debits: pickup cash and the three cash drops');
+    check((await walletNow()).balancePaise === WALLET_FLOAT_PAISE - ledger.rows[0].total, 'wallet = float - the cash fees');
+    report.ids.phase5 = { splitBookingId: split.bookingId, splitEarningId: split.earningId };
+    return { summary, processedPayoutsPaise: processedTotal, payoutItems: itemState, cashFeeDebits: ledger.rows[0] };
   });
 }
 

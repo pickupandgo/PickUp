@@ -296,7 +296,9 @@ describe('Least-privilege database role', () => {
       amountPaise: 30_000,
       stopSequence: 2,
     }).expect(201);
-    ctx.links.pay(ctx.links.byCollection(dropQr.body.collectionId as string).referenceId);
+    const dropPayment = ctx.links.pay(
+      ctx.links.byCollection(dropQr.body.collectionId as string).referenceId,
+    );
     await request(ctx.server)
       .get(`/v1/trips/${mixed.tripId}/collections/${dropQr.body.collectionId as string}`)
       .set(bearer(driver.token))
@@ -307,11 +309,17 @@ describe('Least-privilege database role', () => {
       where: { bookingId: mixed.bookingId },
       include: { collectionLinks: true },
     });
+    // Payment flow Phase 5: the cash part is with the driver, only the QR net is paid out.
     expect(mixedEarning).toMatchObject({
       settlement: 'MIXED',
       status: 'AWAITING_SETTLEMENT',
       grossAmountPaise: 50_000n,
       platformFeePaise: 5_000n,
+      cashCollectedPaise: 20_000n,
+      onlineCollectedPaise: 30_000n,
+      cashFeePaise: 2_000n,
+      onlineFeePaise: 3_000n,
+      payoutAmountPaise: 27_000n,
       collectionId: null,
     });
     expect(
@@ -387,15 +395,38 @@ describe('Least-privilege database role', () => {
       .set(bearer(admin.token))
       .send({ reason: 'Least privilege release check' })
       .expect(200);
-    // Razorpay settles the prepaid and QR payments; the admin sync records them (API role).
+    // Razorpay settles the prepaid and QR payments and the mixed trip's drop QR, plus a payment
+    // that is not ours; the admin sync records them (API role): three settlements applied, one
+    // settlement finding recorded, then only counted when seen again (payment flow Phase 5).
+    const unknownPaymentId = `pay_${randomUUID().replace(/-/g, '').slice(0, 14)}`;
     ctx.settlements.settle({ providerPaymentId: paid.id, amountPaise: 20_000 });
     ctx.settlements.settle({ providerPaymentId: qrPayment.id, amountPaise: 30_000 });
+    ctx.settlements.settle({ providerPaymentId: dropPayment.id, amountPaise: 30_000 });
+    ctx.settlements.settle({ providerPaymentId: unknownPaymentId, amountPaise: 12_345 });
     const synced = await request(ctx.server)
       .post('/v1/admin/settlements/sync')
       .set(bearer(admin.token))
       .send({})
       .expect(200);
-    expect(synced.body).toMatchObject({ recorded: 2, earningsPromoted: 2 });
+    expect(synced.body).toMatchObject({ recorded: 3, earningsPromoted: 3, unknownPayments: 1 });
+    const again = await request(ctx.server)
+      .post('/v1/admin/settlements/sync')
+      .set(bearer(admin.token))
+      .send({})
+      .expect(200);
+    expect(again.body).toMatchObject({ recorded: 0, earningsPromoted: 0, unknownPayments: 1 });
+    expect(
+      await owner.settlementFinding.findFirstOrThrow({
+        where: { providerPaymentId: unknownPaymentId },
+      }),
+    ).toMatchObject({ kind: 'UNKNOWN_PAYMENT', occurrences: 2, settledAmountPaise: 12_345n });
+    expect(
+      (await owner.driverEarning.findUniqueOrThrow({ where: { id: mixedEarning.id } })).status,
+    ).toBe('PAYABLE');
+    await request(ctx.server)
+      .get('/v1/admin/reconciliation/settlement-anomalies')
+      .set(bearer(admin.token))
+      .expect(200);
     await request(ctx.server).get('/v1/admin/settlements').set(bearer(admin.token)).expect(200);
     await request(ctx.server)
       .get('/v1/admin/settlements/overdue-earnings')
@@ -490,6 +521,13 @@ describe('Least-privilege database role', () => {
 
     expect(
       (await owner.driverEarning.findUniqueOrThrow({ where: { id: earning.id } })).status,
+    ).toBe('PAID');
+    // One payout carried each online earning for its payout amount: the prepaid net (18,000),
+    // the QR net (27,000) and the mixed trip's QR net (27,000); the cash parts stayed with the
+    // driver.
+    expect(payout.amountPaise).toBe(18_000n + 27_000n + 27_000n);
+    expect(
+      (await owner.driverEarning.findUniqueOrThrow({ where: { id: mixedEarning.id } })).status,
     ).toBe('PAID');
     // Funded 20,000 and 10,000; each cash payment debited its 10% fee: 4,000 frozen on the pickup
     // booking, 2,000 for the cash drop (that drop's share), 5,000 from the legacy booking's pinned
@@ -606,6 +644,21 @@ describe('Least-privilege database role', () => {
     // The collections that fund an earning are written once with it (payment flow Phase 4).
     ['change the collections of an earning', 'UPDATE earning_collections SET amount_paise = 1'],
     ['delete the collections of an earning', 'DELETE FROM earning_collections'],
+    // The split of an earning and what it pays out are written once (payment flow Phase 5).
+    ['change what a collection contributes', 'UPDATE earning_collections SET net_amount_paise = 1'],
+    ['rewrite an earning payout amount', 'UPDATE driver_earnings SET payout_amount_paise = 1'],
+    [
+      'move an earning between cash and online',
+      'UPDATE driver_earnings SET cash_collected_paise = 0, online_collected_paise = 1',
+    ],
+    ['rewrite an earning fee split', 'UPDATE driver_earnings SET online_fee_paise = 0'],
+    ['rewrite a settlement finding', 'UPDATE settlement_findings SET settled_amount_paise = 1'],
+    [
+      'move a settlement finding to another collection',
+      'UPDATE settlement_findings SET collection_id = gen_random_uuid()',
+    ],
+    ['delete settlement findings', 'DELETE FROM settlement_findings'],
+    ['truncate settlement findings', 'TRUNCATE settlement_findings'],
     ['delete booking stops', 'DELETE FROM booking_stops'],
     ['change a booking fare snapshot', 'UPDATE bookings SET fare_paise = 1'],
     ['change a booking platform fee', 'UPDATE bookings SET platform_fee_paise = 0'],
@@ -829,6 +882,19 @@ describe('Least-privilege database role', () => {
     [
       'the earning collections guard',
       'ALTER TABLE earning_collections DISABLE TRIGGER trg_earning_collections_insert_guard',
+    ],
+    // Payment flow Phase 5.
+    [
+      'the every-online-collection-settled check',
+      'ALTER TABLE driver_earnings DISABLE TRIGGER trg_earnings_settled',
+    ],
+    [
+      'the settlement findings guard',
+      'ALTER TABLE settlement_findings DISABLE TRIGGER trg_settlement_findings_guard',
+    ],
+    [
+      'the settlement findings delete guard',
+      'ALTER TABLE settlement_findings DISABLE TRIGGER trg_settlement_findings_no_delete',
     ],
   ])('the API role cannot disable %s', async (_label, sql) => {
     const client = new PrismaClient({

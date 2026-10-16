@@ -6,8 +6,13 @@ import { Clock } from '../common/clock';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
-import { EarningsService, type SettlementApplyOutcome } from '../earnings/earnings.service';
-import type { DriverEarning, PaymentSettlement } from '../generated/prisma/client';
+import {
+  EARNING_SOURCES,
+  type EarningWithSources,
+  EarningsService,
+  type SettlementApplyOutcome,
+} from '../earnings/earnings.service';
+import type { PaymentSettlement } from '../generated/prisma/client';
 import { zonedParts } from '../payouts/payout-schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { SETTLEMENT_ID_PATTERN } from './razorpay-settlement-http.gateway';
@@ -219,7 +224,12 @@ export class MerchantSettlementsService {
     item: SettledPayment,
   ): Promise<{ outcome: RecordOutcome; applied: SettlementApplyOutcome | null }> {
     const target = await this.findTarget(item.providerPaymentId);
-    if (target === 'NOT_A_BOOKING_PAYMENT' || target === 'UNKNOWN_PAYMENT') {
+    if (target === 'NOT_A_BOOKING_PAYMENT') {
+      return { outcome: target, applied: null };
+    }
+    if (target === 'UNKNOWN_PAYMENT') {
+      // Money settled to Nikhil Enterprises for a payment this backend never made: reported.
+      await this.recordFinding(item, 'UNKNOWN_PAYMENT', null);
       return { outcome: target, applied: null };
     }
     if (BigInt(item.amountPaise) !== target.amountPaise) {
@@ -233,6 +243,7 @@ export class MerchantSettlementsService {
         },
         'Settlement amount does not match the payment; not recorded',
       );
+      await this.recordFinding(item, 'AMOUNT_MISMATCH', target);
       return { outcome: 'AMOUNT_MISMATCH', applied: null };
     }
 
@@ -293,29 +304,75 @@ export class MerchantSettlementsService {
     });
   }
 
-  /** ONLINE earnings still waiting for their merchant settlement after SETTLEMENT_OVERDUE_DAYS. */
-  overdueEarnings(): Promise<DriverEarning[]> {
+  /** Earnings still waiting for a merchant settlement after SETTLEMENT_OVERDUE_DAYS. */
+  overdueEarnings(): Promise<EarningWithSources[]> {
     const before = new Date(
       this.clock.now().getTime() - this.config.settlements.overdueDays * DAY_MS,
     );
     return this.prisma.driverEarning.findMany({
       where: { status: 'AWAITING_SETTLEMENT', createdAt: { lt: before } },
+      include: EARNING_SOURCES,
       orderBy: { createdAt: 'asc' },
       take: 200,
     });
   }
 
+  /**
+   * A settled payment that matched none of ours, or ours with another amount: recorded once per
+   * payment, settlement and kind (seeing it again only counts it), never applied to an earning.
+   */
+  private async recordFinding(
+    item: SettledPayment,
+    kind: 'UNKNOWN_PAYMENT' | 'AMOUNT_MISMATCH',
+    target: SettlementTarget | null,
+  ): Promise<void> {
+    await this.prisma.$executeRaw`
+      INSERT INTO settlement_findings (provider, kind, provider_payment_id, provider_settlement_id,
+                                       settled_at, settled_amount_paise, expected_amount_paise,
+                                       booking_id, payment_id, collection_id, source)
+      VALUES (${PROVIDER_RAZORPAY}, ${kind}, ${item.providerPaymentId}, ${item.providerSettlementId},
+              ${item.settledAt}, ${BigInt(item.amountPaise)}, ${target?.amountPaise ?? null},
+              ${target?.bookingId ?? null}::uuid, ${target?.paymentId ?? null}::uuid,
+              ${target?.collectionId ?? null}::uuid, ${this.gateway.source})
+      ON CONFLICT (provider, provider_payment_id, provider_settlement_id, kind)
+      DO UPDATE SET occurrences = settlement_findings.occurrences + 1,
+                    last_seen_at = greatest(settlement_findings.last_seen_at, clock_timestamp())`;
+  }
+
   private async applyRecordedSettlements(): Promise<SettlementApplyOutcome[]> {
+    // Earnings with one source whose settlement is recorded but not linked, and earnings funded
+    // by several collections whose online collections are all settled but that are still
+    // waiting (applied with their latest settlement).
     const rows = await this.prisma.$queryRaw<{ booking_id: string; settlement_id: string }[]>`
-      SELECT e.booking_id, s.id AS settlement_id
-      FROM driver_earnings e
-      JOIN payment_settlements s
-        ON (e.payment_id IS NOT NULL AND s.payment_id = e.payment_id)
-        OR (e.collection_id IS NOT NULL AND s.collection_id = e.collection_id)
-      WHERE e.settlement = 'ONLINE'::earning_settlement
-        AND e.payment_settlement_id IS NULL
-        AND e.status IN ('AWAITING_SETTLEMENT'::earning_status, 'ON_HOLD'::earning_status)
-      ORDER BY e.created_at
+      SELECT booking_id, settlement_id FROM (
+        SELECT e.booking_id, s.id AS settlement_id, e.created_at
+        FROM driver_earnings e
+        JOIN payment_settlements s
+          ON (e.payment_id IS NOT NULL AND s.payment_id = e.payment_id)
+          OR (e.collection_id IS NOT NULL AND s.collection_id = e.collection_id)
+        WHERE e.settlement = 'ONLINE'::earning_settlement
+          AND e.payment_settlement_id IS NULL
+          AND e.status IN ('AWAITING_SETTLEMENT'::earning_status, 'ON_HOLD'::earning_status)
+        UNION ALL
+        SELECT e.booking_id, latest.id AS settlement_id, e.created_at
+        FROM driver_earnings e
+        CROSS JOIN LATERAL (
+              SELECT s.id
+              FROM earning_collections l
+              JOIN payment_settlements s ON s.collection_id = l.collection_id
+              WHERE l.earning_id = e.id
+              ORDER BY s.settled_at DESC, s.id
+              LIMIT 1) latest
+        WHERE e.payment_id IS NULL AND e.collection_id IS NULL
+          AND e.settlement IN ('ONLINE'::earning_settlement, 'MIXED'::earning_settlement)
+          AND e.status = 'AWAITING_SETTLEMENT'::earning_status
+          AND NOT EXISTS (
+                SELECT 1 FROM earning_collections l
+                WHERE l.earning_id = e.id AND l.method = 'ONLINE_QR'
+                  AND NOT EXISTS (SELECT 1 FROM payment_settlements s2
+                                  WHERE s2.collection_id = l.collection_id))
+      ) pending
+      ORDER BY created_at
       LIMIT ${SWEEP_LIMIT}`;
     const outcomes: SettlementApplyOutcome[] = [];
     for (const row of rows) {

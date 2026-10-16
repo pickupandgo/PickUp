@@ -358,6 +358,60 @@ psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261018120000_
 psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261018120000_partially_paid_mixed_enums';"
 ```
 
+### Earnings funded by several collections (payment flow Phase 5)
+
+One migration, `20261019120000_mixed_earnings_payout_hold`:
+- `driver_earnings` gets `cash_collected_paise`, `online_collected_paise`, `cash_fee_paise`, `online_fee_paise` and `payout_amount_paise`. The migration fills them in for every existing earning from its own sources: its linked collections, or its single source (a CASH earning is all cash, an ONLINE one all online). It then asserts that every row adds up before making them NOT NULL. No existing value changes. New CHECKs keep the split adding up and tie the payout amount to the settlement: CASH 0, ONLINE the net, MIXED the online part net of its fee.
+- `earning_collections` gets `net_amount_paise` (amount − fee, CHECK), filled in for the existing links. The links' immutability trigger is switched off for that one UPDATE, inside the migration's transaction.
+- New deferred `trg_earnings_settled`: an earning funded by several collections is PAYABLE, IN_PAYOUT or PAID only once every online collection funding it has its merchant settlement.
+- `guard_earning_change` v3: the split is immutable, and an earning in a payout leaves it PAID or ON_HOLD, never straight back to PAYABLE (N10). `check_earning_sources` v2 checks the split against the links.
+- `guard_payout_item_change` v2: an item carries exactly the payout amount of a PAYABLE online or mixed earning of the payout's driver.
+- New table `settlement_findings`: settled payments that matched none of ours, or another amount. A row is recorded once and then only counted; it can't be changed otherwise, deleted or truncated.
+
+The UPDATEs write every row of `driver_earnings` and `earning_collections`, and the new CHECKs scan both tables under an exclusive lock. On a large database, run it in a maintenance window.
+
+**Deploy it together with the Phase 5 backend.** The Phase 4 backend can't complete a trip on the new schema: its earnings lack the new NOT NULL columns. It also can't record a failed payout, because it would re-queue the earnings and the guard refuses that. So stop the old backend, migrate, re-run the grants, then start the new backend.
+
+Before migrating a database that holds data, the same rules as for Phase 1 apply (decision N1): run the preflight and have it reviewed, take a snapshot, rehearse with `npm run db:migration-check`, then deploy. The preflight now also lists:
+- whether the split columns and `settlement_findings` exist
+- earnings by settlement and status, with their split and payout amount once migrated
+- earnings funded by several collections, whether their online collections are settled, and any payable before all are (must be 0)
+- earnings of failed or returned payouts and their status now (before this migration a failed payout re-queued them as PAYABLE on its own)
+- unfinished bookings with a drop resolved UNDELIVERED (with the technical safe default `EARNINGS_UNDELIVERED_DROP_HOLD=true`, their earning's online part will start ON_HOLD; the business rule is open, L-11 / D-70)
+- settlement findings by kind
+
+Deploy, then **re-run `02-app-grants.sql`**. The API role needs SELECT and INSERT on `settlement_findings`, and UPDATE of `occurrences` and `last_seen_at` only. Without them, the settlement sync fails with `permission denied` on the first unmatched settlement.
+
+Check after deploying:
+
+```sql
+SELECT count(*) FROM information_schema.columns
+ WHERE table_schema = 'public' AND table_name = 'driver_earnings'
+   AND column_name IN ('cash_collected_paise', 'online_collected_paise', 'cash_fee_paise',
+                       'online_fee_paise', 'payout_amount_paise');                       -- 5
+SELECT count(*) FROM pg_trigger
+ WHERE tgname IN ('trg_earnings_settled', 'trg_settlement_findings_guard',
+                  'trg_settlement_findings_no_delete', 'trg_settlement_findings_no_truncate');  -- 4
+SELECT settlement, count(*), sum(payout_amount_paise) FROM driver_earnings GROUP BY 1;  -- CASH: 0
+SELECT count(*) FROM settlement_findings;                       -- 0 until a settlement doesn't match
+```
+
+Connected as `mr_app`, these must still fail with `permission denied`:
+
+```sql
+UPDATE driver_earnings SET payout_amount_paise = 1;
+UPDATE earning_collections SET net_amount_paise = 1;
+UPDATE settlement_findings SET settled_amount_paise = 1;
+DELETE FROM settlement_findings;
+```
+
+**Rollback.** Roll the backend back to the Phase 4 release at the same time. The `down.sql` drops no data the previous rules can't rebuild: the split and the link nets are derived values. It refuses once an earning funded by several collections has been made payable or carried by a payout, or a settlement finding exists, because the previous rules can't explain those. Otherwise it restores the previous guards, the sources check and the CHECK exactly, and drops the new columns, trigger and table (its grants go with it). Rolling back also brings back the automatic re-queue of a failed payout's earnings. Earnings already ON_HOLD after a failed payout stay ON_HOLD until an admin releases them.
+
+```bash
+psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261019120000_mixed_earnings_payout_hold/down.sql
+psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261019120000_mixed_earnings_payout_hold';"
+```
+
 ## Ongoing rules
 
 - **Schema changes:** only through new migration files. Re-run step 4 (migrate, then grants) on every release that adds one.

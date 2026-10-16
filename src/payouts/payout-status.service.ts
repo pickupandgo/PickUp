@@ -7,6 +7,8 @@ import type { ProviderPayout } from './payout.gateway';
 
 /** status_reason prefix of an account suspended because a payout to it came back. */
 const PAYOUT_REVERSED = 'PAYOUT_REVERSED';
+/** hold_reason prefix of an earning whose payout failed (N10). */
+export const PAYOUT_FAILED = 'PAYOUT_FAILED';
 
 export type PayoutUpdateSource = 'SUBMIT' | 'WEBHOOK' | 'ADMIN_SYNC';
 
@@ -63,7 +65,8 @@ export function mapProviderStatus(status: string): PayoutStatus {
  *
  *   SUBMITTED  provider accepted it (queued / pending / processing)
  *   PROCESSED  items PAID, earnings PAID: the only way an earning is ever marked paid
- *   FAILED     items RELEASED, earnings back to PAYABLE: retried in a later payout with a new key
+ *   FAILED     items RELEASED, earnings ON_HOLD (PAYOUT_FAILED, N10): nothing is re-queued on its
+ *              own; an admin releases them for a new payout with a new key
  *   REVERSED   items REVERSED, earnings ON_HOLD for review (money returned after processing)
  *
  * Repeated or out-of-order updates (webhook retries, sync after webhook) change nothing.
@@ -159,7 +162,7 @@ export class PayoutStatusService {
               failureReason: provider.failureReason ?? `PROVIDER_${provider.status.toUpperCase()}`,
             },
           });
-          await this.release(tx, payoutId);
+          await this.holdFailedEarnings(tx, updated, now);
           break;
         case 'REVERSED':
           updated = await tx.driverPayout.update({
@@ -201,8 +204,8 @@ export class PayoutStatusService {
 
   /**
    * Fails a payout that never reached the provider (bank account no longer verified, or the
-   * provider definitively refused the request and has no record of it). Its earnings go back to
-   * PAYABLE for a later payout.
+   * provider definitively refused the request and has no record of it). Its earnings go ON_HOLD
+   * (PAYOUT_FAILED) until an admin releases them for a later payout (N10).
    */
   async failBeforeSubmit(payoutId: string, reason: string): Promise<DriverPayout> {
     const payout = await this.prisma.runInTransaction(async (tx) => {
@@ -213,11 +216,12 @@ export class PayoutStatusService {
       if (locked.providerPayoutId !== null) {
         throw new Error('A payout known to the provider cannot be failed locally');
       }
+      const now = new Date();
       const failed = await tx.driverPayout.update({
         where: { id: payoutId },
-        data: { status: 'FAILED', failedAt: new Date(), failureReason: reason.slice(0, 300) },
+        data: { status: 'FAILED', failedAt: now, failureReason: reason.slice(0, 300) },
       });
-      await this.release(tx, payoutId);
+      await this.holdFailedEarnings(tx, failed, now);
       return failed;
     });
     this.logger.warn({ payoutId, reason }, 'Payout failed before reaching the provider');
@@ -240,20 +244,48 @@ export class PayoutStatusService {
         )`;
   }
 
-  /** Items RELEASED first, then their earnings back to PAYABLE (the earnings trigger checks it). */
-  private async release(tx: Tx, payoutId: string): Promise<void> {
+  /**
+   * A failed payout (N10): items RELEASED first, then their earnings ON_HOLD with the reason, for
+   * an admin to release (the earnings trigger refuses IN_PAYOUT -> PAYABLE). Nothing is re-queued
+   * automatically, and a released earning is only ever paid by a new payout: its old item is no
+   * longer live, so it can't be carried twice (partial unique index).
+   */
+  private async holdFailedEarnings(tx: Tx, payout: DriverPayout, now: Date): Promise<void> {
     const items = await tx.payoutItem.findMany({
-      where: { payoutId, status: 'INCLUDED' },
+      where: { payoutId: payout.id, status: 'INCLUDED' },
       select: { earningId: true },
     });
     await tx.payoutItem.updateMany({
-      where: { payoutId, status: 'INCLUDED' },
+      where: { payoutId: payout.id, status: 'INCLUDED' },
       data: { status: 'RELEASED' },
     });
+    const earningIds = items.map((item) => item.earningId);
+    const reason =
+      `${PAYOUT_FAILED}: payout ${payout.id} failed (${payout.failureReason ?? 'no reason given'}); ` +
+      'an admin releases the earning for a new payout';
     await tx.driverEarning.updateMany({
-      where: { id: { in: items.map((item) => item.earningId) }, status: 'IN_PAYOUT' },
-      data: { status: 'PAYABLE' },
+      where: { id: { in: earningIds }, status: 'IN_PAYOUT' },
+      data: {
+        status: 'ON_HOLD',
+        holdReason: reason.slice(0, 500),
+        heldAt: now,
+        heldByUserId: null,
+      },
     });
+    if (earningIds.length > 0) {
+      await recordAdminAction(tx, {
+        actorUserId: null,
+        action: 'PAYOUT_FAILED_EARNINGS_HELD',
+        targetType: 'DRIVER_PAYOUT',
+        targetId: payout.id,
+        reason: reason.slice(0, 500),
+        details: {
+          earningIds: earningIds.join(','),
+          earnings: earningIds.length,
+          failureReason: payout.failureReason,
+        },
+      });
+    }
   }
 
   /**

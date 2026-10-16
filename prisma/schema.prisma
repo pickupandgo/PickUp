@@ -258,23 +258,23 @@ model User {
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  authIdentities           AuthIdentity[]
-  driver                   Driver?                   @relation("DriverUser")
-  customer                 Customer?
-  approvedDrivers          Driver[]                  @relation("DriverApprovedBy")
-  payments                 Payment[]
-  performedLedgerEntries   DriverWalletTransaction[]
-  adminActions             AdminAction[]
-  createdFeeRules          FeeRule[]                 @relation("FeeRuleCreatedBy")
-  deactivatedFeeRules      FeeRule[]                 @relation("FeeRuleDeactivatedBy")
-  heldEarnings             DriverEarning[]           @relation("EarningHeldBy")
-  verifiedBankAccounts     DriverBankAccount[]       @relation("BankAccountVerifiedBy")
-  bankAccountStatusChanges DriverBankAccount[]       @relation("BankAccountStatusChangedBy")
-  createdPayoutBatches     PayoutBatch[]             @relation("PayoutBatchCreatedBy")
-  bankValidationRequests   BankAccountVerification[] @relation("BankValidationRequestedBy")
-  createdPricingVersions     PricingVersion[]        @relation("PricingVersionCreatedBy")
-  deactivatedPricingVersions PricingVersion[]        @relation("PricingVersionDeactivatedBy")
-  resolvedBookingStops       BookingStop[]           @relation("BookingStopResolvedBy")
+  authIdentities             AuthIdentity[]
+  driver                     Driver?                   @relation("DriverUser")
+  customer                   Customer?
+  approvedDrivers            Driver[]                  @relation("DriverApprovedBy")
+  payments                   Payment[]
+  performedLedgerEntries     DriverWalletTransaction[]
+  adminActions               AdminAction[]
+  createdFeeRules            FeeRule[]                 @relation("FeeRuleCreatedBy")
+  deactivatedFeeRules        FeeRule[]                 @relation("FeeRuleDeactivatedBy")
+  heldEarnings               DriverEarning[]           @relation("EarningHeldBy")
+  verifiedBankAccounts       DriverBankAccount[]       @relation("BankAccountVerifiedBy")
+  bankAccountStatusChanges   DriverBankAccount[]       @relation("BankAccountStatusChangedBy")
+  createdPayoutBatches       PayoutBatch[]             @relation("PayoutBatchCreatedBy")
+  bankValidationRequests     BankAccountVerification[] @relation("BankValidationRequestedBy")
+  createdPricingVersions     PricingVersion[]          @relation("PricingVersionCreatedBy")
+  deactivatedPricingVersions PricingVersion[]          @relation("PricingVersionDeactivatedBy")
+  resolvedBookingStops       BookingStop[]             @relation("BookingStopResolvedBy")
 
   @@map("users")
 }
@@ -398,11 +398,12 @@ model Payment {
   createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  user       User               @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  booking    Booking?           @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  events     PaymentEvent[]
-  earning    DriverEarning?
-  settlement PaymentSettlement?
+  user               User                @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  booking            Booking?            @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  events             PaymentEvent[]
+  earning            DriverEarning?
+  settlement         PaymentSettlement?
+  settlementFindings SettlementFinding[]
 
   @@unique([userId, idempotencyKey], map: "uq_payments_user_idempotency")
   // At most one live payment per booking, so a booking can never be charged twice. A FAILED
@@ -495,18 +496,19 @@ model Booking {
   createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  customer       Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  feeRule        FeeRule             @relation(fields: [feeRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  fareQuote      FareQuote?          @relation(fields: [fareQuoteId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  pricingVersion PricingVersion?     @relation(fields: [pricingVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  stops          BookingStop[]
-  trip           Trip?
-  payments       Payment[]
-  collections    PaymentCollection[]
-  earning        DriverEarning?
+  customer           Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  feeRule            FeeRule             @relation(fields: [feeRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  fareQuote          FareQuote?          @relation(fields: [fareQuoteId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  pricingVersion     PricingVersion?     @relation(fields: [pricingVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  stops              BookingStop[]
+  trip               Trip?
+  payments           Payment[]
+  collections        PaymentCollection[]
+  earning            DriverEarning?
   earningCollections EarningCollection[]
-  disputes       PaymentDispute[]
-  settlements    PaymentSettlement[]
+  disputes           PaymentDispute[]
+  settlements        PaymentSettlement[]
+  settlementFindings SettlementFinding[]
 
   @@index([customerId, createdAt(sort: Desc)], map: "idx_bookings_customer_created")
   @@index([status, createdAt], map: "idx_bookings_status_created")
@@ -664,17 +666,18 @@ model PaymentCollection {
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  booking           Booking                  @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  booking            Booking                  @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   /// Composite key: a collection can only name a stop of its own booking.
-  bookingStop       BookingStop?             @relation(fields: [bookingId, bookingStopId], references: [bookingId, id], onDelete: Restrict, onUpdate: Restrict)
-  trip              Trip                     @relation(fields: [tripId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  collectedBy       Driver                   @relation(fields: [collectedByDriverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  feeRule           FeeRule?                 @relation(fields: [feeRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  walletTransaction DriverWalletTransaction? @relation(fields: [walletTransactionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  earning           DriverEarning?
+  bookingStop        BookingStop?             @relation(fields: [bookingId, bookingStopId], references: [bookingId, id], onDelete: Restrict, onUpdate: Restrict)
+  trip               Trip                     @relation(fields: [tripId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  collectedBy        Driver                   @relation(fields: [collectedByDriverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  feeRule            FeeRule?                 @relation(fields: [feeRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  walletTransaction  DriverWalletTransaction? @relation(fields: [walletTransactionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  earning            DriverEarning?
   /// The earning this collection funds, once the trip completed.
-  earningLink       EarningCollection?
-  settlement        PaymentSettlement?
+  earningLink        EarningCollection?
+  settlement         PaymentSettlement?
+  settlementFindings SettlementFinding[]
 
   @@unique([provider, providerPaymentId], map: "uq_collection_provider_payment", where: raw("(provider_payment_id IS NOT NULL)"))
   @@unique([provider, providerReferenceId], map: "uq_collection_provider_reference", where: raw("(provider_reference_id IS NOT NULL)"))
@@ -706,8 +709,21 @@ model DriverEarning {
   /// Tax deducted at source. Always 0 while the TDS policy is DISABLED (OPEN_DECISIONS D-57).
   tdsAmountPaise       BigInt            @default(0) @map("tds_amount_paise")
   /// gross - fee - other deductions - TDS (CHECK). ONLINE: owed to the driver by payout. CASH:
-  /// already kept by the driver.
+  /// already kept by the driver. MIXED: the cash part kept, the online part owed.
   netAmountPaise       BigInt            @map("net_amount_paise")
+  /// Collected in cash: already in the driver's hand (payment flow Phase 5). With the online
+  /// part it adds up to the gross amount (CHECK).
+  cashCollectedPaise   BigInt            @map("cash_collected_paise")
+  /// Collected online (prepaid or QR): received by Nikhil Enterprises.
+  onlineCollectedPaise BigInt            @map("online_collected_paise")
+  /// Platform fee on the cash part (debited from the wallet). With the online fee it adds up to
+  /// the platform fee (CHECK).
+  cashFeePaise         BigInt            @map("cash_fee_paise")
+  /// Platform fee on the online part (kept from the payout).
+  onlineFeePaise       BigInt            @map("online_fee_paise")
+  /// What a payout carries for this earning (CHECK): 0 for CASH, the net for ONLINE, the online
+  /// part net of its fee for MIXED. Immutable; a payout item must equal it.
+  payoutAmountPaise    BigInt            @map("payout_amount_paise")
   /// DISABLED or TAX_RULE (CHECK): the TDS policy snapshotted when the earning was recorded.
   tdsPolicy            String            @default("DISABLED") @map("tds_policy") @db.VarChar(20)
   /// The tax rule version applied (TAX_RULE policy only).
@@ -733,15 +749,15 @@ model DriverEarning {
   createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  booking           Booking            @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  trip              Trip               @relation(fields: [tripId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  driver            Driver             @relation(fields: [driverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  feeRule           FeeRule            @relation(fields: [feeRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  taxRule           TaxRule?           @relation(fields: [taxRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  payment           Payment?           @relation(fields: [paymentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  collection        PaymentCollection? @relation(fields: [collectionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  paymentSettlement PaymentSettlement? @relation(fields: [paymentSettlementId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  heldBy            User?              @relation("EarningHeldBy", fields: [heldByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  booking           Booking             @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  trip              Trip                @relation(fields: [tripId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  driver            Driver              @relation(fields: [driverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  feeRule           FeeRule             @relation(fields: [feeRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  taxRule           TaxRule?            @relation(fields: [taxRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  payment           Payment?            @relation(fields: [paymentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  collection        PaymentCollection?  @relation(fields: [collectionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  paymentSettlement PaymentSettlement?  @relation(fields: [paymentSettlementId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  heldBy            User?               @relation("EarningHeldBy", fields: [heldByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   payoutItems       PayoutItem[]
   /// Every collection that funds this earning, with its method, amount and fee share.
   collectionLinks   EarningCollection[]
@@ -765,6 +781,8 @@ model EarningCollection {
   /// The platform fee on this amount: the fee debited for a cash collection, or the share of the
   /// fee owed on an online one (the drop's share, or the booking's fee).
   platformFeePaise BigInt   @map("platform_fee_paise")
+  /// What this collection contributes to the earning: amount - platform fee (CHECK).
+  netAmountPaise   BigInt   @map("net_amount_paise")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   collection PaymentCollection @relation(fields: [collectionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
@@ -818,6 +836,40 @@ model PaymentSettlement {
   @@index([providerSettlementId], map: "idx_settlements_provider_settlement")
   @@index([settledAt], map: "idx_settlements_settled_at")
   @@map("payment_settlements")
+}
+
+/// A settled payment from Razorpay settlement reconciliation that the backend could not match
+/// (payment flow Phase 5): UNKNOWN_PAYMENT (none of ours) or AMOUNT_MISMATCH (ours, with another
+/// amount). Never applied to an earning; listed for review. One row per payment, settlement and
+/// kind; seeing it again only counts it (trigger). Never deleted.
+model SettlementFinding {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider             String   @default("RAZORPAY") @db.VarChar(40)
+  /// UNKNOWN_PAYMENT or AMOUNT_MISMATCH (CHECK).
+  kind                 String   @db.VarChar(30)
+  providerPaymentId    String   @map("provider_payment_id") @db.VarChar(100)
+  providerSettlementId String   @map("provider_settlement_id") @db.VarChar(100)
+  settledAt            DateTime @map("settled_at") @db.Timestamptz(6)
+  /// What the settlement data reports.
+  settledAmountPaise   BigInt   @map("settled_amount_paise")
+  /// AMOUNT_MISMATCH: what our payment or collection was for.
+  expectedAmountPaise  BigInt?  @map("expected_amount_paise")
+  bookingId            String?  @map("booking_id") @db.Uuid
+  paymentId            String?  @map("payment_id") @db.Uuid
+  collectionId         String?  @map("collection_id") @db.Uuid
+  /// RAZORPAY_RECON or SIMULATED (CHECK).
+  source               String   @db.VarChar(20)
+  occurrences          Int      @default(1)
+  firstSeenAt          DateTime @default(dbgenerated("clock_timestamp()")) @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt           DateTime @default(dbgenerated("clock_timestamp()")) @map("last_seen_at") @db.Timestamptz(6)
+
+  booking    Booking?           @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  payment    Payment?           @relation(fields: [paymentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  collection PaymentCollection? @relation(fields: [collectionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([provider, providerPaymentId, providerSettlementId, kind], map: "uq_settlement_findings_item")
+  @@index([lastSeenAt], map: "idx_settlement_findings_last_seen")
+  @@map("settlement_findings")
 }
 
 /// Versioned tax-deduction (TDS) rules. Deliberately empty: whether and how driver payouts are

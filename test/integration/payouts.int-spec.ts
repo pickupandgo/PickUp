@@ -198,20 +198,21 @@ describe('Driver payouts', () => {
     const items = await ctx.prisma.payoutItem.findMany({ where: { earningId: earning.id } });
     expect(items).toHaveLength(1);
     expect((await earningOf(earning.id)).status).toBe('IN_PAYOUT');
-    // The database refuses a second live item for the earning outright.
+    // The database refuses a second live item for the earning outright: the item guard takes
+    // only a PAYABLE earning (this one is IN_PAYOUT), and the partial unique index would refuse
+    // a second live item even then.
     const [item] = items;
     if (!item) {
       throw new Error('expected an item');
     }
     await expect(
-      ctx.prisma.payoutItem.create({
-        data: {
-          payoutId: item.payoutId,
-          earningId: earning.id,
-          amountPaise: earning.netAmountPaise,
-        },
-      }),
-    ).rejects.toThrow(/Unique constraint/i);
+      ctx.prisma.$executeRaw`
+        INSERT INTO payout_items (payout_id, earning_id, amount_paise)
+        VALUES (${item.payoutId}::uuid, ${earning.id}::uuid, ${earning.netAmountPaise})`,
+    ).rejects.toThrow(/payable online or mixed earnings/);
+    const [index] = await ctx.prisma.$queryRaw<{ indexdef: string }[]>`
+      SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_payout_items_earning_active'`;
+    expect(index?.indexdef).toMatch(/UNIQUE INDEX .*\(earning_id\) WHERE .*INCLUDED.*PAID/);
   });
 
   it('never pays out an earning whose customer payment is not settled yet', async () => {
@@ -297,7 +298,14 @@ describe('Driver payouts', () => {
     ).toHaveLength(1);
   });
 
-  it('#14 a failed payout never marks the earning paid, and the earning is retried with a new payout', async () => {
+  /** An admin releases a held earning (here: after its payout failed) for a new payout. */
+  const releaseEarning = (earningId: string) =>
+    request(ctx.server)
+      .post(`/v1/admin/earnings/${earningId}/release`)
+      .set(bearer(admin.token))
+      .send({ reason: 'Bank confirmed the beneficiary is reachable again, ticket 77' });
+
+  it('#14 a failed payout never marks the earning paid: the earning goes ON_HOLD and only an admin release sends it in a new payout (N10)', async () => {
     const driver = await driverWithBank();
     const { earning } = await payableEarning(driver);
     const { payout, provider } = await paidOutToProvider(driver);
@@ -313,19 +321,50 @@ describe('Driver payouts', () => {
       status: 'FAILED',
       failureReason: 'Beneficiary bank was offline',
     });
-    const released = await earningOf(earning.id);
-    expect(released).toMatchObject({ status: 'PAYABLE', paidAt: null });
+    const held = await earningOf(earning.id);
+    expect(held).toMatchObject({ status: 'ON_HOLD', paidAt: null, heldByUserId: null });
+    expect(held.holdReason).toMatch(
+      /^PAYOUT_FAILED: payout .* failed \(Beneficiary bank was offline\)/,
+    );
     expect(
       (await ctx.prisma.payoutItem.findFirstOrThrow({ where: { payoutId: payout.id } })).status,
     ).toBe('RELEASED');
+    expect(
+      await ctx.prisma.adminAction.count({
+        where: { action: 'PAYOUT_FAILED_EARNINGS_HELD', targetId: payout.id },
+      }),
+    ).toBe(1);
+    // The database refuses the silent re-queue the old rule did.
+    await expect(
+      ctx.prisma.$executeRaw`
+        UPDATE driver_earnings SET status = 'IN_PAYOUT' WHERE id = ${earning.id}::uuid`,
+    ).rejects.toThrow(/Invalid earning transition ON_HOLD -> IN_PAYOUT/);
 
+    // No silent retry: the next batch doesn't carry it.
+    const skipped = await prepare().expect(201);
+    expect(
+      await ctx.prisma.driverPayout.count({
+        where: { batchId: skipped.body.batch.batchId as string, driverId: driver.driverId },
+      }),
+    ).toBe(0);
+    expect(await liveItems(earning.id)).toEqual([]);
+
+    // An admin releases it (twice: the second is a no-op), then a new payout carries it once.
+    expect((await releaseEarning(earning.id).expect(200)).body.status).toBe('PAYABLE');
+    expect((await releaseEarning(earning.id).expect(200)).body.status).toBe('PAYABLE');
+    expect(
+      await ctx.prisma.adminAction.count({
+        where: { action: 'EARNING_RELEASED', targetId: earning.id },
+      }),
+    ).toBe(1);
     const retry = await paidOutToProvider(driver);
     expect(retry.payout.id).not.toBe(payout.id);
     expect(retry.provider.id).not.toBe(provider.id);
     expect((await liveItems(earning.id)).map((i) => i.payoutId)).toEqual([retry.payout.id]);
+    expect(retry.payout.amountPaise).toBe(earning.payoutAmountPaise);
   });
 
-  it('#14 a definitive provider rejection fails the payout and releases its earnings', async () => {
+  it('#14 a definitive provider rejection fails the payout and holds its earnings for an admin', async () => {
     const driver = await driverWithBank();
     const { earning } = await payableEarning(driver);
     const batch = await prepare().expect(201);
@@ -337,7 +376,10 @@ describe('Driver payouts', () => {
       status: 'FAILED',
       failureReason: 'PROVIDER_REJECTED:BAD_REQUEST_ERROR',
     });
-    expect((await earningOf(earning.id)).status).toBe('PAYABLE');
+    const held = await earningOf(earning.id);
+    expect(held.status).toBe('ON_HOLD');
+    expect(held.holdReason).toMatch(/^PAYOUT_FAILED: .*PROVIDER_REJECTED:BAD_REQUEST_ERROR/);
+    expect(await liveItems(earning.id)).toEqual([]);
   });
 
   it('#14 a bank account suspended after preparation is never paid', async () => {
@@ -357,7 +399,10 @@ describe('Driver payouts', () => {
     expect(payout).toMatchObject({ status: 'FAILED', failureReason: 'BANK_ACCOUNT_NOT_VERIFIED' });
     expect(ctx.payouts.byReference(payout.id)).toBeUndefined();
     expect(ctx.payouts.calls.createPayout).toBeGreaterThanOrEqual(calls);
-    expect((await earningOf(earning.id)).status).toBe('PAYABLE');
+    // Nothing reached the bank; the earning waits ON_HOLD for an admin (N10).
+    const held = await earningOf(earning.id);
+    expect(held.status).toBe('ON_HOLD');
+    expect(held.holdReason).toMatch(/^PAYOUT_FAILED: .*BANK_ACCOUNT_NOT_VERIFIED/);
     // The database refuses a payout to an account that is not VERIFIED.
     await expect(
       ctx.prisma.driverPayout.create({

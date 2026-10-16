@@ -62,6 +62,14 @@ export interface AppConfig {
     /** Always false: TDS waits for a CA-approved rule (OPEN_DECISIONS D-57). */
     readonly tdsEnabled: false;
   };
+  readonly earnings: {
+    /**
+     * EARNINGS_UNDELIVERED_DROP_HOLD (OPEN_DECISIONS L-11 / D-70, open business decision): hold
+     * the online part of an earning whose booking has a drop resolved UNDELIVERED for an admin's
+     * review. Technical safe default: true. Never moves money on its own.
+     */
+    readonly undeliveredDropHold: boolean;
+  };
   readonly fare: {
     /** Seconds a fare quote stays bookable. */
     readonly quoteTtlSeconds: number;
@@ -128,6 +136,15 @@ export function openReadinessItems(config: AppConfig): string[] {
     );
   }
   items.push('D-57: TDS policy DISABLED until the CA confirms the rule');
+  // Open business decisions with a technical safe default (payment flow Phase 5).
+  items.push(
+    config.earnings.undeliveredDropHold
+      ? 'L-11/D-70 (open business decision): a trip with an undelivered drop pays out only what was collected, and its online part is held for admin review (technical safe default)'
+      : 'L-11/D-70 (open business decision): the undelivered-drop review hold is OFF (EARNINGS_UNDELIVERED_DROP_HOLD=false); such a trip pays out what was collected once settled, without review',
+  );
+  items.push(
+    'N5 driver pay (open business decision): a partly paid trip pays out only what was collected and settled; nothing is refunded, compensated or recovered automatically',
+  );
   if (config.collections.simulated) {
     items.push(
       'D-47: collection QR codes are simulated (local end-to-end runs only); live needs Razorpay QR Codes (UPI QR)',
@@ -225,6 +242,9 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     tax: {
       // The schema refuses TDS_ENABLED=true; this is a constant until a rule is implemented.
       tdsEnabled: false,
+    },
+    earnings: {
+      undeliveredDropHold: env.EARNINGS_UNDELIVERED_DROP_HOLD,
     },
     fare: {
       quoteTtlSeconds: env.FARE_QUOTE_TTL_SECONDS,

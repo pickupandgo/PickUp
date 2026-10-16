@@ -20,9 +20,12 @@
  * the schema built from the earlier migration files alone, and refuses to run once the data it
  * would drop exists (a QUOTE_PER_STOP booking, a quote with more than 5 drops, a collection for a
  * single drop, a stop with lifecycle data, a drop with its own collection, a partially paid
- * booking). The stop lifecycle migration drops no data, so its down.sql has nothing to refuse; the
- * fresh install proves a drop is reached, collected and paid through the Phase 3 and 4 rules with
- * every guard on. It prints the read-only preflight inventory
+ * booking, a settlement finding, a payable earning funded by several collections). The stop
+ * lifecycle migration drops no data, so its down.sql has nothing to refuse; the fresh install
+ * proves a drop is reached, collected and paid through the Phase 3 and 4 rules, and that an
+ * earning funded by two drop QRs is payable only once both are settled (Phase 5), with every
+ * guard on. After every deploy it checks each earning's cash / online split and payout amount
+ * against its own sources (Phase 5 backfill). It prints the read-only preflight inventory
  * (prisma/sql/preflight-payment-flow.sql) of every source before migrating it.
  *
  * Sources are never written: each one is copied with CREATE DATABASE ... TEMPLATE (which needs no
@@ -50,6 +53,7 @@ const STOP_SCHEMA_MIGRATION = '20261016120000_per_stop_obligation_schema';
 const STOP_LIFECYCLE_MIGRATION = '20261017120000_payment_gate_stop_lifecycle';
 const ENUMS_MIGRATION = '20261018120000_partially_paid_mixed_enums';
 const OBLIGATION_MIGRATION = '20261018120100_obligation_collections';
+const MIXED_EARNINGS_MIGRATION = '20261019120000_mixed_earnings_payout_hold';
 const PREFLIGHT_SQL = path.join(ROOT, 'prisma', 'sql', 'preflight-payment-flow.sql');
 const DEFAULT_SOURCES = [
   'multipleride_legacy_snapshot_test',
@@ -285,6 +289,32 @@ async function migrationHistory(client) {
   }));
 }
 
+/**
+ * Collections that name a drop, and drops with lifecycle data, at any schema level (0 before the
+ * migrations that add them). A source migrated from an earlier phase has none; one already at a
+ * later phase (the e2e database after an E2E run) has its own, which a migration must not change.
+ */
+const STOP_DATA_SQL = `
+           CASE WHEN NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                  WHERE table_schema = 'public' AND table_name = 'payment_collections'
+                                    AND column_name = 'booking_stop_id') THEN 0
+                ELSE (xpath('/row/n/text()', query_to_xml(
+                        'SELECT count(*) AS n FROM payment_collections WHERE booking_stop_id IS NOT NULL',
+                        false, true, '')))[1]::text::int
+           END AS collections_for_one_drop,
+           CASE WHEN to_regclass('public.booking_stops') IS NULL THEN 0
+                ELSE (xpath('/row/n/text()', query_to_xml(
+                        'SELECT count(*) AS n FROM booking_stops s
+                          WHERE COALESCE(to_jsonb(s) ->> ''status'', ''PENDING'') <> ''PENDING''
+                             OR to_jsonb(s) ->> ''arrived_at'' IS NOT NULL
+                             OR to_jsonb(s) ->> ''payment_confirmed_at'' IS NOT NULL
+                             OR to_jsonb(s) ->> ''delivered_at'' IS NOT NULL
+                             OR to_jsonb(s) ->> ''failed_at'' IS NOT NULL
+                             OR to_jsonb(s) ->> ''cancelled_at'' IS NOT NULL
+                             OR to_jsonb(s) ->> ''resolved_at'' IS NOT NULL',
+                        false, true, '')))[1]::text::int
+           END AS stops_with_lifecycle`;
+
 /** What a source holds before it is migrated, for the checks that depend on its level. */
 async function sourceState(client) {
   const { rows } = await client.query(`
@@ -296,7 +326,8 @@ async function sourceState(client) {
                         'SELECT count(*) AS n FROM booking_stops', false, true, '')))[1]::text::int
            END AS stops,
            (SELECT count(*)::int FROM payment_collections
-             WHERE method = 'ONLINE_QR' AND status = 'PENDING') AS pending_qrs`);
+             WHERE method = 'ONLINE_QR' AND status = 'PENDING') AS pending_qrs,
+           ${STOP_DATA_SQL}`);
   return rows[0];
 }
 
@@ -319,7 +350,8 @@ async function checkLegacyMarking(scope, client) {
 
 /**
  * No stop was invented (the same number as before, all on QUOTE_PER_STOP bookings), no existing
- * collection names a stop, and no stop has lifecycle data.
+ * collection was made to name a stop, and no stop gained lifecycle data: a source migrated from
+ * before those migrations has none of either; one already past them keeps exactly its own.
  */
 async function checkStops(scope, client, before) {
   const { rows } = await client.query(`
@@ -327,28 +359,69 @@ async function checkStops(scope, client, before) {
            (SELECT count(*)::int FROM booking_stops s JOIN bookings b ON b.id = s.booking_id
              WHERE b.payment_model <> 'QUOTE_PER_STOP') AS stops_on_legacy,
            (SELECT count(*)::int FROM payment_collections
-             WHERE booking_stop_id IS NOT NULL) AS collections_for_one_drop,
-           (SELECT count(*)::int FROM booking_stops
-             WHERE status <> 'PENDING' OR arrived_at IS NOT NULL
-                OR payment_confirmed_at IS NOT NULL OR delivered_at IS NOT NULL
-                OR failed_at IS NOT NULL OR cancelled_at IS NOT NULL
-                OR resolved_at IS NOT NULL) AS stops_with_lifecycle,
-           (SELECT count(*)::int FROM payment_collections
-             WHERE method = 'ONLINE_QR' AND status = 'PENDING') AS pending_qrs`);
+             WHERE method = 'ONLINE_QR' AND status = 'PENDING') AS pending_qrs,
+           ${STOP_DATA_SQL}`);
   const [state] = rows;
   if (
     state.stops === before.stops &&
     state.stops_on_legacy === 0 &&
-    state.collections_for_one_drop === 0 &&
-    state.stops_with_lifecycle === 0 &&
+    state.collections_for_one_drop === before.collections_for_one_drop &&
+    state.stops_with_lifecycle === before.stops_with_lifecycle &&
     state.pending_qrs === before.pending_qrs
   ) {
     pass(
-      `stops: ${state.stops} (none invented, none on a legacy booking, no lifecycle data); ` +
-        `no collection names a stop; ${state.pending_qrs} in-flight QR collection(s) still PENDING`,
+      `stops: ${state.stops} (none invented, none on a legacy booking); collections naming a ` +
+        `drop: ${state.collections_for_one_drop} and drops with lifecycle data: ` +
+        `${state.stops_with_lifecycle}, as before; ${state.pending_qrs} in-flight QR ` +
+        'collection(s) still PENDING',
     );
   } else {
     fail(scope, `stops and collections: ${JSON.stringify({ before, after: state })}`);
+  }
+}
+
+/**
+ * Payment flow Phase 5: every earning's cash / online split and payout amount are what its own
+ * sources say (its linked collections, by method, or its single source: a CASH earning all cash,
+ * an ONLINE one all online), and every link's net amount is its amount minus its fee.
+ */
+async function checkEarningSplit(scope, client) {
+  const { rows } = await client.query(`
+    SELECT count(*)::int AS earnings,
+           count(*) FILTER (WHERE e.settlement = 'CASH')::int AS cash,
+           count(*) FILTER (WHERE e.settlement = 'ONLINE')::int AS online,
+           count(*) FILTER (WHERE e.settlement = 'MIXED')::int AS mixed,
+           count(*) FILTER (WHERE NOT (
+               e.cash_collected_paise = CASE WHEN l.n > 0 THEN l.cash
+                   WHEN e.settlement = 'CASH' THEN e.gross_amount_paise ELSE 0 END
+               AND e.online_collected_paise = CASE WHEN l.n > 0 THEN l.online
+                   WHEN e.settlement = 'CASH' THEN 0 ELSE e.gross_amount_paise END
+               AND e.cash_fee_paise = CASE WHEN l.n > 0 THEN l.cash_fee
+                   WHEN e.settlement = 'CASH' THEN e.platform_fee_paise ELSE 0 END
+               AND e.online_fee_paise = CASE WHEN l.n > 0 THEN l.online_fee
+                   WHEN e.settlement = 'CASH' THEN 0 ELSE e.platform_fee_paise END
+               AND e.payout_amount_paise = CASE e.settlement WHEN 'CASH' THEN 0
+                   WHEN 'ONLINE' THEN e.net_amount_paise
+                   ELSE e.online_collected_paise - e.online_fee_paise END))::int AS wrong,
+           (SELECT count(*)::int FROM earning_collections
+             WHERE net_amount_paise <> amount_paise - platform_fee_paise) AS wrong_links
+      FROM driver_earnings e
+     CROSS JOIN LATERAL (
+           SELECT count(*) AS n,
+                  coalesce(sum(amount_paise) FILTER (WHERE method = 'CASH'), 0) AS cash,
+                  coalesce(sum(amount_paise) FILTER (WHERE method = 'ONLINE_QR'), 0) AS online,
+                  coalesce(sum(platform_fee_paise) FILTER (WHERE method = 'CASH'), 0) AS cash_fee,
+                  coalesce(sum(platform_fee_paise) FILTER (WHERE method = 'ONLINE_QR'), 0)
+                      AS online_fee
+             FROM earning_collections WHERE earning_id = e.id) l`);
+  const [state] = rows;
+  if (state.wrong === 0 && state.wrong_links === 0) {
+    pass(
+      `earning split: ${state.earnings} earnings (${state.cash} cash, ${state.online} online, ` +
+        `${state.mixed} mixed) split and payout amount as their sources say; link nets correct`,
+    );
+  } else {
+    fail(scope, `earning split: ${JSON.stringify(state)}`);
   }
 }
 
@@ -496,6 +569,97 @@ UPDATE booking_stops SET status = 'PAYMENT_CONFIRMED', payment_confirmed_at = no
 UPDATE bookings SET payment_status = 'PARTIALLY_PAID' WHERE external_ref = 'MIGCHECK-1';
 COMMIT;`;
 
+/** A settled payment that matches none of ours, recorded for review (Phase 5). */
+const SETTLEMENT_FINDING_SQL = `
+INSERT INTO settlement_findings (kind, provider_payment_id, provider_settlement_id, settled_at,
+                                 settled_amount_paise, source)
+VALUES ('UNKNOWN_PAYMENT', 'pay_migcheckunknown1', 'setl_migcheckfinding1', now(), 12345,
+        'SIMULATED');`;
+
+/**
+ * Drop 1 handed over; drop 2 reached, paid by its own QR and handed over; the trip and the
+ * booking completed; and the earning written as trip completion writes it (Phase 5): ONLINE,
+ * funded by both QR collections (no payment or collection of its own), with its cash / online
+ * split and payout amount, and one link per collection. Every guard on.
+ */
+const MULTI_COLLECTION_EARNING_SQL = `
+BEGIN;
+UPDATE booking_stops SET status = 'DELIVERED', delivered_at = now()
+ WHERE sequence = 1 AND booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
+UPDATE booking_stops SET status = 'ARRIVED', arrived_at = now()
+ WHERE sequence = 2 AND booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
+INSERT INTO payment_collections (booking_id, booking_stop_id, trip_id, stage, method, amount_paise,
+                                 collected_by_driver_id, status, provider, provider_product,
+                                 provider_reference_id, idempotency_key)
+SELECT b.id, s.id, t.id, 'DELIVERY', 'ONLINE_QR', s.payable_paise, t.driver_id, 'PENDING',
+       'RAZORPAY', 'QR_CODE', 'qr_migcheck_drop_2', 'migcheck-drop-2'
+  FROM bookings b
+  JOIN booking_stops s ON s.booking_id = b.id AND s.sequence = 2
+  JOIN trips t ON t.booking_id = b.id
+ WHERE b.external_ref = 'MIGCHECK-1';
+COMMIT;
+BEGIN;
+UPDATE payment_collections
+   SET status = 'COMPLETED', provider_payment_id = 'pay_migcheckdrop2', payment_method = 'UPI',
+       completed_at = now()
+ WHERE idempotency_key = 'migcheck-drop-2';
+UPDATE booking_stops SET status = 'PAYMENT_CONFIRMED', payment_confirmed_at = now()
+ WHERE sequence = 2 AND booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
+UPDATE bookings SET payment_status = 'PAID' WHERE external_ref = 'MIGCHECK-1';
+COMMIT;
+BEGIN;
+UPDATE booking_stops SET status = 'DELIVERED', delivered_at = now()
+ WHERE sequence = 2 AND booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
+UPDATE trips SET status = 'DELIVERED', delivered_at = now()
+ WHERE booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
+UPDATE trips SET status = 'PAYMENT_CONFIRMED', payment_confirmed_at = now()
+ WHERE booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
+UPDATE trips SET status = 'COMPLETED', completed_at = now()
+ WHERE booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');
+UPDATE bookings SET status = 'DRIVER_ASSIGNED' WHERE external_ref = 'MIGCHECK-1';
+UPDATE bookings SET status = 'COMPLETED', completed_at = now() WHERE external_ref = 'MIGCHECK-1';
+DO $$
+DECLARE
+    v_booking RECORD;
+    v_earning UUID;
+BEGIN
+    SELECT b.id, b.fee_rule_id, t.id AS trip_id, t.driver_id
+      INTO v_booking
+      FROM bookings b JOIN trips t ON t.booking_id = b.id
+     WHERE b.external_ref = 'MIGCHECK-1';
+    INSERT INTO driver_earnings (booking_id, trip_id, driver_id, settlement, status,
+                                 gross_amount_paise, platform_fee_paise, net_amount_paise,
+                                 fee_rule_id, cash_collected_paise, online_collected_paise,
+                                 cash_fee_paise, online_fee_paise, payout_amount_paise)
+         VALUES (v_booking.id, v_booking.trip_id, v_booking.driver_id, 'ONLINE',
+                 'AWAITING_SETTLEMENT', 50000, 5000, 45000, v_booking.fee_rule_id, 0, 50000, 0,
+                 5000, 45000)
+      RETURNING id INTO v_earning;
+    INSERT INTO earning_collections (collection_id, earning_id, booking_id, method, amount_paise,
+                                     platform_fee_paise, net_amount_paise)
+    SELECT c.id, v_earning, c.booking_id, c.method, c.amount_paise, s.platform_fee_share_paise,
+           c.amount_paise - s.platform_fee_share_paise
+      FROM payment_collections c
+      JOIN booking_stops s ON s.id = c.booking_stop_id
+     WHERE c.booking_id = v_booking.id AND c.status = 'COMPLETED';
+END;
+$$;
+COMMIT;`;
+
+/** Razorpay's settlement of one drop's QR payment, as the settlement sync records it. */
+const dropSettlementSql = (drop) => `
+INSERT INTO payment_settlements (provider_payment_id, provider_settlement_id, settled_at,
+                                 amount_paise, booking_id, collection_id, source)
+SELECT c.provider_payment_id, 'setl_migcheckdrop${drop}', now(), c.amount_paise, c.booking_id,
+       c.id, 'SIMULATED'
+  FROM payment_collections c
+ WHERE c.idempotency_key = 'migcheck-drop-${drop}';`;
+
+/** The earning funded by both drops becomes PAYABLE (the settlement sync's promotion). */
+const MULTI_COLLECTION_PAYABLE_SQL = `
+UPDATE driver_earnings SET status = 'PAYABLE', payable_at = now()
+ WHERE booking_id = (SELECT id FROM bookings WHERE external_ref = 'MIGCHECK-1');`;
+
 /** A quote with 6 drops (allowed once FARE_MAX_DROPS is raised), never booked. */
 const SIX_DROP_QUOTE_SQL = `
 DO $$
@@ -620,6 +784,40 @@ async function freshReference(admin) {
       /QUOTE_PER_STOP bookings exist/,
       'a QUOTE_PER_STOP booking exists',
     );
+
+    // Payment flow Phase 5: a settlement finding; then the trip finished with both drops paid
+    // by their own QR, its earning funded by both, payable only once both are settled.
+    await client.query(SETTLEMENT_FINDING_SQL);
+    pass('a settlement finding is recorded with every guard on');
+    await expectRefused(
+      'fresh',
+      client,
+      MIXED_EARNINGS_MIGRATION,
+      /settlement findings are recorded/,
+      'a settlement finding is recorded',
+    );
+    await client.query(MULTI_COLLECTION_EARNING_SQL);
+    pass('a trip paid by two drop QRs completes with one earning funded by both, every guard on');
+    await client.query(dropSettlementSql(1));
+    const early = await client.query(MULTI_COLLECTION_PAYABLE_SQL).then(
+      () => null,
+      (error) => (error instanceof Error ? error.message : String(error)),
+    );
+    if (early && /online collections have no merchant settlement yet/.test(early)) {
+      pass('that earning is not payable while one of its QRs is unsettled');
+    } else {
+      fail('fresh', `payable with one QR unsettled: ${early ?? 'it was allowed'}`);
+    }
+    await client.query(dropSettlementSql(2));
+    await client.query(MULTI_COLLECTION_PAYABLE_SQL);
+    pass('it becomes payable once both QRs are settled');
+    await expectRefused(
+      'fresh',
+      client,
+      MIXED_EARNINGS_MIGRATION,
+      /earnings funded by several collections have been made payable/,
+      'an earning funded by several collections is payable',
+    );
     compareCatalogs(
       'fresh',
       'schema unchanged after the refused rollbacks',
@@ -646,6 +844,7 @@ async function levelReferences(admin, fresh) {
     STOP_LIFECYCLE_MIGRATION,
     ENUMS_MIGRATION,
     OBLIGATION_MIGRATION,
+    MIXED_EARNINGS_MIGRATION,
   ]) {
     if (!reversible.includes(required)) {
       throw new Error(`Expected ${required} to have a down.sql`);
@@ -736,6 +935,7 @@ async function checkSource(admin, source, references) {
       await checkLegacyMarking(scope, client);
     }
     await checkStops(scope, client, before.state);
+    await checkEarningSplit(scope, client);
     compareCatalogs(
       scope,
       `${label}: schema = fresh install`,

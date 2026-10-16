@@ -552,8 +552,8 @@ Raj approved the architecture in [PAYMENT_FLOW_FINAL_REVIEW.md](./PAYMENT_FLOW_F
 | **PREPAID_UPI is not offered to new bookings (N4).** | Registration answers `422 PAYMENT_METHOD_NOT_OFFERED`; the database refuses the row (insert guard and a CHECK). |
 | **Historical PREPAID_UPI bookings keep Checkout, and only they do (N4).** | Start, verify, the webhook and the admin sync apply a booking payment only to a `LEGACY_BOOKING_LEVEL` + `PREPAID_UPI` booking. The code checks it at start and verify, before capturing an authorized payment, and in the finalizer (`BOOKING_NOT_PAYABLE` otherwise, logged as a payment anomaly). The database refuses a booking payment row for any other booking. Ownership and signature checks are unchanged. |
 | **Pickup gate also for legacy PAY_AT_PICKUP bookings (N2).** | Done in Phase 3 (below). |
-| **Completion with undelivered drops (N5).** | Phase 4 (below): the trip completes PARTIALLY_PAID and earns what was collected. The driver-pay treatment of such a trip is Phase 5. |
-| **Failed payout → ON_HOLD, explicit release (N10).** | Phase 7, not built yet. |
+| **Completion with undelivered drops (N5).** | Phase 4 (below): the trip completes PARTIALLY_PAID and earns what was collected. Phase 5 (below), as technical safe defaults: the online part of such an earning starts ON_HOLD for an admin's review, and it is paid out only for what was collected and settled. What the driver is paid for such a trip stays an **OPEN** business decision (L-11 / D-70, N5 driver pay). |
+| **Failed payout → ON_HOLD, explicit release (N10).** | Done in Phase 5 (below), as the approved phase plan places it. |
 | **Removing the legacy code (L-22).** | Open. Only after no environment has unfinished legacy bookings. |
 | **Non-local databases (N1).** | Blocked until `prisma/sql/preflight-payment-flow.sql` has been run there and its output reviewed. Phase 1 is applied to the local dev database only. |
 
@@ -656,6 +656,7 @@ Raj approved and locked Phase 3, then asked for Phase 4 only. Phase 4 adds two m
 - All-cash multi-drop PAY_AT_DELIVERY bookings may work through the current backend flow. Each drop is collected in cash at the drop, and the earning is settled in cash.
 - Single-drop PAY_AT_DELIVERY bookings paid by QR work. They have one collection, so the ONLINE earning becomes payable once Razorpay settles the payment, as before. PAY_AT_PICKUP bookings (cash or QR) are also one collection and work.
 - Multi-drop PAY_AT_DELIVERY bookings containing a QR drop must stay blocked in production until Phase 5 makes earnings funded by several collections correctly payable and settleable. Today their earning (ONLINE or MIXED) is recorded with every source but never becomes payable. The backend doesn't refuse such a QR yet, so the restriction is operational: don't take these bookings for real.
+- **Status after Phase 5:** the restriction is still in force. Phase 5 makes these earnings payable in the backend, but lifting the restriction needs the live validation listed under Phase 5 below and Raj's explicit decision.
 
 **Consequences of the approved rules (technical, not policy).**
 - A drop left undelivered and unpaid keeps the booking PARTIALLY_PAID. The trip still completes once every drop is finished (N5), and the earning counts only what was collected. A trip where nothing was collected still can't complete; an admin cancels it.
@@ -678,3 +679,74 @@ Raj approved and locked Phase 3, then asked for Phase 4 only. Phase 4 adds two m
 | Gross is what was collected (an undelivered unpaid drop adds nothing), and the fee is the collected fee shares | `earningFunding`, `trg_earnings_sources`, `GROSS_NOT_BOOKING_FARE` | N5 driver-pay treatment (Phase 5) |
 | `stopSequence` missing for a booking paid drop by drop: `422 STOP_REQUIRED`. Sent for a whole-booking obligation: `400 VALIDATION_FAILED` | collections API | none |
 | Simulated QR codes for local end-to-end runs (`COLLECTION_LINK_PROVIDER=simulated`, `POST /v1/dev/simulate/qr-codes/:qrCodeId/payments`), refused in production and with live keys | config, `SimulatedCollectionLinkGateway` | none |
+
+### Phase 5: earnings funded by several collections
+
+Raj approved Phase 4 (local commit `ea0cb14`), then asked for Phase 5 only. Phase 5 adds migration `20261019120000_mixed_earnings_payout_hold`, following review C.4 and N10. It adds new earning columns, filled from each earning's own sources (no existing value changes), and new rules. It adds one link column and one new table. It also adds the code that enforces the same rules and two grants. Upgrade steps: [DATABASE_SETUP.md](./DATABASE_SETUP.md#earnings-funded-by-several-collections-payment-flow-phase-5).
+
+| Requirement | Implementation |
+|---|---|
+| **Single-collection flows unchanged.** | PAY_AT_PICKUP cash: one cash collection, `SETTLED_IN_CASH`. PAY_AT_PICKUP QR and single-drop PAY_AT_DELIVERY QR: ONLINE, `AWAITING_SETTLEMENT`, PAYABLE only once Razorpay's settlement of that payment is recorded. All-cash multi-drop: CASH, `SETTLED_IN_CASH`. Historical (`LEGACY_BOOKING_LEVEL`) and prepaid earnings keep their single source and settlement link. |
+| **`earning_collections` is the authoritative linkage.** | Each link keeps the collection, its method, amount, fee share and new `net_amount_paise` (amount − fee, CHECK). The primary key is the collection, so a collection funds one earning and is linked once. Links are written with the earning, never change and are never deleted. The existing links were filled in by the migration. |
+| **Split and payout amount.** | Every earning records `cash_collected_paise`, `online_collected_paise`, `cash_fee_paise`, `online_fee_paise` and `payout_amount_paise`. CASH pays out 0. ONLINE pays out its net. MIXED pays out its online part net of its fee: the cash part, net of its fee, is already in the driver's hand and is never held as if it were online. CHECKs keep the split adding up to gross and fee, and tie the payout amount to the settlement. At commit, `check_earning_sources` checks the split against the links. All of it is immutable. No fee or tax rule is added: a MIXED earning has no other deduction and no TDS (D-57). The API shows the split, `netCashPaise`, `netOnlinePaise` and `onlineSettledPaise`. |
+| **Settlement per collection.** | Each QR's settlement is recorded against its own collection (`payment_settlements.collection_id`). An earning funded by several collections is PAYABLE only once every one of its online collections is settled. When the last one settles, the sync promotes it; until then the sync answers `PARTIALLY_SETTLED`. It never gets one settlement link of its own (CHECK `earnings_settlement_link_single_source`). The deferred `trg_earnings_settled` refuses PAYABLE, IN_PAYOUT or PAID with an unsettled online collection, for every role, the table owner included. No T+N delay is assumed: settlement is what Razorpay reports. The sync also finds recorded settlements not applied yet (a crash in between) and applies them. |
+| **Payout amount.** | A batch takes PAYABLE ONLINE and MIXED earnings, settled by the rule above, for their payout amount. One payout per driver adds them up, and gross = transfer while TDS stays disabled. `guard_payout_item_change` v2 requires an item to carry exactly the payout amount of a PAYABLE online or mixed earning of the payout's driver. The existing partial unique index keeps an earning in at most one live item. So an item can't carry the gross instead of the net, an unsettled amount, the first collection only, a stale value, or the same earning twice. |
+| **Failed payout → ON_HOLD (N10).** | A failed payout, or one refused before submission, releases its items and puts its earnings ON_HOLD (`PAYOUT_FAILED: payout <id> failed (<reason>); an admin releases the earning for a new payout`). This is audited as `PAYOUT_FAILED_EARNINGS_HELD`. Nothing is re-queued on its own: the database no longer allows IN_PAYOUT → PAYABLE. The existing `POST /v1/admin/earnings/:id/release` returns the earning to PAYABLE if every online part is settled, and to AWAITING_SETTLEMENT otherwise. It is idempotent, and only a new payout pays the earning. A duplicate webhook or a provider re-query changes nothing again. A returned payout keeps its existing hold (`PAYOUT_REVERSED`). |
+| **Admin booking chain.** | `merchantSettlements` lists every settlement of the booking. `merchantSettlement` (the first one) stays for older readers. Each collection shows its own settlement and the earning it funds. The earning shows its split, payout amount, settled online amount, every source with its settlement state, and each payout's item amount. Backend only. |
+| **Reconciliation.** | New earning findings: `EARNING_NOT_SUM_OF_SOURCES`, `FEE_NOT_SUM_OF_SOURCES`, `CASH_NOT_CASH_SOURCES`, `ONLINE_NOT_ONLINE_SOURCES`, `PAYOUT_AMOUNT_NOT_ONLINE_NET`, `PAYABLE_BEFORE_SETTLEMENT`, `SETTLED_BUT_AWAITING` (several collections), `COLLECTION_LINKED_TWICE`, `COLLECTION_FUNDS_SEVERAL_EARNINGS` and `COLLECTION_NOT_IN_EARNING`. New payout findings: `ITEM_NOT_EARNING_PAYOUT_AMOUNT` and `EARNING_IN_SEVERAL_LIVE_ITEMS`. A settled payment that matches none of ours, or one with another amount, is recorded in the new `settlement_findings` table: once per payment, settlement and kind, then only counted. It is never applied, and `GET /v1/admin/reconciliation/settlement-anomalies` lists it with the provider and internal amounts. Nothing is fixed silently. |
+| **Least privilege.** | The API role gets SELECT and INSERT on `settlement_findings`, and UPDATE of `occurrences` and `last_seen_at` only. The new earning and link columns are not updatable. The least-privilege suite runs a MIXED earning to PAID and records a finding with production grants, and checks the new refusals. |
+| **Non-local databases (N1).** | Still blocked until their preflight has been run and reviewed. Phase 5 is applied to the local dev database only, after its preflight was reviewed. |
+
+**Production restriction (technical, not policy): still in force.** Phase 5 makes multi-drop PAY_AT_DELIVERY bookings with a QR drop financially correct, payable and settleable in the backend. Local tests prove it with simulated providers. The operational restriction from Phase 4 is not lifted. Lift it only when all of these hold:
+1. Razorpay QR Codes are active on the live account (D-47, BK-3), and one real QR payment for a drop has been taken and confirmed by its webhook and by the driver refresh.
+2. Settlement reconciliation is verified on the live account (D-56, BK-5), and `SETTLEMENT_RECON_VERIFIED=true` is set. A real booking with two QR drops, settled separately, became PAYABLE only after its second settlement, and `settlement-anomalies` was empty for it.
+3. RazorpayX is active (D-46, D-58, BK-4). A real payout was processed, and the failure path (ON_HOLD, admin release, new payout) was run once by ops.
+4. Ops review ON_HOLD earnings (`PAYOUT_FAILED`, `PAYOUT_REVERSED`, `UNDELIVERED_STOP_REVIEW`) and the settlement anomalies daily.
+5. The production database's preflight has been reviewed (N1, BK-1) and this migration applied there.
+6. Raj approves lifting the restriction in writing.
+
+**Open business decisions: technical safe defaults, not final policy.** Raj reviewed both on approving Phase 5's technical architecture and asked that they stay explicitly open. Neither is a business rule. Each is a temporary safe value that a decision may replace (review section L).
+
+**OPEN: undelivered drop, financially (L-11; D-70 for PAY_AT_PICKUP).**
+- **Status:** OPEN business decision.
+- **Technical safe default (`EARNINGS_UNDELIVERED_DROP_HOLD=true`):** the trip's earning starts ON_HOLD when it has an online part and its booking has a drop resolved UNDELIVERED. The hold reason is `UNDELIVERED_STOP_REVIEW: drop N was not delivered; an admin reviews the trip before its online part is paid out`. An admin reviews the trip and releases the earning.
+- **Scope:** this also applies to a PAY_AT_PICKUP booking paid by QR, where the online part is the whole pickup payment. A cash-only earning has nothing to hold.
+- **Configurable:** `EARNINGS_UNDELIVERED_DROP_HOLD=false` turns the hold off. Such an earning is then paid out once settled, without review. The startup log reports the setting as an open item, and as a warning in production. The money rules below hold either way.
+- **What the default never does:** no money moves on its own. Nothing is refunded to the customer, and the driver's wallet is neither debited nor credited. Nothing is compensated. Any refund or recovery is left to Phase 6 and an admin (review L-7, L-9, L-10, L-15, L-21).
+- **Decision needed (Raj):** what the driver is paid for a trip with an undelivered drop, whether that differs between PAY_AT_PICKUP (the drop was paid) and PAY_AT_DELIVERY (it wasn't), and whether a review hold stays.
+
+**OPEN: payout of a partly paid trip (N5 driver pay).**
+- **Status:** OPEN business decision.
+- **Technical safe default:** an earning of a booking left PARTIALLY_PAID (a trip completed with an unpaid drop resolved UNDELIVERED, N5) can become payable. Phase 4 left such earnings out of every batch, so they would have waited for ever. Payout batches now take them, for what was actually collected and settled. REFUND_PENDING and REFUNDED bookings stay excluded.
+- **Only collected and settled money is paid out:**
+  - An unpaid or undelivered drop has no completed collection, so it contributes nothing to gross, fee or payout amount. The earning links only completed collections of its booking (insert guard), gross and fee add up to those links (`trg_earnings_sources`), and the payout amount is the online part net of its fee (CHECK).
+  - The earning is payable only once every online collection is settled (`trg_earnings_settled`), and a payout item carries exactly its payout amount (`guard_payout_item_change`).
+- **With the L-11 default,** such an earning with an online part starts ON_HOLD, so it is paid out only after an admin's release.
+- **What it never does:** no automatic compensation, refund, wallet debit or recovery for the unpaid portion. A later refund or recovery stays with the Phase 6 and admin flow.
+- **Decision needed (Raj):** whether and how a driver is paid for a partly paid trip.
+
+Both are pinned by tests: `multi-collection-earnings.int-spec.ts`, "undelivered drop", with the hold on and off.
+
+**Other behaviour changes to note (approved).**
+- **N10 ops impact:** every failed payout needs an admin release before its earnings are paid.
+- **Driver summary:** each status shows payout amounts, and `settledInCashPaise` is everything not paid out (net − payout amount). The cash drops of a MIXED trip no longer show as awaiting settlement.
+
+**Not in Phase 5.**
+- Phase 6: refunds, every policy switch off (paid then cancelled bookings, paid drops resolved as undelivered, money on closed QRs).
+- Phase 7: the financial event log, the audit endpoint and the stuck-collection recovery job.
+- The apps, engine-v2 and the admin UI.
+- Live provider validation (above).
+
+**Technical defaults introduced in Phase 5.** The first two are the open business decisions above. None of the others is a business decision.
+
+| Default | Where | Decision it waits for |
+|---|---|---|
+| A trip with an undelivered drop: its online part starts ON_HOLD for an admin's review; no money moves on its own (configurable: `EARNINGS_UNDELIVERED_DROP_HOLD`, default true) | `EarningsService.undeliveredStopHold`, config | **OPEN:** L-11 / D-70 |
+| A partly paid trip's earning can be paid out, for what was collected and settled only; no compensation, refund or recovery | `PayoutBatchesService.prepare` | **OPEN:** N5 driver pay |
+| An earning funded by several collections becomes payable at its last online collection's settlement time, or at the trip's completion if that is later | `EarningsService` | none |
+| The settlement sync answers `PARTIALLY_SETTLED` while other online collections of the earning are unsettled; it replaces Phase 4's `SEVERAL_COLLECTIONS` | `SettlementApplyOutcome` | none |
+| Settlement findings: `UNKNOWN_PAYMENT` and `AMOUNT_MISMATCH` are recorded; a wallet top-up's settlement (`NOT_A_BOOKING_PAYMENT`) is not | `MerchantSettlementsService.recordFinding` | none |
+| An earning's sources are listed in collection order (drop by drop) | `EARNING_SOURCES` | none |
+| `merchantSettlement` in the booking chain is kept (first settlement) next to the new `merchantSettlements` | booking chain | removal once no reader uses it |
+| The release of an earning on hold is idempotent: releasing a PAYABLE or AWAITING_SETTLEMENT earning changes nothing and writes no second audit record | `EarningsService.release` | none |
+| `down.sql` refuses once a payable or paid-out earning funded by several collections, or a settlement finding, exists | migration | none |

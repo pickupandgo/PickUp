@@ -92,6 +92,12 @@ export class ReconciliationController {
   }
 
   /** Cash collections whose platform fee and wallet debit disagree. */
+  /** Settled payments that matched none of ours, or another amount: never applied (Phase 5). */
+  @Get('reconciliation/settlement-anomalies')
+  settlementAnomalies(): Promise<Finding[]> {
+    return this.earnings.findSettlementAnomalies();
+  }
+
   @Get('reconciliation/cash-fee-mismatches')
   cashFeeMismatches(): Promise<Finding[]> {
     return this.earnings.findCashFeeMismatches();

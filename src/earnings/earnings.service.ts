@@ -1,7 +1,8 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import type { Principal } from '../auth/principal';
 import { recordAdminAction } from '../audit/admin-actions';
 import { computeEarningBreakdown } from '../common/deductions';
+import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import { feeForFare } from '../fees/fee-rules';
@@ -15,40 +16,76 @@ import type {
 } from '../generated/prisma/client';
 import type { EarningStatus } from '../generated/prisma/enums';
 import { PrismaService, type Tx } from '../prisma/prisma.service';
-import { type EarningFunding, earningFunding } from './earning-funding';
+import {
+  type EarningFunding,
+  earningFunding,
+  onlineSettlementProgress,
+  prepaidSplit,
+  type SourceSettlement,
+} from './earning-funding';
 
 export const EARNINGS_PAGE_SIZE = 20;
 
+/** Hold reason prefixes set by the system (an admin hold carries the admin's own reason). */
+export const HOLD_PAYMENT_DISPUTED = 'PAYMENT_DISPUTED';
+export const HOLD_UNDELIVERED_STOP_REVIEW = 'UNDELIVERED_STOP_REVIEW';
+
 /** What applying a merchant settlement did to a booking's earning. */
 export type SettlementApplyOutcome =
-  /** AWAITING_SETTLEMENT -> PAYABLE. */
+  /** AWAITING_SETTLEMENT -> PAYABLE: every online payment of the earning is now settled. */
   | 'PROMOTED'
-  /** ON_HOLD: the settlement is linked; the earning stays held until an admin releases it. */
+  /** ON_HOLD: the settlement is recorded; the earning stays held until an admin releases it. */
   | 'LINKED_ON_HOLD'
   | 'ALREADY_LINKED'
   /** The trip has not completed yet; the earning will start PAYABLE when it does. */
   | 'NO_EARNING_YET'
   /**
-   * Funded by several collections (a booking paid drop by drop): it stays AWAITING_SETTLEMENT.
-   * Making it payable once every online collection is settled is payment flow Phase 5.
+   * Funded by several collections and another online one is still unsettled: the earning stays
+   * AWAITING_SETTLEMENT until every one is (payment flow Phase 5).
    */
-  | 'SEVERAL_COLLECTIONS'
+  | 'PARTIALLY_SETTLED'
   | 'NOT_APPLICABLE';
 
+/** An earning with the collections that fund it and their merchant settlements. */
+export const EARNING_SOURCES = {
+  collectionLinks: {
+    // In the order the money was collected (drop by drop). The links themselves are all written
+    // in one transaction at trip completion, so their own created_at ties.
+    orderBy: [{ collection: { createdAt: 'asc' } }, { collectionId: 'asc' }],
+    include: {
+      collection: {
+        select: {
+          bookingStop: { select: { sequence: true } },
+          settlement: { select: { id: true, providerSettlementId: true, settledAt: true } },
+        },
+      },
+    },
+  },
+} satisfies Prisma.DriverEarningInclude;
+
+export type EarningWithSources = Prisma.DriverEarningGetPayload<{
+  include: typeof EARNING_SOURCES;
+}>;
+
 export interface EarningPage {
-  readonly items: DriverEarning[];
+  readonly items: EarningWithSources[];
   readonly nextCursor: string | null;
 }
 
+/**
+ * Totals per state. Each earning counts its payout amount under its status (0 for CASH, the online
+ * net otherwise) and the cash share the driver already kept under settledInCashPaise, so the cash
+ * part of a MIXED earning is never shown as waiting for a settlement.
+ */
 export interface EarningSummary {
-  /** ONLINE earnings whose customer payment Razorpay has not settled yet. Not payable. */
+  /** Payout amounts whose online payments Razorpay has not all settled yet. Not payable. */
   readonly awaitingSettlementPaise: bigint;
-  /** ONLINE earnings (settled) waiting for the next weekly payout. */
+  /** Settled payout amounts waiting for the next weekly payout. */
   readonly payablePaise: bigint;
   readonly inPayoutPaise: bigint;
   readonly onHoldPaise: bigint;
   readonly paidPaise: bigint;
-  /** Net share of CASH trips the driver already kept. */
+  /** The driver's share of cash already kept (cash collected minus its fee). */
   readonly settledInCashPaise: bigint;
   readonly grossPaise: bigint;
   readonly platformFeePaise: bigint;
@@ -68,17 +105,23 @@ export type DisputeHoldOutcome =
 export class EarningsService {
   private readonly logger = new Logger(EarningsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+  ) {}
 
   /**
    * Creates the earning for a trip that is completing, inside the completion transaction (the
    * caller holds the booking and trip locks). Idempotent: one earning per booking (UNIQUE).
    *
    *   prepaid or QR (money with Nikhil Enterprises) -> ONLINE:
-   *       AWAITING_SETTLEMENT until Razorpay settles the customer payment,
-   *       PAYABLE if that settlement is already recorded,
-   *       ON_HOLD if the payment is disputed
+   *       AWAITING_SETTLEMENT until Razorpay settles every online payment,
+   *       PAYABLE if those settlements are already recorded,
+   *       ON_HOLD if a payment is disputed, or a drop was left undelivered (L-11 / D-70 technical
+   *       safe default, EARNINGS_UNDELIVERED_DROP_HOLD)
    *   cash (money with the driver, fee already debited from the wallet) -> CASH, SETTLED_IN_CASH
+   *   both (a booking paid drop by drop) -> MIXED: the cash part is already with the driver; the
+   *       online part follows the ONLINE rules
    */
   async createForCompletedTrip(
     tx: Tx,
@@ -119,9 +162,10 @@ export class EarningsService {
       data = {
         ...base,
         ...breakdown(gross, onlineFee),
+        ...prepaidSplit(gross, onlineFee),
         settlement: 'ONLINE',
         paymentId: payment.id,
-        ...onlineStatus(disputed, settlement, completedAt),
+        ...onlineStatus(disputed ? DISPUTED_HOLD : null, settlement, completedAt),
       };
     } else {
       // Every completed collection of the booking funds the earning: one for a booking paid as a
@@ -146,6 +190,7 @@ export class EarningsService {
         ...base,
         // Gross is what was collected: the fare, unless a drop ended undelivered and unpaid (N5).
         ...breakdown(funding.grossPaise, funding.platformFeePaise),
+        ...funding.split,
         settlement: funding.settlement,
         collectionId: funding.collectionId,
       };
@@ -157,15 +202,27 @@ export class EarningsService {
         for (const collection of online) {
           disputed = disputed || (await this.isDisputed(tx, collection.providerPaymentId));
         }
-        // One online collection: payable once its settlement is recorded, as before. Several
-        // (or online and cash mixed) stay AWAITING_SETTLEMENT: making them payable, one
-        // settlement per collection, with the payout amount for the online part, is Phase 5.
-        const [only] = online;
-        const settlement =
-          funding.collectionId !== null && only
-            ? await tx.paymentSettlement.findUnique({ where: { collectionId: only.id } })
-            : null;
-        data = { ...fields, ...onlineStatus(disputed, settlement, completedAt) };
+        const hold = disputed ? DISPUTED_HOLD : await this.undeliveredStopHold(tx, booking.id);
+        const settlements = await tx.paymentSettlement.findMany({
+          where: { collectionId: { in: online.map((collection) => collection.id) } },
+        });
+        if (funding.collectionId !== null) {
+          // One online collection: its own settlement link, as before.
+          data = { ...fields, ...onlineStatus(hold, settlements[0] ?? null, completedAt) };
+        } else {
+          // Several: payable only once every online collection is settled (trg_earnings_settled).
+          const progress = onlineSettlementProgress(
+            online.map((collection) => ({
+              collectionId: collection.id,
+              method: 'ONLINE_QR',
+              amountPaise: collection.amountPaise,
+              settledAt:
+                settlements.find((settlement) => settlement.collectionId === collection.id)
+                  ?.settledAt ?? null,
+            })),
+          );
+          data = { ...fields, ...severalStatus(hold, progress.settledAt, completedAt) };
+        }
       }
     }
 
@@ -180,6 +237,7 @@ export class EarningsService {
           method: collection.method,
           amountPaise: collection.amountPaise,
           platformFeePaise: collection.platformFeePaise,
+          netAmountPaise: collection.amountPaise - collection.platformFeePaise,
         })),
       });
     }
@@ -192,6 +250,7 @@ export class EarningsService {
         status: earning.status,
         grossPaise: Number(earning.grossAmountPaise),
         feePaise: Number(earning.platformFeePaise),
+        payoutPaise: Number(earning.payoutAmountPaise),
       },
       'Driver earning recorded',
     );
@@ -224,30 +283,37 @@ export class EarningsService {
     const groups = await this.prisma.driverEarning.groupBy({
       by: ['status'],
       where: { driverId },
-      _sum: { netAmountPaise: true, grossAmountPaise: true, platformFeePaise: true },
+      _sum: {
+        netAmountPaise: true,
+        payoutAmountPaise: true,
+        grossAmountPaise: true,
+        platformFeePaise: true,
+      },
       _count: { _all: true },
     });
-    const net = (status: EarningStatus) =>
-      groups.find((group) => group.status === status)?._sum.netAmountPaise ?? 0n;
+    const payout = (status: EarningStatus) =>
+      groups.find((group) => group.status === status)?._sum.payoutAmountPaise ?? 0n;
+    const total = (
+      field: 'netAmountPaise' | 'payoutAmountPaise' | 'grossAmountPaise' | 'platformFeePaise',
+    ) => groups.reduce((sum, group) => sum + (group._sum[field] ?? 0n), 0n);
     return {
-      awaitingSettlementPaise: net('AWAITING_SETTLEMENT'),
-      payablePaise: net('PAYABLE'),
-      inPayoutPaise: net('IN_PAYOUT'),
-      onHoldPaise: net('ON_HOLD'),
-      paidPaise: net('PAID'),
-      settledInCashPaise: net('SETTLED_IN_CASH'),
-      grossPaise: groups.reduce((sum, group) => sum + (group._sum.grossAmountPaise ?? 0n), 0n),
-      platformFeePaise: groups.reduce(
-        (sum, group) => sum + (group._sum.platformFeePaise ?? 0n),
-        0n,
-      ),
+      awaitingSettlementPaise: payout('AWAITING_SETTLEMENT'),
+      payablePaise: payout('PAYABLE'),
+      inPayoutPaise: payout('IN_PAYOUT'),
+      onHoldPaise: payout('ON_HOLD'),
+      paidPaise: payout('PAID'),
+      // What is not paid out is the cash part, already kept: net - payout amount.
+      settledInCashPaise: total('netAmountPaise') - total('payoutAmountPaise'),
+      grossPaise: total('grossAmountPaise'),
+      platformFeePaise: total('platformFeePaise'),
       tripCount: groups.reduce((sum, group) => sum + group._count._all, 0),
     };
   }
 
-  async getForDriver(driverId: string, earningId: string): Promise<DriverEarning> {
+  async getForDriver(driverId: string, earningId: string): Promise<EarningWithSources> {
     const earning = await this.prisma.driverEarning.findFirst({
       where: { id: earningId, driverId },
+      include: EARNING_SOURCES,
     });
     if (!earning) {
       throw new AppError(ErrorCode.EARNING_NOT_FOUND, HttpStatus.NOT_FOUND, 'Earning not found');
@@ -255,8 +321,11 @@ export class EarningsService {
     return earning;
   }
 
-  async get(earningId: string): Promise<DriverEarning> {
-    const earning = await this.prisma.driverEarning.findUnique({ where: { id: earningId } });
+  async get(earningId: string): Promise<EarningWithSources> {
+    const earning = await this.prisma.driverEarning.findUnique({
+      where: { id: earningId },
+      include: EARNING_SOURCES,
+    });
     if (!earning) {
       throw new AppError(ErrorCode.EARNING_NOT_FOUND, HttpStatus.NOT_FOUND, 'Earning not found');
     }
@@ -267,11 +336,11 @@ export class EarningsService {
    * Admin hold: keeps an earning that is payable (or still waiting for its settlement) out of
    * payouts until released. Idempotent.
    */
-  async hold(admin: Principal, earningId: string, reason: string): Promise<DriverEarning> {
-    return this.prisma.runInTransaction(async (tx) => {
+  async hold(admin: Principal, earningId: string, reason: string): Promise<EarningWithSources> {
+    await this.prisma.runInTransaction(async (tx) => {
       const earning = await this.lock(tx, earningId);
       if (earning.status === 'ON_HOLD') {
-        return earning;
+        return;
       }
       if (earning.status !== 'PAYABLE' && earning.status !== 'AWAITING_SETTLEMENT') {
         throw invalidState(
@@ -279,7 +348,7 @@ export class EarningsService {
           'Only an earning that is payable or awaiting settlement can be put on hold',
         );
       }
-      const held = await tx.driverEarning.update({
+      await tx.driverEarning.update({
         where: { id: earningId },
         data: {
           status: 'ON_HOLD',
@@ -295,39 +364,34 @@ export class EarningsService {
         targetId: earningId,
         reason,
       });
-      return held;
     });
+    return this.get(earningId);
   }
 
   /**
-   * Admin release of an ON_HOLD earning. It becomes PAYABLE only if its customer payment is
-   * already settled; otherwise it goes back to AWAITING_SETTLEMENT. A release never makes
-   * unsettled money payable. Idempotent.
+   * Admin release of an ON_HOLD earning (a dispute, a failed or returned payout, an undelivered
+   * drop). It becomes PAYABLE only if every online payment of it is already settled; otherwise it
+   * goes back to AWAITING_SETTLEMENT. A release never makes unsettled money payable, and a
+   * released earning is paid only by a new payout. Idempotent.
    */
-  async release(admin: Principal, earningId: string, reason: string): Promise<DriverEarning> {
-    return this.prisma.runInTransaction(async (tx) => {
+  async release(admin: Principal, earningId: string, reason: string): Promise<EarningWithSources> {
+    await this.prisma.runInTransaction(async (tx) => {
       const earning = await this.lock(tx, earningId);
       if (earning.status === 'PAYABLE' || earning.status === 'AWAITING_SETTLEMENT') {
-        return earning;
+        return;
       }
       if (earning.status !== 'ON_HOLD') {
         throw invalidState(earning.status, 'Only an earning on hold can be released');
       }
-      const settlement = earning.paymentSettlementId
-        ? await tx.paymentSettlement.findUniqueOrThrow({
-            where: { id: earning.paymentSettlementId },
-          })
-        : null;
+      const settledAt = await this.settledAt(tx, earning);
       const cleared = { holdReason: null, heldAt: null, heldByUserId: null };
       const released = await tx.driverEarning.update({
         where: { id: earningId },
-        data: settlement
+        data: settledAt
           ? {
               ...cleared,
               status: 'PAYABLE',
-              ...(earning.payableAt
-                ? {}
-                : { payableAt: later(settlement.settledAt, earning.createdAt) }),
+              ...(earning.payableAt ? {} : { payableAt: later(settledAt, earning.createdAt) }),
             }
           : { ...cleared, status: 'AWAITING_SETTLEMENT' },
       });
@@ -339,19 +403,20 @@ export class EarningsService {
         reason,
         details: { previousHoldReason: earning.holdReason, releasedTo: released.status },
       });
-      return released;
     });
+    return this.get(earningId);
   }
 
   /**
    * Applies a recorded merchant settlement to the booking's earning, inside the settlement's
    * transaction (the caller holds the booking lock, the same lock trip completion takes, so a
-   * completing trip and a settlement never miss each other).
+   * completing trip and a settlement never miss each other). An earning funded by several
+   * collections becomes payable only with the settlement of its last unsettled online collection.
    */
   async applySettlement(
     tx: Tx,
     bookingId: string,
-    settlement: Pick<PaymentSettlement, 'id' | 'settledAt'>,
+    settlement: Pick<PaymentSettlement, 'id' | 'settledAt' | 'collectionId'>,
   ): Promise<SettlementApplyOutcome> {
     const rows = await tx.$queryRaw<{ id: string }[]>`
       SELECT id FROM driver_earnings WHERE booking_id = ${bookingId}::uuid FOR UPDATE`;
@@ -360,11 +425,11 @@ export class EarningsService {
       return 'NO_EARNING_YET';
     }
     const earning = await tx.driverEarning.findUniqueOrThrow({ where: { id: row.id } });
-    if (earning.paymentId === null && earning.collectionId === null) {
-      return 'SEVERAL_COLLECTIONS';
-    }
-    if (earning.settlement !== 'ONLINE') {
+    if (earning.settlement === 'CASH') {
       return 'NOT_APPLICABLE';
+    }
+    if (earning.paymentId === null && earning.collectionId === null) {
+      return this.applyToSeveral(tx, earning, settlement);
     }
     if (earning.paymentSettlementId) {
       return 'ALREADY_LINKED';
@@ -427,6 +492,92 @@ export class EarningsService {
     }
   }
 
+  /** The collections funding an earning, with when each online one was settled. */
+  async sourcesOf(db: Tx | PrismaService, earningId: string): Promise<SourceSettlement[]> {
+    const links = await db.earningCollection.findMany({
+      where: { earningId },
+      include: { collection: { select: { settlement: { select: { settledAt: true } } } } },
+    });
+    return links.map((link) => ({
+      collectionId: link.collectionId,
+      method: link.method,
+      amountPaise: link.amountPaise,
+      settledAt: link.collection.settlement?.settledAt ?? null,
+    }));
+  }
+
+  /** Several collections: payable once the last unsettled online one is settled. */
+  private async applyToSeveral(
+    tx: Tx,
+    earning: DriverEarning,
+    settlement: Pick<PaymentSettlement, 'id' | 'settledAt' | 'collectionId'>,
+  ): Promise<SettlementApplyOutcome> {
+    const sources = await this.sourcesOf(tx, earning.id);
+    if (
+      !sources.some(
+        (source) =>
+          source.method === 'ONLINE_QR' && source.collectionId === settlement.collectionId,
+      )
+    ) {
+      return 'NOT_APPLICABLE';
+    }
+    const progress = onlineSettlementProgress(sources);
+    if (!progress.fullySettled || progress.settledAt === null) {
+      return 'PARTIALLY_SETTLED';
+    }
+    if (earning.status === 'AWAITING_SETTLEMENT') {
+      await tx.driverEarning.update({
+        where: { id: earning.id },
+        data: { status: 'PAYABLE', payableAt: later(progress.settledAt, earning.createdAt) },
+      });
+      this.logger.log(
+        { earningId: earning.id, bookingId: earning.bookingId, settlementId: settlement.id },
+        'Earning is payable: every online collection is settled',
+      );
+      return 'PROMOTED';
+    }
+    return earning.status === 'ON_HOLD' ? 'LINKED_ON_HOLD' : 'ALREADY_LINKED';
+  }
+
+  /** When the earning's online money was fully settled, or null while it isn't (or is cash). */
+  private async settledAt(tx: Tx, earning: DriverEarning): Promise<Date | null> {
+    if (earning.settlement === 'CASH') {
+      return null;
+    }
+    if (earning.paymentId !== null || earning.collectionId !== null) {
+      if (!earning.paymentSettlementId) {
+        return null;
+      }
+      const settlement = await tx.paymentSettlement.findUniqueOrThrow({
+        where: { id: earning.paymentSettlementId },
+      });
+      return settlement.settledAt;
+    }
+    return onlineSettlementProgress(await this.sourcesOf(tx, earning.id)).settledAt;
+  }
+
+  /**
+   * L-11 / D-70 (open business decisions; technical safe default, not a final rule): with
+   * EARNINGS_UNDELIVERED_DROP_HOLD on (the default), a drop left undelivered holds the online part
+   * for an admin's review. Either way the earning carries only what was collected (an unpaid drop
+   * adds nothing), and nothing is refunded, compensated or debited on its own.
+   */
+  private async undeliveredStopHold(tx: Tx, bookingId: string): Promise<string | null> {
+    if (!this.config.earnings.undeliveredDropHold) {
+      return null;
+    }
+    const undelivered = await tx.bookingStop.findMany({
+      where: { bookingId, status: 'UNDELIVERED' },
+      select: { sequence: true },
+      orderBy: { sequence: 'asc' },
+    });
+    if (undelivered.length === 0) {
+      return null;
+    }
+    const drops = undelivered.map((stop) => stop.sequence).join(', ');
+    return `${HOLD_UNDELIVERED_STOP_REVIEW}: drop ${drops} was not delivered; an admin reviews the trip before its online part is paid out`;
+  }
+
   private async lock(tx: Tx, earningId: string): Promise<DriverEarning> {
     const rows = await tx.$queryRaw<{ id: string }[]>`
       SELECT id FROM driver_earnings WHERE id = ${earningId}::uuid FOR UPDATE`;
@@ -451,6 +602,7 @@ export class EarningsService {
     const limit = options.limit ?? EARNINGS_PAGE_SIZE;
     const rows = await this.prisma.driverEarning.findMany({
       where,
+      include: EARNING_SOURCES,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       ...(options.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
@@ -461,6 +613,8 @@ export class EarningsService {
     return { items, nextCursor: hasMore && last ? last.id : null };
   }
 }
+
+const DISPUTED_HOLD = `${HOLD_PAYMENT_DISPUTED}: the customer payment has a dispute`;
 
 /** Server-side amounts of an earning (fee from the pinned rule; TDS policy DISABLED). */
 function breakdown(
@@ -480,22 +634,22 @@ function breakdown(
 }
 
 /**
- * Starting state of an ONLINE earning. It is payable only once Razorpay has settled the customer
- * payment; a dispute holds it either way.
+ * Starting state of an earning with one online source. It is payable only once Razorpay has
+ * settled the customer payment; a hold (dispute, undelivered drop) keeps it held either way.
  */
 function onlineStatus(
-  disputed: boolean,
+  holdReason: string | null,
   settlement: Pick<PaymentSettlement, 'id' | 'settledAt'> | null,
   completedAt: Date,
 ): Pick<
   Prisma.DriverEarningUncheckedCreateInput,
   'status' | 'payableAt' | 'holdReason' | 'heldAt' | 'paymentSettlementId'
 > {
-  if (disputed) {
+  if (holdReason) {
     return {
       status: 'ON_HOLD',
       paymentSettlementId: settlement?.id ?? null,
-      holdReason: 'PAYMENT_DISPUTED: the customer payment has a dispute',
+      holdReason,
       heldAt: completedAt,
     };
   }
@@ -505,6 +659,27 @@ function onlineStatus(
       paymentSettlementId: settlement.id,
       payableAt: later(settlement.settledAt, completedAt),
     };
+  }
+  return { status: 'AWAITING_SETTLEMENT' };
+}
+
+/**
+ * Starting state of an earning funded by several collections with online money: payable once
+ * every online collection is settled (`settledAt` is the latest of them), never on one alone.
+ */
+function severalStatus(
+  holdReason: string | null,
+  settledAt: Date | null,
+  completedAt: Date,
+): Pick<
+  Prisma.DriverEarningUncheckedCreateInput,
+  'status' | 'payableAt' | 'holdReason' | 'heldAt'
+> {
+  if (holdReason) {
+    return { status: 'ON_HOLD', holdReason, heldAt: completedAt };
+  }
+  if (settledAt) {
+    return { status: 'PAYABLE', payableAt: later(settledAt, completedAt) };
   }
   return { status: 'AWAITING_SETTLEMENT' };
 }

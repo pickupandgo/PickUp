@@ -99,6 +99,107 @@ export class EarningsReconciliationService {
                s.amount_paise, 'earning gross ' || e.gross_amount_paise::text
         FROM driver_earnings e JOIN payment_settlements s ON s.id = e.payment_settlement_id
         WHERE s.amount_paise <> e.gross_amount_paise
+        UNION ALL
+        -- Payment flow Phase 5: an earning against its linked collections, by method.
+        SELECT 'EARNING_NOT_SUM_OF_SOURCES', e.booking_id, e.id, NULL, NULL,
+               e.gross_amount_paise,
+               'sources ' || l.amount::text || ' paise, fees ' || l.fee::text
+        FROM driver_earnings e
+        JOIN (SELECT earning_id, sum(amount_paise) AS amount, sum(platform_fee_paise) AS fee,
+                     coalesce(sum(amount_paise) FILTER (WHERE method = 'CASH'), 0) AS cash,
+                     coalesce(sum(amount_paise) FILTER (WHERE method = 'ONLINE_QR'), 0) AS online,
+                     coalesce(sum(platform_fee_paise) FILTER (WHERE method = 'CASH'), 0) AS cash_fee,
+                     coalesce(sum(platform_fee_paise) FILTER (WHERE method = 'ONLINE_QR'), 0) AS online_fee
+                FROM earning_collections GROUP BY earning_id) l ON l.earning_id = e.id
+        WHERE l.amount <> e.gross_amount_paise
+        UNION ALL
+        SELECT 'FEE_NOT_SUM_OF_SOURCES', e.booking_id, e.id, NULL, NULL, e.platform_fee_paise,
+               'source fees ' || l.fee::text
+        FROM driver_earnings e
+        JOIN (SELECT earning_id, sum(platform_fee_paise) AS fee FROM earning_collections
+               GROUP BY earning_id) l ON l.earning_id = e.id
+        WHERE l.fee <> e.platform_fee_paise
+        UNION ALL
+        SELECT 'CASH_NOT_CASH_SOURCES', e.booking_id, e.id, NULL, NULL, e.cash_collected_paise,
+               'cash sources ' || l.cash::text || ', fees ' || l.cash_fee::text
+        FROM driver_earnings e
+        JOIN (SELECT earning_id,
+                     coalesce(sum(amount_paise) FILTER (WHERE method = 'CASH'), 0) AS cash,
+                     coalesce(sum(platform_fee_paise) FILTER (WHERE method = 'CASH'), 0) AS cash_fee
+                FROM earning_collections GROUP BY earning_id) l ON l.earning_id = e.id
+        WHERE l.cash <> e.cash_collected_paise OR l.cash_fee <> e.cash_fee_paise
+        UNION ALL
+        SELECT 'ONLINE_NOT_ONLINE_SOURCES', e.booking_id, e.id, NULL, NULL, e.online_collected_paise,
+               'online sources ' || l.online::text || ', fees ' || l.online_fee::text
+        FROM driver_earnings e
+        JOIN (SELECT earning_id,
+                     coalesce(sum(amount_paise) FILTER (WHERE method = 'ONLINE_QR'), 0) AS online,
+                     coalesce(sum(platform_fee_paise) FILTER (WHERE method = 'ONLINE_QR'), 0) AS online_fee
+                FROM earning_collections GROUP BY earning_id) l ON l.earning_id = e.id
+        WHERE l.online <> e.online_collected_paise OR l.online_fee <> e.online_fee_paise
+        UNION ALL
+        -- The payout amount the approved model gives: nothing for cash, the online net otherwise.
+        SELECT 'PAYOUT_AMOUNT_NOT_ONLINE_NET', e.booking_id, e.id, NULL, NULL,
+               e.payout_amount_paise,
+               'expected ' || (CASE e.settlement WHEN 'CASH' THEN 0
+                                    WHEN 'ONLINE' THEN e.net_amount_paise
+                                    ELSE e.online_collected_paise - e.online_fee_paise END)::text
+        FROM driver_earnings e
+        WHERE e.payout_amount_paise <> CASE e.settlement WHEN 'CASH' THEN 0
+                                            WHEN 'ONLINE' THEN e.net_amount_paise
+                                            ELSE e.online_collected_paise - e.online_fee_paise END
+        UNION ALL
+        -- Every online collection of an earning funded by several is settled, yet it still waits.
+        SELECT 'SETTLED_BUT_AWAITING', e.booking_id, e.id, NULL, NULL, e.payout_amount_paise,
+               'every online collection is settled'
+        FROM driver_earnings e
+        WHERE e.status = 'AWAITING_SETTLEMENT'::earning_status
+          AND e.payment_id IS NULL AND e.collection_id IS NULL
+          AND EXISTS (SELECT 1 FROM earning_collections l
+                      WHERE l.earning_id = e.id AND l.method = 'ONLINE_QR')
+          AND NOT EXISTS (SELECT 1 FROM earning_collections l
+                          WHERE l.earning_id = e.id AND l.method = 'ONLINE_QR'
+                            AND NOT EXISTS (SELECT 1 FROM payment_settlements s
+                                            WHERE s.collection_id = l.collection_id))
+        UNION ALL
+        -- Payable, in a payout or paid while some online money is not settled yet.
+        SELECT 'PAYABLE_BEFORE_SETTLEMENT', e.booking_id, e.id, NULL, l.collection_id,
+               l.amount_paise, 'online collection not settled'
+        FROM driver_earnings e
+        JOIN earning_collections l ON l.earning_id = e.id AND l.method = 'ONLINE_QR'
+        WHERE e.status IN ('PAYABLE'::earning_status, 'IN_PAYOUT'::earning_status,
+                           'PAID'::earning_status)
+          AND NOT EXISTS (SELECT 1 FROM payment_settlements s WHERE s.collection_id = l.collection_id)
+        UNION ALL
+        SELECT 'PAYABLE_BEFORE_SETTLEMENT', e.booking_id, e.id, NULL, e.collection_id,
+               e.payout_amount_paise, 'no settlement link'
+        FROM driver_earnings e
+        WHERE e.settlement IN ('ONLINE'::earning_settlement, 'MIXED'::earning_settlement)
+          AND e.status IN ('PAYABLE'::earning_status, 'IN_PAYOUT'::earning_status,
+                           'PAID'::earning_status)
+          AND (e.payment_id IS NOT NULL OR e.collection_id IS NOT NULL)
+          AND e.payment_settlement_id IS NULL
+        UNION ALL
+        -- A collection funds at most one earning: one link row (primary key), and never the
+        -- direct source of one earning while linked to another.
+        SELECT 'COLLECTION_LINKED_TWICE', NULL, NULL, NULL, l.collection_id, NULL,
+               count(*)::text || ' links'
+        FROM earning_collections l GROUP BY l.collection_id HAVING count(*) > 1
+        UNION ALL
+        SELECT 'COLLECTION_FUNDS_SEVERAL_EARNINGS', e.booking_id, e.id, NULL, e.collection_id,
+               NULL, 'also linked to earning ' || l.earning_id::text
+        FROM driver_earnings e
+        JOIN earning_collections l ON l.collection_id = e.collection_id AND l.earning_id <> e.id
+        UNION ALL
+        -- Money completed for a booking after its earning was recorded: in no earning.
+        SELECT 'COLLECTION_NOT_IN_EARNING', c.booking_id, e.id, NULL, c.id, c.amount_paise,
+               c.method || ' completed ' || COALESCE(c.completed_at::text, 'unknown')
+        FROM payment_collections c
+        JOIN driver_earnings e ON e.booking_id = c.booking_id
+        WHERE c.status = 'COMPLETED'
+          AND e.collection_id IS DISTINCT FROM c.id
+          AND NOT EXISTS (SELECT 1 FROM earning_collections l WHERE l.collection_id = c.id)
+          AND e.payment_id IS NULL
       ) findings
       ORDER BY problem, booking_id
       LIMIT ${ROW_LIMIT}`;
@@ -145,13 +246,50 @@ export class EarningsReconciliationService {
         SELECT 'REVERSED', NULL, NULL, p.id, NULL, p.amount_paise, p.failure_reason
         FROM driver_payouts p
         WHERE p.status = 'REVERSED'::payout_status
+        UNION ALL
+        -- Payment flow Phase 5: an item carries exactly its earning's payout amount.
+        SELECT 'ITEM_NOT_EARNING_PAYOUT_AMOUNT', e.booking_id, e.id, i.payout_id, NULL,
+               i.amount_paise, 'earning payout amount ' || e.payout_amount_paise::text
+        FROM payout_items i JOIN driver_earnings e ON e.id = i.earning_id
+        WHERE i.amount_paise <> e.payout_amount_paise
+        UNION ALL
+        SELECT 'EARNING_IN_SEVERAL_LIVE_ITEMS', NULL, i.earning_id, NULL, NULL, NULL,
+               count(*)::text || ' live items'
+        FROM payout_items i
+        WHERE i.status IN ('INCLUDED'::payout_item_status, 'PAID'::payout_item_status)
+        GROUP BY i.earning_id HAVING count(*) > 1
       ) findings
       ORDER BY problem, payout_id
       LIMIT ${ROW_LIMIT}`;
     return rows.map(toFinding);
   }
 
-  /** Failed payouts: their earnings went back to PAYABLE and ride the next batch. */
+  /**
+   * Settled payments from Razorpay's settlement data that matched none of our payments, or one of
+   * ours with a different amount (payment flow Phase 5). Never applied to an earning.
+   */
+  async findSettlementAnomalies(): Promise<Finding[]> {
+    const findings = await this.prisma.settlementFinding.findMany({
+      orderBy: { lastSeenAt: 'desc' },
+      take: ROW_LIMIT,
+    });
+    return findings.map((finding) => ({
+      problem: `SETTLEMENT_${finding.kind}`,
+      bookingId: finding.bookingId,
+      earningId: null,
+      payoutId: null,
+      collectionId: finding.collectionId,
+      amountPaise: paiseToNumber(finding.settledAmountPaise),
+      detail:
+        `${finding.providerPaymentId} in ${finding.providerSettlementId}` +
+        (finding.expectedAmountPaise === null
+          ? ''
+          : `, expected ${finding.expectedAmountPaise.toString()} paise`) +
+        `, seen ${finding.occurrences} time(s), last ${finding.lastSeenAt.toISOString()}`,
+    }));
+  }
+
+  /** Failed payouts: their earnings are ON_HOLD (PAYOUT_FAILED) until an admin releases them. */
   async findFailedPayouts(): Promise<Finding[]> {
     const rows = await this.prisma.$queryRaw<FindingRow[]>`
       SELECT 'PAYOUT_FAILED' AS problem, NULL::uuid AS booking_id, NULL::uuid AS earning_id,
@@ -228,7 +366,7 @@ export class EarningsReconciliationService {
     const rows = await this.prisma.$queryRaw<
       { driver_id: string; payable: bigint; earnings: bigint }[]
     >`
-      SELECT e.driver_id, SUM(e.net_amount_paise)::bigint AS payable, COUNT(*)::bigint AS earnings
+      SELECT e.driver_id, SUM(e.payout_amount_paise)::bigint AS payable, COUNT(*)::bigint AS earnings
       FROM driver_earnings e
       WHERE e.status = 'PAYABLE'::earning_status
         AND NOT EXISTS (SELECT 1 FROM driver_bank_accounts a

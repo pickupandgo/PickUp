@@ -96,6 +96,14 @@ export const envSchema = z
     // rule and a versioned tax rule is implemented (OPEN_DECISIONS D-57); true is refused.
     TDS_ENABLED: booleanString.default(false),
 
+    // A completed trip with a drop resolved UNDELIVERED (OPEN_DECISIONS L-11 / D-70: an open
+    // business decision, not a final rule). true is the technical safe default: the online part
+    // of that trip's earning starts ON_HOLD (UNDELIVERED_STOP_REVIEW) until an admin reviews and
+    // releases it. false: it follows the normal rules (payable once every online collection is
+    // settled). Either way the earning carries only the money actually collected, and nothing
+    // moves on its own: no refund, no wallet debit or credit.
+    EARNINGS_UNDELIVERED_DROP_HOLD: booleanString.default(true),
+
     // How long a fare quote can be booked (seconds). After that the app must ask for a new
     // quote, so a customer always pays a price calculated by the current pricing version.
     FARE_QUOTE_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),

@@ -3,6 +3,9 @@ import { toAdminBookingStopView } from '../bookings/bookings.mapper';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import { paiseToNumber } from '../common/money';
+import { toEarningResponse, toEarningSourceView } from '../earnings/earnings.mapper';
+import { EARNING_SOURCES } from '../earnings/earnings.service';
+import type { PaymentSettlement } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 const iso = (value: Date | null | undefined): string | null => (value ? value.toISOString() : null);
@@ -27,16 +30,19 @@ export class BookingChainService {
         trip: true,
         stops: { orderBy: { sequence: 'asc' } },
         payments: { orderBy: { createdAt: 'asc' } },
-        collections: { orderBy: { createdAt: 'asc' }, include: { walletTransaction: true } },
+        collections: {
+          orderBy: { createdAt: 'asc' },
+          include: { walletTransaction: true, settlement: true, earningLink: true },
+        },
         disputes: true,
-        settlements: { orderBy: { createdAt: 'asc' } },
+        settlements: { orderBy: [{ settledAt: 'asc' }, { createdAt: 'asc' }] },
         earning: {
           include: {
             payoutItems: {
               orderBy: { createdAt: 'asc' },
               include: { payout: { include: { batch: true } } },
             },
-            collectionLinks: { orderBy: { createdAt: 'asc' } },
+            ...EARNING_SOURCES,
           },
         },
       },
@@ -115,6 +121,10 @@ export class BookingChainService {
           : null,
         failureReason: collection.failureReason,
         completedAt: iso(collection.completedAt),
+        /** Online only: Razorpay's settlement of this collection to Nikhil Enterprises, once known. */
+        settlement: collection.settlement ? settlementView(collection.settlement) : null,
+        /** The earning it funds, once the trip completed. */
+        earningId: collection.earningLink?.earningId ?? null,
       })),
       disputes: booking.disputes.map((dispute) => ({
         providerDisputeId: dispute.providerDisputeId,
@@ -122,69 +132,87 @@ export class BookingChainService {
         status: dispute.status,
         amountPaise: paiseToNumber(dispute.amountPaise),
       })),
-      /** Razorpay's settlement of the customer payment to Nikhil Enterprises, once known. */
-      merchantSettlement: (() => {
-        const settlement = booking.settlements[0];
-        return settlement
-          ? {
-              settlementId: settlement.id,
-              providerPaymentId: settlement.providerPaymentId,
-              providerSettlementId: settlement.providerSettlementId,
-              settlementUtr: settlement.settlementUtr,
-              settledAt: settlement.settledAt.toISOString(),
-              amountPaise: paiseToNumber(settlement.amountPaise),
-              feePaise: paiseToNumber(settlement.feePaise),
-              taxPaise: paiseToNumber(settlement.taxPaise),
-              source: settlement.source,
-              recordedAt: settlement.createdAt.toISOString(),
-            }
-          : null;
-      })(),
+      /**
+       * The booking's first merchant settlement, kept for older readers. A booking paid drop by
+       * drop can have one per online collection: see merchantSettlements.
+       */
+      merchantSettlement: booking.settlements[0] ? settlementView(booking.settlements[0]) : null,
+      /** Every merchant settlement of the booking's payments, one per settled payment. */
+      merchantSettlements: booking.settlements.map(settlementView),
       earning: earning
-        ? {
-            earningId: earning.id,
-            settlement: earning.settlement,
-            status: earning.status,
-            grossAmountPaise: paiseToNumber(earning.grossAmountPaise),
-            platformFeePaise: paiseToNumber(earning.platformFeePaise),
-            otherDeductionsPaise: paiseToNumber(earning.otherDeductionsPaise),
-            tdsAmountPaise: paiseToNumber(earning.tdsAmountPaise),
-            tdsPolicy: earning.tdsPolicy,
-            taxRuleId: earning.taxRuleId,
-            netAmountPaise: paiseToNumber(earning.netAmountPaise),
-            /**
-             * Every collection that funds the earning, with its method, amount and fee share (none
-             * for a prepaid earning, or one recorded before collections were linked).
-             */
-            collections: earning.collectionLinks.map((link) => ({
-              collectionId: link.collectionId,
-              method: link.method,
-              amountPaise: paiseToNumber(link.amountPaise),
-              platformFeePaise: paiseToNumber(link.platformFeePaise),
-            })),
-            /** ONLINE: true once the customer payment's merchant settlement is recorded. */
-            merchantSettled: earning.paymentSettlementId !== null,
-            paymentSettlementId: earning.paymentSettlementId,
-            payableAt: iso(earning.payableAt),
-            paidAt: iso(earning.paidAt),
-            holdReason: earning.holdReason,
-            /** True only when a processed payout carried this earning. */
-            paidOut: earning.status === 'PAID',
-            payoutHistory: earning.payoutItems.map((item) => ({
-              payoutItemStatus: item.status,
-              payoutId: item.payout.id,
-              payoutStatus: item.payout.status,
-              providerPayoutId: item.payout.providerPayoutId,
-              utr: item.payout.utr,
-              batchId: item.payout.batch.id,
-              cycleKey: item.payout.batch.cycleKey,
-              processedAt: iso(item.payout.processedAt),
-              failedAt: iso(item.payout.failedAt),
-              failureReason: item.payout.failureReason,
-            })),
-            currentPayoutId: activeItem?.payout.id ?? null,
-          }
+        ? (() => {
+            const view = toEarningResponse(earning);
+            return {
+              earningId: earning.id,
+              settlement: earning.settlement,
+              status: earning.status,
+              grossAmountPaise: paiseToNumber(earning.grossAmountPaise),
+              platformFeePaise: paiseToNumber(earning.platformFeePaise),
+              otherDeductionsPaise: paiseToNumber(earning.otherDeductionsPaise),
+              tdsAmountPaise: paiseToNumber(earning.tdsAmountPaise),
+              tdsPolicy: earning.tdsPolicy,
+              taxRuleId: earning.taxRuleId,
+              netAmountPaise: paiseToNumber(earning.netAmountPaise),
+              /** Where the money is: cash with the driver, online with Nikhil Enterprises. */
+              cashCollectedPaise: view.cashCollectedPaise,
+              onlineCollectedPaise: view.onlineCollectedPaise,
+              cashFeePaise: view.cashFeePaise,
+              onlineFeePaise: view.onlineFeePaise,
+              netCashPaise: view.netCashPaise,
+              netOnlinePaise: view.netOnlinePaise,
+              /** What a payout carries for this earning. */
+              payoutAmountPaise: view.payoutAmountPaise,
+              onlineSettledPaise: view.onlineSettledPaise,
+              /**
+               * Every collection that funds the earning, with its method, amount, fee share and
+               * settlement state (none for a prepaid earning, or one recorded before collections
+               * were linked).
+               */
+              collections: earning.collectionLinks.map(toEarningSourceView),
+              /** True once every online payment of the earning is settled. */
+              merchantSettled: view.merchantSettled,
+              paymentSettlementId: earning.paymentSettlementId,
+              payableAt: iso(earning.payableAt),
+              paidAt: iso(earning.paidAt),
+              holdReason: earning.holdReason,
+              /** True only when a processed payout carried this earning. */
+              paidOut: earning.status === 'PAID',
+              /** Every payout that carried the earning, failed ones included, with its amount. */
+              payoutHistory: earning.payoutItems.map((item) => ({
+                payoutItemStatus: item.status,
+                payoutItemAmountPaise: paiseToNumber(item.amountPaise),
+                payoutId: item.payout.id,
+                payoutStatus: item.payout.status,
+                providerPayoutId: item.payout.providerPayoutId,
+                utr: item.payout.utr,
+                batchId: item.payout.batch.id,
+                cycleKey: item.payout.batch.cycleKey,
+                processedAt: iso(item.payout.processedAt),
+                failedAt: iso(item.payout.failedAt),
+                failureReason: item.payout.failureReason,
+              })),
+              currentPayoutId: activeItem?.payout.id ?? null,
+            };
+          })()
         : null,
     };
   }
+}
+
+function settlementView(settlement: PaymentSettlement) {
+  return {
+    settlementId: settlement.id,
+    providerPaymentId: settlement.providerPaymentId,
+    providerSettlementId: settlement.providerSettlementId,
+    settlementUtr: settlement.settlementUtr,
+    settledAt: settlement.settledAt.toISOString(),
+    amountPaise: paiseToNumber(settlement.amountPaise),
+    feePaise: paiseToNumber(settlement.feePaise),
+    taxPaise: paiseToNumber(settlement.taxPaise),
+    /** The online collection settled (null for a prepaid booking payment). */
+    collectionId: settlement.collectionId,
+    paymentId: settlement.paymentId,
+    source: settlement.source,
+    recordedAt: settlement.createdAt.toISOString(),
+  };
 }

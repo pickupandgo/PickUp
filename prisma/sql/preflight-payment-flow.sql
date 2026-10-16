@@ -1,7 +1,8 @@
 -- Read-only inventory before the PAY AT PICKUP / per-drop PAY AT DELIVERY migrations
 -- (20261015120000_booking_quote_snapshot, 20261016120000_per_stop_obligation_schema,
 -- 20261017120000_payment_gate_stop_lifecycle, 20261018120000_partially_paid_mixed_enums,
--- 20261018120100_obligation_collections, and later payment-flow migrations). Run it in every
+-- 20261018120100_obligation_collections, 20261019120000_mixed_earnings_payout_hold, and later
+-- payment-flow migrations). Run it in every
 -- environment that holds data, and review the output before migrating:
 --   psql "$DATABASE_URL" -f prisma/sql/preflight-payment-flow.sql
 -- It only SELECTs; the transaction is READ ONLY so it cannot change anything by mistake. Every
@@ -152,5 +153,81 @@ SELECT CASE WHEN to_jsonb(t) ->> 'idempotency_key' LIKE 'cash-ride-fee:collectio
 FROM driver_wallet_transactions t
 WHERE t.type::text = 'CASH_RIDE_FEE'
 GROUP BY 1 ORDER BY 1;
+
+-- Payment flow Phase 5 (20261019120000_mixed_earnings_payout_hold): the cash / online split and
+-- payout amount of every earning, settlement per collection, failed payouts held for an admin.
+
+\echo '== Phase 5 schema: earning split and settlement findings (false: before 20261019120000) =='
+SELECT EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = 'public' AND table_name = 'driver_earnings'
+                 AND column_name = 'payout_amount_paise') AS earning_split_present,
+       to_regclass('public.settlement_findings') IS NOT NULL AS settlement_findings_present;
+
+\echo '== Earnings by settlement and status with their split and payout amount (NULL: before 20261019120000, which fills them from each earning''s own sources: CASH pays out 0, ONLINE its net, MIXED its online part net of its fee) =='
+SELECT settlement, status, count(*) AS earnings, COALESCE(sum(net_amount_paise), 0) AS net_paise,
+       sum((to_jsonb(e) ->> 'cash_collected_paise')::bigint) AS cash_collected_paise,
+       sum((to_jsonb(e) ->> 'online_collected_paise')::bigint) AS online_collected_paise,
+       sum((to_jsonb(e) ->> 'payout_amount_paise')::bigint) AS payout_amount_paise
+FROM driver_earnings e GROUP BY 1, 2 ORDER BY 1, 2;
+
+\echo '== Earnings funded by several collections by settlement/status, their online collections settled or not, and any payable before all are settled (must be 0) (NULL: before 20261018120100) =='
+SELECT CASE WHEN to_regclass('public.earning_collections') IS NULL THEN NULL
+            ELSE (xpath('/row/s/text()', query_to_xml(
+                     'SELECT COALESCE(string_agg(k || ''='' || n, '', '' ORDER BY k), ''(none)'') AS s
+                        FROM (SELECT e.settlement::text || ''/'' || e.status::text AS k, count(*) AS n
+                                FROM driver_earnings e
+                               WHERE e.payment_id IS NULL AND e.collection_id IS NULL
+                               GROUP BY 1) per_kind',
+                     false, true, '')))[1]::text
+       END AS several_collection_earnings,
+       CASE WHEN to_regclass('public.earning_collections') IS NULL THEN NULL
+            ELSE (xpath('/row/s/text()', query_to_xml(
+                     'SELECT count(*) FILTER (WHERE s.id IS NOT NULL) || '' settled, ''
+                             || count(*) FILTER (WHERE s.id IS NULL) || '' unsettled'' AS s
+                        FROM earning_collections l
+                        JOIN driver_earnings e ON e.id = l.earning_id
+                         AND e.payment_id IS NULL AND e.collection_id IS NULL
+                        LEFT JOIN payment_settlements s ON s.collection_id = l.collection_id
+                       WHERE l.method = ''ONLINE_QR''',
+                     false, true, '')))[1]::text
+       END AS their_online_collections,
+       CASE WHEN to_regclass('public.earning_collections') IS NULL THEN NULL
+            ELSE (xpath('/row/n/text()', query_to_xml(
+                     'SELECT count(DISTINCT e.id) AS n
+                        FROM driver_earnings e
+                        JOIN earning_collections l ON l.earning_id = e.id AND l.method = ''ONLINE_QR''
+                       WHERE e.payment_id IS NULL AND e.collection_id IS NULL
+                         AND e.status::text IN (''PAYABLE'', ''IN_PAYOUT'', ''PAID'')
+                         AND NOT EXISTS (SELECT 1 FROM payment_settlements s
+                                          WHERE s.collection_id = l.collection_id)',
+                     false, true, '')))[1]::text::bigint
+       END AS payable_with_an_unsettled_online_collection;
+
+\echo '== Earnings of failed or returned payouts by their status now: before 20261019120000 a failed payout put them back to PAYABLE on its own; after it they wait ON_HOLD for an admin (N10) =='
+SELECT p.status AS payout_status, i.status AS item_status, e.status AS earning_status,
+       count(DISTINCT e.id) AS earnings
+FROM driver_payouts p
+JOIN payout_items i ON i.payout_id = p.id
+JOIN driver_earnings e ON e.id = i.earning_id
+WHERE p.status::text IN ('FAILED', 'REVERSED')
+GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;
+
+\echo '== Unfinished bookings with a drop resolved UNDELIVERED: after 20261019120000 the online part of their earning starts ON_HOLD for review (L-11) (NULL: before booking stops) =='
+SELECT CASE WHEN to_regclass('public.booking_stops') IS NULL THEN NULL
+            ELSE (xpath('/row/n/text()', query_to_xml(
+                     'SELECT count(DISTINCT s.booking_id) AS n
+                        FROM booking_stops s JOIN bookings b ON b.id = s.booking_id
+                       WHERE s.status::text = ''UNDELIVERED''
+                         AND b.status::text NOT IN (''COMPLETED'', ''CANCELLED'')',
+                     false, true, '')))[1]::text::bigint
+       END AS unfinished_bookings_with_an_undelivered_drop;
+
+\echo '== Settlement findings by kind: settled payments that matched none of ours, or another amount (NULL: before 20261019120000) =='
+SELECT CASE WHEN to_regclass('public.settlement_findings') IS NULL THEN NULL
+            ELSE (xpath('/row/s/text()', query_to_xml(
+                     'SELECT COALESCE(string_agg(kind || ''='' || n, '', '' ORDER BY kind), ''(none)'') AS s
+                        FROM (SELECT kind, count(*) AS n FROM settlement_findings GROUP BY 1) per_kind',
+                     false, true, '')))[1]::text
+       END AS settlement_findings_by_kind;
 
 ROLLBACK;

@@ -307,11 +307,23 @@ describe('Collections for a booking paid drop by drop (PAY_AT_DELIVERY)', () => 
           [third.body.collectionId, ['CASH', 20_000n, 2_000n]],
         ]),
       );
-      // Settling the online drop doesn't make a mixed earning payable yet (payment flow Phase 5).
+      // The cash drops are already with the driver (their fee debited); only the QR drop's net
+      // (Rs 100 - Rs 10) is owed, and it waits for that drop's settlement (payment flow Phase 5).
+      expect(earning).toMatchObject({
+        cashCollectedPaise: 40_000n,
+        onlineCollectedPaise: 10_000n,
+        cashFeePaise: 4_000n,
+        onlineFeePaise: 1_000n,
+        payoutAmountPaise: 9_000n,
+      });
       await settleAndSync(ctx, second.payment.id, 10_000);
       expect(
-        (await ctx.prisma.driverEarning.findUniqueOrThrow({ where: { id: earning.id } })).status,
-      ).toBe('AWAITING_SETTLEMENT');
+        await ctx.prisma.driverEarning.findUniqueOrThrow({ where: { id: earning.id } }),
+      ).toMatchObject({
+        status: 'PAYABLE',
+        paymentSettlementId: null,
+        payableAt: expect.any(Date),
+      });
 
       // The admin money trail lists each drop's collection and the earning's sources.
       const chain = await request(ctx.server)
@@ -986,6 +998,7 @@ describe('Collections for a booking paid drop by drop (PAY_AT_DELIVERY)', () => 
             method: 'CASH',
             amountPaise: 30_000n,
             platformFeePaise: 3_000n,
+            netAmountPaise: 27_000n,
           },
         }),
       ).rejects.toThrow();
@@ -998,6 +1011,7 @@ describe('Collections for a booking paid drop by drop (PAY_AT_DELIVERY)', () => 
             method: 'CASH',
             amountPaise: 30_000n,
             platformFeePaise: 3_000n,
+            netAmountPaise: 27_000n,
           },
         }),
       ).rejects.toThrow(/recorded with the earning, in its transaction/);

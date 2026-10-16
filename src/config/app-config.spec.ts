@@ -137,8 +137,30 @@ describe('loadConfig', () => {
           }),
         ),
       );
-      // TDS stays open until the CA confirms the rule.
-      expect(ready).toEqual([expect.stringMatching(/^D-57/)]);
+      // TDS stays open until the CA confirms the rule, and the open business decisions with a
+      // technical safe default are listed until they are decided.
+      expect(ready).toEqual([
+        expect.stringMatching(/^D-57/),
+        expect.stringMatching(/^L-11\/D-70 .*held for admin review \(technical safe default\)/),
+        expect.stringMatching(/^N5 driver pay .*nothing is refunded, compensated or recovered/),
+      ]);
+    });
+
+    it('holds the online part of a trip with an undelivered drop by default; the hold is configurable (L-11)', () => {
+      expect(loadConfig(validEnv()).earnings.undeliveredDropHold).toBe(true);
+      expect(
+        loadConfig(validEnv({ EARNINGS_UNDELIVERED_DROP_HOLD: 'true' })).earnings
+          .undeliveredDropHold,
+      ).toBe(true);
+      const off = loadConfig(validEnv({ EARNINGS_UNDELIVERED_DROP_HOLD: 'false' }));
+      expect(off.earnings.undeliveredDropHold).toBe(false);
+      // Switching it off is reported at startup (a warning in production).
+      expect(openReadinessItems(off).join('\n')).toMatch(
+        /L-11\/D-70 .*hold is OFF \(EARNINGS_UNDELIVERED_DROP_HOLD=false\)/,
+      );
+      expect(problemsFor(validEnv({ EARNINGS_UNDELIVERED_DROP_HOLD: 'maybe' })).join()).toMatch(
+        /EARNINGS_UNDELIVERED_DROP_HOLD/,
+      );
     });
 
     it('collects with a UPI QR when live; a payment-link QR is for test mode only (D-47)', () => {
