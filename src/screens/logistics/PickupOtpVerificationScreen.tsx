@@ -12,6 +12,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useBooking } from '../../state/BookingContext';
 import { useTripStatus } from '../../hooks/useTripStatus';
+import { useRideOtps } from '../../hooks/useRideOtps';
 
 export interface PickupOTPVerificationScreenProps {
   readonly pickupLocation?: string;
@@ -35,7 +36,7 @@ const PickupOTPVerificationScreen: React.FC<PickupOTPVerificationScreenProps & {
   isLoading = false,
   isError = false,
 }) => {
-  const { trip, setTrip } = useBooking();
+  const { ride, trip, setTrip } = useBooking();
 
   // Poll the trip so the screen advances the moment the driver verifies.
   const { trip: polled, error: pollError } = useTripStatus(trip?.id, { intervalMs: 3_000 });
@@ -45,11 +46,18 @@ const PickupOTPVerificationScreen: React.FC<PickupOTPVerificationScreenProps & {
   }, [polled, setTrip]);
 
   const current = polled ?? trip;
-  const otpDigits = (current?.otp ?? '----').split('');
   const isVerified =
     current?.status === 'PICKUP_VERIFIED' ||
     current?.status === 'IN_TRANSIT' ||
     current?.status === 'DROP_PROGRESS';
+
+  // The pickup OTP comes from the gated endpoint. The server withholds it (otp: null) until the
+  // payment backend allows the pickup handover; for pay-at-pickup that means after payment.
+  const rideId = ride?.id ?? current?.rideId;
+  const { otps } = useRideOtps(rideId, { enabled: !isVerified });
+  const pickupOtp = otps?.pickup.otp ?? null;
+  const paymentRequired = otps?.pickup.withheld === 'PAYMENT_REQUIRED';
+  const otpDigits = (pickupOtp ?? '----').split('');
 
   // React to whatever the driver just did. `replace` (not `navigate`) removes
   // this screen from the stack, so `useTripStatus` stops polling and later
@@ -65,7 +73,7 @@ const PickupOTPVerificationScreen: React.FC<PickupOTPVerificationScreenProps & {
       return;
     }
     if (isVerified) {
-      onVerify?.(current?.otp ?? '');
+      onVerify?.(pickupOtp ?? '');
       navigation?.replace('PickupVerifiedSuccessScreen');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,28 +124,55 @@ const PickupOTPVerificationScreen: React.FC<PickupOTPVerificationScreenProps & {
           </View>
         </View>
 
-        {/* OTP Section — the engine issues the code to the customer, and the
-            driver submits it, so this displays rather than collects. */}
+        {/* OTP Section — the engine issues the code to the customer, and the driver submits it,
+            so this displays rather than collects. The server withholds the code until the
+            payment backend allows the pickup handover (pay-at-pickup: after payment). */}
         <View style={styles.otpSection}>
-          <View style={styles.otpHeader}>
-            <Text style={styles.otpTitle}>Share your OTP</Text>
-            <Text style={styles.otpSubtitle}>
-              Read this 4-digit code out to your driver. They enter it to confirm pickup.
-            </Text>
-          </View>
+          {paymentRequired ? (
+            <View style={styles.otpHeader}>
+              <Text style={styles.otpTitle}>Payment is required to start the trip</Text>
+              <Text style={styles.otpSubtitle}>
+                Pay the driver at pickup (cash, or scan their QR). Your OTP appears here once the
+                payment is confirmed.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.otpHeader}>
+              <Text style={styles.otpTitle}>Share your OTP</Text>
+              <Text style={styles.otpSubtitle}>
+                Read this 4-digit code out to your driver. They enter it to confirm pickup.
+              </Text>
+            </View>
+          )}
 
-          <View style={styles.otpInputContainer}>
-            {otpDigits.map((digit, index) => (
-              <View key={`otp-${index}`} style={styles.otpDigitBox}>
-                <Text style={styles.otpDigitText}>{digit}</Text>
-              </View>
-            ))}
-          </View>
+          {pickupOtp ? (
+            <View style={styles.otpInputContainer}>
+              {otpDigits.map((digit, index) => (
+                <View key={`otp-${index}`} style={styles.otpDigitBox}>
+                  <Text style={styles.otpDigitText}>{digit}</Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.otpInputContainer}>
+              {['-', '-', '-', '-'].map((digit, index) => (
+                <View key={`otp-${index}`} style={styles.otpDigitBox}>
+                  <Text style={styles.otpDigitText}>{digit}</Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           <View style={styles.waitingRow}>
             <ActivityIndicator size="small" color={colors.onSurfaceVariant} />
             <Text style={styles.waitingText}>
-              {isVerified ? 'Pickup verified' : 'Waiting for the driver to confirm…'}
+              {isVerified
+                ? 'Pickup verified'
+                : paymentRequired
+                  ? 'Waiting for the payment to be confirmed…'
+                  : pickupOtp
+                    ? 'Waiting for the driver to confirm…'
+                    : 'Checking payment status…'}
             </Text>
           </View>
 

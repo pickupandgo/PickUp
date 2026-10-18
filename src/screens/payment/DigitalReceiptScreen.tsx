@@ -48,8 +48,10 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
   navigation,
 }) => {
   const { ride, trip, draft } = useBooking();
-  const currentFare = trip?.fare || ride?.fare || draft.fareEstimate?.fare;
-  
+  // Display only, from the server's quote figure; the backend is authoritative for what was paid.
+  const currentFare =
+    trip?.fare ?? ride?.fare ?? (draft.quote ? draft.quote.payablePaise / 100 : undefined);
+
   const actualTotal = currentFare ? `₹${currentFare}` : '--';
   const actualBase = currentFare ? `₹${(currentFare * 0.8).toFixed(2)}` : '--'; // Simplified breakup
   const actualTaxes = currentFare ? `₹${(currentFare * 0.2).toFixed(2)}` : '--';

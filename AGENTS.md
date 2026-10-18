@@ -1,238 +1,100 @@
+# PICKUP Customer App — Project Context for AI Assistants
 
-# PICKUP UI — Project Context for AI Assistants
+> Read this file before changing code.
 
-> **Read this entire file before writing ANY code.**
+## What this is
 
----
+PICKUP is the **customer-side** React Native app for a multi-drop logistics/delivery service.
+It is a real app wired to two backends (not a mock-only prototype):
 
-## What Is This Project?
+- **Trip engine** (dispatch, rides, trips, live state, handover OTPs) — `env.apiBaseUrl`.
+- **Payments backend** (`/v1`: fare quotes, customer account, booking payment state, the payment
+  gate) — `env.paymentsApiBaseUrl`.
 
-PICKUP UI is a **customer-side logistics/delivery app prototype** built in React Native + Expo. It is a **UI-only prototype** with 76 screens, designed to be shown to clients as a fully tappable demo. There is **NO backend, NO real APIs, NO real maps** — all data is hardcoded mock data.
+> History: this started as a UI-only Expo prototype with hardcoded mock data. It is now bare
+> React Native (no Expo) integrated with the Phase 8 engine/backend contracts. The old
+> "mock only, no API calls, Pay Now / prepaid" rules are obsolete — do not reintroduce them.
 
-**GitHub:** https://github.com/Rajpatel800/PICKUP_UI
+## Tech stack
 
----
-
-## Tech Stack
-
-| Technology | Version | Purpose |
+| Tech | Version | Purpose |
 |---|---|---|
-| React Native | 0.81.5 | Core framework |
-| Expo | 54.0.0 (SDK 54) | Build & dev tooling |
-| TypeScript | 5.9.2 | Type safety |
-| React Navigation (Native Stack) | 7.x | Screen-to-screen navigation |
-| @expo/vector-icons (Feather) | 15.x | Icons |
-| react-native-safe-area-context | 5.6.0 | Safe area handling |
-| react-native-screens | 4.16.0 | Native screen containers |
+| React Native | 0.81.5 | Core framework (bare RN, not Expo) |
+| React | 19.1.0 | UI |
+| TypeScript | 5.9 | Types |
+| React Navigation (native-stack + bottom-tabs) | 7.x | Navigation |
+| @react-native-firebase/auth | 26.x | Customer authentication |
+| react-native-config | 1.7 | Build-time env (`EXPO_PUBLIC_*` names kept for continuity) |
+| react-native-maps | 1.20 | Maps |
+| Jest 29 + react-test-renderer 19 | | Tests (API/state/logic) |
 
-**Entry point:** `index.ts` → `App.tsx`
+Entry: `index.js` → `App.tsx`.
 
----
+## Frozen ownership (do not re-implement on the client)
 
-## Critical Rules
+- The **engine** owns dispatch, driver assignment, the trip lifecycle, stop progression, the OTP
+  operational flow, and live trip/location state.
+- The **payments backend** owns fare, quote, payment, paymentGate, collection, financial
+  confirmation, earnings, settlement, payout, refund and audit.
+- The Customer App is **never authoritative** for fare, payment status, payment confirmation,
+  handover authorization, delivery completion or stop completion. It displays server state.
 
-### 1. Expo Version
-> **This project is pinned to Expo SDK 54 for Expo Go 54.0.8 compatibility. Read the exact versioned docs at https://docs.expo.dev/versions/v54.0.0/ before writing any code.**
-
-### 2. Customer-Only App
-This is **PURELY a customer app**. There is NO driver side, NO admin panel. Do NOT add any driver/logistics-provider features.
-
-### 3. No New Features Without Permission
-Do NOT create new features, new screens, or new flows unless the user explicitly asks. Only modify what exists.
-
-### 4. Mock Data Only
-All data is mock/hardcoded in `src/data/mockData.ts`. Do NOT add API calls, fetch requests, or backend integrations.
-
-### 5. Navigation Pattern
-Every screen receives `navigation` as a prop (typed as `any`). Navigation is done via:
-```tsx
-navigation?.navigate('ScreenName')
-```
-Do NOT use `useNavigation()` hook — use the prop passed down from React Navigation's Stack.Screen.
-
-### 6. Theme System
-All colors, spacing, typography, and border radius come from `src/theme.ts`. Do NOT hardcode colors or sizes. Always import from theme:
-```tsx
-import { colors, spacing, borderRadius, typography } from '../../theme';
-```
-
-### 7. Component Library
-The project has custom atoms/molecules in `src/components/`. Always use these instead of creating new ones:
-- `Button` — primary action buttons
-- `Card` — container cards
-- `TopAppBar` — screen headers
-- `ListRow` — list items
-- `Divider` — separators
-- `DraggableBottomSheet` — bottom sheets
-- `BottomNavBar` — bottom navigation
-- `VehicleOptionCard` — vehicle selection cards
-
-### 8. Navigation Helpers
-`BottomNavBar` emits tab ids, not route names. Screens that render it must wire tabs through
-`src/navigation/tabRoutes.ts`:
-```tsx
-import { navigateToTab } from '../../navigation/tabRoutes';
-<BottomNavBar currentTab="home" onTabPress={(id) => navigateToTab(navigation, id)} />
-```
-
-### 9. No Dead Buttons
-Every interactive element must do something. Never bind `onPress` to a bare optional prop
-(`onPress={onHelp}`) — it silently no-ops when the prop isn't supplied. Use the prop with a
-navigation fallback instead:
-```tsx
-onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
-```
-If a control has no meaningful behaviour in a mock-only prototype, render it as a `View`
-rather than a `Pressable`. Run `node scripts/check-wiring.js` to verify.
-
----
-
-## Folder Structure
+## Booking flow (the real path)
 
 ```
-pickup/
-├── App.tsx                    # Root — NavigationContainer + flat Stack.Navigator with all 76 screens,
-│                              # plus a `Gallery` route listing every screen for direct access.
-│                              # initialRouteName is LoginScreen.
-├── index.ts                   # Entry point
-├── src/
-│   ├── theme.ts               # Design tokens (colors, spacing, typography, borderRadius, shadows)
-│   ├── data/
-│   │   └── mockData.ts        # All mock/hardcoded data and strings
-│   ├── components/
-│   │   ├── atoms/             # Button, Card, InputField, Divider, etc.
-│   │   ├── molecules/         # TopAppBar, ListRow, VehicleOptionCard, etc.
-│   │   ├── DraggableBottomSheet.tsx
-│   │   └── BottomNavBar.tsx
-│   ├── screens/
-│   │   ├── auth/              # Login, OTP, Permission, RecordingConsent (4 screens)
-│   │   ├── home/              # HomeScreen (1 screen)
-│   │   ├── booking/           # Address search, vehicle selection, review, etc. (14 screens)
-│   │   ├── tracking/          # Driver search, assignment, live tracking (12 screens)
-│   │   ├── logistics/         # Multi-drop, pickup/drop OTP, delivery summary (12 screens)
-│   │   ├── payment/           # Payment selection, processing, receipt, etc. (10 screens)
-│   │   ├── profile/           # Profile, settings, trip history (5 screens)
-│   │   └── support/           # Chat, cancellation, ratings, errors, etc. (18 screens)
-│   ├── navigation/            # Navigation type definitions
-│   ├── types/                 # TypeScript type definitions
-│   ├── constants/             # App constants
-│   ├── hooks/                 # Custom hooks
-│   └── utils/                 # Utility functions
-├── WIRING_MAP.md              # Complete screen-to-screen wiring documentation
-└── AGENTS.md                  # This file
+locations → goods → vehicle → FareEstimate (POST /v1/fare/quotes) → PaymentMethod (two options)
+  → ReviewBooking (book needs an unexpired quote + a chosen method) → BookingConfirmed
+  → FindingDriver (POST /rides {quoteId, paymentMethod, driverId}) → DriverAssigned
+  → PickupOtpVerification → CustomerLiveTracking → (per drop) → TripCompleted
 ```
 
----
+- No local fare is ever calculated or sent. The server quote is the only fare; any change to the
+  route, vehicle or weight discards the quote and forces a new one (`BookingContext`).
+- Payment methods are exactly **PAY_AT_PICKUP** and **PAY_AT_DELIVERY**. There is no prepaid /
+  pay-now flow; those screens were removed.
 
-## All 76 Screens & Their Wiring
+## OTP / payment gate (security)
 
-Every screen is wired. The complete map is in `WIRING_MAP.md`. Here's the summary:
+- The pickup and drop OTPs come only from the gated engine route `GET /rides/:id/otps`. The
+  server withholds a code until the payment backend allows that handover; the app shows whatever
+  the server releases and never derives or logs an OTP.
+- The payment state the UI shows comes from `GET /v1/bookings/:paymentBookingId` (the customer
+  payment gate and per-drop state). Never show "paid" from local state.
 
-### Auth Flow (5 screens)
-```
-LoginScreen → OtpVerificationScreen → PermissionScreen → RecordingConsentScreen → HomeScreen
-```
+## Auth / identity
 
-### HomeScreen Hub
-HomeScreen has bottom tabs: **Home, Trips, Account** — each navigates to its section.
-There is deliberately **no Wallet feature** in this app: no stored balance, no wallet tab, no wallet
-payment method. Payment methods are UPI, card and cash only.
-"Start Booking" and "Enter drop location" → AddressSearchScreen.
+- Firebase is the single auth. Every protected request carries the Firebase ID token (see
+  `src/api/http.ts` and `src/api/payments.ts`); it is refreshed once on a 401. The customer's id
+  is the Firebase uid (the token subject) — never a client-supplied id. Call `POST /v1/customers/me`
+  after sign-in (done in `SessionContext`).
 
-### Booking Flow (14 screens)
-```
-AddressSearchScreen → SelectDropLocationScreen → SelectLocationScreen → MultiDropOverviewScreen
-→ SelectVehicleScreen → GoodsDetailsScreen → GoodsInsuranceScreen → ReceiverDetailsScreen
-→ FareEstimateScreen → ReviewBookingScreen → ValidateBookingScreen → BookingConfirmedScreen
-→ FindingDriverScreen (auto 3s timer)
-```
+## Conventions that still hold
 
-### Driver Search & Assignment (8 screens)
-```
-FindingDriverScreen → NoDriversAvailableScreen → AssignmentFailedScreen → DriverFoundScreen (auto 3s)
-→ DriverAssignedScreen → DriverAssignedExpandedScreen → CallDriverScreen → ActiveTripChatScreen
-```
+1. Screens receive `navigation` as a prop; do not use `useNavigation()`.
+2. Theme tokens only (`src/theme.ts`) — no hardcoded colours/sizes.
+3. Reuse the existing atoms/molecules/organisms in `src/components/`.
+4. No dead buttons; run `node scripts/check-wiring.js`.
+5. Customer-only app: no driver/admin features.
+6. Do not add new features/screens/flows without explicit instruction.
 
-### Cancellation Flow (6 screens)
-```
-CancellationReasonScreen → CancellationChargeConfirmationScreen → CancellationConfirmationScreen
-→ CancellationResultScreen → TripCancelledStatusScreen → CustomerLiveTrackingScreen
-```
+## Layout
 
-### Live Tracking & Logistics (17 screens)
 ```
-CustomerLiveTrackingScreen → LiveTrackingScreen → ActiveTripTrackingScreen
-→ LiveTrackingExceptionsScreen (auto 3s) → MapLoadingScreen (auto 3s) → ReconnectingScreen (auto 3s)
-→ NetworkErrorScreen → RouteUnavailableScreen → MultiDropProgressScreen → CurrentDropDetailsScreen
-→ PickupOtpVerificationScreen → PickupVerifiedSuccessScreen → NextDropScreen
-→ DropOtpVerificationScreen → DropCompletedStateScreen → FinalDeliverySummaryScreen
-→ TripCompletedScreen → TripCompletedSummaryScreen
+src/
+  api/        http.ts, engine.ts, payments.ts, types.ts, matching.ts, geocoding.ts, directions.ts
+  state/      BookingContext.tsx (draft, quote, paymentMethod, ride/trip), SessionContext.tsx
+  hooks/      useTripStatus.ts, useRideOtps.ts, useRoute.ts, useNearbyDrivers.ts, ...
+  screens/    auth, booking, payment, tracking, logistics, profile, support, home
+  data/       mockData.ts (labels, vehicle catalogue + category codes), paymentMethods.ts
+config/env.ts  apiBaseUrl, paymentsApiBaseUrl, googleMapsApiKey
+__tests__/     Jest (API/state/logic)
 ```
 
-### Payment Flow (10 screens)
-```
-PaymentSelectionScreen → PaymentMethodScreen → PaymentMethodSelectedScreen
-→ PaymentProcessingScreen (auto 3s) → PaymentPendingScreen → PaymentSuccessfulScreen
-→ CashPaymentStatusScreen → PaymentFailedScreen → DigitalReceiptScreen
-→ DriverRatingScreen → WrittenReviewScreen
-```
+## Running
 
-### Profile (5 screens)
 ```
-ProfileScreen → CustomerSettingsScreen → SavedAddressesScreen
-→ TripHistoryScreen → HistoricalTripDetailScreen → ShareTrackingSheetScreen
-```
-
-### Error/Edge Case Screens (7 screens)
-```
-EmptyStateScreen → ErrorScreen → SearchUnavailableScreen → LogoutConfirmationScreen
-→ NotificationCenterScreen → HomeScreen
-```
-
-### Auto-Timer Screens
-These screens have NO buttons — they auto-advance after 3 seconds using `useEffect` + `setTimeout`:
-- BookingConfirmedScreen → FindingDriverScreen
-- DriverFoundScreen → DriverAssignedScreen
-- PaymentProcessingScreen → PaymentPendingScreen
-- LiveTrackingExceptionsScreen → MapLoadingScreen
-- MapLoadingScreen → ReconnectingScreen
-- ReconnectingScreen → NetworkErrorScreen
-
----
-
-## How to Run
-
-```bash
-# Install dependencies
 npm install
-
-# Start Expo dev server (with tunnel for phone testing)
-npm run start -- --tunnel -c
-
-# Then scan QR code with Expo Go app on your phone
+npm run typecheck
+npm test
+npm run check:wiring   # navigation wiring (pre-existing warnings for tab/nested routes)
 ```
-
----
-
-## Current Project Status (as of 30 Aug 2026)
-
-| Item | Status |
-|---|---|
-| UI Screens Built | 76/76 Done |
-| All Screens Wired | 76/76 Done |
-| Bottom Tabs Working | Done |
-| Back Buttons Working | Done |
-| Auto-Timer Screens | 6/6 Done |
-| Pushed to GitHub | Done |
-| TypeScript Errors | 0 blocking |
-| Backend/API | Not started (prototype only) |
-| Real Maps | Placeholder views |
-| Real Payments | Mock only |
-
-### What's Next
-The prototype is complete and ready for client demo. Future phases would involve:
-1. Adding real map integration (Google Maps / Mapbox)
-2. Backend API integration
-3. Real authentication (OTP via SMS)
-4. Payment gateway integration
-5. Real-time driver tracking via WebSockets

@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { getAuth, onAuthStateChanged } from '@react-native-firebase/auth';
 import { signOut } from '../auth/authService';
 import { isProfileComplete, setProfileComplete, clearSession } from './session';
+import { registerCustomer } from '../api/payments';
+import { hasPaymentsConfig } from '../config/env';
 
 interface SessionContextValue {
   isLoggedIn: boolean | null;
@@ -22,6 +24,11 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const subscriber = onAuthStateChanged(authInstance, async (user: any) => {
       if (user) {
         console.log('[AUTH] Auth state restored for Customer UID:', user.uid);
+        // Register (or refresh) the customer with the payments backend. Safe to repeat; the
+        // sign-in must carry a verified phone. Non-fatal: booking surfaces any real problem.
+        if (hasPaymentsConfig()) {
+          registerCustomer().catch(() => undefined);
+        }
         const profileDone = await isProfileComplete();
         setHasProfile(profileDone);
         setIsLoggedIn(true);

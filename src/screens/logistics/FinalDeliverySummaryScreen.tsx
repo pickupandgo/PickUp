@@ -129,11 +129,13 @@ const FinalDeliverySummaryScreen: React.FC<FinalDeliverySummaryScreenProps & { n
           style={styles.confirmButton}
           onPress={() => {
             onConfirmPayment?.();
-            navigation?.navigate('PaymentSelectionScreen');
+            // Payment is collected by the driver and confirmed by the backend; the customer
+            // just closes out to the receipt. No prepaid/pay-now flow.
+            navigation?.navigate('DigitalReceiptScreen');
           }}
           accessibilityRole="button"
         >
-          <Text style={styles.confirmText}>CONFIRM PAYMENT & CLOSE TRIP</Text>
+          <Text style={styles.confirmText}>VIEW RECEIPT & CLOSE TRIP</Text>
         </Pressable>
       </View>
     </SafeAreaView>

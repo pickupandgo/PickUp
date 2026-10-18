@@ -12,6 +12,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
 import { useTripStatus } from '../../hooks/useTripStatus';
+import { useRideOtps } from '../../hooks/useRideOtps';
 import { getDriver, getRide } from '../../api/engine';
 import type { GeoPoint } from '../../api/types';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
@@ -32,7 +33,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
   const { trip, setTrip, assignedDriver, ride, setRide } = useBooking();
 
   // If the user killed the app and restarted, `ride` might be undefined, but `trip` exists.
-  // We fetch `ride` to restore access to the OTPs since the `trip` object strips them.
+  // Restore `ride` so we have its id for the gated OTP endpoint (the trip never carries OTPs).
   useEffect(() => {
     if (trip?.rideId && !ride) {
       let active = true;
@@ -59,6 +60,13 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
   // arrays; a later `const` would be in the temporal dead zone at render time
   // and Hermes throws "Property 'status' doesn't exist".
   const status = current?.status;
+
+  // Handover OTPs come from the gated endpoint: the server releases the pickup OTP once the
+  // pickup handover is allowed, and each drop's OTP once that drop's payment is confirmed.
+  const rideId = ride?.id ?? current?.rideId;
+  const { otps } = useRideOtps(rideId, {
+    enabled: status !== undefined && status !== 'COMPLETED' && status !== 'CANCELLED',
+  });
 
   // Take the customer through completion the moment the driver finishes.
   // `replace` swaps this screen out of the stack so back-swipe doesn't return
@@ -134,8 +142,17 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
   // driver doesn't blow through the Directions quota.
   const preTransit =
     status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED' || status === 'PICKUP_VERIFIED';
-  const routeDestination = preTransit ? current?.pickup : current?.drop;
+  const routeDestination = (preTransit ? current?.pickup : current?.drop) ?? undefined;
   const roadRoute = useRoute(driverPoint ?? current?.pickup, routeDestination);
+
+  // The pickup OTP and the current drop's OTP, only when the server has released them.
+  const pickupOtp = otps?.pickup.otp ?? null;
+  const pickupPaymentRequired = otps?.pickup.withheld === 'PAYMENT_REQUIRED';
+  const currentStopSequence = current?.currentStop?.sequence;
+  const currentDropOtp =
+    currentStopSequence != null
+      ? (otps?.stops.find((s) => s.sequence === currentStopSequence)?.otp ?? null)
+      : null;
 
   // Short status labels driven off the engine's own trip status. No mocks.
   const tripHeadline = (() => {
@@ -241,25 +258,29 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
               <View style={[styles.progressBarFill, { width: progressPercent }]} />
             </View>
 
-            {/* PICKUP OTP — shown while driver hasn't verified pickup yet */}
-            {(current?.otp ?? ride?.otp) &&
-              (status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED') && (
+            {/* PICKUP OTP — released by the server once the pickup handover is allowed. For
+                pay-at-pickup that is after payment; until then show that payment is required. */}
+            {(status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED') &&
+              (pickupOtp ? (
                 <View style={styles.otpRow}>
                   <Text style={styles.otpLabel}>PICKUP OTP</Text>
-                  <Text style={styles.otpValue}>{current?.otp ?? ride?.otp}</Text>
+                  <Text style={styles.otpValue}>{pickupOtp}</Text>
                 </View>
-              )}
+              ) : pickupPaymentRequired ? (
+                <View style={styles.otpRow}>
+                  <Text style={styles.otpLabel}>PAYMENT REQUIRED</Text>
+                  <Text style={styles.otpHint}>Pay the driver at pickup to start the trip.</Text>
+                </View>
+              ) : null)}
 
-            {/* DELIVERY OTP — shown while driver is heading to or arrived at a drop */}
-            {ride?.stopOtps &&
-              (status === 'IN_TRANSIT' || status === 'DROP_PROGRESS') &&
+            {/* DELIVERY OTP — released once this drop's payment is confirmed (pay at delivery). */}
+            {(status === 'IN_TRANSIT' || status === 'DROP_PROGRESS') &&
               current?.currentStop &&
-              !current.currentStop.otpVerified && (
+              !current.currentStop.otpVerified &&
+              currentDropOtp && (
                 <View style={styles.otpRow}>
                   <Text style={styles.otpLabel}>DELIVERY OTP</Text>
-                  <Text style={styles.otpValue}>
-                    {ride.stopOtps[current.currentStopIndex ?? 0]}
-                  </Text>
+                  <Text style={styles.otpValue}>{currentDropOtp}</Text>
                 </View>
               )}
 
@@ -591,7 +612,15 @@ const styles = StyleSheet.create({
     fontFamily: typography.dataMono.fontFamily,
     letterSpacing: 4,
   },
-  
+  otpHint: {
+    flex: 1,
+    marginLeft: spacing.md,
+    textAlign: 'right',
+    fontSize: typography.labelSm.fontSize,
+    color: colors.onPrimaryContainer,
+    fontFamily: typography.labelSm.fontFamily,
+  },
+
   driverDetailsContainer: {
     borderTopWidth: 1,
     borderTopColor: colors.surfaceContainerHighest,

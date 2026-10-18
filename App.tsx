@@ -20,7 +20,6 @@ import CancellationChargeConfirmationScreen from './src/screens/support/Cancella
 import CancellationConfirmationScreen from './src/screens/support/CancellationConfirmationScreen';
 import CancellationReasonScreen from './src/screens/support/CancellationReasonScreen';
 import CancellationResultScreen from './src/screens/support/CancellationResultScreen';
-import CashPaymentStatusScreen from './src/screens/payment/CashPaymentStatusScreen';
 import ChangeProfilePhotoScreen from './src/screens/profile/ChangeProfilePhotoScreen';
 import CreateProfileScreen from './src/screens/profile/CreateProfileScreen';
 import CurrentDropDetailsScreen from './src/screens/logistics/CurrentDropDetailsScreen';
@@ -58,14 +57,7 @@ import NextDropScreen from './src/screens/logistics/NextDropScreen';
 import NoDriversAvailableScreen from './src/screens/support/NoDriversAvailableScreen';
 import NotificationCenterScreen from './src/screens/support/NotificationCenterScreen';
 import OtpVerificationScreen from './src/screens/auth/OtpVerificationScreen';
-import PaymentConfirmationScreen from './src/screens/payment/PaymentConfirmationScreen';
-import PaymentFailedScreen from './src/screens/payment/PaymentFailedScreen';
 import PaymentMethodScreen from './src/screens/payment/PaymentMethodScreen';
-import PaymentMethodSelectedScreen from './src/screens/payment/PaymentMethodSelectedScreen';
-import PaymentPendingScreen from './src/screens/payment/PaymentPendingScreen';
-import PaymentProcessingScreen from './src/screens/payment/PaymentProcessingScreen';
-import PaymentSelectionScreen from './src/screens/payment/PaymentSelectionScreen';
-import PaymentSuccessfulScreen from './src/screens/payment/PaymentSuccessfulScreen';
 import PickupOtpVerificationScreen from './src/screens/logistics/PickupOtpVerificationScreen';
 import PickupVerifiedSuccessScreen from './src/screens/logistics/PickupVerifiedSuccessScreen';
 import ProfileScreen from './src/screens/profile/ProfileScreen';
@@ -111,10 +103,10 @@ function ErrorRoute(props: any) {
 function GalleryScreen({ navigation }: any) {
   return (
     <SafeAreaView style={styles.galleryContainer}>
-      <Text style={styles.header}>Screen Gallery (76 Screens)</Text>
+      <Text style={styles.header}>Screen Gallery</Text>
       <FlatList
         data={[
-          'ActiveTripChatScreen', 'ActiveTripTrackingScreen', 'AddressSearchScreen', 'AssignmentFailedScreen', 'BookingConfirmedScreen', 'BookingReviewScreen', 'CallDriverScreen', 'CancellationChargeConfirmationScreen', 'CancellationConfirmationScreen', 'CancellationReasonScreen', 'CancellationResultScreen', 'CashPaymentStatusScreen', 'ChangeProfilePhotoScreen', 'CreateProfileScreen', 'CurrentDropDetailsScreen', 'CustomerLiveTrackingScreen', 'CustomerSettingsScreen', 'DeclaredValueSelectionScreen', 'DigitalReceiptScreen', 'DriverAssignedExpandedScreen', 'DriverAssignedScreen', 'DriverFoundScreen', 'DriverRatingScreen', 'DropCompletedStateScreen', 'DropOtpVerificationScreen', 'EditProfileScreen', 'EmptyStateScreen', 'ErrorScreen', 'FareEstimateScreen', 'FinalDeliverySummaryScreen', 'FindingDriverScreen', 'GoodsDetailsScreen', 'GoodsInsuranceScreen', 'HistoricalTripDetailScreen', 'HomeScreen', 'LiveTrackingExceptionsScreen', 'LiveTrackingScreen', 'LoadingSkeletonScreen', 'LoginScreen', 'LogoutConfirmationScreen', 'MapLoadingScreen', 'MultiDropOverviewScreen', 'MultiDropProgressScreen', 'NetworkErrorScreen', 'NextDropScreen', 'NoDriversAvailableScreen', 'NotificationCenterScreen', 'OtpVerificationScreen', 'PaymentConfirmationScreen', 'PaymentFailedScreen', 'PaymentMethodScreen', 'PaymentMethodSelectedScreen', 'PaymentPendingScreen', 'PaymentProcessingScreen', 'PaymentSelectionScreen', 'PaymentSuccessfulScreen', 'PickupOtpVerificationScreen', 'PickupVerifiedSuccessScreen', 'ProfileScreen', 'ReceiverDetailsScreen', 'ReconnectingScreen', 'ReviewBookingScreen', 'RouteUnavailableScreen', 'SavedAddressesScreen', 'SearchingDriverScreen', 'SearchUnavailableScreen', 'SelectDropLocationScreen', 'SelectLocationScreen', 'SelectVehicleScreen', 'ShareTrackingSheetScreen', 'TripCancelledStatusScreen', 'TripCompletedScreen', 'TripCompletedSummaryScreen', 'TripHistoryScreen', 'ValidateBookingScreen', 'VehicleSelectionScreen', 'WrittenReviewScreen'
+          'ActiveTripChatScreen', 'ActiveTripTrackingScreen', 'AddressSearchScreen', 'AssignmentFailedScreen', 'BookingConfirmedScreen', 'BookingReviewScreen', 'CallDriverScreen', 'CancellationChargeConfirmationScreen', 'CancellationConfirmationScreen', 'CancellationReasonScreen', 'CancellationResultScreen', 'ChangeProfilePhotoScreen', 'CreateProfileScreen', 'CurrentDropDetailsScreen', 'CustomerLiveTrackingScreen', 'CustomerSettingsScreen', 'DeclaredValueSelectionScreen', 'DigitalReceiptScreen', 'DriverAssignedExpandedScreen', 'DriverAssignedScreen', 'DriverFoundScreen', 'DriverRatingScreen', 'DropCompletedStateScreen', 'DropOtpVerificationScreen', 'EditProfileScreen', 'EmptyStateScreen', 'ErrorScreen', 'FareEstimateScreen', 'FinalDeliverySummaryScreen', 'FindingDriverScreen', 'GoodsDetailsScreen', 'GoodsInsuranceScreen', 'HistoricalTripDetailScreen', 'HomeScreen', 'LiveTrackingExceptionsScreen', 'LiveTrackingScreen', 'LoadingSkeletonScreen', 'LoginScreen', 'LogoutConfirmationScreen', 'MapLoadingScreen', 'MultiDropOverviewScreen', 'MultiDropProgressScreen', 'NetworkErrorScreen', 'NextDropScreen', 'NoDriversAvailableScreen', 'NotificationCenterScreen', 'OtpVerificationScreen', 'PaymentMethodScreen', 'PickupOtpVerificationScreen', 'PickupVerifiedSuccessScreen', 'ProfileScreen', 'ReceiverDetailsScreen', 'ReconnectingScreen', 'ReviewBookingScreen', 'RouteUnavailableScreen', 'SavedAddressesScreen', 'SearchingDriverScreen', 'SearchUnavailableScreen', 'SelectDropLocationScreen', 'SelectLocationScreen', 'SelectVehicleScreen', 'ShareTrackingSheetScreen', 'TripCancelledStatusScreen', 'TripCompletedScreen', 'TripCompletedSummaryScreen', 'TripHistoryScreen', 'ValidateBookingScreen', 'VehicleSelectionScreen', 'WrittenReviewScreen'
         ]}
         keyExtractor={item => item}
         renderItem={({item}) => (
@@ -196,18 +188,11 @@ function BookingStackNavigator() {
       <Stack.Screen name="ValidateBookingScreen" component={ValidateBookingScreen} />
       <Stack.Screen name="MultiDropOverviewScreen" component={MultiDropOverviewScreen} />
       
-      {/* Payment Screens */}
+      {/* Payment method: exactly PAY_AT_PICKUP / PAY_AT_DELIVERY (review H). The old prepaid
+          chain (selection, processing, pending, success/failed, cash status) is removed. */}
       <Stack.Screen name="PaymentMethodScreen" component={PaymentMethodScreen} />
-      <Stack.Screen name="PaymentMethodSelectedScreen" component={PaymentMethodSelectedScreen} />
-      <Stack.Screen name="PaymentSelectionScreen" component={PaymentSelectionScreen} />
-      <Stack.Screen name="PaymentConfirmationScreen" component={PaymentConfirmationScreen} />
-      <Stack.Screen name="PaymentProcessingScreen" component={PaymentProcessingScreen} />
-      <Stack.Screen name="PaymentPendingScreen" component={PaymentPendingScreen} />
-      <Stack.Screen name="PaymentSuccessfulScreen" component={PaymentSuccessfulScreen} />
-      <Stack.Screen name="PaymentFailedScreen" component={PaymentFailedScreen} />
-      <Stack.Screen name="CashPaymentStatusScreen" component={CashPaymentStatusScreen} />
       <Stack.Screen name="DigitalReceiptScreen" component={DigitalReceiptScreen} />
-      
+
       <Stack.Screen name="BookingConfirmedScreen" component={BookingConfirmedScreen} />
     </Stack.Navigator>
   );

@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import { strings, mockBookingReview, mockVehicleTypes } from '../../data/mockData';
+import { mockBookingReview, mockVehicleTypes, vehicleLabelFor } from '../../data/mockData';
 import { useBooking } from '../../state/BookingContext';
+import { isQuoteBookable } from '../../api/payments';
 import TopAppBar from '../../components/organisms/TopAppBar';
 import Card from '../../components/molecules/Card';
 import LocationInputRow from '../../components/molecules/LocationInputRow';
@@ -31,21 +32,32 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
   navigation,
 }) => {
   const { draft } = useBooking();
-  const estimate = draft.fareEstimate;
+  const quote = draft.quote;
   const [isAddressExpanded, setIsAddressExpanded] = useState(false);
+  // Prevents a double-tap from starting two booking flows.
+  const [submitting, setSubmitting] = useState(false);
 
   // Fallback vehicle info if somehow unselected, but we assume select vehicle always passes one
-  const vehicleName = draft.vehicleType ?? mockBookingReview.vehicleType;
-  const vehicle = mockVehicleTypes.find((v) => v.name === vehicleName) || mockVehicleTypes[2];
+  const vehicleName = vehicleLabelFor(draft.vehicleType);
+  const vehicle = mockVehicleTypes.find((v) => v.name === draft.vehicleType) || mockVehicleTypes[2];
 
   // Address logic
   const pickupAddress = draft.pickup?.address ?? mockBookingReview.pickup;
   const dropAddresses = draft.drops.length
     ? draft.drops.map((d) => d.address)
     : mockBookingReview.drops;
-  
-  const estimatedFare = estimate ? `₹${estimate.fare}` : mockBookingReview.estimatedFare;
-  const etaMinutes = estimate?.durationMin ?? (parseInt(vehicle.eta) || 30);
+
+  // Fare and payment method come from the server quote and the chosen method; never a local total.
+  const quoteValid = !!quote && isQuoteBookable(quote);
+  const estimatedFare = quote ? `₹${(quote.payablePaise / 100).toFixed(2)}` : '--';
+  const etaMinutes = parseInt(vehicle.eta, 10) || 30;
+  const paymentLabel =
+    draft.paymentMethod === 'PAY_AT_PICKUP'
+      ? 'Pay at pickup'
+      : draft.paymentMethod === 'PAY_AT_DELIVERY'
+        ? 'Pay at delivery'
+        : 'Select payment method';
+  const canBook = quoteValid && !!draft.paymentMethod && !submitting;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -158,26 +170,29 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
             <View style={styles.paymentMethodInfo}>
               <Text style={styles.paymentTitle}>Choose Payment Method</Text>
               <Pressable style={styles.paymentSelector} onPress={() => (onChangePayment ? onChangePayment() : navigation?.navigate('PaymentMethodScreen'))}>
-                <Text style={styles.paymentMethodText}>{mockBookingReview.paymentMethod}</Text>
+                <Text style={styles.paymentMethodText}>{paymentLabel}</Text>
                 <Feather name="chevron-down" size={16} color={colors.onSurface} />
               </Pressable>
             </View>
           </View>
           <View style={styles.paymentRight}>
             <Text style={styles.totalFareText}>{estimatedFare}</Text>
-            <Text style={styles.viewBreakupText}>View Breakup</Text>
+            {!quoteValid && <Text style={styles.viewBreakupText}>Fare expired — go back</Text>}
           </View>
         </View>
 
         <Button
-          label={`Book ${vehicleName}`}
+          label={canBook ? `Book ${vehicleName}` : !draft.paymentMethod ? 'Select payment method' : 'Book'}
           onPress={() => {
+            if (!canBook) return;
+            setSubmitting(true);
             onConfirm?.();
             navigation?.navigate('BookingConfirmedScreen');
           }}
           variant="primary"
           size="lg"
           fullWidth
+          disabled={!canBook}
         />
       </View>
     </SafeAreaView>

@@ -13,12 +13,13 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import { mockVehicleTypes } from '../../data/mockData';
 import Feather from 'react-native-vector-icons/Feather';
 import MapCanvas, { NEIGHBORHOOD_DELTA } from '../../components/map/MapCanvas';
-import { useBooking, toGeoPoint } from '../../state/BookingContext';
+import { useBooking } from '../../state/BookingContext';
 import { findDriverAndCreateRide, NoDriversAvailableError } from '../../api/matching';
 import { getRideTrip } from '../../api/engine';
+import { isQuoteBookable } from '../../api/payments';
 import { toApiError } from '../../api/http';
+import { vehicleLabelFor } from '../../data/mockData';
 
-import type { GeoPoint } from '../../api/types';
 import { MIN_DRIVER_SEARCH_DURATION_MS } from '../../config/constants';
 
 export interface FindingDriverScreenProps {
@@ -45,8 +46,16 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
    */
   useEffect(() => {
     const pickup = draft.pickup;
+    const quote = draft.quote;
+    const paymentMethod = draft.paymentMethod;
     if (!pickup || !primaryDrop || !customerId) {
       setFailure('Pickup and drop are required before booking.');
+      return;
+    }
+    // The server fare quote and a chosen payment method are mandatory: no quote, no booking,
+    // and the client never sends a fare. A stale quote is refused rather than silently booked.
+    if (!quote || !isQuoteBookable(quote) || !paymentMethod) {
+      setFailure('Your fare has expired. Go back and get a new one.');
       return;
     }
 
@@ -61,13 +70,19 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
       try {
         const { ride, driver } = await findDriverAndCreateRide(
           {
-            customerId,
-            pickup,
-            drop: primaryDrop,
-            drops: draft.drops.map(toGeoPoint),
-            vehicleType: draft.vehicleType,
-            weight: draft.weightKg,
-            fare: draft.fareEstimate?.fare,
+            quoteId: quote.quoteId,
+            paymentMethod,
+            pickup: { address: pickup.address },
+            // Receiver details per drop, in the quote's order. Coordinates come from the quote.
+            drops: draft.drops.map((d) => ({
+              address: d.address,
+              receiver:
+                d.receiverName || d.receiverPhone
+                  ? { name: d.receiverName, phone: d.receiverPhone }
+                  : draft.receiverName || draft.receiverPhone
+                    ? { name: draft.receiverName, phone: draft.receiverPhone }
+                    : undefined,
+            })),
           },
           {
             signal: controller.signal,
@@ -173,9 +188,12 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
     outputRange: ['-100%', '330%'],
   });
 
-  const currentFare = trip?.fare || ride?.fare || draft.fareEstimate?.fare;
-  const currentVehicle = ride?.vehicleType || draft.vehicleType || 'Any Vehicle';
-  const vehicleData = mockVehicleTypes.find((v) => v.name === currentVehicle || v.id === currentVehicle);
+  const currentFare =
+    trip?.fare ?? ride?.fare ?? (draft.quote ? draft.quote.payablePaise / 100 : undefined);
+  const currentVehicle = vehicleLabelFor(ride?.vehicleType ?? draft.vehicleType);
+  const vehicleData = mockVehicleTypes.find(
+    (v) => v.name === currentVehicle || v.id === draft.vehicleType,
+  );
 
   return (
     <View style={styles.container}>

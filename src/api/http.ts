@@ -132,12 +132,11 @@ const linkSignals = (
   };
 };
 
-const attempt = async <T>(path: string, options: RequestOptions): Promise<T> => {
-  const isNearby = path.includes('/drivers/nearby');
-  if (isNearby) {
-    console.log('[CUSTOMER_NEARBY] request started');
-    console.log('[CUSTOMER_NEARBY] request URL:', buildUrl(path, options.query));
-  }
+const attempt = async <T>(
+  path: string,
+  options: RequestOptions,
+  forceRefresh = false,
+): Promise<T> => {
   const { method = 'GET', body, query, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = options;
   const { signal: linked, cleanup, didTimeout } = linkSignals(timeoutMs, signal);
 
@@ -148,10 +147,11 @@ const attempt = async <T>(path: string, options: RequestOptions): Promise<T> => 
   }
   if (currentUser) {
     try {
-      const token = await currentUser.getIdToken();
+      // The engine takes the customer's identity from this token; it is never sent in the body.
+      const token = await currentUser.getIdToken(forceRefresh);
       headers['Authorization'] = `Bearer ${token}`;
     } catch (e) {
-      console.warn("Failed to get Firebase token", e);
+      console.warn('Failed to get Firebase token', e);
     }
   }
 
@@ -164,7 +164,6 @@ const attempt = async <T>(path: string, options: RequestOptions): Promise<T> => 
       signal: linked,
     });
   } catch (cause) {
-    if (isNearby) console.log('[CUSTOMER_NEARBY] request failed');
     if (didTimeout()) {
       throw new ApiError('timeout', `Request to ${path} timed out after ${timeoutMs}ms`);
     }
@@ -199,13 +198,33 @@ export const request = async <T>(path: string, options: RequestOptions = {}): Pr
 
   const retries = options.retries ?? DEFAULT_RETRIES;
   let lastError: ApiError | undefined;
+  // The cached Firebase token may have expired; refresh once on the first 401 and retry.
+  let refreshedOnAuth = false;
 
   for (let i = 0; i <= retries; i++) {
     try {
-      return await attempt<T>(path, options);
+      return await attempt<T>(path, options, false);
     } catch (error) {
       const apiError =
-        (error && typeof error === 'object' && (error as any).name === 'ApiError') ? (error as ApiError) : new ApiError('network', String(error));
+        error && typeof error === 'object' && (error as any).name === 'ApiError'
+          ? (error as ApiError)
+          : new ApiError('network', String(error));
+
+      if (
+        apiError.kind === 'http' &&
+        apiError.status === 401 &&
+        !refreshedOnAuth &&
+        !options.signal?.aborted
+      ) {
+        refreshedOnAuth = true;
+        try {
+          return await attempt<T>(path, options, true);
+        } catch (retryError) {
+          throw (retryError && typeof retryError === 'object' && (retryError as any).name === 'ApiError')
+            ? (retryError as ApiError)
+            : new ApiError('network', String(retryError));
+        }
+      }
 
       if (!apiError.isRetryable || i === retries || options.signal?.aborted) {
         throw apiError;

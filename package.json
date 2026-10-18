@@ -21,12 +21,17 @@
         "react-native-vector-icons": "^10.3.0"
     },
     "devDependencies": {
+        "@babel/core": "^7.25.0",
         "@react-native-community/cli": "^20.2.0",
+        "@react-native/babel-preset": "0.81.6",
         "@react-native/metro-config": "^0.81.5",
         "@react-native/typescript-config": "^0.81.5",
-        "@types/jest": "^30.0.0",
+        "@types/jest": "^29.5.14",
         "@types/react": "~19.1.10",
         "@types/react-native-vector-icons": "^6.4.18",
+        "babel-jest": "^29.7.0",
+        "jest": "^29.7.0",
+        "react-test-renderer": "19.1.0",
         "typescript": "~5.9.2"
     },
     "scripts": {
@@ -34,6 +39,7 @@
         "android": "react-native run-android",
         "ios": "react-native run-ios",
         "typecheck": "tsc --noEmit",
+        "test": "jest",
         "check:wiring": "node scripts/check-wiring.js",
         "check:text": "node scripts/check-text-nodes.js",
         "check": "npm run typecheck && npm run check:wiring && npm run check:text"

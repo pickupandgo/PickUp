@@ -1,10 +1,10 @@
 import { request } from './http';
 import type {
   CreateRideInput,
-  FareEstimate,
   GeoPoint,
   NearbyDriver,
   Ride,
+  RideOtps,
   Trip,
 } from './types';
 
@@ -12,28 +12,6 @@ import type {
 interface Envelope {
   readonly success: boolean;
 }
-
-// ─── Fare ────────────────────────────────────────────────────────────────────
-
-export const getFareEstimate = async (
-  pickup: GeoPoint,
-  drop: GeoPoint,
-  weightKg: number,
-  signal?: AbortSignal
-): Promise<FareEstimate> => {
-  const res = await request<Envelope & FareEstimate>('/fare/estimate', {
-    query: {
-      pickupLat: pickup.latitude,
-      pickupLng: pickup.longitude,
-      dropLat: drop.latitude,
-      dropLng: drop.longitude,
-      weight: weightKg,
-    },
-    signal,
-  });
-  const { success, ...estimate } = res;
-  return estimate;
-};
 
 // ─── Drivers ─────────────────────────────────────────────────────────────────
 
@@ -66,12 +44,17 @@ export const getDriver = async (driverId: string, signal?: AbortSignal) => {
 
 // ─── Rides ───────────────────────────────────────────────────────────────────
 
+/**
+ * Confirms a server fare quote into a booking (engine POST /rides). The body carries only the
+ * quote id, the payment method and the driver to offer it to: the route, vehicle, weight and
+ * fare all come from the quote, and the customer is the signed-in user (the token). Never
+ * retried: a retry could create a duplicate ride.
+ */
 export const createRide = async (input: CreateRideInput, signal?: AbortSignal): Promise<Ride> => {
   const res = await request<Envelope & { ride: Ride }>('/rides', {
     method: 'POST',
     body: input,
     signal,
-    // Never retry: a retry could create a duplicate ride.
     retries: 0,
   });
   return res.ride;
@@ -85,10 +68,27 @@ export const getRide = async (rideId: string, signal?: AbortSignal): Promise<Rid
   return res.ride;
 };
 
-export const cancelRide = async (rideId: string, signal?: AbortSignal): Promise<Ride> => {
+/**
+ * The handover OTPs for this ride (engine GET /rides/:id/otps). The pickup / drop code is
+ * withheld until the payment backend allows that handover; the server decides, not the app.
+ */
+export const getRideOtps = async (rideId: string, signal?: AbortSignal): Promise<RideOtps> => {
+  const res = await request<Envelope & RideOtps>(
+    `/rides/${encodeURIComponent(rideId)}/otps`,
+    { signal }
+  );
+  const { success, ...otps } = res;
+  return otps;
+};
+
+export const cancelRide = async (
+  rideId: string,
+  reason = 'Cancelled by the customer',
+  signal?: AbortSignal
+): Promise<Ride> => {
   const res = await request<Envelope & { ride: Ride }>(
     `/rides/${encodeURIComponent(rideId)}/cancel`,
-    { method: 'POST', signal, retries: 0 }
+    { method: 'POST', body: { reason }, signal, retries: 0 }
   );
   return res.ride;
 };
@@ -125,19 +125,18 @@ export const getActiveTripForCustomer = async (
 
 export const cancelTrip = async (
   tripId: string,
-  customerId: string,
-  reason?: string,
+  reason = 'Cancelled by the customer',
   signal?: AbortSignal
 ): Promise<Trip> => {
   const res = await request<Envelope & { trip: Trip }>(
     `/trips/${encodeURIComponent(tripId)}/cancel`,
-    { method: 'POST', body: { customerId, reason }, signal, retries: 0 }
+    { method: 'POST', body: { reason }, signal, retries: 0 }
   );
   return res.trip;
 };
 
 export const getCustomerHistory = async (customerId: string, signal?: AbortSignal): Promise<Trip[]> => {
-  const res = await request<Envelope & { trips: Trip[] }>(`/trips/history/customer/${customerId}`, {
+  const res = await request<Envelope & { trips: Trip[] }>(`/trips/history/customer/${encodeURIComponent(customerId)}`, {
     signal,
   });
   return res.trips;

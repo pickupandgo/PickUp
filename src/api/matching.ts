@@ -125,8 +125,11 @@ export const findDriverAndCreateRide = async (
     searchCenter,
   } = options;
 
-  const pickup: GeoPoint = searchCenter ?? input.pickup;
-  const candidates = await getNearbyDrivers(pickup, radiusKm, signal);
+  // The booking route comes from the quote; the search needs the pickup coordinates explicitly.
+  if (!searchCenter) {
+    throw new ApiError('config', 'A pickup location is required to find a driver.');
+  }
+  const candidates = await getNearbyDrivers(searchCenter, radiusKm, signal);
 
   if (!candidates.length) {
     throw new NoDriversAvailableError(

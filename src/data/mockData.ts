@@ -64,6 +64,11 @@ export interface VehicleType {
   readonly image: any;
   readonly baseFare: number;
   readonly perKmCharge: number;
+  /**
+   * The server's vehicle category code used to price the route (POST /v1/fare/quotes).
+   * Null for vehicles that are not instantly priced (quote on request).
+   */
+  readonly category: string | null;
 }
 
 export const mockVehicleTypes: readonly VehicleType[] = [
@@ -78,6 +83,7 @@ export const mockVehicleTypes: readonly VehicleType[] = [
     image: require('../../assets/vehicles/bike.png'),
     baseFare: 50,
     perKmCharge: 10,
+    category: 'TWO_WHEELER',
   },
   {
     id: '3-wheeler',
@@ -90,6 +96,7 @@ export const mockVehicleTypes: readonly VehicleType[] = [
     image: require('../../assets/vehicles/three_wheeler.png'),
     baseFare: 100,
     perKmCharge: 18,
+    category: 'THREE_WHEELER',
   },
   {
     id: 'mini-truck',
@@ -102,6 +109,7 @@ export const mockVehicleTypes: readonly VehicleType[] = [
     image: require('../../assets/vehicles/mini_truck.png'),
     baseFare: 150,
     perKmCharge: 25,
+    category: 'MINI_TRUCK',
   },
   {
     id: 'pickup',
@@ -114,6 +122,7 @@ export const mockVehicleTypes: readonly VehicleType[] = [
     image: require('../../assets/vehicles/pickup.png'),
     baseFare: 200,
     perKmCharge: 30,
+    category: 'PICKUP_TRUCK',
   },
   {
     id: 'jcb',
@@ -126,6 +135,7 @@ export const mockVehicleTypes: readonly VehicleType[] = [
     image: require('../../assets/vehicles/jcb.png'),
     baseFare: 0,
     perKmCharge: 0,
+    category: null,
   },
   {
     id: 'crane',
@@ -138,8 +148,27 @@ export const mockVehicleTypes: readonly VehicleType[] = [
     image: require('../../assets/vehicles/crane.png'),
     baseFare: 0,
     perKmCharge: 0,
+    category: null,
   },
 ];
+
+/** The server vehicle category for a stored vehicle choice (name or id), or null if not priced. */
+export const vehicleCategoryFor = (vehicleType: string | undefined): string | null => {
+  if (!vehicleType) return null;
+  const match = mockVehicleTypes.find(
+    (v) => v.name === vehicleType || v.id === vehicleType || v.category === vehicleType,
+  );
+  return match?.category ?? null;
+};
+
+/** A human label for a vehicle choice (name, id or server category code). */
+export const vehicleLabelFor = (vehicleType: string | undefined): string => {
+  if (!vehicleType) return 'Vehicle';
+  const match = mockVehicleTypes.find(
+    (v) => v.name === vehicleType || v.id === vehicleType || v.category === vehicleType,
+  );
+  return match?.name ?? vehicleType;
+};
 
 // ─── Active Trip ─────────────────────────────────────────────────────────────
 

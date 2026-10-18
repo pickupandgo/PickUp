@@ -209,11 +209,13 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
           )}
         </View>
 
-        {/* The engine gives the OTP to the customer to read out to the driver. */}
-        {(trip?.otp ?? ride?.otp) && (
+        {/* Pay-at-pickup: tell the customer payment is due at pickup. The pickup OTP is never
+            shown here — the server withholds it until the driver arrives and (for pay-at-pickup)
+            the payment is confirmed; it then appears on the pickup verification screen. */}
+        {(current?.paymentMethod ?? ride?.paymentMethod) === 'PAY_AT_PICKUP' && (
           <View style={styles.otpRow}>
-            <Text style={styles.otpLabel}>PICKUP OTP</Text>
-            <Text style={styles.otpValue}>{trip?.otp ?? ride?.otp}</Text>
+            <Text style={styles.otpLabel}>PAYMENT AT PICKUP</Text>
+            <Text style={styles.paymentHintValue}>Pay the driver when they arrive to start the trip.</Text>
           </View>
         )}
 
@@ -486,6 +488,14 @@ const styles = StyleSheet.create({
     color: colors.onSecondaryContainer,
     fontFamily: typography.dataMono.fontFamily,
     letterSpacing: 4,
+  },
+  paymentHintValue: {
+    flex: 1,
+    marginLeft: spacing.md,
+    textAlign: 'right',
+    fontSize: typography.labelSm.fontSize,
+    color: colors.onSecondaryContainer,
+    fontFamily: typography.labelSm.fontFamily,
   },
 });
 

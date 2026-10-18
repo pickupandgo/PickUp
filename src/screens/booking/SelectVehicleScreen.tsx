@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { strings, mockVehicleTypes } from '../../data/mockData';
 import { useBooking } from '../../state/BookingContext';
-import { getFareEstimate } from '../../api/engine';
 import Feather from 'react-native-vector-icons/Feather';
 import TopAppBar from '../../components/organisms/TopAppBar';
 import VehicleOptionCard from '../../components/molecules/VehicleOptionCard';
@@ -21,26 +20,8 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
   onHelp,
   navigation,
 }) => {
-  const { draft, primaryDrop, setVehicleType } = useBooking();
+  const { draft, setVehicleType } = useBooking();
   const [selectedId, setSelectedId] = useState<string>('mini-truck');
-  const [distanceKm, setDistanceKm] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    if (draft.pickup && primaryDrop) {
-      setIsLoading(true);
-      getFareEstimate(draft.pickup, primaryDrop, 10)
-        .then((res) => {
-          setDistanceKm(res.distanceKm);
-          setIsLoading(false);
-        })
-        .catch(() => {
-          setIsLoading(false);
-        });
-    } else {
-      setIsLoading(false);
-    }
-  }, [draft.pickup, primaryDrop]);
 
   const selectedVehicle = mockVehicleTypes.find((v) => v.id === selectedId);
 
@@ -115,33 +96,22 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
           </Text>
         </View>
 
-        {isLoading ? (
-          <ActivityIndicator color={colors.primary} size="large" style={{ marginTop: spacing.xxl }} />
-        ) : (
-          <View style={styles.vehicleList}>
-            {mockVehicleTypes.map((vehicle) => {
-              const displayPrice = vehicle.baseFare === 0 
-                ? vehicle.estimatedPrice
-                : distanceKm 
-                  ? `₹${Math.round(vehicle.baseFare + (distanceKm * vehicle.perKmCharge))}`
-                  : `₹${parseInt(vehicle.estimatedPrice.replace(/[^0-9]/g, ''), 10) || vehicle.baseFare}`;
-
-              return (
-                <VehicleOptionCard
-                  key={vehicle.id}
-                  name={vehicle.name}
-                  description={vehicle.description}
-                  capacity={vehicle.capacity}
-                  estimatedPrice={displayPrice}
-                  eta={vehicle.eta}
-                  image={vehicle.image}
-                  selected={selectedId === vehicle.id}
-                  onPress={() => setSelectedId(vehicle.id)}
-                />
-              );
-            })}
-          </View>
-        )}
+        <View style={styles.vehicleList}>
+          {/* Indicative estimate only; the server sets the real fare on the next screen. */}
+          {mockVehicleTypes.map((vehicle) => (
+            <VehicleOptionCard
+              key={vehicle.id}
+              name={vehicle.name}
+              description={vehicle.description}
+              capacity={vehicle.capacity}
+              estimatedPrice={vehicle.estimatedPrice}
+              eta={vehicle.eta}
+              image={vehicle.image}
+              selected={selectedId === vehicle.id}
+              onPress={() => setSelectedId(vehicle.id)}
+            />
+          ))}
+        </View>
       </ScrollView>
 
       {/* Bottom CTA */}
