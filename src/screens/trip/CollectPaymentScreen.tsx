@@ -29,7 +29,9 @@ import { colors, typography, spacing, borderRadius } from '../../theme';
 import { useI18n } from '../../i18n';
 import { getPaymentsApi } from '../../services/payments';
 import {
+  cashShortfallPaise,
   collectAvailability,
+  type Obligation,
   requiredFeePaise,
   shouldReuseKey,
   watchCollection,
@@ -81,9 +83,26 @@ const STALE_TRIP_CODES: ReadonlySet<string> = new Set([
   'BOOKING_CLOSED',
   'COLLECTION_NOT_ALLOWED',
   'COLLECTION_AMOUNT_MISMATCH',
+  'COLLECTION_IN_PROGRESS',
+  'STOP_REQUIRED',
+  'STOP_NOT_FOUND',
 ]);
 
+/** Phase 8 codes with an EN/HI message of their own. */
+const CODE_MESSAGE_KEYS: Readonly<Record<string, string>> = {
+  STOP_REQUIRED: 'collect.errStopRequired',
+  STOP_NOT_FOUND: 'collect.errStopNotFound',
+};
+
 const money = (paise: number) => formatRupees(paiseToRupees(paise));
+
+/** What is owed now, when the gate says something can be collected. */
+const obligationOf = (trip: DriverTripDto): Obligation | null => {
+  const availability = collectAvailability(trip);
+  return availability.kind === 'open' || availability.kind === 'processing'
+    ? availability
+    : null;
+};
 
 const timeOf = (iso: string) =>
   new Date(iso).toLocaleTimeString('en-IN', {
@@ -108,7 +127,22 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
   const [qr, setQr] = useState<ShownQr | null>(null);
   const [busy, setBusy] = useState<CollectionMethodDto | null>(null);
   const [actionError, setActionError] = useState<ActionError | null>(null);
+  /** Wallet balance, to show a cash-fee shortfall before the driver takes cash. */
+  const [balancePaise, setBalancePaise] = useState<number | null>(null);
   const mounted = useRef(false);
+  // The pending QR already shown (or being fetched) for the gate's collectionId.
+  const resumedCollection = useRef<string | null>(null);
+
+  const messageOf = useCallback(
+    (error: unknown) => {
+      const key =
+        error instanceof PaymentsApiError
+          ? CODE_MESSAGE_KEYS[error.code]
+          : undefined;
+      return key ? t(key) : describePaymentsError(error);
+    },
+    [t],
+  );
   // One idempotency key per attempt and method, reused only while the outcome is unknown.
   const keys = useRef<Partial<Record<CollectionMethodDto, string>>>({});
   // Bumped to stop the QR watcher (new QR, cash instead, screen closed).
@@ -128,6 +162,15 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
       setScreen({ kind: 'unavailable' });
       return;
     }
+    // The wallet balance only informs the driver; the server checks the fee itself.
+    api
+      .getWallet()
+      .then(wallet => {
+        if (mounted.current) {
+          setBalancePaise(wallet.balancePaise);
+        }
+      })
+      .catch(() => undefined);
     try {
       const trip = await api.getTrip(tripId);
       if (mounted.current) {
@@ -163,6 +206,12 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
         setScreen({ kind: 'unavailable' });
         return;
       }
+      // What is owed comes from the payment gate: the booking's amount, or this drop's.
+      const owed = obligationOf(trip);
+      if (!owed) {
+        loadTrip().catch(() => undefined);
+        return;
+      }
       if (method === 'CASH') {
         watchGeneration.current += 1;
       }
@@ -173,7 +222,11 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
       try {
         const collection = await api.startCollection(
           trip.tripId,
-          { method, amountPaise: trip.payment.farePaise },
+          {
+            method,
+            amountPaise: owed.amountPaise,
+            stopSequence: owed.stopSequence,
+          },
           key,
         );
         keys.current[method] = undefined;
@@ -201,7 +254,7 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
           return;
         }
         setActionError({
-          message: describePaymentsError(error),
+          message: messageOf(error),
           requiredFeePaise: requiredFeePaise(error),
         });
         if (
@@ -217,8 +270,45 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
         }
       }
     },
-    [loadTrip, t],
+    [loadTrip, messageOf, t],
   );
+
+  // The gate says a QR is already open for this obligation (e.g. the screen was closed while
+  // the customer was paying): show that QR again instead of creating a new one.
+  useEffect(() => {
+    const api = getPaymentsApi();
+    if (!api || qr || screen.kind !== 'trip') {
+      return;
+    }
+    const availability = collectAvailability(screen.trip);
+    if (
+      availability.kind !== 'processing' ||
+      !availability.collectionId ||
+      resumedCollection.current === availability.collectionId
+    ) {
+      return;
+    }
+    const collectionId = availability.collectionId;
+    const trip = screen.trip;
+    resumedCollection.current = collectionId;
+    api
+      .getCollection(trip.tripId, collectionId)
+      .then(collection => {
+        if (!mounted.current) {
+          return;
+        }
+        if (collection.status === 'PENDING' && collection.qr?.url) {
+          setQr({ trip, collection });
+        } else if (collection.status === 'COMPLETED') {
+          setScreen({ kind: 'paid', trip, collection });
+        } else {
+          loadTrip().catch(() => undefined);
+        }
+      })
+      .catch(() => {
+        resumedCollection.current = null;
+      });
+  }, [screen, qr, loadTrip]);
 
   // While a QR is shown, ask the server until it is paid, expires or is cancelled.
   useEffect(() => {
@@ -272,15 +362,26 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
 
   const confirmCash = useCallback(
     (trip: DriverTripDto) => {
-      const fee = trip.payment.platformFeePaise;
-      const message =
-        fee > 0
-          ? `${t('collect.confirmCashMsg', {
-              amount: money(trip.payment.farePaise),
-            })} ${t('collect.confirmCashFee', { fee: money(fee) })}`
-          : t('collect.confirmCashMsg', {
-              amount: money(trip.payment.farePaise),
-            });
+      const owed = obligationOf(trip);
+      if (!owed) {
+        loadTrip().catch(() => undefined);
+        return;
+      }
+      const fee = owed.cashFeePaise ?? 0;
+      const short = cashShortfallPaise(owed.cashFeePaise, balancePaise);
+      const amountText = t('collect.confirmCashMsg', {
+        amount: money(owed.amountPaise),
+      });
+      const feeText =
+        fee > 0 ? ` ${t('collect.confirmCashFee', { fee: money(fee) })}` : '';
+      const shortText =
+        short !== null && balancePaise !== null
+          ? ` ${t('collect.walletShort', {
+              balance: money(balancePaise),
+              fee: money(fee),
+            })}`
+          : '';
+      const message = `${amountText}${feeText}${shortText}`;
       Alert.alert(t('collect.confirmCashTitle'), message, [
         { text: t('common.cancel'), style: 'cancel' },
         {
@@ -291,7 +392,7 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
         },
       ]);
     },
-    [collect, t],
+    [collect, loadTrip, balancePaise, t],
   );
 
   const shareLink = useCallback(
@@ -384,24 +485,35 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
     }
 
     const { trip } = screen;
+    // Everything below comes from the payment gate: what is owed now, for which drop.
     const availability = collectAvailability(trip);
+    const owed = obligationOf(trip);
+    const perDrop = owed !== null && owed.stopSequence !== null;
     const stageLabel =
       trip.payment.collectionStage === 'PICKUP'
         ? t('collect.stagePickup')
         : t('collect.stageDelivery');
+    const cashFee = owed ? owed.cashFeePaise ?? 0 : 0;
+    const shortfall = owed
+      ? cashShortfallPaise(owed.cashFeePaise, balancePaise)
+      : null;
 
     return (
       <>
         {/* What to collect: all from the server */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Text style={styles.label}>{t('collect.fare')}</Text>
+            <Text style={styles.label}>
+              {perDrop
+                ? t('collect.dropFare', { n: owed.stopSequence ?? '' })
+                : t('collect.fare')}
+            </Text>
             {trip.payment.collectionStage ? (
               <StatusPill label={stageLabel} variant="info" />
             ) : null}
           </View>
           <Text style={styles.amountLarge}>
-            {money(trip.payment.farePaise)}
+            {money(owed ? owed.amountPaise : trip.payment.farePaise)}
           </Text>
           <Text style={styles.reference}>
             {t('collect.booking', { ref: trip.externalRef })}
@@ -410,16 +522,28 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
           <View style={styles.row}>
             <Text style={styles.rowLabel}>{t('collect.platformFee')}</Text>
             <Text style={styles.rowValue}>
-              {money(trip.payment.platformFeePaise)}
+              {money(
+                owed && owed.cashFeePaise !== null
+                  ? owed.cashFeePaise
+                  : trip.payment.platformFeePaise,
+              )}
             </Text>
           </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>{t('collect.yourShare')}</Text>
-            <Text style={styles.rowValueStrong}>
-              {money(trip.payment.driverSharePaise)}
-            </Text>
-          </View>
+          {perDrop ? null : (
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>{t('collect.yourShare')}</Text>
+              <Text style={styles.rowValueStrong}>
+                {money(trip.payment.driverSharePaise)}
+              </Text>
+            </View>
+          )}
         </View>
+
+        {availability.kind === 'open' && availability.lastFailure ? (
+          <Text style={styles.note}>
+            {t('collect.lastFailure', { reason: availability.lastFailure })}
+          </Text>
+        ) : null}
 
         {actionError ? (
           <View style={styles.errorBlock}>
@@ -435,6 +559,15 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
                   label={t('collect.recharge')}
                   onPress={goToRecharge}
                 />
+                {!qr && owed ? (
+                  <SecondaryButton
+                    label={t('collect.useQrInstead')}
+                    onPress={() => {
+                      collect(trip, 'ONLINE_QR').catch(() => undefined);
+                    }}
+                    disabled={busy !== null}
+                  />
+                ) : null}
               </>
             ) : null}
           </View>
@@ -492,18 +625,30 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
               disabled={busy !== null}
             />
           </View>
-        ) : availability.kind === 'open' ? (
+        ) : availability.kind === 'open' ||
+          availability.kind === 'processing' ? (
           <View style={styles.actions}>
-            <PrimaryButton
-              label={t('collect.qr')}
-              onPress={() => {
-                collect(trip, 'ONLINE_QR').catch(() => undefined);
-              }}
-              loading={busy === 'ONLINE_QR'}
-              disabled={busy !== null}
-            />
+            {availability.kind === 'processing' ? (
+              <View style={styles.waitingRow}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={styles.waitingText}>{t('collect.waiting')}</Text>
+              </View>
+            ) : (
+              <PrimaryButton
+                label={t('collect.qr')}
+                onPress={() => {
+                  collect(trip, 'ONLINE_QR').catch(() => undefined);
+                }}
+                loading={busy === 'ONLINE_QR'}
+                disabled={busy !== null}
+              />
+            )}
             <SecondaryButton
-              label={t('collect.cash')}
+              label={
+                availability.kind === 'processing'
+                  ? t('collect.switchToCash')
+                  : t('collect.cash')
+              }
               onPress={() => confirmCash(trip)}
               disabled={busy !== null}
             />
@@ -513,12 +658,30 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
                 accessibilityLabel={t('collect.pleaseWait')}
               />
             ) : null}
-            {trip.payment.platformFeePaise > 0 ? (
+            {/* The cash fee due, against the wallet balance, before the driver takes cash */}
+            {cashFee > 0 ? (
               <Text style={styles.noteCenter}>
-                {t('collect.cashFeeNote', {
-                  fee: money(trip.payment.platformFeePaise),
-                })}
+                {balancePaise !== null
+                  ? t('collect.cashFeeDue', {
+                      fee: money(cashFee),
+                      balance: money(balancePaise),
+                    })
+                  : t('collect.cashFeeNote', { fee: money(cashFee) })}
               </Text>
+            ) : null}
+            {shortfall !== null && balancePaise !== null ? (
+              <>
+                <Text style={styles.note}>
+                  {t('collect.walletShort', {
+                    balance: money(balancePaise),
+                    fee: money(cashFee),
+                  })}
+                </Text>
+                <SecondaryButton
+                  label={t('collect.recharge')}
+                  onPress={goToRecharge}
+                />
+              </>
             ) : null}
           </View>
         ) : availability.kind === 'paid' ? (
@@ -536,8 +699,14 @@ export const CollectPaymentScreen: React.FC<CollectPaymentScreenProps> = ({
         ) : (
           <View style={styles.card}>
             <Text style={styles.note}>
-              {availability.stage === 'PICKUP'
+              {availability.kind === 'awaiting_customer'
+                ? t('collect.awaitingCustomer')
+                : availability.kind === 'nothing_due'
+                ? t('collect.nothingDue')
+                : availability.stage === 'PICKUP'
                 ? t('collect.notYetPickup')
+                : trip.payment.stops.length > 0
+                ? t('collect.notYetDrop')
                 : t('collect.notYetDelivery')}
             </Text>
             <SecondaryButton

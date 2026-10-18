@@ -1,7 +1,9 @@
 import React, { useCallback } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Alert } from 'react-native';
 import { launchCamera } from 'react-native-image-picker';
+import { env } from '../../config/env';
 import { deliveryProofLabels } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 import { CameraOverlay } from '../../components/organisms/CameraOverlay';
 import type { HomeScreenProps } from '../../types/navigation';
 
@@ -17,14 +19,18 @@ export interface DeliveryProofCameraScreenProps {
   readonly testID?: string;
 }
 
-export const DeliveryProofCameraScreen: React.FC<DeliveryProofCameraScreenProps> = ({
-  navigation,
-  route,
-  testID,
-}) => {
+export const DeliveryProofCameraScreen: React.FC<
+  DeliveryProofCameraScreenProps
+> = ({ navigation, route, testID }) => {
   const { tripId, stopId } = route.params;
+  const { t } = useI18n();
 
   const handleCapture = useCallback(async () => {
+    // Mock mode only (no trip engine): a placeholder photo for the local demo trip.
+    const placeholder = env.IS_MOCK_MODE
+      ? 'mock://delivery-proof-photo.jpg'
+      : null;
+    let uri: string | null = null;
     try {
       const result = await launchCamera({
         mediaType: 'photo',
@@ -36,22 +42,21 @@ export const DeliveryProofCameraScreen: React.FC<DeliveryProofCameraScreenProps>
       if (result.didCancel) {
         return; // Driver backed out of the camera; stay on this screen.
       }
-
-      const uri = result.assets?.[0]?.uri;
-      navigation.navigate('DeliveryProofPreview', {
-        tripId,
-        stopId,
-        photoUri: uri ?? 'mock://delivery-proof-photo.jpg',
-      });
-    } catch (e) {
-      // If the camera can't be opened, don't block the flow.
-      navigation.navigate('DeliveryProofPreview', {
-        tripId,
-        stopId,
-        photoUri: 'mock://delivery-proof-photo.jpg',
-      });
+      uri = result.assets?.[0]?.uri ?? placeholder;
+    } catch {
+      uri = placeholder;
     }
-  }, [navigation, tripId, stopId]);
+    if (!uri) {
+      // A delivery is never confirmed without a real photo.
+      Alert.alert(deliveryProofLabels.cameraTitle, t('trip.cameraFailed'));
+      return;
+    }
+    navigation.navigate('DeliveryProofPreview', {
+      tripId,
+      stopId,
+      photoUri: uri,
+    });
+  }, [navigation, tripId, stopId, t]);
 
   return (
     <View style={styles.container} testID={testID}>

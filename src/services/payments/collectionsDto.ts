@@ -26,10 +26,56 @@ export type BookingPaymentMethodDto =
   | 'PAY_AT_DELIVERY';
 export type BookingPaymentStatusDto =
   | 'UNPAID'
+  /** Some drops of a booking paid drop by drop are paid. */
+  | 'PARTIALLY_PAID'
   | 'PAID'
   | 'REFUND_PENDING'
-  | 'REFUNDED';
+  | 'REFUNDED'
+  | 'PARTIALLY_REFUNDED';
 export type CollectionStageDto = 'PICKUP' | 'DELIVERY';
+export type GateStageDto = 'PICKUP' | 'DROP';
+export type GatePaymentStateDto =
+  /** Nothing is owed at this point. */
+  | 'NOT_REQUIRED'
+  /** Owed at a later point (before arrival at the pickup, or a drop not reached yet). */
+  | 'NOT_YET'
+  /** Owed now and not paid; no payment in progress. */
+  | 'PAYMENT_REQUIRED'
+  /** A QR is open and waiting for the customer or receiver to pay. */
+  | 'PAYMENT_PROCESSING'
+  /** The last QR expired or was closed unpaid: a new attempt is needed. */
+  | 'PAYMENT_FAILED'
+  | 'PAYMENT_CONFIRMED';
+
+/**
+ * The payment gate (docs/PAYMENT_FLOW_FINAL_REVIEW.md D, E): what must be paid at the handover
+ * point the trip is at now, and whether the goods may be handed over. The only source of what
+ * the driver can collect and whether an OTP can be entered.
+ */
+export interface PaymentGateDto {
+  readonly stage: GateStageDto | null;
+  /** The drop this obligation is for; null for the whole booking. */
+  readonly stopSequence: number | null;
+  readonly paymentState: GatePaymentStateDto;
+  /** What is owed at this point, in paise. */
+  readonly amountPaise: number | null;
+  /** The platform fee debited from the driver's wallet if this is paid in cash. */
+  readonly cashFeePaise: number | null;
+  /** The goods may be handed over now (pickup OTP / drop OTP). */
+  readonly handoverAllowed: boolean;
+  /** The collection behind paymentState (live, completed, or the last failed one). */
+  readonly collectionId: string | null;
+  /** Why the last collection attempt failed (PAYMENT_FAILED). */
+  readonly lastFailure: string | null;
+}
+
+/** A drop of the booking, as the payment backend has it. */
+export interface TripStopPaymentDto {
+  readonly sequence: number;
+  readonly payablePaise: number;
+  readonly status: string;
+  readonly paid: boolean;
+}
 export type CollectionMethodDto = 'CASH' | 'ONLINE_QR';
 /** PENDING: QR shown, not paid yet. FAILED: QR expired or was cancelled. */
 export type CollectionStatusDto =
@@ -52,6 +98,10 @@ export interface TripPaymentDto {
   readonly collectionStage: CollectionStageDto | null;
   /** True when the server accepts a cash or QR collection right now. */
   readonly collectionOpen: boolean;
+  /** Whether the goods may be handed over now, and what is owed first. */
+  readonly paymentGate: PaymentGateDto;
+  /** In delivery order; empty for a historical booking. */
+  readonly stops: readonly TripStopPaymentDto[];
 }
 
 export interface DriverTripDto {
@@ -93,6 +143,12 @@ export interface CollectionDto {
   readonly createdAt: string;
   /** True when this request had already been processed (a retry). */
   readonly replayed: boolean;
+  /** The drop this collection pays for; null for the whole booking. */
+  readonly stopSequence: number | null;
+  /** The booking's payment status as the server recorded it (when the server sent it). */
+  readonly bookingPaymentStatus: BookingPaymentStatusDto | null;
+  /** The payment gate right after this collection (when the server sent it). */
+  readonly paymentGate: PaymentGateDto | null;
 }
 
 const PAYMENT_METHODS: readonly BookingPaymentMethodDto[] = [
@@ -102,11 +158,24 @@ const PAYMENT_METHODS: readonly BookingPaymentMethodDto[] = [
 ];
 const PAYMENT_STATUSES: readonly BookingPaymentStatusDto[] = [
   'UNPAID',
+  'PARTIALLY_PAID',
   'PAID',
   'REFUND_PENDING',
   'REFUNDED',
+  'PARTIALLY_REFUNDED',
 ];
 const STAGES: readonly CollectionStageDto[] = ['PICKUP', 'DELIVERY'];
+const GATE_STAGES: readonly GateStageDto[] = ['PICKUP', 'DROP'];
+const GATE_STATES: readonly GatePaymentStateDto[] = [
+  'NOT_REQUIRED',
+  'NOT_YET',
+  'PAYMENT_REQUIRED',
+  'PAYMENT_PROCESSING',
+  'PAYMENT_FAILED',
+  'PAYMENT_CONFIRMED',
+];
+const STOP_STATUS_PATTERN = /^[A-Z_]{3,40}$/;
+const MAX_STOPS = 25;
 export const COLLECTION_METHODS: readonly CollectionMethodDto[] = [
   'CASH',
   'ONLINE_QR',
@@ -131,6 +200,54 @@ const RAZORPAY_URL_PATTERN =
 
 export function isRazorpayUrl(url: string): boolean {
   return url.length <= 2048 && RAZORPAY_URL_PATTERN.test(url);
+}
+
+function stopSequenceOf(value: unknown, what: string): number {
+  const sequence = wholeNumber(value, what);
+  return sequence >= 1 && sequence <= MAX_STOPS ? sequence : invalid(what);
+}
+
+function nullableStopSequence(value: unknown, what: string): number | null {
+  return value === null ? null : stopSequenceOf(value, what);
+}
+
+/** The gate decides OTPs and collections: anything inconsistent is refused, never guessed. */
+export function parsePaymentGate(value: unknown): PaymentGateDto {
+  const json = record(value, 'payment gate');
+  const paymentState = oneOf(json.paymentState, GATE_STATES, 'payment state');
+  const amountPaise = nullableWholeNumber(json.amountPaise, 'amount owed');
+  const owedNow =
+    paymentState === 'PAYMENT_REQUIRED' ||
+    paymentState === 'PAYMENT_FAILED' ||
+    paymentState === 'PAYMENT_PROCESSING';
+  if (owedNow && (amountPaise === null || amountPaise <= 0)) {
+    invalid('amount owed');
+  }
+  const collectionId = nullableText(
+    json.collectionId,
+    'collection id',
+    UUID_PATTERN,
+  );
+  return {
+    stage: nullableOneOf(json.stage, GATE_STAGES, 'gate stage'),
+    stopSequence: nullableStopSequence(json.stopSequence, 'gate drop'),
+    paymentState,
+    amountPaise,
+    cashFeePaise: nullableWholeNumber(json.cashFeePaise, 'cash fee'),
+    handoverAllowed: bool(json.handoverAllowed, 'handover flag'),
+    collectionId,
+    lastFailure: nullableText(json.lastFailure, 'last failure'),
+  };
+}
+
+function parseStopPayment(value: unknown): TripStopPaymentDto {
+  const json = record(value, 'drop payment');
+  return {
+    sequence: stopSequenceOf(json.sequence, 'drop'),
+    payablePaise: wholeNumber(json.payablePaise, 'drop amount'),
+    status: text(json.status, 'drop status', STOP_STATUS_PATTERN),
+    paid: bool(json.paid, 'drop paid flag'),
+  };
 }
 
 export function parseTrip(value: unknown): DriverTripDto {
@@ -171,6 +288,8 @@ export function parseTrip(value: unknown): DriverTripDto {
         'collection stage',
       ),
       collectionOpen: bool(payment.collectionOpen, 'collection window'),
+      paymentGate: parsePaymentGate(payment.paymentGate),
+      stops: list(payment.stops, 'drops').map(parseStopPayment),
     },
   };
 }
@@ -218,5 +337,18 @@ export function parseCollection(value: unknown): CollectionDto {
     completedAt: nullableTimestamp(json.completedAt, 'completion time'),
     createdAt: timestamp(json.createdAt, 'creation time'),
     replayed: bool(json.replayed, 'replay flag'),
+    // Additive fields (Phase 8): checked when present.
+    stopSequence:
+      json.stopSequence === undefined
+        ? null
+        : nullableStopSequence(json.stopSequence, 'collection drop'),
+    bookingPaymentStatus:
+      json.bookingPaymentStatus === undefined
+        ? null
+        : oneOf(json.bookingPaymentStatus, PAYMENT_STATUSES, 'payment status'),
+    paymentGate:
+      json.paymentGate === undefined
+        ? null
+        : parsePaymentGate(json.paymentGate),
   };
 }

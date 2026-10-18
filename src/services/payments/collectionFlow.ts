@@ -1,30 +1,145 @@
-import type { CollectionDto, DriverTripDto } from './collectionsDto';
+import type {
+  CollectionDto,
+  DriverTripDto,
+  GateStageDto,
+  PaymentGateDto,
+} from './collectionsDto';
 import type { PaymentsApi } from './paymentsApi';
 import { PaymentsApiError } from './paymentsErrors';
 
 /*
  * Pickup / delivery payment collection. The server decides everything that involves money:
- * whether the trip can be collected now, the fare, the platform fee, and whether a QR was paid.
- * The app only shows that state and asks the server to record cash or create a QR.
+ * whether the trip can be collected now, what is owed (the booking's amount, or one drop's), the
+ * platform fee, and whether a QR was paid. The app only shows that state and asks the server to
+ * record cash or create a QR.
  */
 
-/** What the collect screen can offer for a trip, from the server's view of it. */
-export type CollectAvailability =
-  /** Cash or QR can be collected now. */
-  | { readonly kind: 'open' }
-  /** Already paid (prepaid in the app, or collected earlier). */
-  | { readonly kind: 'paid'; readonly prepaid: boolean }
-  /** Pay-at-pickup / pay-at-delivery, but not in its window yet (or the trip is closed). */
-  | { readonly kind: 'not_yet'; readonly stage: 'PICKUP' | 'DELIVERY' };
+/** What is owed at the handover point the trip is at now (from the payment gate). */
+export interface Obligation {
+  readonly stage: GateStageDto;
+  /** What to collect, in paise: the booking's payable amount, or the drop's. */
+  readonly amountPaise: number;
+  /** The platform fee debited from the wallet if this is taken in cash. */
+  readonly cashFeePaise: number | null;
+  /** The drop being paid for (sent as stopSequence); null for the whole booking. */
+  readonly stopSequence: number | null;
+}
 
+/** What the collect screen can offer for a trip, from the payment gate only. */
+export type CollectAvailability =
+  /** Owed now: cash or QR can be collected. */
+  | (Obligation & {
+      readonly kind: 'open';
+      /** Why the last QR failed, when it did (shown to the driver). */
+      readonly lastFailure: string | null;
+    })
+  /** A QR is open for this obligation: show it again, or take cash instead. */
+  | (Obligation & {
+      readonly kind: 'processing';
+      readonly collectionId: string | null;
+    })
+  /** Paid: collected here, or prepaid in the app. */
+  | {
+      readonly kind: 'paid';
+      readonly prepaid: boolean;
+      readonly stopSequence: number | null;
+    }
+  /** Owed later: before the arrival at the pickup, or at a drop not reached yet. */
+  | { readonly kind: 'not_yet'; readonly stage: 'PICKUP' | 'DELIVERY' }
+  /** Prepaid in the app but not paid there: the customer pays in the app, never the driver. */
+  | { readonly kind: 'awaiting_customer' }
+  /** Nothing is owed at this point. */
+  | { readonly kind: 'nothing_due' };
+
+/**
+ * Availability comes from the payment gate only (review G). A prepaid booking that is still
+ * unpaid is not paid: the driver has nothing to collect, and the customer must pay in the app.
+ */
 export function collectAvailability(trip: DriverTripDto): CollectAvailability {
-  const { payment } = trip;
-  if (payment.status !== 'UNPAID' || payment.collectionStage === null) {
-    return { kind: 'paid', prepaid: payment.method === 'PREPAID_UPI' };
+  const { paymentGate: gate, method, status } = trip.payment;
+  const owed =
+    gate.stage !== null && gate.amountPaise !== null && gate.amountPaise > 0
+      ? {
+          stage: gate.stage,
+          amountPaise: gate.amountPaise,
+          cashFeePaise: gate.cashFeePaise,
+          stopSequence: gate.stopSequence,
+        }
+      : null;
+  switch (gate.paymentState) {
+    case 'PAYMENT_REQUIRED':
+    case 'PAYMENT_FAILED':
+      return owed
+        ? { kind: 'open', ...owed, lastFailure: gate.lastFailure }
+        : { kind: 'awaiting_customer' };
+    case 'PAYMENT_PROCESSING':
+      return owed
+        ? { kind: 'processing', ...owed, collectionId: gate.collectionId }
+        : { kind: 'awaiting_customer' };
+    case 'PAYMENT_CONFIRMED':
+      return {
+        kind: 'paid',
+        prepaid: method === 'PREPAID_UPI',
+        stopSequence: gate.stopSequence,
+      };
+    case 'NOT_YET':
+      return {
+        kind: 'not_yet',
+        stage: gate.stage === 'PICKUP' ? 'PICKUP' : 'DELIVERY',
+      };
+    default:
+      return status === 'PAID'
+        ? {
+            kind: 'paid',
+            prepaid: method === 'PREPAID_UPI',
+            stopSequence: null,
+          }
+        : { kind: 'nothing_due' };
   }
-  return payment.collectionOpen
-    ? { kind: 'open' }
-    : { kind: 'not_yet', stage: payment.collectionStage };
+}
+
+/**
+ * Whether the pickup OTP may be entered now: only when the payment backend allows the pickup
+ * handover (paid, or nothing owed at the pickup). The engine checks the same gate again.
+ */
+export function pickupHandoverAllowed(gate: PaymentGateDto | null): boolean {
+  return gate !== null && gate.stage === 'PICKUP' && gate.handoverAllowed;
+}
+
+/**
+ * Whether the OTP of drop `sequence` may be entered now: only when the payment backend allows
+ * that drop's handover (its payment confirmed, or nothing owed there).
+ */
+export function dropHandoverAllowed(
+  gate: PaymentGateDto | null,
+  sequence: number | undefined,
+): boolean {
+  return (
+    gate !== null &&
+    gate.stage === 'DROP' &&
+    gate.handoverAllowed &&
+    (gate.stopSequence === null || gate.stopSequence === sequence)
+  );
+}
+
+/** True when the driver can collect (or is collecting) a payment for this trip now. */
+export function isCollectable(trip: DriverTripDto): boolean {
+  const availability = collectAvailability(trip);
+  return availability.kind === 'open' || availability.kind === 'processing';
+}
+
+/**
+ * The cash fee the wallet must cover before the driver takes cash, when the balance is short.
+ * Null when there is no fee or the balance covers it (the server still checks it).
+ */
+export function cashShortfallPaise(
+  cashFeePaise: number | null,
+  balancePaise: number | null,
+): number | null {
+  if (cashFeePaise === null || cashFeePaise <= 0 || balancePaise === null) {
+    return null;
+  }
+  return balancePaise < cashFeePaise ? cashFeePaise - balancePaise : null;
 }
 
 export type CollectionWatchResult =

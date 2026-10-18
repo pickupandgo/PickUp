@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { getPaymentsApi } from '../services/payments';
+import { isCollectable } from '../services/payments/collectionFlow';
 import type { DriverTripDto } from '../services/payments/collectionsDto';
 
 export interface UseCollectableTripsOptions {
@@ -11,8 +12,9 @@ export interface UseCollectableTripsOptions {
 const DEFAULT_POLL_INTERVAL_MS = 20_000;
 
 /**
- * The driver's running trips whose payment can be collected right now (pay at pickup once
- * arrived; pay at delivery once every drop is delivered), as the payments backend reports them.
+ * The driver's running trips whose payment can be collected right now, as the payments backend's
+ * payment gate reports them (pay at pickup once arrived; pay at delivery at the drop the driver
+ * is at, or after the last drop for an older booking).
  * Re-checked while the screen is focused, so a banner appears as soon as the window opens.
  * Failures are silent: the banner just stays hidden and the next check tries again.
  */
@@ -42,7 +44,8 @@ export function useCollectableTrips(
           .listActiveTrips()
           .then(list => {
             if (active && mounted.current) {
-              setTrips(list.filter(trip => trip.payment.collectionOpen));
+              // What can be collected comes from the payment gate only.
+              setTrips(list.filter(isCollectable));
             }
           })
           .catch(() => undefined);

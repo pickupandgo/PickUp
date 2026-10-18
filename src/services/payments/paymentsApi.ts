@@ -121,13 +121,16 @@ export interface PaymentsApi {
   getTrip(tripId: string): Promise<DriverTripDto>;
   /**
    * Records cash (and debits the platform fee from the wallet) or returns a booking-linked QR.
-   * `amountPaise` must be the fare the server showed; retry with the same key, never a new one.
+   * `amountPaise` must be what the payment gate says is owed (the booking's amount, or the
+   * drop's); `stopSequence` names the drop for a booking paid drop by drop, and is left out
+   * otherwise. Retry with the same key, never a new one.
    */
   startCollection(
     tripId: string,
     collection: {
       readonly method: CollectionMethodDto;
       readonly amountPaise: number;
+      readonly stopSequence?: number | null;
     },
     idempotencyKey: string,
   ): Promise<CollectionDto>;
@@ -276,22 +279,39 @@ export function createPaymentsApi(client: PaymentsClient): PaymentsApi {
       if (!IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
         throw new RangeError('Invalid idempotency key');
       }
+      const stopSequence = collection.stopSequence ?? null;
+      if (
+        stopSequence !== null &&
+        (!Number.isSafeInteger(stopSequence) ||
+          stopSequence < 1 ||
+          stopSequence > 25)
+      ) {
+        throw new RangeError('Invalid drop');
+      }
       const result = parseCollection(
         await client.request({
           method: 'POST',
           path: `/v1/trips/${tripId}/collections`,
-          body: {
-            method: collection.method,
-            amountPaise: collection.amountPaise,
-          },
+          body:
+            stopSequence === null
+              ? {
+                  method: collection.method,
+                  amountPaise: collection.amountPaise,
+                }
+              : {
+                  method: collection.method,
+                  amountPaise: collection.amountPaise,
+                  stopSequence,
+                },
           idempotencyKey,
         }),
       );
-      // Only ever act on the collection the driver asked for: this trip, method and fare.
+      // Only ever act on the collection the driver asked for: this trip, drop, method and amount.
       if (
         result.tripId !== tripId ||
         result.method !== collection.method ||
-        result.amountPaise !== collection.amountPaise
+        result.amountPaise !== collection.amountPaise ||
+        (stopSequence !== null && result.stopSequence !== stopSequence)
       ) {
         throw new PaymentsApiError(
           'AMOUNT_MISMATCH',

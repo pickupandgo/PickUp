@@ -2,7 +2,13 @@ import React, { useCallback, useMemo } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import {
+  colors,
+  typography,
+  spacing,
+  borderRadius,
+  shadows,
+} from '../../theme';
 import { DriverMap, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
 import { useActiveTrip } from '../../hooks/useActiveTrip';
@@ -24,7 +30,9 @@ export interface ActiveTripScreenProps {
 function stopLabel(stops: readonly TripStop[], index: number): string {
   const stop = stops[index];
   if (stop.type === 'pickup') return 'Pickup';
-  const dropNumber = stops.slice(0, index + 1).filter((s) => s.type !== 'pickup').length;
+  const dropNumber = stops
+    .slice(0, index + 1)
+    .filter(s => s.type !== 'pickup').length;
   return `Drop ${dropNumber}`;
 }
 
@@ -38,12 +46,17 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   const { route: routingData } = useTripRoute();
   const collectable = useCollectableTrips();
 
-  useArrivalDetection((event) => {
-    if (trip && event.tripId === trip.id) {
-      navigation.navigate('ArrivedAtPickup', {
-        tripId: event.tripId,
-        stopId: event.stopId,
-      });
+  // Near a stop: open that stop's screen. The arrival itself is the driver's explicit action
+  // there (one engine step), never automatic.
+  useArrivalDetection(event => {
+    if (!trip || event.tripId !== trip.id) {
+      return;
+    }
+    const params = { tripId: event.tripId, stopId: event.stopId };
+    if (event.stopType === 'pickup') {
+      navigation.navigate('ArrivedAtPickup', params);
+    } else {
+      navigation.navigate('DropOTP', params);
     }
   });
 
@@ -60,7 +73,10 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
         coordinate: { latitude: stop.latitude, longitude: stop.longitude },
         isCurrent: index === trip.currentStopIndex,
         completed: stop.status === 'completed',
-        label: stop.type === 'drop' && trip.stops.length > 2 ? String(index) : undefined,
+        label:
+          stop.type === 'drop' && trip.stops.length > 2
+            ? String(index)
+            : undefined,
       })),
     };
   }, [trip, routingData]);
@@ -102,12 +118,15 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   }
 
   const currentIndex = trip.currentStopIndex;
-  const totalDrops = trip.stops.filter((s) => s.type !== 'pickup').length;
+  const totalDrops = trip.stops.filter(s => s.type !== 'pickup').length;
   const isPickup = currentStop?.type === 'pickup';
   const currentDropNumber = isPickup
     ? 0
-    : trip.stops.slice(0, currentIndex + 1).filter((s) => s.type !== 'pickup').length;
-  const statusCaps = isPickup ? 'PICKUP' : `DROP ${currentDropNumber} OF ${totalDrops}`;
+    : trip.stops.slice(0, currentIndex + 1).filter(s => s.type !== 'pickup')
+        .length;
+  const statusCaps = isPickup
+    ? 'PICKUP'
+    : `DROP ${currentDropNumber} OF ${totalDrops}`;
   const arrivingLabel = isPickup ? 'Pickup' : `Drop ${currentDropNumber}`;
 
   return (
@@ -124,9 +143,16 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
       </View>
 
       {/* Top overlay: back / status / support */}
-      <SafeAreaView edges={['top']} style={styles.topOverlay} pointerEvents="box-none">
+      <SafeAreaView
+        edges={['top']}
+        style={styles.topOverlay}
+        pointerEvents="box-none"
+      >
         <View style={styles.topRow} pointerEvents="box-none">
-          <Pressable style={styles.circleBtn} onPress={() => navigation.goBack()}>
+          <Pressable
+            style={styles.circleBtn}
+            onPress={() => navigation.goBack()}
+          >
             <Icon name="arrow_back" size={22} color={colors.onSurface} />
           </Pressable>
           <View style={styles.statusPill}>
@@ -152,12 +178,20 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
             <View style={styles.flexShrink}>
               <Text style={styles.etaText}>
                 {displayDistance != null ? `${displayDistance} km` : ''}
-                {displayEta != null ? <Text style={styles.etaSub}>{`  · ${displayEta} min`}</Text> : null}
+                {displayEta != null ? (
+                  <Text style={styles.etaSub}>{`  · ${displayEta} min`}</Text>
+                ) : null}
               </Text>
-              <Text style={styles.arrivingText}>Arriving at {arrivingLabel}</Text>
+              <Text style={styles.arrivingText}>
+                Arriving at {arrivingLabel}
+              </Text>
             </View>
             <View style={styles.onTimeBadge}>
-              <Icon name="speed" size={16} color={colors.onSecondaryContainer} />
+              <Icon
+                name="speed"
+                size={16}
+                color={colors.onSecondaryContainer}
+              />
               <Text style={styles.onTimeText}>On Time</Text>
             </View>
           </View>
@@ -177,20 +211,34 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
                         isCompleted
                           ? 'check_circle'
                           : isCurrent
-                            ? 'radio_button_checked'
-                            : 'radio_button_unchecked'
+                          ? 'radio_button_checked'
+                          : 'radio_button_unchecked'
                       }
                       size={18}
-                      color={isCurrent || isCompleted ? colors.primary : colors.outlineVariant}
+                      color={
+                        isCurrent || isCompleted
+                          ? colors.primary
+                          : colors.outlineVariant
+                      }
                     />
                     {!isLast && <View style={styles.tlConnector} />}
                   </View>
-                  <View style={[styles.tlTextCol, isCompleted && styles.tlCompleted]}>
+                  <View
+                    style={[
+                      styles.tlTextCol,
+                      isCompleted && styles.tlCompleted,
+                    ]}
+                  >
                     {isCurrent ? (
                       <>
-                        <Text style={styles.tlCurrentTitle}>{label} (Current)</Text>
+                        <Text style={styles.tlCurrentTitle}>
+                          {label} (Current)
+                        </Text>
                         {!!stop.address && (
-                          <Text style={styles.tlCurrentAddress} numberOfLines={1}>
+                          <Text
+                            style={styles.tlCurrentAddress}
+                            numberOfLines={1}
+                          >
                             {stop.address}
                           </Text>
                         )}
@@ -206,7 +254,11 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
 
           {/* Actions */}
           <View style={styles.actions}>
-            <Pressable style={styles.navBtn} onPress={handleNavigate} accessibilityRole="button">
+            <Pressable
+              style={styles.navBtn}
+              onPress={handleNavigate}
+              accessibilityRole="button"
+            >
               <Icon name="navigation" size={18} color={colors.onPrimary} />
               <Text style={styles.navBtnText}>NAVIGATE</Text>
             </Pressable>

@@ -48,6 +48,19 @@ export interface TripStop {
   readonly requiresSignature?: boolean;
   readonly requiresPhoto?: boolean;
   readonly requiresOtp?: boolean;
+  /** Engine trips only (drops): the drop's position in the trip, from 1. */
+  readonly sequence?: number;
+  /**
+   * Engine trips only (drops): the engine's drop status (PENDING, IN_TRANSIT, ARRIVED,
+   * DELIVERED, DELIVERY_FAILED, UNDELIVERED, CANCELLED). Authoritative for what the driver can do.
+   */
+  readonly engineStatus?: string;
+  /** What this drop's receiver pays at delivery: display copy, the payment backend decides. */
+  readonly payablePaise?: number;
+  /** The engine accepted this drop's OTP: the delivery photo is next. */
+  readonly otpVerified?: boolean;
+  /** Why the last delivery attempt failed. */
+  readonly failureReason?: string;
 }
 
 export interface TripOffer {
@@ -77,6 +90,26 @@ export interface ActiveTrip {
   readonly vehicleRegistration: string;
   readonly startedAt?: number;
   readonly completedAt?: number;
+  /**
+   * Engine trips only: the engine's trip status (DRIVER_ASSIGNED ... COMPLETED, CANCELLED).
+   * Authoritative; `status` is its display mapping.
+   */
+  readonly engineStatus?: string;
+  /** The engine ride (booking) this trip was created for. */
+  readonly rideId?: string;
+  /** The payment backend's trip id: null until the backend confirmed the assignment. */
+  readonly paymentTripId?: string | null;
+  /** The booking reference shared with the payment backend. */
+  readonly externalRef?: string;
+  /** PAY_AT_PICKUP, PAY_AT_DELIVERY or PREPAID_UPI. */
+  readonly paymentMethod?: string;
+  /** Display copy of the booking's payable amount; the payment backend decides what is owed. */
+  readonly payablePaise?: number;
+  readonly totalStops?: number;
+  readonly completedStops?: number;
+  readonly remainingStops?: number;
+  /** When the engine last changed the trip (epoch ms): an older answer never replaces a newer one. */
+  readonly updatedAt?: number;
 }
 
 export interface TripEarnings {

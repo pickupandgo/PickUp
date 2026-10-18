@@ -1,13 +1,61 @@
 /* eslint-env jest */
 // Jest setup file for mocking native modules unavailable in the test environment.
 
+// react-native-config and @react-native-firebase/* ship ESM that Jest's default
+// transformIgnorePatterns does not reach (the Firebase SDK pulls @firebase/* from a nested
+// node_modules dir, which the top-level allowlist does not match). Mock them globally so any
+// test that imports App.tsx or src/config/env.ts can start. Individual suites can override.
+jest.mock('react-native-config', () => ({
+  __esModule: true,
+  default: {},
+}));
+jest.mock('@react-native-firebase/auth', () => ({
+  __esModule: true,
+  getAuth: () => ({
+    currentUser: null,
+  }),
+  getIdToken: jest.fn(async () => 'test-token'),
+  // Named function exports AuthService.ts imports (the SDK's modular API).
+  onAuthStateChanged: jest.fn(() => () => {}),
+  signInWithPhoneNumber: jest.fn(async () => ({ confirm: jest.fn() })),
+  signOut: jest.fn(async () => undefined),
+  signInWithEmailAndPassword: jest.fn(async () => ({ user: { uid: 'test' } })),
+  createUserWithEmailAndPassword: jest.fn(async () => ({
+    user: { uid: 'test' },
+  })),
+  default: () => ({
+    currentUser: null,
+  }),
+}));
+jest.mock('@react-native-firebase/app', () => ({
+  __esModule: true,
+  getApp: () => ({ name: 'test', options: {} }),
+  default: () => ({ name: 'test', options: {} }),
+}));
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
+  default: {
+    getItem: jest.fn(async () => null),
+    setItem: jest.fn(async () => undefined),
+    removeItem: jest.fn(async () => undefined),
+    multiGet: jest.fn(async () => []),
+    multiSet: jest.fn(async () => undefined),
+    clear: jest.fn(async () => undefined),
+  },
+}));
+
 // Mock the NativeLocationModule before anything imports it
 jest.mock('./src/location/NativeLocationModule', () => ({
   NativeLocationModule: {
     getPermissionStatus: jest.fn().mockResolvedValue('granted'),
     hasBackgroundPermission: jest.fn().mockResolvedValue(true),
     isProviderEnabled: jest.fn().mockResolvedValue(true),
-    getCurrentLocation: jest.fn().mockResolvedValue({ latitude: 0, longitude: 0, accuracy: 10, timestamp: Date.now() }),
+    getCurrentLocation: jest.fn().mockResolvedValue({
+      latitude: 0,
+      longitude: 0,
+      accuracy: 10,
+      timestamp: Date.now(),
+    }),
     startTracking: jest.fn().mockResolvedValue(true),
     stopTracking: jest.fn().mockResolvedValue(true),
     isTracking: jest.fn().mockResolvedValue(false),
@@ -64,10 +112,14 @@ jest.mock('react-native-gesture-handler', () => {
     RectButton: mockView,
     BorderlessButton: mockView,
     FlatList: mockFlatList,
-    gestureHandlerRootHOC: (component) => component,
+    gestureHandlerRootHOC: component => component,
     Directions: {},
     Gesture: {
-      Pan: () => ({ onStart: () => ({}), onUpdate: () => ({}), onEnd: () => ({}) }),
+      Pan: () => ({
+        onStart: () => ({}),
+        onUpdate: () => ({}),
+        onEnd: () => ({}),
+      }),
       Tap: () => ({ onStart: () => ({}), onEnd: () => ({}) }),
     },
     GestureDetector: mockView,
@@ -87,7 +139,10 @@ jest.mock('react-native-safe-area-context', () => {
   const mockView = require('react-native').View;
   const mockInsets = { top: 0, right: 0, bottom: 0, left: 0 };
   const mockFrame = { x: 0, y: 0, width: 393, height: 852 };
-  const mockSafeAreaContext = mockReact.createContext({ insets: mockInsets, frame: mockFrame });
+  const mockSafeAreaContext = mockReact.createContext({
+    insets: mockInsets,
+    frame: mockFrame,
+  });
 
   return {
     SafeAreaProvider: ({ children }) =>
@@ -97,7 +152,9 @@ jest.mock('react-native-safe-area-context', () => {
         children,
       ),
     SafeAreaConsumer: ({ children }) =>
-      mockReact.createElement(mockSafeAreaContext.Consumer, null, () => children(mockInsets)),
+      mockReact.createElement(mockSafeAreaContext.Consumer, null, () =>
+        children(mockInsets),
+      ),
     SafeAreaInsetsContext: mockSafeAreaContext,
     SafeAreaFrameContext: mockReact.createContext(mockFrame),
     useSafeAreaInsets: () => mockInsets,
@@ -149,7 +206,7 @@ jest.mock('@react-navigation/native-stack', () => {
 jest.mock('react-native-maps', () => {
   const mockReact = require('react');
   const mockView = require('react-native').View;
-  const MockMapView = (props) => mockReact.createElement(mockView, props);
+  const MockMapView = props => mockReact.createElement(mockView, props);
   MockMapView.Marker = mockView;
   MockMapView.Polyline = mockView;
   MockMapView.Callout = mockView;
@@ -157,7 +214,13 @@ jest.mock('react-native-maps', () => {
   MockMapView.Polygon = mockView;
   MockMapView.Overlay = mockView;
   MockMapView.Animated = MockMapView;
-  return { __esModule: true, default: MockMapView, Marker: mockView, Polyline: mockView, PROVIDER_GOOGLE: 'google' };
+  return {
+    __esModule: true,
+    default: MockMapView,
+    Marker: mockView,
+    Polyline: mockView,
+    PROVIDER_GOOGLE: 'google',
+  };
 });
 
 // Mock react-native-image-picker

@@ -101,6 +101,10 @@ const MESSAGES: Readonly<Record<string, string>> = {
     'An online payment for this trip is still in progress. Try again in a moment.',
   BOOKING_ALREADY_PAID: 'This trip is already paid.',
   BOOKING_CLOSED: 'This booking is closed.',
+  STOP_REQUIRED:
+    'This booking is paid drop by drop. Refresh and collect for the drop you are at.',
+  STOP_NOT_FOUND:
+    'This drop is not part of the booking. Refresh and try again.',
   INSUFFICIENT_BALANCE:
     'Your wallet balance does not cover the platform fee for this cash trip. Recharge your wallet and try again.',
   // Earnings and payouts

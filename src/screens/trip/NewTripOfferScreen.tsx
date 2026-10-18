@@ -2,17 +2,22 @@ import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import {
+  colors,
+  typography,
+  spacing,
+  borderRadius,
+  shadows,
+} from '../../theme';
 import { TripOfferSheet } from '../../components/organisms/TripOfferSheet';
 import { StatusPill } from '../../components/atoms/StatusPill';
 import { DriverMap, MapOverlay, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
 import type { HomeScreenProps } from '../../types/navigation';
-import {
-  acceptRideRequest,
-  rejectRideRequest,
-  getTripIdForRide,
-} from '../../services/engine/dispatch';
+import { rejectRideRequest } from '../../services/engine/dispatch';
+import { TripController } from '../../services/trip/TripController';
+import { describeTripError } from '../../services/trip/tripErrors';
+import { useI18n } from '../../i18n';
 
 export interface NewTripOfferScreenProps {
   readonly navigation: HomeScreenProps<'TripOffer'>['navigation'];
@@ -25,9 +30,12 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
   route,
   testID,
 }) => {
-  const { offer, driverId } = route.params;
+  const { offer } = route.params;
+  const { t } = useI18n();
   const { currentLocation } = useDriverLocation();
-  const [offerState, setOfferState] = useState<'pending' | 'accepted' | 'expired'>('pending');
+  const [offerState, setOfferState] = useState<
+    'pending' | 'accepted' | 'expired'
+  >('pending');
   const [submitting, setSubmitting] = useState(false);
 
   const offerRouteData: RouteData = {
@@ -58,24 +66,22 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
     setSubmitting(true);
     setOfferState('accepted');
     try {
-      await acceptRideRequest(offer.id, driverId);
-      const tripId = await getTripIdForRide(offer.id).catch(() => null);
-      navigation.navigate('ActiveTrip', { tripId: tripId ?? offer.id });
+      // The engine creates the trip (the same one for a repeated accept: never a second trip).
+      const trip = await TripController.getInstance().acceptOffer(offer.id);
+      navigation.navigate('ActiveTrip', { tripId: trip.id });
     } catch (e) {
       setSubmitting(false);
       setOfferState('pending');
-      Alert.alert(
-        'Request unavailable',
-        'This trip was cancelled or taken by someone else.',
-        [{ text: 'OK', onPress: () => navigation.goBack() }],
-      );
+      Alert.alert('Request unavailable', describeTripError(e, t), [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
     }
-  }, [submitting, offer.id, driverId, navigation]);
+  }, [submitting, offer.id, navigation, t]);
 
   const handleDecline = useCallback(() => {
-    rejectRideRequest(offer.id, driverId).catch(() => {});
+    rejectRideRequest(offer.id).catch(() => {});
     navigation.goBack();
-  }, [offer.id, driverId, navigation]);
+  }, [offer.id, navigation]);
 
   const handleExpired = useCallback(() => {
     setOfferState('expired');
@@ -90,10 +96,15 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
   return (
     <View style={styles.flex1} testID={testID}>
       {/* Scrollable Content */}
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <SafeAreaView edges={['top']} style={styles.header}>
           <Text style={styles.headerTitle}>TRIP OFFER</Text>
-          <Text style={styles.headerId}>ID: {offer.id.slice(0, 8).toUpperCase()}</Text>
+          <Text style={styles.headerId}>
+            ID: {offer.id.slice(0, 8).toUpperCase()}
+          </Text>
         </SafeAreaView>
 
         {/* Embedded Map Card */}
@@ -115,7 +126,11 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
                 style={styles.newRequestPill}
               />
               {offerState === 'expired' && (
-                <StatusPill label="EXPIRED" variant="danger_outline" iconName="timer" />
+                <StatusPill
+                  label="EXPIRED"
+                  variant="danger_outline"
+                  iconName="timer"
+                />
               )}
             </MapOverlay>
           )}
@@ -164,7 +179,9 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
             <Text style={styles.guaranteedLabel}>ESTIMATED EARNINGS</Text>
             <Text style={styles.guaranteedValue}>
               {offer.currency}
-              {offer.estimatedEarning.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {offer.estimatedEarning.toLocaleString('en-IN', {
+                minimumFractionDigits: 2,
+              })}
             </Text>
           </View>
           <View style={styles.demandBadge}>
@@ -191,7 +208,9 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
               <Icon name="check" style={styles.confirmationIcon} />
             </View>
             <Text style={styles.confirmationTitle}>Trip Accepted!</Text>
-            <Text style={styles.confirmationSubtitle}>Redirecting to Navigation...</Text>
+            <Text style={styles.confirmationSubtitle}>
+              Redirecting to Navigation...
+            </Text>
           </View>
         </SafeAreaView>
       )}

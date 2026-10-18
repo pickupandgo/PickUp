@@ -1,13 +1,18 @@
 import {
+  cashShortfallPaise,
   collectAvailability,
+  dropHandoverAllowed,
+  isCollectable,
+  pickupHandoverAllowed,
   requiredFeePaise,
   shouldReuseKey,
   watchCollection,
 } from '../src/services/payments/collectionFlow';
 import {
   isRazorpayUrl,
+  parsePaymentGate,
+  parseTrip,
   type CollectionDto,
-  type DriverTripDto,
 } from '../src/services/payments/collectionsDto';
 import { createPaymentsApi } from '../src/services/payments/paymentsApi';
 import type { PaymentsClient } from '../src/services/payments/paymentsClient';
@@ -35,6 +40,26 @@ function fakeClient(
   };
 }
 
+/**
+ * The payment gate of a trip (Phase 8: GET /v1/trips/:id carries it). Default: an older booking
+ * paid at delivery for the whole booking, delivered and not paid yet.
+ */
+function gateBody(overrides: Record<string, unknown> = {}) {
+  return {
+    stage: 'DROP',
+    stopSequence: null,
+    paymentState: 'PAYMENT_REQUIRED',
+    amountPaise: 50_000,
+    cashFeePaise: 5_000,
+    handoverAllowed: false,
+    collectionId: null,
+    lastFailure: null,
+    ...overrides,
+  };
+}
+
+// Phase 9: the fixture carries the Phase 8 fields (paymentGate, stops). The payment gate is
+// required: the app decides collections and OTPs from it only (review G).
 function tripBody(
   payment: Record<string, unknown> = {},
   overrides: Record<string, unknown> = {},
@@ -54,6 +79,8 @@ function tripBody(
       driverSharePaise: 45_000,
       collectionStage: 'DELIVERY',
       collectionOpen: true,
+      paymentGate: gateBody(),
+      stops: [],
       ...payment,
     },
     ...overrides,
@@ -106,6 +133,49 @@ describe('trip and collection API', () => {
         driverSharePaise: 45_000,
         collectionOpen: true,
       },
+    });
+  });
+
+  it('reads the payment gate and the drops of a booking paid drop by drop', async () => {
+    const client = fakeClient(
+      tripBody({
+        status: 'PARTIALLY_PAID',
+        paymentGate: gateBody({
+          stopSequence: 2,
+          amountPaise: 30_000,
+          cashFeePaise: 3_000,
+        }),
+        stops: [
+          {
+            sequence: 1,
+            payablePaise: 20_000,
+            status: 'DELIVERED',
+            paid: true,
+          },
+          { sequence: 2, payablePaise: 30_000, status: 'ARRIVED', paid: false },
+        ],
+      }),
+    );
+    await expect(
+      createPaymentsApi(client).getTrip(TRIP_ID),
+    ).resolves.toMatchObject({
+      payment: {
+        status: 'PARTIALLY_PAID',
+        paymentGate: { stage: 'DROP', stopSequence: 2, amountPaise: 30_000 },
+        stops: [
+          { sequence: 1, paid: true },
+          { sequence: 2, paid: false },
+        ],
+      },
+    });
+  });
+
+  it('refuses a trip without its payment gate (handovers stay locked)', async () => {
+    const client = fakeClient(tripBody({ paymentGate: undefined }));
+    await expect(
+      createPaymentsApi(client).getTrip(TRIP_ID),
+    ).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
     });
   });
 
@@ -173,6 +243,61 @@ describe('trip and collection API', () => {
       status: 'PENDING',
       qr: { product: 'PAYMENT_LINK', url: LINK },
     });
+  });
+
+  it("names the drop for a booking paid drop by drop, and checks the answer is that drop's", async () => {
+    const client = fakeClient(
+      collectionBody({
+        amountPaise: 30_000,
+        stopSequence: 2,
+        bookingPaymentStatus: 'PARTIALLY_PAID',
+        paymentGate: gateBody({
+          stopSequence: 2,
+          amountPaise: 30_000,
+          paymentState: 'PAYMENT_PROCESSING',
+          collectionId: COLLECTION_ID,
+        }),
+      }),
+    );
+    const collection = await createPaymentsApi(client).startCollection(
+      TRIP_ID,
+      { method: 'ONLINE_QR', amountPaise: 30_000, stopSequence: 2 },
+      KEY,
+    );
+    expect(client.request).toHaveBeenCalledWith({
+      method: 'POST',
+      path: `/v1/trips/${TRIP_ID}/collections`,
+      body: { method: 'ONLINE_QR', amountPaise: 30_000, stopSequence: 2 },
+      idempotencyKey: KEY,
+    });
+    expect(collection).toMatchObject({
+      stopSequence: 2,
+      bookingPaymentStatus: 'PARTIALLY_PAID',
+      paymentGate: { paymentState: 'PAYMENT_PROCESSING' },
+    });
+
+    const otherDrop = createPaymentsApi(
+      fakeClient(collectionBody({ amountPaise: 30_000, stopSequence: 3 })),
+    );
+    await expect(
+      otherDrop.startCollection(
+        TRIP_ID,
+        { method: 'ONLINE_QR', amountPaise: 30_000, stopSequence: 2 },
+        KEY,
+      ),
+    ).rejects.toMatchObject({ code: 'AMOUNT_MISMATCH' });
+
+    const invalid = fakeClient(collectionBody());
+    for (const stopSequence of [0, 26, 1.5]) {
+      await expect(
+        createPaymentsApi(invalid).startCollection(
+          TRIP_ID,
+          { method: 'CASH', amountPaise: 30_000, stopSequence },
+          KEY,
+        ),
+      ).rejects.toBeInstanceOf(RangeError);
+    }
+    expect(invalid.request).not.toHaveBeenCalled();
   });
 
   it('records cash with the fee the server debited', async () => {
@@ -275,41 +400,265 @@ describe('isRazorpayUrl', () => {
   });
 });
 
-describe('collectAvailability', () => {
-  const trip = (payment: Record<string, unknown>) =>
-    tripBody(payment) as unknown as DriverTripDto;
+// Updated in Phase 9. These tests used to derive availability from `collectionOpen` and the
+// booking's payment status, and asserted that a PREPAID_UPI booking is always "paid", even
+// while UNPAID (the bug review G names). The Phase 8 contract makes the payment gate the only
+// source: the same cases (open, not yet at pickup / delivery, paid, prepaid) are kept, now built
+// from the gate, and the prepaid-while-unpaid case asserts the fix.
+describe('collectAvailability (payment gate only)', () => {
+  const trip = (
+    gate: Record<string, unknown>,
+    payment: Record<string, unknown> = {},
+  ) => parseTrip(tripBody({ ...payment, paymentGate: gateBody(gate) }));
 
-  it('is open only while the server says so', () => {
-    expect(collectAvailability(trip({}))).toEqual({ kind: 'open' });
-    expect(collectAvailability(trip({ collectionOpen: false }))).toEqual({
-      kind: 'not_yet',
-      stage: 'DELIVERY',
+  it('is open only while the gate says the payment is owed now', () => {
+    expect(collectAvailability(trip({}))).toEqual({
+      kind: 'open',
+      stage: 'DROP',
+      amountPaise: 50_000,
+      cashFeePaise: 5_000,
+      stopSequence: null,
+      lastFailure: null,
     });
     expect(
       collectAvailability(
         trip({
-          method: 'PAY_AT_PICKUP',
-          collectionStage: 'PICKUP',
-          collectionOpen: false,
+          paymentState: 'PAYMENT_FAILED',
+          collectionId: COLLECTION_ID,
+          lastFailure: 'EXPIRED',
         }),
+      ),
+    ).toMatchObject({ kind: 'open', lastFailure: 'EXPIRED' });
+    // collectionOpen is not what decides.
+    expect(
+      collectAvailability(
+        trip({ paymentState: 'NOT_YET' }, { collectionOpen: true }),
+      ),
+    ).toEqual({ kind: 'not_yet', stage: 'DELIVERY' });
+    expect(
+      collectAvailability(
+        trip(
+          { stage: 'PICKUP', paymentState: 'NOT_YET' },
+          {
+            method: 'PAY_AT_PICKUP',
+            collectionStage: 'PICKUP',
+            collectionOpen: false,
+          },
+        ),
       ),
     ).toEqual({ kind: 'not_yet', stage: 'PICKUP' });
   });
 
-  it('has nothing to collect once paid or when prepaid', () => {
-    expect(collectAvailability(trip({ status: 'PAID' }))).toEqual({
-      kind: 'paid',
-      prepaid: false,
-    });
+  it('resumes an open QR instead of opening a second one', () => {
     expect(
       collectAvailability(
         trip({
-          method: 'PREPAID_UPI',
-          collectionStage: null,
-          collectionOpen: false,
+          paymentState: 'PAYMENT_PROCESSING',
+          collectionId: COLLECTION_ID,
         }),
       ),
-    ).toEqual({ kind: 'paid', prepaid: true });
+    ).toMatchObject({
+      kind: 'processing',
+      collectionId: COLLECTION_ID,
+      amountPaise: 50_000,
+    });
+  });
+
+  it('collects one drop at a time for a booking paid drop by drop', () => {
+    expect(
+      collectAvailability(
+        trip({ stopSequence: 2, amountPaise: 30_000, cashFeePaise: 3_000 }),
+      ),
+    ).toEqual({
+      kind: 'open',
+      stage: 'DROP',
+      amountPaise: 30_000,
+      cashFeePaise: 3_000,
+      stopSequence: 2,
+      lastFailure: null,
+    });
+  });
+
+  it('has nothing to collect once paid or when prepaid', () => {
+    expect(
+      collectAvailability(
+        trip(
+          { paymentState: 'PAYMENT_CONFIRMED', handoverAllowed: true },
+          { status: 'PAID' },
+        ),
+      ),
+    ).toEqual({ kind: 'paid', prepaid: false, stopSequence: null });
+    expect(
+      collectAvailability(
+        trip(
+          {
+            stage: null,
+            paymentState: 'PAYMENT_CONFIRMED',
+            cashFeePaise: null,
+            handoverAllowed: true,
+          },
+          {
+            method: 'PREPAID_UPI',
+            status: 'PAID',
+            collectionStage: null,
+            collectionOpen: false,
+          },
+        ),
+      ),
+    ).toEqual({ kind: 'paid', prepaid: true, stopSequence: null });
+  });
+
+  it('never treats a prepaid booking that is still unpaid as paid', () => {
+    expect(
+      collectAvailability(
+        trip(
+          {
+            stage: null,
+            paymentState: 'PAYMENT_REQUIRED',
+            cashFeePaise: null,
+            handoverAllowed: true,
+          },
+          {
+            method: 'PREPAID_UPI',
+            status: 'UNPAID',
+            collectionStage: null,
+            collectionOpen: false,
+          },
+        ),
+      ),
+    ).toEqual({ kind: 'awaiting_customer' });
+  });
+
+  it('marks only owed or open payments as collectable', () => {
+    expect(isCollectable(trip({}))).toBe(true);
+    expect(
+      isCollectable(
+        trip({
+          paymentState: 'PAYMENT_PROCESSING',
+          collectionId: COLLECTION_ID,
+        }),
+      ),
+    ).toBe(true);
+    expect(isCollectable(trip({ paymentState: 'NOT_YET' }))).toBe(false);
+    expect(
+      isCollectable(
+        trip({ paymentState: 'PAYMENT_CONFIRMED', handoverAllowed: true }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('payment gate: handovers', () => {
+  const gate = (overrides: Record<string, unknown>) =>
+    parsePaymentGate(gateBody(overrides));
+
+  it('locks the pickup OTP until the payment backend allows the handover', () => {
+    const pickup = { stage: 'PICKUP', amountPaise: 50_000 };
+    // Pay at pickup, unpaid / QR open / last QR failed: locked.
+    expect(pickupHandoverAllowed(gate({ ...pickup }))).toBe(false);
+    expect(
+      pickupHandoverAllowed(
+        gate({
+          ...pickup,
+          paymentState: 'PAYMENT_PROCESSING',
+          collectionId: COLLECTION_ID,
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      pickupHandoverAllowed(
+        gate({ ...pickup, paymentState: 'PAYMENT_FAILED' }),
+      ),
+    ).toBe(false);
+    // Not arrived yet as far as the backend knows.
+    expect(
+      pickupHandoverAllowed(gate({ ...pickup, paymentState: 'NOT_YET' })),
+    ).toBe(false);
+    // Paid: allowed.
+    expect(
+      pickupHandoverAllowed(
+        gate({
+          ...pickup,
+          paymentState: 'PAYMENT_CONFIRMED',
+          handoverAllowed: true,
+        }),
+      ),
+    ).toBe(true);
+    // Pay at delivery: nothing owed at the pickup, the pickup proceeds without payment.
+    expect(
+      pickupHandoverAllowed(
+        gate({
+          stage: 'PICKUP',
+          paymentState: 'NOT_REQUIRED',
+          amountPaise: null,
+          cashFeePaise: null,
+          handoverAllowed: true,
+        }),
+      ),
+    ).toBe(true);
+    // A drop's gate never opens the pickup; no gate opens nothing.
+    expect(
+      pickupHandoverAllowed(
+        gate({
+          handoverAllowed: true,
+          paymentState: 'NOT_REQUIRED',
+          amountPaise: null,
+        }),
+      ),
+    ).toBe(false);
+    expect(pickupHandoverAllowed(null)).toBe(false);
+  });
+
+  it("opens a drop's OTP only for that drop, once it is paid (or nothing is owed)", () => {
+    const paidDrop2 = gate({
+      stopSequence: 2,
+      amountPaise: 30_000,
+      paymentState: 'PAYMENT_CONFIRMED',
+      handoverAllowed: true,
+    });
+    expect(dropHandoverAllowed(paidDrop2, 2)).toBe(true);
+    expect(dropHandoverAllowed(paidDrop2, 3)).toBe(false);
+    expect(
+      dropHandoverAllowed(gate({ stopSequence: 2, amountPaise: 30_000 }), 2),
+    ).toBe(false);
+    // Paid at pickup: the drops are handed over freely.
+    expect(
+      dropHandoverAllowed(
+        gate({
+          stopSequence: 1,
+          paymentState: 'NOT_REQUIRED',
+          amountPaise: null,
+          cashFeePaise: null,
+          handoverAllowed: true,
+        }),
+        1,
+      ),
+    ).toBe(true);
+    expect(dropHandoverAllowed(null, 1)).toBe(false);
+  });
+
+  it('refuses a gate that is owed without an amount, or malformed', () => {
+    expect(() => parsePaymentGate(gateBody({ amountPaise: null }))).toThrow(
+      PaymentsApiError,
+    );
+    expect(() =>
+      parsePaymentGate(gateBody({ handoverAllowed: 'yes' })),
+    ).toThrow(PaymentsApiError);
+    expect(() => parsePaymentGate(gateBody({ paymentState: 'PAID' }))).toThrow(
+      PaymentsApiError,
+    );
+    expect(() => parsePaymentGate(gateBody({ stopSequence: 0 }))).toThrow(
+      PaymentsApiError,
+    );
+  });
+});
+
+describe('cash fee against the wallet', () => {
+  it('shows the shortfall only when the balance does not cover the fee', () => {
+    expect(cashShortfallPaise(5_000, 2_000)).toBe(3_000);
+    expect(cashShortfallPaise(5_000, 5_000)).toBeNull();
+    expect(cashShortfallPaise(null, 0)).toBeNull();
+    expect(cashShortfallPaise(5_000, null)).toBeNull();
   });
 });
 

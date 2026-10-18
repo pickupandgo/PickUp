@@ -5,6 +5,7 @@ import { colors, typography, spacing, borderRadius } from '../../theme';
 import { useI18n } from '../../i18n';
 import { formatRupees, paiseToRupees } from '../../services/payments/money';
 import type { DriverTripDto } from '../../services/payments/collectionsDto';
+import { collectAvailability } from '../../services/payments/collectionFlow';
 
 export interface CollectPaymentBannerProps {
   /** Trips whose payment can be collected now (useCollectableTrips). */
@@ -28,7 +29,13 @@ export const CollectPaymentBanner: React.FC<CollectPaymentBannerProps> = ({
   return (
     <View style={[styles.container, style]} testID={testID}>
       {trips.map(trip => {
-        const amount = formatRupees(paiseToRupees(trip.payment.farePaise));
+        // What is owed now (the booking's amount, or one drop's), from the payment gate.
+        const availability = collectAvailability(trip);
+        const owedPaise =
+          availability.kind === 'open' || availability.kind === 'processing'
+            ? availability.amountPaise
+            : trip.payment.farePaise;
+        const amount = formatRupees(paiseToRupees(owedPaise));
         const stage =
           trip.payment.collectionStage === 'PICKUP'
             ? t('collect.stagePickup')
