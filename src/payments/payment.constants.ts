@@ -6,8 +6,12 @@ export type PaymentPurpose = (typeof PaymentPurpose)[keyof typeof PaymentPurpose
 
 export const PAYMENT_PROVIDER_RAZORPAY = 'RAZORPAY';
 
-/** Where a confirmation attempt came from. Recorded on the ledger entry metadata. */
-export type ConfirmationSource = 'CHECKOUT_VERIFY' | 'WEBHOOK' | 'ADMIN_SYNC' | 'DRIVER_REFRESH';
+/**
+ * Where a confirmation attempt came from. Recorded on the ledger entry metadata. RECOVERY_JOB is
+ * the collection recovery job (payment flow Phase 7).
+ */
+export type ConfirmationSource =
+  'CHECKOUT_VERIFY' | 'WEBHOOK' | 'ADMIN_SYNC' | 'DRIVER_REFRESH' | 'RECOVERY_JOB';
 
 /** Result of trying to apply a provider payment (wallet credit, booking payment, collection). */
 export const ConfirmationOutcome = {

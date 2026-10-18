@@ -200,14 +200,16 @@ export class TopUpService {
       return { payment: existing, created: false };
     }
     try {
-      const payment = await this.prisma.payment.create({
-        data: {
-          userId,
-          purpose: PaymentPurpose.DRIVER_WALLET_TOPUP,
-          amountPaise: amount,
-          idempotencyKey,
-        },
-      });
+      const payment = await this.prisma.withFinancialContext(
+        this.prisma.payment.create({
+          data: {
+            userId,
+            purpose: PaymentPurpose.DRIVER_WALLET_TOPUP,
+            amountPaise: amount,
+            idempotencyKey,
+          },
+        }),
+      );
       return { payment, created: true };
     } catch (error) {
       if (isUniqueViolation(error)) {

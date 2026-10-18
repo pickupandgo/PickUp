@@ -480,6 +480,85 @@ psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261020120000_
 psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261020120000_partially_refunded_enum';"
 ```
 
+### Audit trail and reconciliation (payment flow Phase 7)
+
+Two migrations, applied in order by `prisma migrate deploy`. Neither changes an existing row, and nothing is backfilled.
+- `20261021120000_financial_events` adds the financial event log:
+  - Table `financial_events`: one row per change of a financial record, with who made it (`actor_type`, `actor_user_id`), in which request or job run (`request_id`, `origin`, `provider_event_id`), the database role, and the changed columns before and after.
+  - `record_financial_event()`, a SECURITY DEFINER trigger function, and one AFTER INSERT, UPDATE or DELETE trigger on each of 14 tables: `bookings`, `trips`, `booking_stops`, `payments`, `payment_collections`, `payment_settlements`, `payment_disputes`, `payment_refunds`, `driver_earnings`, `payout_batches`, `driver_payouts`, `payout_items`, `driver_wallet_transactions` (`trg_wallet_tx_financial_event`) and `admin_actions`. The others are named `trg_<table>_financial_event`.
+  - Append-only for every role, the table owner included. `trg_financial_events_immutable` and `trg_financial_events_no_truncate` refuse UPDATE, DELETE and TRUNCATE. `trg_financial_events_insert_guard` refuses any INSERT that doesn't come from the triggers.
+  - The actor comes from transaction-local settings (`app.actor_type`, `app.actor_user_id`, `app.request_id`, `app.origin`, `app.provider_event_id`) that the backend sets at the start of every transaction. A change made without them, an operator's SQL say, is recorded as `UNATTRIBUTED` with its database role. A trigger never makes a write fail because of a missing or malformed setting.
+  - Rows that existed before the migration have no CREATED event. Their first event is their next change.
+- `20261021120100_reconciliation_findings` adds the reconciliation tables:
+  - Table `reconciliation_runs`: one row per run of the collection recovery or the reconciliation job, with its lease. A partial unique index allows one RUNNING run per job. A finished run never changes.
+  - Table `reconciliation_findings`: every mismatch a run detected, with one OPEN row per fingerprint. Its identity and first sighting are immutable, sightings only move forward, and only an active admin resolves it, with a note of at least 10 characters, once.
+  - Neither table can be deleted from or truncated, by any role.
+
+Creating the 14 triggers briefly locks writes on each table; no table is rewritten. From then on, every write to those tables also inserts its event in the same transaction. For scale: the end-to-end run (26 steps, 8 bookings with their payouts and refunds) records 265 events, about 350 kB with indexes.
+
+**Deploy order.** The backend writes no event itself, and the triggers need no privilege from the API role, so writes keep working right after `migrate deploy`. The Phase 7 jobs and endpoints need the new grants. So: migrate, re-run the grants, then start the Phase 7 backend.
+
+Before migrating a database that holds data, the same rules as for Phase 1 apply (decision N1): run the preflight and have it reviewed, take a snapshot, rehearse with `npm run db:migration-check`, then deploy. The preflight now also lists:
+- whether the Phase 7 tables exist
+- row counts of the 14 covered tables (their changes are recorded from this migration on)
+- event-log triggers already present (none before; a trigger name already taken would fail the migration)
+- the `app.*` actor settings outside the backend: in the preflight's session, and as defaults of any role or database (the API role's included). All must be unset: a default would be recorded as the actor of every unattributed change.
+- pending online collections the recovery job will re-read from Razorpay, by age. One without a provider reference can't be re-read, and is reported instead.
+- pending payments by purpose and age. Each is reported by the reconciliation run, and none is applied automatically.
+- recorded events, runs and OPEN findings, once migrated
+
+Deploy, then **re-run `02-app-grants.sql`**. The API role needs:
+- SELECT on `financial_events` (and nothing else on it);
+- SELECT and INSERT on `reconciliation_runs`, and UPDATE of `status`, `lease_expires_at`, `finished_at`, `summary`, `error` and `updated_at`;
+- SELECT and INSERT on `reconciliation_findings`, and UPDATE of `status`, `detail`, `internal_state`, `provider_state`, `internal_amount_paise`, `provider_amount_paise`, `refs`, `occurrences`, `last_seen_at`, `last_run_id`, `cleared_at`, `resolved_at`, `resolved_by_user_id`, `resolution_note` and `updated_at`.
+
+Without them the jobs fail with `permission denied` (logged, retried on the next tick), and so do the audit and reconciliation endpoints.
+
+Check after deploying:
+
+```sql
+SELECT count(*) FROM pg_trigger
+ WHERE tgname LIKE 'trg\_%\_financial\_event' AND NOT tgisinternal;                    -- 14
+SELECT count(*) FROM pg_trigger
+ WHERE tgname IN ('trg_financial_events_insert_guard', 'trg_financial_events_immutable',
+                  'trg_financial_events_no_truncate',
+                  'trg_reconciliation_runs_insert_guard', 'trg_reconciliation_runs_guard',
+                  'trg_reconciliation_runs_no_delete', 'trg_reconciliation_runs_no_truncate',
+                  'trg_reconciliation_findings_insert_guard', 'trg_reconciliation_findings_guard',
+                  'trg_reconciliation_findings_no_delete',
+                  'trg_reconciliation_findings_no_truncate');                          -- 11
+SELECT prosecdef FROM pg_proc WHERE proname = 'record_financial_event';               -- t
+SELECT count(*) FROM financial_events;      -- 0 right after the migration, then one per change
+SELECT count(*) FROM reconciliation_runs;   -- 0 until the first run
+```
+
+Connected as `mr_app`, these must still fail with `permission denied`:
+
+```sql
+INSERT INTO financial_events DEFAULT VALUES;
+UPDATE financial_events SET origin = 'rewritten';
+DELETE FROM financial_events;
+TRUNCATE financial_events;
+UPDATE reconciliation_findings SET kind = 'SOMETHING_ELSE';
+UPDATE reconciliation_runs SET job = 'RECONCILIATION';
+DELETE FROM reconciliation_findings;
+```
+
+**After the first start.** The recovery job re-reads every online collection still PENDING after `COLLECTION_RECOVERY_MIN_AGE_MINUTES`, whatever its age (the preflight lists them). It settles each one as Razorpay reports it, exactly as the driver's refresh would: an expired QR or link is closed as FAILED (`EXPIRED`), and money found on one is applied once and recorded as a finding. On the local dev database that is `TAB-QR-001`'s payment link (created 6 Oct 2026, long expired), which the first run will most likely close. If Razorpay refuses the lookup, the collection stays PENDING, and one `RECOVERY_PROVIDER_LOOKUP_FAILED` finding counts a sighting per run; once an admin resolves it with a note, it stays resolved. Review `GET /v1/admin/reconciliation/summary` after the first runs.
+
+**Rollback**, newest first. Roll the backend back to the Phase 6 release at the same time. Neither `down.sql` drops data:
+- `20261021120100`'s refuses once any run or finding is recorded. Otherwise it drops both empty tables (their grants go with them) and their functions.
+- `20261021120000`'s refuses once any financial event is recorded (export `financial_events` first). Otherwise it drops the 14 triggers, the functions and the empty table. No financial record changes.
+
+```bash
+psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261021120100_reconciliation_findings/down.sql
+psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261021120100_reconciliation_findings';"
+psql "<mr_migrator url>" -v ON_ERROR_STOP=1 -f prisma/migrations/20261021120000_financial_events/down.sql
+psql "<mr_migrator url>" -c "DELETE FROM _prisma_migrations WHERE migration_name = '20261021120000_financial_events';"
+```
+
+So the schema can only be rolled back before the first event: any write to a covered table records one. After that, roll back the backend alone. The Phase 6 backend doesn't use the new tables and sets no actor, so the triggers keep recording its changes as `UNATTRIBUTED`. That combination follows from the design; it hasn't been run as a test.
+
 ## Ongoing rules
 
 - **Schema changes:** only through new migration files. Re-run step 4 (migrate, then grants) on every release that adds one.

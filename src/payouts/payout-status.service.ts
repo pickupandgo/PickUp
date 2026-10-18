@@ -231,17 +231,19 @@ export class PayoutStatusService {
 
   /** Marks the batch COMPLETED once none of its payouts is still in flight. */
   async completeBatchIfDone(batchId: string): Promise<void> {
-    await this.prisma.$executeRaw`
-      UPDATE payout_batches
-      SET status = 'COMPLETED'::payout_batch_status, completed_at = now(), updated_at = now()
-      WHERE id = ${batchId}::uuid
-        AND status <> 'COMPLETED'::payout_batch_status
-        AND NOT EXISTS (
-          SELECT 1 FROM driver_payouts
-          WHERE batch_id = ${batchId}::uuid
-            AND status IN ('PREPARED'::payout_status, 'SUBMITTING'::payout_status,
-                           'SUBMITTED'::payout_status)
-        )`;
+    await this.prisma.withFinancialContext(
+      this.prisma.$executeRaw`
+        UPDATE payout_batches
+        SET status = 'COMPLETED'::payout_batch_status, completed_at = now(), updated_at = now()
+        WHERE id = ${batchId}::uuid
+          AND status <> 'COMPLETED'::payout_batch_status
+          AND NOT EXISTS (
+            SELECT 1 FROM driver_payouts
+            WHERE batch_id = ${batchId}::uuid
+              AND status IN ('PREPARED'::payout_status, 'SUBMITTING'::payout_status,
+                             'SUBMITTED'::payout_status)
+          )`,
+    );
   }
 
   /**

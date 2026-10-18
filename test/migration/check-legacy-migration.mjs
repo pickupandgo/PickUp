@@ -25,8 +25,12 @@
  * proves a drop is reached, collected and paid through the Phase 3 and 4 rules, and that an
  * earning funded by two drop QRs is payable only once both are settled (Phase 5), with every
  * guard on. After every deploy it checks each earning's cash / online split and payout amount
- * against its own sources (Phase 5 backfill). It prints the read-only preflight inventory
- * (prisma/sql/preflight-payment-flow.sql) of every source before migrating it.
+ * against its own sources (Phase 5 backfill), and that the migration recorded no financial event
+ * (Phase 7: the event log starts empty). On the fresh install it also proves the fixture writes
+ * are in the event log, that no role can change, delete or forge an event, and that the Phase 7
+ * down.sql files refuse once a reconciliation run, a finding or an event exists. It prints the
+ * read-only preflight inventory (prisma/sql/preflight-payment-flow.sql) of every source before
+ * migrating it.
  *
  * Sources are never written: each one is copied with CREATE DATABASE ... TEMPLATE (which needs no
  * other connection to the source: stop the dev backend and Prisma Studio first). Every database
@@ -56,6 +60,8 @@ const OBLIGATION_MIGRATION = '20261018120100_obligation_collections';
 const MIXED_EARNINGS_MIGRATION = '20261019120000_mixed_earnings_payout_hold';
 const REFUND_ENUM_MIGRATION = '20261020120000_partially_refunded_enum';
 const REFUNDS_MIGRATION = '20261020120100_refunds';
+const EVENTS_MIGRATION = '20261021120000_financial_events';
+const FINDINGS_MIGRATION = '20261021120100_reconciliation_findings';
 const PREFLIGHT_SQL = path.join(ROOT, 'prisma', 'sql', 'preflight-payment-flow.sql');
 const DEFAULT_SOURCES = [
   'multipleride_legacy_snapshot_test',
@@ -701,6 +707,33 @@ SELECT c.booking_id, c.booking_stop_id, c.id, 'PROVIDER', 'PENDING', 'COMPLETED_
   FROM payment_collections c, users u
  WHERE c.idempotency_key = 'migcheck-drop-1' AND u.phone = '+919999900004';`;
 
+/** Phase 7: an event written by hand, not by a financial record's trigger: refused. */
+const FORGED_EVENT_SQL = `
+INSERT INTO financial_events (occurred_at, transaction_id, entity_type, entity_id, action, changes,
+                              actor_type, db_role)
+VALUES (now(), 1, 'BOOKING', gen_random_uuid(), 'CREATED', '{}', 'ADMIN', 'migcheck');`;
+
+/** Phase 7: a scheduled reconciliation run, leased and finished as the runs service does. */
+const RECONCILIATION_RUN_SQL = `
+INSERT INTO reconciliation_runs (job, triggered_by, lease_expires_at)
+VALUES ('RECONCILIATION', 'SCHEDULE', clock_timestamp() + interval '30 minutes');
+UPDATE reconciliation_runs
+   SET status = 'COMPLETED', finished_at = clock_timestamp(), summary = '{"checks": []}'
+ WHERE job = 'RECONCILIATION' AND status = 'RUNNING';`;
+
+/** Phase 7: a finding of that run, then resolved with a note by the fixture admin. */
+const RECONCILIATION_FINDING_SQL = `
+INSERT INTO reconciliation_findings (category, kind, severity, source, fingerprint, entity_type,
+                                     entity_id, first_run_id, last_run_id)
+SELECT 'WALLET_MISMATCH', 'MIGCHECK_FINDING', 'INFO', 'DATABASE', 'MIGCHECK_FINDING|1', 'TEST',
+       'migcheck', r.id, r.id
+  FROM reconciliation_runs r WHERE r.job = 'RECONCILIATION';
+UPDATE reconciliation_findings
+   SET status = 'RESOLVED', resolved_at = now(),
+       resolved_by_user_id = (SELECT id FROM users WHERE phone = '+919999900004'),
+       resolution_note = 'Migration check: reviewed and closed'
+ WHERE fingerprint = 'MIGCHECK_FINDING|1';`;
+
 /**
  * Phase 6, after every deploy: no collection shows a refund it never had, no refund was invented,
  * and (reported, not failed) every booking's payment status is what its money says.
@@ -726,6 +759,17 @@ async function checkRefunds(scope, client, before) {
     `  info ${row.mismatched} booking(s) whose payment status differs from booking_money_status` +
       (row.mismatched > 0 ? ' (review before refunding them)' : ''),
   );
+}
+
+/** Rows in the financial event log, or 0 before 20261021120000 created it. */
+async function financialEventCount(client) {
+  const { rows } = await client.query(
+    "SELECT to_regclass('public.financial_events') IS NOT NULL AS present",
+  );
+  if (!rows[0].present) {
+    return 0;
+  }
+  return (await client.query('SELECT count(*)::int AS n FROM financial_events')).rows[0].n;
 }
 
 /** A quote with 6 drops (allowed once FARE_MAX_DROPS is raised), never booked. */
@@ -921,6 +965,66 @@ async function freshReference(admin) {
       /some bookings are PARTIALLY_REFUNDED/,
       'a booking is partially refunded',
     );
+
+    // Payment flow Phase 7: every fixture write above is in the financial event log, which no
+    // role can change; a reconciliation run and a resolved finding are recorded with every guard
+    // on, and each down.sql then refuses (newest first).
+    const { rows: logRows } = await client.query(`
+      SELECT count(*)::int AS events,
+             count(DISTINCT entity_type)::int AS entity_types,
+             count(*) FILTER (WHERE action = 'STATUS_CHANGED')::int AS status_changes,
+             bool_and(actor_type = 'UNATTRIBUTED' AND db_role = session_user) AS unattributed
+        FROM financial_events`);
+    const [log] = logRows;
+    if (log.events > 0 && log.entity_types >= 6 && log.status_changes > 0 && log.unattributed) {
+      pass(
+        `the fixture writes are in the financial event log: ${log.events} events over ` +
+          `${log.entity_types} record types, unattributed and naming the database role`,
+      );
+    } else {
+      fail('fresh', `financial event log: ${JSON.stringify(log)}`);
+    }
+    for (const [label, sql, pattern] of [
+      ['changed', "UPDATE financial_events SET origin = 'migcheck'", /append-only/],
+      ['deleted', 'DELETE FROM financial_events', /append-only/],
+      ['truncated', 'TRUNCATE financial_events', /append-only/],
+      ['written directly', FORGED_EVENT_SQL, /written only by the financial record triggers/],
+    ]) {
+      const refused = await client.query(sql).then(
+        () => null,
+        (error) => (error instanceof Error ? error.message : String(error)),
+      );
+      if (refused && pattern.test(refused)) {
+        pass(`a financial event can't be ${label}, even by the owner`);
+      } else {
+        fail('fresh', `financial event ${label}: ${refused ?? 'it was allowed'}`);
+      }
+    }
+    await client.query(RECONCILIATION_RUN_SQL);
+    pass('a reconciliation run is recorded and finished with every guard on');
+    await expectRefused(
+      'fresh',
+      client,
+      FINDINGS_MIGRATION,
+      /reconciliation runs are recorded/,
+      'a reconciliation run is recorded',
+    );
+    await client.query(RECONCILIATION_FINDING_SQL);
+    pass('a reconciliation finding is recorded and resolved by an admin with every guard on');
+    await expectRefused(
+      'fresh',
+      client,
+      FINDINGS_MIGRATION,
+      /reconciliation findings are recorded/,
+      'a reconciliation finding is recorded',
+    );
+    await expectRefused(
+      'fresh',
+      client,
+      EVENTS_MIGRATION,
+      /financial events are recorded/,
+      'financial events are recorded',
+    );
     compareCatalogs(
       'fresh',
       'schema unchanged after the refused rollbacks',
@@ -950,6 +1054,8 @@ async function levelReferences(admin, fresh) {
     MIXED_EARNINGS_MIGRATION,
     REFUND_ENUM_MIGRATION,
     REFUNDS_MIGRATION,
+    EVENTS_MIGRATION,
+    FINDINGS_MIGRATION,
   ]) {
     if (!reversible.includes(required)) {
       throw new Error(`Expected ${required} to have a down.sql`);
@@ -1020,6 +1126,7 @@ async function checkSource(admin, source, references) {
       refunds: refundsTable.rows[0].present
         ? (await client.query('SELECT count(*)::int AS n FROM payment_refunds')).rows[0].n
         : 0,
+      events: await financialEventCount(client),
     };
   });
   const pending = migrationNames().filter(
@@ -1048,6 +1155,13 @@ async function checkSource(admin, source, references) {
     await checkStops(scope, client, before.state);
     await checkEarningSplit(scope, client);
     await checkRefunds(scope, client, before);
+    // Phase 7: the event log starts empty; a migration that changed a financial row would show.
+    const events = await financialEventCount(client);
+    if (events === before.events) {
+      pass(`no financial event recorded by the migration (${events} before and after)`);
+    } else {
+      fail(scope, `financial events went from ${before.events} to ${events}`);
+    }
     compareCatalogs(
       scope,
       `${label}: schema = fresh install`,

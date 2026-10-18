@@ -3,6 +3,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import request from 'supertest';
 import { FareQuoteRedeemer } from '../../src/fare/fare-contract';
 import { Prisma, PrismaClient } from '../../src/generated/prisma/client';
+import { ReconciliationRunsService } from '../../src/reconciliation/reconciliation-runs.service';
 import {
   bearer,
   createAdmin,
@@ -695,6 +696,32 @@ describe('Least-privilege database role', () => {
     ['write a collection refunded amount', 'UPDATE payment_collections SET refunded_paise = 1'],
     ['delete refunds', 'DELETE FROM payment_refunds'],
     ['truncate refunds', 'TRUNCATE payment_refunds'],
+    // Payment flow Phase 7: the event log is read-only to the API (its triggers write it), and a
+    // finding's identity or a run's job can't be rewritten.
+    [
+      'write a financial event',
+      `INSERT INTO financial_events (occurred_at, transaction_id, entity_type, entity_id, action,
+                                     changes, actor_type, db_role)
+       VALUES (now(), 1, 'BOOKING', gen_random_uuid(), 'CREATED', '{}', 'ADMIN', 'forger')`,
+    ],
+    ['rewrite a financial event', "UPDATE financial_events SET actor_type = 'SYSTEM'"],
+    ['delete financial events', 'DELETE FROM financial_events'],
+    ['truncate financial events', 'TRUNCATE financial_events'],
+    ['change what a finding is', "UPDATE reconciliation_findings SET kind = 'SOMETHING_ELSE'"],
+    [
+      're-point a finding at another record',
+      "UPDATE reconciliation_findings SET entity_id = 'another-record'",
+    ],
+    [
+      "rewrite a finding's first sighting",
+      'UPDATE reconciliation_findings SET first_seen_at = now()',
+    ],
+    ['delete findings', 'DELETE FROM reconciliation_findings'],
+    ['truncate findings', 'TRUNCATE reconciliation_findings'],
+    ["change a run's job", "UPDATE reconciliation_runs SET job = 'RECONCILIATION'"],
+    ['change who requested a run', 'UPDATE reconciliation_runs SET requested_by_user_id = NULL'],
+    ['delete runs', 'DELETE FROM reconciliation_runs'],
+    ['truncate runs', 'TRUNCATE reconciliation_runs'],
   ])('the API role cannot %s', async (_label, sql) => {
     const client = new PrismaClient({
       adapter: new PrismaPg({ connectionString: restrictedDatabaseUrl(), max: 1 }),
@@ -1113,6 +1140,35 @@ describe('Least-privilege database role', () => {
       'the fee-credit ledger check',
       'ALTER TABLE driver_wallet_transactions DISABLE TRIGGER trg_wallet_refund_reversal',
     ],
+    // Payment flow Phase 7: the event log can't be switched off, and its guards stay on.
+    [
+      'the financial event log on payments',
+      'ALTER TABLE payments DISABLE TRIGGER trg_payments_financial_event',
+    ],
+    [
+      'the financial event log on the wallet ledger',
+      'ALTER TABLE driver_wallet_transactions DISABLE TRIGGER trg_wallet_tx_financial_event',
+    ],
+    [
+      'the financial event log on bookings',
+      'ALTER TABLE bookings DISABLE TRIGGER trg_bookings_financial_event',
+    ],
+    [
+      'the financial event immutability guard',
+      'ALTER TABLE financial_events DISABLE TRIGGER trg_financial_events_immutable',
+    ],
+    [
+      'the financial event insert guard',
+      'ALTER TABLE financial_events DISABLE TRIGGER trg_financial_events_insert_guard',
+    ],
+    [
+      'the reconciliation finding guard',
+      'ALTER TABLE reconciliation_findings DISABLE TRIGGER trg_reconciliation_findings_guard',
+    ],
+    [
+      'the reconciliation run guard',
+      'ALTER TABLE reconciliation_runs DISABLE TRIGGER trg_reconciliation_runs_guard',
+    ],
   ])('the API role cannot disable %s', async (_label, sql) => {
     const client = new PrismaClient({
       adapter: new PrismaPg({ connectionString: restrictedDatabaseUrl(), max: 1 }),
@@ -1123,5 +1179,112 @@ describe('Least-privilege database role', () => {
     } finally {
       await client.$disconnect();
     }
+  });
+
+  it('writes the event log, and runs recovery and reconciliation, with production grants', async () => {
+    const [clock] = await owner.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`;
+    const since = clock?.now ?? new Date();
+    const admin = await createAdmin(deps);
+    const customer = await createCustomer(deps);
+    const driver = await createDriver(deps);
+    const category = uniqueCategory();
+    await owner.feeRule.create({
+      data: {
+        category,
+        ruleType: 'PERCENTAGE',
+        value: '10',
+        roundingMode: 'HALF_UP',
+        effectiveFrom: new Date(Date.now() - 60_000),
+        reason: 'Least privilege reconciliation fee rule',
+      },
+    });
+    const trip = await bookedTrip(ctx, customer, driver, {
+      paymentMethod: 'PAY_AT_PICKUP',
+      farePaise: 50_000,
+      category,
+      model: 'QUOTE_PER_STOP',
+      owner,
+    });
+    await setTripStatus(ctx, trip.tripId, 'DRIVER_ARRIVED').expect(200);
+    const shown = await collect(ctx, driver, trip.tripId, {
+      method: 'ONLINE_QR',
+      amountPaise: 50_000,
+    }).expect(201);
+    const collectionId = shown.body.collectionId as string;
+    // Paid at Razorpay; the webhook never arrives.
+    ctx.links.pay(ctx.links.byCollection(collectionId).referenceId);
+
+    const runs = ctx.app.get(ReconciliationRunsService);
+    const recovery = await runs.runNow('COLLECTION_RECOVERY', { trigger: 'SCHEDULE', since });
+    expect(recovery).toMatchObject({ status: 'COMPLETED', error: null });
+    expect(
+      (await owner.paymentCollection.findUniqueOrThrow({ where: { id: collectionId } })).status,
+    ).toBe('COMPLETED');
+    const reconciliation = await runs.runNow('RECONCILIATION', { trigger: 'SCHEDULE', since });
+    expect(reconciliation).toMatchObject({ status: 'COMPLETED', error: null });
+    // Every database and provider check could read what it needs.
+    const checks = (reconciliation?.summary as { checks: { check: string; note?: string }[] })
+      .checks;
+    expect(checks.length).toBeGreaterThan(20);
+    expect(checks.filter((check) => check.note?.startsWith('failed'))).toEqual([]);
+
+    // The API role's changes are in the log under its own database role.
+    const [apiRole] = await ctx.prisma.$queryRaw<{ role: string }[]>`
+      SELECT session_user::text AS role`;
+    const [ownerRole] = await owner.$queryRaw<{ role: string }[]>`
+      SELECT session_user::text AS role`;
+    expect(apiRole?.role).not.toBe(ownerRole?.role);
+    expect(
+      await owner.financialEvent.findMany({
+        where: { entityType: 'PAYMENT_COLLECTION', entityId: collectionId },
+        orderBy: { id: 'asc' },
+      }),
+    ).toEqual([
+      expect.objectContaining({ action: 'CREATED', actorType: 'DRIVER', dbRole: apiRole?.role }),
+      expect.objectContaining({
+        action: 'STATUS_CHANGED',
+        statusTo: 'COMPLETED',
+        actorType: 'SYSTEM',
+        requestId: recovery?.id,
+        dbRole: apiRole?.role,
+      }),
+    ]);
+
+    // An admin reads the log and the findings, resolves one, and starts a run.
+    for (const path of [
+      'audit/financial-events',
+      'audit/admin-actions',
+      'audit/webhook-events',
+      'reconciliation/summary',
+      'reconciliation/findings',
+      'reconciliation/runs',
+      'reconciliation/integrity-checks',
+    ]) {
+      await request(ctx.server).get(`/v1/admin/${path}`).set(bearer(admin.token)).expect(200);
+    }
+    const finding = await owner.reconciliationFinding.findFirstOrThrow({
+      where: { kind: 'COLLECTION_RECOVERED', entityId: collectionId },
+    });
+    await request(ctx.server)
+      .post(`/v1/admin/reconciliation/findings/${finding.id}/resolve`)
+      .set(bearer(admin.token))
+      .send({ note: 'Recovered payment checked against Razorpay' })
+      .expect(200);
+    const started = await request(ctx.server)
+      .post('/v1/admin/reconciliation/runs')
+      .set(bearer(admin.token))
+      .send({ job: 'COLLECTION_RECOVERY', since: since.toISOString() })
+      .expect(202);
+    let finished = started.body as { id: string; status: string };
+    for (let attempt = 0; attempt < 100 && finished.status === 'RUNNING'; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      finished = (
+        await request(ctx.server)
+          .get(`/v1/admin/reconciliation/runs/${finished.id}`)
+          .set(bearer(admin.token))
+          .expect(200)
+      ).body as { id: string; status: string };
+    }
+    expect(finished.status).toBe('COMPLETED');
   });
 });

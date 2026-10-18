@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import type { Principal } from '../auth/principal';
 import { requireDriver } from '../auth/require-driver';
-import { recordAdminAction } from '../audit/admin-actions';
+import { adminActionStatement, recordAdminAction } from '../audit/admin-actions';
 import { Clock } from '../common/clock';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -382,16 +382,18 @@ export class BankAccountsService {
     } catch (error) {
       throw toPayoutProviderError(error);
     }
-    await recordAdminAction(this.prisma, {
-      actorUserId: admin.userId,
-      action: 'BANK_VALIDATION_REQUESTED',
-      targetType: 'DRIVER_BANK_ACCOUNT',
-      targetId: bankAccountId,
-      details: {
-        validationId: validation.id,
-        providerValidationId: validation.providerValidationId,
-      },
-    });
+    await this.prisma.withFinancialContext(
+      adminActionStatement(this.prisma, {
+        actorUserId: admin.userId,
+        action: 'BANK_VALIDATION_REQUESTED',
+        targetType: 'DRIVER_BANK_ACCOUNT',
+        targetId: bankAccountId,
+        details: {
+          validationId: validation.id,
+          providerValidationId: validation.providerValidationId,
+        },
+      }),
+    );
     return validation;
   }
 

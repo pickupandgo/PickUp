@@ -21,7 +21,18 @@ export type AuditWriter = Pick<Prisma.TransactionClient, 'adminAction'>;
  * change it describes, so the audit row and the change commit or roll back together.
  */
 export async function recordAdminAction(db: AuditWriter, input: AdminActionInput): Promise<void> {
-  await db.adminAction.create({
+  await adminActionStatement(db, input);
+}
+
+/**
+ * The admin_actions insert as a statement, not yet run. Outside a transaction, run it with
+ * `prisma.withFinancialContext(...)` so its financial event names the actor and request.
+ */
+export function adminActionStatement(
+  db: AuditWriter,
+  input: AdminActionInput,
+): Prisma.PrismaPromise<unknown> {
+  return db.adminAction.create({
     data: {
       actorUserId: input.actorUserId,
       action: input.action,

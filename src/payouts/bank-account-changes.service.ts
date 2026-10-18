@@ -3,7 +3,7 @@ import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import type { Principal } from '../auth/principal';
 import { requireDriver } from '../auth/require-driver';
 import { checkStepUp, maskPhone, STEP_UP_METHOD, type StepUpProblem } from '../auth/step-up';
-import { recordAdminAction } from '../audit/admin-actions';
+import { adminActionStatement, recordAdminAction } from '../audit/admin-actions';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import type {
@@ -315,18 +315,20 @@ export class BankAccountChangesService {
     problem: StepUpProblem,
   ): Promise<never> {
     // Evidence for the admin who later reviews this driver's bank account. No phone numbers.
-    await recordAdminAction(this.prisma, {
-      actorUserId: principal.userId,
-      action: 'BANK_ACCOUNT_CHANGE_STEP_UP_REFUSED',
-      targetType: TARGET,
-      targetId: request.id,
-      reason: problem,
-      details: {
-        driverId,
-        signInProvider: principal.session.signInProvider,
-        authenticatedAt: principal.session.authenticatedAt?.toISOString() ?? null,
-      },
-    });
+    await this.prisma.withFinancialContext(
+      adminActionStatement(this.prisma, {
+        actorUserId: principal.userId,
+        action: 'BANK_ACCOUNT_CHANGE_STEP_UP_REFUSED',
+        targetType: TARGET,
+        targetId: request.id,
+        reason: problem,
+        details: {
+          driverId,
+          signInProvider: principal.session.signInProvider,
+          authenticatedAt: principal.session.authenticatedAt?.toISOString() ?? null,
+        },
+      }),
+    );
     this.logger.warn(
       { changeRequestId: request.id, driverId, reason: problem },
       'Bank account change refused: no valid step-up re-authentication',

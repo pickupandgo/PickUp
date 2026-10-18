@@ -85,6 +85,24 @@ export interface AppConfig {
     /** REFUND_ALLOWED_CASES (L-7). Default: every case, each still admin-initiated. */
     readonly allowedCases: readonly RefundCase[];
   };
+  /**
+   * Reconciliation and recovery jobs (payment flow Phase 7). Mismatches are recorded as findings
+   * for an admin; only the collection recovery writes, through the collection finalizer.
+   */
+  readonly reconciliation: {
+    /** COLLECTION_RECOVERY_INTERVAL_MINUTES; 0 = only when an admin runs it. */
+    readonly recoveryIntervalMinutes: number;
+    /** COLLECTION_RECOVERY_MIN_AGE_MINUTES: younger pending collections are left alone. */
+    readonly recoveryMinAgeMinutes: number;
+    /** RECONCILIATION_INTERVAL_MINUTES; 0 = only when an admin runs it. */
+    readonly intervalMinutes: number;
+    /** RECONCILIATION_PROVIDER_CHECKS: read Razorpay / RazorpayX state (read-only). */
+    readonly providerChecks: boolean;
+    /** RECONCILIATION_LOOKBACK_DAYS: how far back provider checks look. */
+    readonly lookbackDays: number;
+    /** RECONCILIATION_MIN_AGE_MINUTES: a younger pending payment is left alone. */
+    readonly minAgeMinutes: number;
+  };
   readonly fare: {
     /** Seconds a fare quote stays bookable. */
     readonly quoteTtlSeconds: number;
@@ -180,6 +198,17 @@ export function openReadinessItems(config: AppConfig): string[] {
         : 'a refund returns all that is left of its source'
     }; cases: ${cases.length > 0 ? cases.join(', ') : 'NONE'}`,
   );
+  // Reconciliation (payment flow Phase 7): reported only when a job is switched off.
+  if (config.reconciliation.recoveryIntervalMinutes === 0) {
+    items.push(
+      'Collection recovery job off (COLLECTION_RECOVERY_INTERVAL_MINUTES=0): a QR paid while its webhook was missed waits for the driver refresh, an admin sync or an admin-started recovery run',
+    );
+  }
+  if (config.reconciliation.intervalMinutes === 0) {
+    items.push(
+      'Scheduled reconciliation off (RECONCILIATION_INTERVAL_MINUTES=0): mismatches are only recorded when an admin starts a run',
+    );
+  }
   if (config.collections.simulated) {
     items.push(
       'D-47: collection QR codes are simulated (local end-to-end runs only); live needs Razorpay QR Codes (UPI QR)',
@@ -287,6 +316,14 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       // The schema refuses REFUND_AUTO_ON_CANCEL=true (L-8 is open).
       autoOnCancel: false,
       allowedCases: parseRefundCases(env.REFUND_ALLOWED_CASES).filter(isRefundCase),
+    },
+    reconciliation: {
+      recoveryIntervalMinutes: env.COLLECTION_RECOVERY_INTERVAL_MINUTES,
+      recoveryMinAgeMinutes: env.COLLECTION_RECOVERY_MIN_AGE_MINUTES,
+      intervalMinutes: env.RECONCILIATION_INTERVAL_MINUTES,
+      providerChecks: env.RECONCILIATION_PROVIDER_CHECKS,
+      lookbackDays: env.RECONCILIATION_LOOKBACK_DAYS,
+      minAgeMinutes: env.RECONCILIATION_MIN_AGE_MINUTES,
     },
     fare: {
       quoteTtlSeconds: env.FARE_QUOTE_TTL_SECONDS,

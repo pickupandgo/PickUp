@@ -40,6 +40,11 @@ export function buildTestConfig(overrides: Record<string, string> = {}): AppConf
     SETTLEMENT_SYNC_INTERVAL_MINUTES: '0',
     // Razorpay refunds in test mode; the gateway is the in-memory fake (test-app.ts).
     REFUND_PROVIDER: 'razorpay',
+    // Reconciliation jobs run only when a test asks (payment flow Phase 7), on rows of any age.
+    COLLECTION_RECOVERY_INTERVAL_MINUTES: '0',
+    COLLECTION_RECOVERY_MIN_AGE_MINUTES: '0',
+    RECONCILIATION_INTERVAL_MINUTES: '0',
+    RECONCILIATION_MIN_AGE_MINUTES: '0',
     ...overrides,
   });
 }

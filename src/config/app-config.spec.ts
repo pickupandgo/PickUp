@@ -495,3 +495,55 @@ describe('loadConfig', () => {
     );
   });
 });
+
+describe('reconciliation config (payment flow Phase 7)', () => {
+  it('runs recovery every 5 minutes and reconciliation hourly by default, reading the providers', () => {
+    const config = loadConfig(validEnv());
+    expect(config.reconciliation).toEqual({
+      recoveryIntervalMinutes: 5,
+      recoveryMinAgeMinutes: 5,
+      intervalMinutes: 60,
+      providerChecks: true,
+      lookbackDays: 3,
+      minAgeMinutes: 15,
+    });
+    // Both jobs on: nothing to report at startup.
+    expect(openReadinessItems(config).join('\n')).not.toMatch(
+      /recovery job off|reconciliation off/,
+    );
+  });
+
+  it('can switch either job off, and says so at startup', () => {
+    const off = loadConfig(
+      validEnv({
+        COLLECTION_RECOVERY_INTERVAL_MINUTES: '0',
+        RECONCILIATION_INTERVAL_MINUTES: '0',
+        RECONCILIATION_PROVIDER_CHECKS: 'false',
+        RECONCILIATION_LOOKBACK_DAYS: '7',
+      }),
+    );
+    expect(off.reconciliation).toMatchObject({
+      recoveryIntervalMinutes: 0,
+      intervalMinutes: 0,
+      providerChecks: false,
+      lookbackDays: 7,
+    });
+    const items = openReadinessItems(off).join('\n');
+    expect(items).toMatch(/Collection recovery job off \(COLLECTION_RECOVERY_INTERVAL_MINUTES=0\)/);
+    expect(items).toMatch(/Scheduled reconciliation off \(RECONCILIATION_INTERVAL_MINUTES=0\)/);
+  });
+
+  it.each([
+    ['COLLECTION_RECOVERY_INTERVAL_MINUTES', '-1'],
+    ['COLLECTION_RECOVERY_INTERVAL_MINUTES', '1441'],
+    ['COLLECTION_RECOVERY_MIN_AGE_MINUTES', '1441'],
+    ['RECONCILIATION_INTERVAL_MINUTES', '10081'],
+    ['RECONCILIATION_INTERVAL_MINUTES', '1.5'],
+    ['RECONCILIATION_LOOKBACK_DAYS', '0'],
+    ['RECONCILIATION_LOOKBACK_DAYS', '32'],
+    ['RECONCILIATION_MIN_AGE_MINUTES', 'soon'],
+    ['RECONCILIATION_PROVIDER_CHECKS', 'maybe'],
+  ])('refuses %s=%s', (name, value) => {
+    expect(problemsFor(validEnv({ [name]: value })).join()).toMatch(new RegExp(name));
+  });
+});

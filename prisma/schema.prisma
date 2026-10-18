@@ -280,6 +280,8 @@ model User {
   resolvedBookingStops       BookingStop[]             @relation("BookingStopResolvedBy")
   requestedRefunds           PaymentRefund[]           @relation("RefundRequestedBy")
   cancelledRefunds           PaymentRefund[]           @relation("RefundCancelledBy")
+  requestedReconciliations   ReconciliationRun[]       @relation("ReconciliationRunRequestedBy")
+  resolvedFindings           ReconciliationFinding[]   @relation("FindingResolvedBy")
 
   @@map("users")
 }
@@ -1369,4 +1371,144 @@ model FareQuoteStop {
 
   @@unique([quoteId, sequence], map: "uq_fare_quote_stops_sequence")
   @@map("fare_quote_stops")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Audit and reconciliation (payment flow Phase 7). Nothing here moves money.
+// ---------------------------------------------------------------------------------------------
+
+/// Append-only log of every change to a financial record (bookings, trips, stops, payments,
+/// collections, settlements, disputes, refunds, earnings, payout batches, payouts, payout items,
+/// wallet ledger entries and admin actions), written by database triggers in the same
+/// transaction as the change. CREATED carries the new row; an update carries the changed columns
+/// ({column: {from, to}}). The actor and request come from transaction-local settings the
+/// service layer sets; a change made without them is UNATTRIBUTED. No role can update, delete
+/// or truncate it, or insert into it directly (triggers); the API role can only read it.
+model FinancialEvent {
+  id              BigInt   @id @default(autoincrement())
+  occurredAt      DateTime @map("occurred_at") @db.Timestamptz(6)
+  /// PostgreSQL transaction id: events with the same value were committed together.
+  transactionId   BigInt   @map("transaction_id")
+  /// BOOKING, TRIP, BOOKING_STOP, PAYMENT, PAYMENT_COLLECTION, PAYMENT_SETTLEMENT,
+  /// PAYMENT_DISPUTE, PAYMENT_REFUND, DRIVER_EARNING, PAYOUT_BATCH, DRIVER_PAYOUT, PAYOUT_ITEM,
+  /// WALLET_TRANSACTION or ADMIN_ACTION (CHECK).
+  entityType      String   @map("entity_type") @db.VarChar(40)
+  entityId        String   @map("entity_id") @db.Uuid
+  /// CREATED, STATUS_CHANGED, PAYMENT_STATUS_CHANGED, UPDATED or DELETED (CHECK).
+  action          String   @db.VarChar(30)
+  statusFrom      String?  @map("status_from") @db.VarChar(40)
+  statusTo        String?  @map("status_to") @db.VarChar(40)
+  bookingId       String?  @map("booking_id") @db.Uuid
+  driverId        String?  @map("driver_id") @db.Uuid
+  /// The record's own amount (fare, payable, collected, refunded, gross earning, payout, ...).
+  amountPaise     BigInt?  @map("amount_paise")
+  changes         Json
+  /// ADMIN, DRIVER, CUSTOMER, ENGINE, PROVIDER, SYSTEM or UNATTRIBUTED (CHECK).
+  actorType       String   @map("actor_type") @db.VarChar(20)
+  actorUserId     String?  @map("actor_user_id") @db.Uuid
+  /// The HTTP request id (X-Request-Id), or the reconciliation run id for a job.
+  requestId       String?  @map("request_id") @db.VarChar(100)
+  /// The route ("POST /v1/admin/refunds"), webhook ("webhook razorpay payment.captured") or job.
+  origin          String?  @db.VarChar(150)
+  /// The provider webhook event that caused the change, when one did.
+  providerEventId String?  @map("provider_event_id") @db.VarChar(150)
+  /// The database role that made the change (session_user).
+  dbRole          String   @map("db_role") @db.VarChar(63)
+
+  @@index([bookingId, id], map: "idx_financial_events_booking", where: raw("(booking_id IS NOT NULL)"))
+  @@index([entityType, entityId, id], map: "idx_financial_events_entity")
+  @@index([driverId, id], map: "idx_financial_events_driver", where: raw("(driver_id IS NOT NULL)"))
+  @@index([requestId], map: "idx_financial_events_request", where: raw("(request_id IS NOT NULL)"))
+  @@index([actorUserId, id], map: "idx_financial_events_actor", where: raw("(actor_user_id IS NOT NULL)"))
+  @@index([occurredAt], map: "idx_financial_events_occurred")
+  @@map("financial_events")
+}
+
+/// One run of a reconciliation job: COLLECTION_RECOVERY or RECONCILIATION (CHECK). At most one
+/// RUNNING run per job; a run that outlives its lease is closed ABANDONED by the next one. A
+/// finished run never changes (trigger).
+model ReconciliationRun {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  job               String    @db.VarChar(40)
+  /// SCHEDULE or ADMIN (CHECK).
+  triggeredBy       String    @map("triggered_by") @db.VarChar(20)
+  /// RUNNING, COMPLETED, FAILED or ABANDONED (CHECK).
+  status            String    @default("RUNNING") @db.VarChar(20)
+  /// What the run looked at (for example {"since": ...}); {} is everything.
+  scope             Json      @default("{}")
+  requestedByUserId String?   @map("requested_by_user_id") @db.Uuid
+  startedAt         DateTime  @default(dbgenerated("clock_timestamp()")) @map("started_at") @db.Timestamptz(6)
+  leaseExpiresAt    DateTime  @map("lease_expires_at") @db.Timestamptz(6)
+  finishedAt        DateTime? @map("finished_at") @db.Timestamptz(6)
+  /// Counts and per-check results of the run.
+  summary           Json      @default("{}")
+  error             String?   @db.VarChar(500)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  requestedBy       User?                   @relation("ReconciliationRunRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  findingsFirstSeen ReconciliationFinding[] @relation("FindingFirstRun")
+  findingsLastSeen  ReconciliationFinding[] @relation("FindingLastRun")
+
+  @@unique([job], map: "uq_reconciliation_runs_running", where: raw("((status)::text = 'RUNNING'::text)"))
+  @@index([job, startedAt(sort: Desc)], map: "idx_reconciliation_runs_job_started")
+  @@map("reconciliation_runs")
+}
+
+/// A mismatch a reconciliation run detected, kept for an admin. Recording one moves no money;
+/// only an admin resolves it, with a note. One OPEN finding per fingerprint (the same condition
+/// seen again counts another sighting); a condition a complete run no longer sees is marked
+/// cleared. Identity and first sighting are immutable, and a resolved finding is never reopened
+/// (triggers).
+model ReconciliationFinding {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// PROVIDER_PAID_INTERNAL_PENDING, INTERNAL_PAID_PROVIDER_NOT_PAID, EARNING_SOURCE_MISMATCH,
+  /// SETTLEMENT_MISMATCH, PAYOUT_MISMATCH, REFUND_MISMATCH, WALLET_MISMATCH, STALE_PENDING,
+  /// DUPLICATE_PROVIDER_EVENT or PROVIDER_EVENT_ANOMALY (CHECK).
+  category            String    @db.VarChar(40)
+  /// The check's problem code, e.g. PROVIDER_PAID_PAYMENT_PENDING.
+  kind                String    @db.VarChar(60)
+  /// INFO, WARNING or CRITICAL (CHECK).
+  severity            String    @db.VarChar(10)
+  /// DATABASE, PROVIDER (a read from Razorpay or RazorpayX) or RECOVERY (CHECK).
+  source              String    @db.VarChar(20)
+  /// Stable identity of the condition (kind and the records involved).
+  fingerprint         String    @db.VarChar(300)
+  /// OPEN or RESOLVED (CHECK).
+  status              String    @default("OPEN") @db.VarChar(20)
+  entityType          String?   @map("entity_type") @db.VarChar(40)
+  entityId            String?   @map("entity_id") @db.VarChar(150)
+  bookingId           String?   @map("booking_id") @db.Uuid
+  driverId            String?   @map("driver_id") @db.Uuid
+  /// The provider's id involved (pay_, qr_, plink_, pout_, rfnd_, setl_, or a webhook event id).
+  providerRef         String?   @map("provider_ref") @db.VarChar(150)
+  internalState       String?   @map("internal_state") @db.VarChar(60)
+  providerState       String?   @map("provider_state") @db.VarChar(60)
+  internalAmountPaise BigInt?   @map("internal_amount_paise")
+  providerAmountPaise BigInt?   @map("provider_amount_paise")
+  detail              String?   @db.VarChar(500)
+  /// Related ids (paymentId, collectionId, earningId, payoutId, refundId, walletId, ...).
+  refs                Json      @default("{}")
+  occurrences         Int       @default(1)
+  firstSeenAt         DateTime  @default(dbgenerated("clock_timestamp()")) @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt          DateTime  @default(dbgenerated("clock_timestamp()")) @map("last_seen_at") @db.Timestamptz(6)
+  firstRunId          String?   @map("first_run_id") @db.Uuid
+  lastRunId           String?   @map("last_run_id") @db.Uuid
+  /// Set when a complete run no longer saw the condition. Never removes the finding.
+  clearedAt           DateTime? @map("cleared_at") @db.Timestamptz(6)
+  resolvedAt          DateTime? @map("resolved_at") @db.Timestamptz(6)
+  resolvedByUserId    String?   @map("resolved_by_user_id") @db.Uuid
+  resolutionNote      String?   @map("resolution_note") @db.VarChar(500)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  firstRun   ReconciliationRun? @relation("FindingFirstRun", fields: [firstRunId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lastRun    ReconciliationRun? @relation("FindingLastRun", fields: [lastRunId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  resolvedBy User?              @relation("FindingResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([fingerprint], map: "uq_reconciliation_findings_open", where: raw("((status)::text = 'OPEN'::text)"))
+  @@index([fingerprint], map: "idx_reconciliation_findings_fingerprint")
+  @@index([status, category, lastSeenAt(sort: Desc)], map: "idx_reconciliation_findings_status")
+  @@index([bookingId], map: "idx_reconciliation_findings_booking", where: raw("(booking_id IS NOT NULL)"))
+  @@map("reconciliation_findings")
 }

@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { AuditEventsService, toFinancialEventResponse } from '../audit/audit-events.service';
 import { toAdminBookingStopView } from '../bookings/bookings.mapper';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -21,7 +22,10 @@ const paise = (value: bigint | null | undefined): number | null =>
  */
 @Injectable()
 export class BookingChainService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditEventsService,
+  ) {}
 
   async get(bookingId: string) {
     const booking = await this.prisma.booking.findUnique({
@@ -55,6 +59,7 @@ export class BookingChainService {
     if (!booking) {
       throw new AppError(ErrorCode.BOOKING_NOT_FOUND, HttpStatus.NOT_FOUND, 'Booking not found');
     }
+    const trail = await this.audit.bookingTrail(booking.id);
     const { earning } = booking;
     const activeItem = earning?.payoutItems.find(
       (item) => item.status === 'INCLUDED' || item.status === 'PAID',
@@ -238,6 +243,14 @@ export class BookingChainService {
             };
           })()
         : null,
+      /**
+       * Every change to the booking's money, oldest first (payment flow Phase 7): what changed,
+       * who changed it (user, trip engine, provider webhook, job), in which request or job run.
+       * Changes before the event log existed are not in it.
+       */
+      auditTrail: trail.events.map(toFinancialEventResponse),
+      /** False when the trail is longer than the chain shows; page /v1/admin/audit/financial-events. */
+      auditTrailComplete: trail.complete,
     };
   }
 }

@@ -1,6 +1,8 @@
 import { DynamicModule, Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { AuditModule } from './audit/audit.module';
+import { FinancialContextInterceptor } from './audit/financial-context.interceptor';
 import { AuthGuard } from './auth/auth.guard';
 import { AuthModule } from './auth/auth.module';
 import { BookingsModule } from './bookings/bookings.module';
@@ -52,6 +54,7 @@ export class AppModule {
         PayoutsModule,
         RefundsModule,
         EngineModule,
+        AuditModule,
         ReconciliationModule,
         // Non-production only: /v1/dev/simulate, mounted when a simulated provider is configured.
         ...(config.simulation.enabled ? [SimulationModule] : []),
@@ -60,6 +63,8 @@ export class AppModule {
         // Order matters: authenticate first, then rate limit per resolved user.
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: APP_GUARD, useClass: AppThrottlerGuard },
+        // Who acts in each request, for the financial event log (payment flow Phase 7).
+        { provide: APP_INTERCEPTOR, useClass: FinancialContextInterceptor },
       ],
     };
   }

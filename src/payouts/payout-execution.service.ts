@@ -1,5 +1,6 @@
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
-import { recordAdminAction } from '../audit/admin-actions';
+import { adminActionStatement } from '../audit/admin-actions';
+import { financialContextStatement } from '../audit/financial-context';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -55,6 +56,8 @@ export class PayoutExecutionService {
     }
     if (batch.status === 'PREPARED') {
       await this.prisma.$transaction([
+        // Who executed it, for the financial event log (payment flow Phase 7).
+        financialContextStatement(this.prisma),
         this.prisma.payoutBatch.updateMany({
           where: { id: batchId, status: 'PREPARED' },
           data: { status: 'EXECUTING', executedAt: new Date() },
@@ -92,18 +95,20 @@ export class PayoutExecutionService {
 
   /** Submits one payout if it is waiting (or its earlier submission went silent). */
   async submit(payoutId: string): Promise<SubmitResult> {
-    const claimed = await this.prisma.$queryRaw<{ id: string }[]>`
-      UPDATE driver_payouts
-      SET status = 'SUBMITTING'::payout_status,
-          attempts = attempts + 1,
-          last_attempt_at = now(),
-          updated_at = now()
-      WHERE id = ${payoutId}::uuid
-        AND (status = 'PREPARED'::payout_status
-             OR (status = 'SUBMITTING'::payout_status
-                 AND (last_attempt_at IS NULL
-                      OR last_attempt_at < now() - make_interval(secs => ${STALE_SUBMISSION_SECONDS}))))
-      RETURNING id`;
+    const claimed = await this.prisma.withFinancialContext(
+      this.prisma.$queryRaw<{ id: string }[]>`
+        UPDATE driver_payouts
+        SET status = 'SUBMITTING'::payout_status,
+            attempts = attempts + 1,
+            last_attempt_at = now(),
+            updated_at = now()
+        WHERE id = ${payoutId}::uuid
+          AND (status = 'PREPARED'::payout_status
+               OR (status = 'SUBMITTING'::payout_status
+                   AND (last_attempt_at IS NULL
+                        OR last_attempt_at < now() - make_interval(secs => ${STALE_SUBMISSION_SECONDS}))))
+        RETURNING id`,
+    );
     if (claimed.length === 0) {
       return { payoutId, result: 'SKIPPED' };
     }
@@ -148,12 +153,14 @@ export class PayoutExecutionService {
     if (!payout) {
       throw new AppError(ErrorCode.PAYOUT_NOT_FOUND, HttpStatus.NOT_FOUND, 'Payout not found');
     }
-    await recordAdminAction(this.prisma, {
-      actorUserId,
-      action: 'PAYOUT_SYNCED',
-      targetType: 'DRIVER_PAYOUT',
-      targetId: payoutId,
-    });
+    await this.prisma.withFinancialContext(
+      adminActionStatement(this.prisma, {
+        actorUserId,
+        action: 'PAYOUT_SYNCED',
+        targetType: 'DRIVER_PAYOUT',
+        targetId: payoutId,
+      }),
+    );
     if (payout.status === 'PREPARED') {
       return { payout, outcome: 'NOT_SUBMITTED' };
     }
