@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MultipleRide Payment Backend: Architecture, Flows and API</title>
+<style>
+  @page { size: A4; margin: 17mm 15mm 18mm 15mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-size: 10.2pt; line-height: 1.48; color: #15181f; margin: 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  h1 { font-size: 22pt; margin: 0 0 4px; letter-spacing: -0.4px; }
+  h2 {
+    font-size: 14pt; margin: 24px 0 10px; padding-bottom: 5px;
+    border-bottom: 2px solid #15181f; page-break-after: avoid;
+  }
+  h3 { font-size: 11.4pt; margin: 17px 0 7px; page-break-after: avoid; }
+  h4 { font-size: 10.3pt; margin: 13px 0 5px; page-break-after: avoid; }
+  p, li { margin: 0 0 6px; }
+  ul, ol { margin: 0 0 10px; padding-left: 20px; }
+  li > ul, li > ol { margin-top: 4px; }
+  code {
+    font-family: "Cascadia Mono", Consolas, monospace; font-size: 8.8pt;
+    background: #eef0f4; padding: 1px 4px; border-radius: 3px;
+  }
+  pre {
+    font-family: "Cascadia Mono", Consolas, monospace; font-size: 8.1pt;
+    background: #f6f7f9; border: 1px solid #dcdfe6; border-left: 3px solid #15181f;
+    padding: 8px 10px; border-radius: 3px; white-space: pre-wrap;
+    margin: 6px 0 10px; line-height: 1.4; page-break-inside: avoid;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  table {
+    width: 100%; border-collapse: collapse; margin: 7px 0 12px;
+    font-size: 8.9pt; page-break-inside: avoid;
+  }
+  table.long { page-break-inside: auto; }
+  table.long tr { page-break-inside: avoid; }
+  th, td { border: 1px solid #ccd0d8; padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: #eef0f4; font-weight: 600; }
+  td code, th code { font-size: 8.2pt; }
+  .cover { border: 2px solid #15181f; padding: 22px 24px; page-break-after: always; }
+  .sub { font-size: 11pt; color: #4a505e; margin: 0 0 16px; }
+  .meta table { margin: 0; font-size: 9.2pt; }
+  .meta td { border: none; padding: 2px 10px 2px 0; }
+  .meta td:first-child { color: #6b7280; width: 112px; }
+  .box {
+    border: 1px solid #ccd0d8; border-left: 4px solid #15181f;
+    background: #f6f7f9; padding: 9px 12px; margin: 10px 0; page-break-inside: avoid;
+  }
+  .box.warn { border-left-color: #b4232a; background: #fdf3f3; border-color: #e8c4c6; }
+  .box.ask  { border-left-color: #9a6a00; background: #fdf8ec; border-color: #e6d4a8; }
+  .box.ok   { border-left-color: #1d6f3f; background: #f1f8f3; border-color: #c2dfcd; }
+  .box p:last-child, .box ul:last-child, .box ol:last-child { margin-bottom: 0; }
+  .box .t { font-weight: 600; display: block; margin-bottom: 4px; }
+  .tag {
+    display: inline-block; font-size: 7.4pt; font-weight: 700; letter-spacing: 0.4px;
+    padding: 1px 5px; border-radius: 3px; vertical-align: 1px; margin-right: 4px;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .tag.exists { background: #1d6f3f; color: #fff; }
+  .tag.build  { background: #b4232a; color: #fff; }
+  .tag.ask    { background: #9a6a00; color: #fff; }
+  .tag.get    { background: #1d5f8a; color: #fff; }
+  .tag.post   { background: #15181f; color: #fff; }
+  .page { page-break-before: always; }
+  .flow {
+    font-family: "Cascadia Mono", Consolas, monospace; font-size: 8pt; line-height: 1.5;
+    white-space: pre-wrap; background: #f6f7f9; border: 1px solid #dcdfe6; padding: 9px 10px;
+    border-radius: 3px; margin: 7px 0 11px; page-break-inside: avoid;
+  }
+  .toc { font-size: 9.6pt; margin-top: 4px; }
+  .toc td { border: none; padding: 2px 0; }
+  .toc td:last-child { color: #6b7280; font-size: 8.8pt; }
+  .small { font-size: 8.8pt; color: #4a505e; }
+  .ep { font-family: "Cascadia Mono", Consolas, monospace; font-size: 8.3pt; white-space: nowrap; }
+  figure { margin: 8px 0 12px; page-break-inside: avoid; }
+  figcaption { font-size: 8.8pt; color: #4a505e; margin-top: 4px; }
+  footer { font-size: 8.4pt; color: #6b7280; margin-top: 24px; border-top: 1px solid #ccd0d8; padding-top: 6px; }
+</style>
+</head>
+<body>
+
+<div class="box warn" style="margin:0 0 14px;">
+  <span class="t">Status: superseded by the as-built implementation (payment flow Phases 8&ndash;11, frozen).</span>
+  <p>
+    This document is the original pre-implementation architecture and API reference (October 2026). The
+    integration it anticipated has since been built, tested and frozen: the trip engine (<code>raj_engine</code>,
+    Phase 8), the Driver App (Phase 9), the Customer App (Phase 10) and the backend end-to-end, concurrency
+    and security sweep (Phase 11). Where this reference and the as-built contract disagree,
+    <strong>the as-built contract wins</strong>, and items tagged <span class="tag build">to build</span> or
+    <span class="tag ask">decision</span> below are now built or decided. The endpoint catalogue and the
+    backend invariants remain accurate; the forward-looking proposals and open decisions are history.
+  </p>
+  <p><strong>Authoritative sources:</strong>
+    <code>raj_backend/docs/PAYMENT_FLOW_FINAL_REVIEW.md</code> (contract of record, &sect;D/E/F),
+    the engine <code>raj_engine/README.md</code>, and <code>raj_backend/docs/OPEN_DECISIONS.md</code>.
+  </p>
+</div>
+
+<div class="box ok" style="margin:0 0 16px;">
+  <span class="t">What changed from the proposals below.</span>
+  <ul>
+    <li><strong>Booking registration carries no amount.</strong> It is
+      <code>POST /v1/internal/bookings { externalRef, customerSubject, quoteId, paymentMethod }</code>;
+      <code>confirmedFarePaise</code> is gone and any amount field is rejected (<code>400</code>). The fare
+      lives only in the server quote (<code>POST /v1/fare/quotes</code>), which the booking references by
+      <code>quoteId</code> and the backend freezes per drop. The &ldquo;where is the fare calculated&rdquo;
+      decision is settled: the server quote is authoritative.</li>
+    <li><strong>Only <code>PAY_AT_PICKUP</code> and <code>PAY_AT_DELIVERY</code> for new bookings.</strong>
+      <code>PREPAID_UPI</code> / pay-online-before-dispatch is retired for new bookings (refused
+      <code>422</code>) and kept only for historical rows; the prepaid-timing decision is closed.</li>
+    <li><strong>PAY_AT_PICKUP</strong> is paid at the pickup before handover;
+      <strong>PAY_AT_DELIVERY</strong> is paid per drop, before each drop's handover, for that drop's amount
+      (<code>UNPAID &rarr; PARTIALLY_PAID &rarr; PAID</code>) &mdash; not once after the last drop.</li>
+    <li><strong>paymentGate</strong>
+      (<code>stage, stopSequence, paymentState, amountPaise, handoverAllowed</code>) is derived by the
+      backend; the engine never sends <code>PAYMENT_CONFIRMED</code>, an amount, a fee or a payment status,
+      and a handover is allowed only when <code>handoverAllowed</code> is true.</li>
+    <li><strong>Gated OTPs, Firebase on every call, a durable outbox and a persistent engine</strong> are all
+      in place; the identity comes from the token, and gated transitions apply only after the backend's 2xx.</li>
+  </ul>
+</div>
+
+<div class="cover">
+  <h1>Payment Backend: Architecture, Flows and API</h1>
+  <p class="sub">For the trip engine and the admin panel. How money moves through MultipleRide, every endpoint the payment backend has today, and what still has to be built.</p>
+  <div class="meta">
+    <table>
+      <tr><td>Product</td><td><strong>MultipleRide / Pick Up</strong>, Nikhil Enterprises, Jodhpur</td></tr>
+      <tr><td>Document</td><td>Architecture and API reference, v1 (October 2026)</td></tr>
+      <tr><td>Audience</td><td>Developer of the trip engine (<code>engine-v2</code>), the admin panel (<code>admin_panel_v1</code>) and Customer App login</td></tr>
+      <tr><td>System</td><td>Payment backend <code>raj_backend</code>: NestJS, PostgreSQL. Built and tested.</td></tr>
+      <tr><td>Source</td><td>Taken from the backend's code and its generated OpenAPI document (76 operations), not from a draft</td></tr>
+      <tr><td>Companion</td><td><em>Trip Engine &rarr; Payment Backend Integration Spec</em>: the engine change checklist and definition of done</td></tr>
+    </table>
+  </div>
+
+  <h3 style="margin-top:20px">Why this document exists</h3>
+  <p>
+    Before you change the engine, move the fare calculation or wire the admin panel, you need three
+    things: what the payment backend owns, how a booking's money moves from confirmation to the
+    driver's bank account, and the exact endpoints you can call. This document covers all three, and
+    lists the endpoints that don't exist yet, with who builds them.
+  </p>
+  <p><span class="tag exists">exists</span>built and tested &nbsp; <span class="tag build">to build</span>missing &nbsp; <span class="tag ask">decision</span>Raj and you agree first</p>
+
+  <h3>Contents</h3>
+  <table class="toc">
+    <tr><td>1. Architecture</td><td>components, inside the backend, data ownership, authentication</td></tr>
+    <tr><td>2. Rules that keep the money safe</td><td>the invariants every change must respect</td></tr>
+    <tr><td>3. Lifecycles</td><td>booking, trip, payment, collection, earning, bank account, payout</td></tr>
+    <tr><td>4. End-to-end flows</td><td>from booking to the driver's bank account</td></tr>
+    <tr><td>5. The fare</td><td>how it works today, what's wrong, the proposed change</td></tr>
+    <tr><td>6. Engine API (internal)</td><td>the six calls the engine makes</td></tr>
+    <tr><td>7. Admin API</td><td>every admin endpoint with request and response shapes</td></tr>
+    <tr><td>8. App endpoints, webhooks, health</td><td>what the apps and Razorpay call</td></tr>
+    <tr><td>9. Admin panel pages &rarr; backend</td><td>page by page: what serves it, what's missing</td></tr>
+    <tr><td>10. What's missing and who builds it</td><td>engine, payment backend, admin panel</td></tr>
+    <tr><td>11. Decisions to agree before building</td><td>fare authority, identity, reassignment, roles</td></tr>
+    <tr><td>12. Setup and handover</td><td>local setup, CORS, test data, test-mode limits</td></tr>
+  </table>
+</div>
+
+<h2>1. Architecture</h2>
+
+<figure>
+<svg viewBox="0 0 680 482" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#15181f"/>
+    </marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b4232a"/>
+    </marker>
+  </defs>
+  <style>
+    .lbl { font-size: 9.4px; fill: #15181f; paint-order: stroke; stroke: #ffffff; stroke-width: 3px; stroke-linejoin: round; }
+    .lblr { font-size: 9.4px; fill: #b4232a; paint-order: stroke; stroke: #ffffff; stroke-width: 3px; stroke-linejoin: round; font-weight: 600; }
+  </style>
+
+  <!-- Trip engine -->
+  <rect x="60" y="10" width="560" height="62" rx="6" fill="#eef0f4" stroke="#15181f" stroke-width="1.5"/>
+  <text x="340" y="35" text-anchor="middle" font-size="13" font-weight="700">Trip Engine  ·  engine-v2</text>
+  <text x="340" y="53" text-anchor="middle" font-size="10" fill="#374151">dispatch · stops · OTPs · delivery proof · live tracking · fare calculation (today)</text>
+  <text x="612" y="24" text-anchor="end" font-size="8.5" font-weight="700" fill="#b4232a">YOUR SIDE</text>
+
+  <!-- Clients -->
+  <rect x="60" y="130" width="170" height="54" rx="6" fill="#ffffff" stroke="#15181f" stroke-width="1.3"/>
+  <text x="145" y="154" text-anchor="middle" font-size="12" font-weight="700">Customer App</text>
+  <text x="145" y="171" text-anchor="middle" font-size="9.5" fill="#4a505e">Expo · React Native</text>
+
+  <rect x="255" y="130" width="170" height="54" rx="6" fill="#ffffff" stroke="#15181f" stroke-width="1.3"/>
+  <text x="340" y="154" text-anchor="middle" font-size="12" font-weight="700">Driver App</text>
+  <text x="340" y="171" text-anchor="middle" font-size="9.5" fill="#4a505e">React Native</text>
+
+  <rect x="450" y="130" width="170" height="54" rx="6" fill="#ffffff" stroke="#15181f" stroke-width="1.3"/>
+  <text x="535" y="154" text-anchor="middle" font-size="12" font-weight="700">Admin Panel</text>
+  <text x="535" y="171" text-anchor="middle" font-size="9.5" fill="#4a505e">Next.js 16 (web)</text>
+
+  <!-- Clients to engine -->
+  <line x1="145" y1="130" x2="145" y2="74" stroke="#15181f" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="151" y="105" class="lbl">booking, fare, tracking</text>
+  <line x1="340" y1="130" x2="340" y2="74" stroke="#15181f" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="346" y="105" class="lbl">offers, trip steps</text>
+  <line x1="535" y1="130" x2="535" y2="74" stroke="#b4232a" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ag)"/>
+  <text x="541" y="105" class="lblr">ops admin (to build)</text>
+
+  <!-- Clients to payment backend -->
+  <line x1="145" y1="184" x2="145" y2="243" stroke="#15181f" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="151" y="218" class="lbl">pay a booking</text>
+  <line x1="340" y1="184" x2="340" y2="243" stroke="#15181f" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="346" y="218" class="lbl">wallet, collect, earnings, bank</text>
+  <line x1="535" y1="184" x2="535" y2="243" stroke="#15181f" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="541" y="218" class="lbl">/v1/admin/*</text>
+
+  <!-- Payment backend -->
+  <rect x="60" y="245" width="560" height="76" rx="6" fill="#15181f" stroke="#15181f"/>
+  <text x="340" y="270" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff">Payment Backend  ·  raj_backend</text>
+  <text x="340" y="289" text-anchor="middle" font-size="10" fill="#d7dae0">NestJS modular monolith · PostgreSQL · the only place money is decided</text>
+  <text x="340" y="306" text-anchor="middle" font-size="10" fill="#d7dae0">fare frozen · payments verified · platform fee · earnings · settlements · payouts</text>
+  <text x="612" y="259" text-anchor="end" font-size="8.5" font-weight="700" fill="#9fe2b8">BUILT</text>
+
+  <!-- Engine to payment backend -->
+  <path d="M60,41 L30,41 L30,283 L58,283" fill="none" stroke="#15181f" stroke-width="2.2" marker-end="url(#a)"/>
+  <text transform="translate(22,163) rotate(-90)" text-anchor="middle" class="lbl" font-weight="700">/v1/internal/*  ·  X-Internal-Api-Key</text>
+
+  <!-- Providers -->
+  <rect x="60" y="374" width="250" height="50" rx="6" fill="#ffffff" stroke="#15181f" stroke-width="1.3"/>
+  <text x="185" y="395" text-anchor="middle" font-size="11.5" font-weight="700">Razorpay</text>
+  <text x="185" y="412" text-anchor="middle" font-size="9.3" fill="#4a505e">Checkout · orders · UPI QR · settlements</text>
+  <rect x="370" y="374" width="250" height="50" rx="6" fill="#ffffff" stroke="#15181f" stroke-width="1.3"/>
+  <text x="495" y="395" text-anchor="middle" font-size="11.5" font-weight="700">RazorpayX</text>
+  <text x="495" y="412" text-anchor="middle" font-size="9.3" fill="#4a505e">driver payouts · bank validation</text>
+
+  <line x1="130" y1="321" x2="130" y2="372" stroke="#15181f" stroke-width="1.3" marker-end="url(#a)"/>
+  <text x="136" y="350" class="lbl">API calls</text>
+  <line x1="240" y1="374" x2="240" y2="323" stroke="#15181f" stroke-width="1.3" marker-end="url(#a)"/>
+  <text x="246" y="350" class="lbl">signed webhooks</text>
+  <line x1="440" y1="321" x2="440" y2="372" stroke="#15181f" stroke-width="1.3" marker-end="url(#a)"/>
+  <text x="446" y="350" class="lbl">API calls</text>
+  <line x1="550" y1="374" x2="550" y2="323" stroke="#15181f" stroke-width="1.3" marker-end="url(#a)"/>
+  <text x="556" y="350" class="lbl">signed webhooks</text>
+
+  <!-- Firebase -->
+  <rect x="60" y="442" width="560" height="32" rx="5" fill="#fdf8ec" stroke="#9a6a00" stroke-width="1.2"/>
+  <text x="340" y="462" text-anchor="middle" font-size="10" fill="#5c4300"><tspan font-weight="700">Firebase Auth (project pickup-7fabe):</tspan> every app signs in here; both servers verify the same ID token</text>
+</svg>
+<figcaption>Figure 1. Two services. The engine runs operations; the payment backend owns money. Apps and the admin panel talk to both, each with a Firebase ID token. The engine talks to the payment backend server to server.</figcaption>
+</figure>
+
+<h3>1.1 Components</h3>
+<table>
+  <tr><th style="width:19%">Component</th><th style="width:13%">Owner</th><th>Responsibility</th><th style="width:22%">Talks to the payment backend with</th></tr>
+  <tr><td><strong>Payment backend</strong><br><code>raj_backend</code></td><td><span class="tag exists">built</span>Raj's side</td><td>Confirmed fare, Razorpay orders and verification, cash and QR collection, platform fee, driver wallet, earnings, merchant settlement tracking, weekly payouts, bank accounts, reconciliation, admin audit trail.</td><td>(it is the payment backend)</td></tr>
+  <tr><td><strong>Trip engine</strong><br><code>engine-v2</code></td><td>you</td><td>Fare calculation, booking details (pickup, up to 5 drops, goods, receivers), dispatch, OTPs, delivery proof, live tracking.</td><td><code>/v1/internal/*</code> with <code>X-Internal-Api-Key</code></td></tr>
+  <tr><td><strong>Admin panel</strong></td><td>you</td><td>Ops and finance UI. Mock-only today.</td><td><code>/v1/admin/*</code> with an admin's Firebase ID token</td></tr>
+  <tr><td><strong>Customer App</strong></td><td>split</td><td>Booking UI. Login and dev build: you. Payment screens: Raj's side.</td><td><code>/v1/bookings/*</code> with the customer's token</td></tr>
+  <tr><td><strong>Driver App</strong></td><td>Raj's side</td><td>Wallet recharge, cash and QR collection, earnings, payouts. Built and tested on a device.</td><td><code>/v1/wallet</code>, <code>/v1/trips</code>, <code>/v1/earnings</code>, <code>/v1/bank-account</code>, <code>/v1/payouts</code></td></tr>
+  <tr><td><strong>Razorpay</strong></td><td>Nikhil Ent.</td><td>Takes customer money (Checkout, UPI QR) into Nikhil Enterprises' account; settles it to the bank.</td><td>API calls out; signed webhooks in</td></tr>
+  <tr><td><strong>RazorpayX</strong></td><td>Nikhil Ent.</td><td>Pays drivers' weekly payouts; validates bank accounts (penny drop).</td><td>API calls out; signed webhooks in</td></tr>
+  <tr><td><strong>Firebase Auth</strong></td><td>shared</td><td>Phone (or email) sign-in for every app. The Firebase UID is the identity shared by all services.</td><td>Verifies ID tokens against Google's published keys</td></tr>
+</table>
+
+<h3>1.2 Inside the payment backend</h3>
+<p>
+  One NestJS application, shipped as one Docker image, with one PostgreSQL database. It is a
+  <strong>modular monolith</strong>: separate modules inside, one transaction boundary. That matters
+  for money: a cash collection and its platform-fee debit, or a trip completion and its driver
+  earning, happen in one database transaction, so money is never half-moved.
+</p>
+<table>
+  <tr><th style="width:17%">Module</th><th>Responsibility</th><th style="width:33%">Main tables</th></tr>
+  <tr><td>auth</td><td>Verifies Firebase ID tokens; maps the UID to our user, role and status. Fail-closed: a route without a policy is denied.</td><td><code>users</code>, <code>auth_identities</code></td></tr>
+  <tr><td>bookings</td><td>Payment view of bookings and trips; payment gate on completion; the engine's internal API.</td><td><code>bookings</code>, <code>trips</code>, <code>customers</code></td></tr>
+  <tr><td>payments</td><td>Razorpay orders for booking payments and wallet top-ups; verification; webhooks; disputes.</td><td><code>payments</code>, <code>payment_events</code>, <code>payment_disputes</code></td></tr>
+  <tr><td>collections</td><td>Pay-at-pickup and pay-at-delivery: cash records and booking-linked UPI QR.</td><td><code>payment_collections</code></td></tr>
+  <tr><td>wallet</td><td>Driver wallet and its append-only ledger. Only funds cash-trip platform fees.</td><td><code>driver_wallets</code>, <code>driver_wallet_transactions</code></td></tr>
+  <tr><td>fees</td><td>Versioned platform fee rules (V1: 10%), HALF_UP rounding.</td><td><code>fee_rules</code></td></tr>
+  <tr><td>earnings</td><td>One earning per completed trip: gross, fee, deductions, net. Holds and releases.</td><td><code>driver_earnings</code>, <code>tax_rules</code></td></tr>
+  <tr><td>settlements</td><td>Records when Razorpay actually settled a customer payment to Nikhil Enterprises.</td><td><code>payment_settlements</code></td></tr>
+  <tr><td>payouts</td><td>Bank accounts with OTP step-up, bank validation, admin approval, weekly batches, RazorpayX payouts.</td><td><code>driver_bank_accounts</code>, <code>bank_account_*</code>, <code>payout_batches</code>, <code>driver_payouts</code>, <code>payout_items</code>, <code>payout_events</code></td></tr>
+  <tr><td>reconciliation</td><td>Integrity reports; the full money trail of one booking.</td><td>reads everything</td></tr>
+  <tr><td>audit</td><td>Append-only record of every admin money action, with reason.</td><td><code>admin_actions</code></td></tr>
+</table>
+<ul>
+  <li><strong>Background jobs</strong> run inside the same process: the payout scheduler (Monday 11:00 IST by default) and the settlement pull (every 60 minutes by default). Both are safe with several copies running: the weekly batch has one key per ISO week, and recording a settlement twice is a no-op.</li>
+  <li><strong>Scaling:</strong> stateless HTTP, so several copies can run behind a load balancer. One change first: the rate limiter counts in memory, so it needs Redis before a second copy.</li>
+  <li><strong>Database roles:</strong> a migrator role owns the schema and runs migrations and the ops CLI. The API runs as a restricted role that can never DELETE or TRUNCATE, can only INSERT into the ledger, can UPDATE only listed columns, and can only <em>read</em> identity tables (users, drivers, customers). Triggers and CHECK constraints enforce the money rules a second time, inside the database.</li>
+</ul>
+
+<h3>1.3 Who owns which data</h3>
+<table>
+  <tr><th style="width:24%">Data</th><th style="width:20%">Lives in</th><th>Notes</th></tr>
+  <tr><td>Identity: Firebase UID</td><td>Firebase</td><td>The one id every service shares. Called <code>subject</code> in the payment backend.</td></tr>
+  <tr><td>User, role, account status</td><td>payment backend</td><td><code>users</code> (phone unique, one role per user: CUSTOMER, DRIVER or ADMIN; ACTIVE, SUSPENDED, DELETED). Created by the ops CLI today. Read-only to the API.</td></tr>
+  <tr><td>Driver approval, KYC legal name</td><td>payment backend</td><td><code>drivers.approval_status</code> gates assignment; <code>legal_name</code> is compared with the bank's name. Set by the ops CLI today.</td></tr>
+  <tr><td>Booking money facts</td><td>payment backend</td><td>Ref, customer, vehicle category, confirmed fare (paise), payment method, payment status, pinned fee rule.</td></tr>
+  <tr><td>Booking operational detail</td><td>engine</td><td>Pickup, drops, goods, receivers, OTPs, delivery proof, notes. The payment backend deliberately stores none of it.</td></tr>
+  <tr><td>Trip lifecycle</td><td>both</td><td>The engine drives it; the payment backend keeps a payment-scoped copy and owns <code>PAYMENT_CONFIRMED</code>.</td></tr>
+  <tr><td>Dispatch, availability, location</td><td>engine</td><td>Offers, timeouts, live GPS.</td></tr>
+  <tr><td>Pricing rules and fare calculation</td><td>engine today</td><td>Hard-coded constants today. See section 5 and decision 1.</td></tr>
+  <tr><td>Platform fee (commission)</td><td>payment backend</td><td>Versioned <code>fee_rules</code>. Separate from pricing.</td></tr>
+  <tr><td>Wallet, earnings, payouts, bank accounts</td><td>payment backend</td><td>Never anywhere else.</td></tr>
+  <tr><td>Profiles (names, email, city), KYC documents, vehicles, vehicle registry, service area, driver instructions, ratings</td><td><strong>nowhere yet</strong></td><td>Not built in either service. See decision 3.</td></tr>
+</table>
+
+<h3>1.4 Authentication</h3>
+<table>
+  <tr><th style="width:20%">Caller</th><th style="width:32%">Credential</th><th>Rules</th></tr>
+  <tr><td>Customer and Driver Apps</td><td><code>Authorization: Bearer &lt;Firebase ID token&gt;</code></td><td>RS256, issuer and audience <code>pickup-7fabe</code>, expiry checked. The role comes from our database, never from token claims. Unknown UID: <code>403 USER_NOT_PROVISIONED</code>. Suspended: <code>403 ACCOUNT_DISABLED</code>.</td></tr>
+  <tr><td>Admin panel</td><td>Same, for a user whose role is <code>ADMIN</code></td><td>Any Firebase sign-in method works. The admin user is created with the ops CLI (<code>create-admin</code>). There is one admin role; no owner/supervisor split yet.</td></tr>
+  <tr><td>Trip engine</td><td><code>X-Internal-Api-Key: &lt;key&gt;</code></td><td>32 to 128 characters, compared in constant time, several keys allowed for rotation. Server secret: never in an app or repository.</td></tr>
+  <tr><td>Razorpay, RazorpayX</td><td>HMAC signature on the raw body</td><td><code>X-Razorpay-Signature</code> checked; <code>X-Razorpay-Event-Id</code> stored so a redelivery is applied once.</td></tr>
+  <tr><td>Load balancer</td><td>none</td><td><code>/health/live</code> and <code>/health/ready</code> are public.</td></tr>
+</table>
+
+<h2>2. Rules that keep the money safe</h2>
+<p>Every change in the engine or the admin panel has to respect these. They are enforced in the payment backend's code and, where possible, by the database itself.</p>
+<ol>
+  <li><strong>Integer paise everywhere.</strong> 100 paise = &#8377;1. No floating point on money, in any service.</li>
+  <li><strong>The fare is frozen at confirmation.</strong> The engine registers it once; it never changes. Every later amount (Razorpay order, QR, cash figure, fee, earning) comes from it.</li>
+  <li><strong>No app ever sends an amount the server uses.</strong> The booking payment has no amount field; a collection's amount must equal the fare and is only a confirmation.</li>
+  <li><strong>The fee rule is pinned at confirmation.</strong> Changing commission later never changes an existing booking.</li>
+  <li><strong>Only the server decides a payment happened,</strong> after checking with Razorpay (verify call, webhook or admin sync). An app's "success" callback is never proof.</li>
+  <li><strong>A trip can't complete while unpaid.</strong> <code>COMPLETED</code> is refused with <code>409 PAYMENT_REQUIRED</code>.</li>
+  <li><strong>One live payment per booking.</strong> Every retry returns the same Razorpay order.</li>
+  <li><strong>Everything that creates something is idempotent.</strong> Retries never charge, credit or pay twice.</li>
+  <li><strong>The wallet ledger is append-only</strong> and the wallet never goes negative. The wallet only funds cash-trip fees; it is not earnings and can't be withdrawn.</li>
+  <li><strong>An online earning is payable only after Razorpay settles the money</strong> to Nikhil Enterprises, not at payment or completion.</li>
+  <li><strong>Payouts go only to bank accounts an admin approved</strong> after a bank validation, and a driver's account change needs a phone OTP step-up.</li>
+  <li><strong>Every admin money action needs a written reason</strong> and is recorded in the audit trail.</li>
+</ol>
+
+<div class="page"></div>
+<h2>3. Lifecycles</h2>
+<p>Status values exactly as the API returns them.</p>
+
+<h3>3.1 Booking</h3>
+<table>
+  <tr><th style="width:22%">Status</th><th style="width:26%">Set by</th><th>Meaning</th></tr>
+  <tr><td><code>CREATED</code></td><td>engine: register</td><td>Confirmed; fare frozen; fee rule pinned.</td></tr>
+  <tr><td><code>SEARCHING_DRIVER</code></td><td>engine: <code>/searching</code></td><td>Dispatch running. Optional step.</td></tr>
+  <tr><td><code>DRIVER_ASSIGNED</code></td><td>engine: <code>/assign</code></td><td>The single trip exists. A different driver is refused.</td></tr>
+  <tr><td><code>COMPLETED</code></td><td>engine: trip <code>COMPLETED</code></td><td>Only when paid. Final. The driver's earning is created in the same transaction.</td></tr>
+  <tr><td><code>CANCELLED</code></td><td>engine: <code>/cancel</code></td><td>Final. Allowed any time before completion; paid bookings are flagged for refund review.</td></tr>
+</table>
+<p><strong>Payment status</strong> (separate field): <code>UNPAID</code> &rarr; <code>PAID</code> (verified prepaid payment, or a completed cash or QR collection). <code>REFUND_PENDING</code> and <code>REFUNDED</code> exist in the schema but nothing sets them yet: there is no refund API.</p>
+
+<h3>3.2 Trip (strict order)</h3>
+<table>
+  <tr><th style="width:5%">#</th><th style="width:24%">Status</th><th style="width:25%">Set by</th><th>Meaning</th></tr>
+  <tr><td>1</td><td><code>DRIVER_ASSIGNED</code></td><td>backend, on <code>/assign</code></td><td>The trip exists for this driver.</td></tr>
+  <tr><td>2</td><td><code>DRIVER_ARRIVED</code></td><td>engine</td><td>At the pickup point. Pay-at-pickup collection opens.</td></tr>
+  <tr><td>3</td><td><code>PICKUP_VERIFIED</code></td><td>engine</td><td>Pickup OTP verified.</td></tr>
+  <tr><td>4</td><td><code>IN_TRANSIT</code></td><td>engine</td><td>Loaded and moving.</td></tr>
+  <tr><td>5</td><td><code>DROP_PROGRESS</code></td><td>engine</td><td>Working through the drops.</td></tr>
+  <tr><td>6</td><td><code>DELIVERED</code></td><td>engine</td><td>Last drop delivered. Pay-at-delivery collection opens.</td></tr>
+  <tr><td>7</td><td><code>PAYMENT_CONFIRMED</code></td><td><strong>backend only</strong></td><td>Delivered and paid. Never sent by the engine.</td></tr>
+  <tr><td>8</td><td><code>COMPLETED</code></td><td>engine</td><td>Accepted only from step 7. Creates the driver's earning.</td></tr>
+  <tr><td>&ndash;</td><td><code>CANCELLED</code></td><td>engine, on the booking's <code>/cancel</code></td><td>From any step before 8.</td></tr>
+</table>
+<ul>
+  <li>Skipping a step is <code>409 INVALID_TRIP_TRANSITION</code>. Repeating the current or an earlier status is a harmless no-op.</li>
+  <li><code>PAYMENT_CONFIRMED</code> is set by the backend: on <code>DELIVERED</code> when the booking is already paid, or the moment a payment lands on a delivered trip.</li>
+  <li><code>COMPLETED</code> is accepted only from <code>PAYMENT_CONFIRMED</code>; on an unpaid booking it is <code>409 PAYMENT_REQUIRED</code>.</li>
+</ul>
+
+<h3>3.3 Customer payment, collection, wallet</h3>
+<table>
+  <tr><th style="width:22%">Record</th><th>Statuses</th></tr>
+  <tr><td>Payment (Razorpay order: booking payment or wallet top-up)</td><td><code>PENDING</code> &rarr; <code>PAID</code> or <code>FAILED</code>. A failed attempt can be retried on the same order. <code>REFUND_PENDING</code>, <code>REFUNDED</code> reserved.</td></tr>
+  <tr><td>Collection (pickup or delivery)</td><td>CASH: straight to <code>COMPLETED</code>. ONLINE_QR: <code>PENDING</code> (QR shown) &rarr; <code>COMPLETED</code> (paid) or <code>FAILED</code> (expired, cancelled, closed). <code>REVERSED</code> exists in the schema but nothing sets it yet.</td></tr>
+  <tr><td>Driver wallet</td><td><code>ACTIVE</code>, <code>LOW_BALANCE</code>, <code>BLOCKED</code>. Ledger entry types: <code>TOPUP</code>, <code>CASH_RIDE_FEE</code>, <code>ADJUSTMENT</code>, <code>REFUND_REVERSAL</code> (reserved).</td></tr>
+</table>
+
+<h3>3.4 Driver earning</h3>
+<table>
+  <tr><th style="width:25%">Status</th><th style="width:10%">Trips</th><th>Meaning and next step</th></tr>
+  <tr><td><code>AWAITING_SETTLEMENT</code></td><td>online</td><td>Prepaid or QR trip completed; waiting for Razorpay to settle the money to Nikhil Enterprises.</td></tr>
+  <tr><td><code>PAYABLE</code></td><td>online</td><td>Settled. Joins the next Monday batch if the driver's bank account is verified.</td></tr>
+  <tr><td><code>IN_PAYOUT</code></td><td>online</td><td>In a batch, sent to RazorpayX. A failed payout returns it to <code>PAYABLE</code>; a reversed one puts it <code>ON_HOLD</code>.</td></tr>
+  <tr><td><code>PAID</code></td><td>online</td><td>RazorpayX confirmed the transfer (UTR). Final.</td></tr>
+  <tr><td><code>ON_HOLD</code></td><td>online</td><td>Held by an admin or a dispute, or after a reversed payout. Released by an admin with a reason.</td></tr>
+  <tr><td><code>SETTLED_IN_CASH</code></td><td>cash</td><td>Final. The driver kept the cash; the platform fee was taken from the wallet.</td></tr>
+</table>
+<p>Admins can hold an earning only while it is <code>AWAITING_SETTLEMENT</code> or <code>PAYABLE</code>. Releasing returns it to <code>PAYABLE</code> if the money is settled, otherwise to <code>AWAITING_SETTLEMENT</code>; never straight to paid.</p>
+
+<h3>3.5 Bank account and payouts</h3>
+<table>
+  <tr><th style="width:22%">Record</th><th>Statuses</th></tr>
+  <tr><td>Bank account</td><td><code>PENDING_VERIFICATION</code> &rarr; <code>VERIFIED</code> (admin approval on a completed validation) or <code>REJECTED</code>. <code>VERIFIED</code> &rarr; <code>SUSPENDED</code> (admin, replaced by a new account, payout reversed). <code>SUSPENDED</code> &rarr; <code>VERIFIED</code> only on a new validation, and never for a replaced account. Only <code>VERIFIED</code> receives payouts.</td></tr>
+  <tr><td>Bank validation</td><td><code>CREATED</code> (waiting for the bank) &rarr; <code>COMPLETED</code> (account <code>ACTIVE</code> or <code>INVALID</code>, registered name, name match) or <code>FAILED</code>.</td></tr>
+  <tr><td>Payout batch</td><td><code>PREPARED</code> &rarr; <code>EXECUTING</code> &rarr; <code>COMPLETED</code>.</td></tr>
+  <tr><td>Payout (one per driver per batch)</td><td><code>PREPARED</code> &rarr; <code>SUBMITTING</code> &rarr; <code>SUBMITTED</code> &rarr; <code>PROCESSED</code>, or <code>FAILED</code>, or <code>REVERSED</code>. Only <code>PROCESSED</code> marks earnings <code>PAID</code>.</td></tr>
+  <tr><td>Payout item (one per earning)</td><td><code>INCLUDED</code> &rarr; <code>PAID</code>, <code>RELEASED</code> (payout failed), or <code>REVERSED</code>.</td></tr>
+</table>
+
+<div class="page"></div>
+<h2>4. End-to-end flows</h2>
+
+<h3>4.1 Booking confirmation and registration</h3>
+<div class="flow">Customer App              Trip Engine                          Payment Backend
+    |  get a fare quote        |                                         |
+    |------------------------->|  server calculates the fare             |
+    |<-------------------------|  (section 5)                            |
+    |  confirm: quote, method, |                                         |
+    |  stops, goods (no amount)|                                         |
+    |------------------------->|  save booking (UUID)                    |
+    |                          |  POST /v1/internal/bookings             |
+    |                          |  { externalRef, customerSubject,        |
+    |                          |    vehicleCategory, paymentMethod,      |
+    |                          |    confirmedFarePaise }                 |
+    |                          |---------------------------------------->|  fee rule in force now
+    |                          |                                         |  pinned; fare frozen
+    |                          |<----------------------------------------|  201 { bookingId, ... }
+    |                          |  store bookingId as paymentBookingId    |
+    |<-------------------------|  { bookingRef, paymentBookingId,        |
+    |                          |    farePaise, paymentMethod }           |</div>
+<ul>
+  <li>If the payment backend can't be reached, don't confirm the booking and don't dispatch. A booking it never heard of can't be paid.</li>
+  <li>The customer must already exist in the payment backend (<code>422 CUSTOMER_NOT_FOUND</code> otherwise; see decision 3).</li>
+</ul>
+
+<h3>4.2 Prepaid: pay online in the Customer App</h3>
+<div class="flow">Customer App                     Payment Backend                       Razorpay
+    |  POST /v1/bookings/{id}/payment  |                                     |
+    |  (Idempotency-Key, no body)      |  order for the frozen fare          |
+    |--------------------------------->|------------------------------------>|
+    |<---------------------------------|  { paymentId, checkout:             |
+    |                                  |    { keyId, orderId, amountPaise }} |
+    |  open Razorpay Checkout ----------------------------------------------->|
+    |<------------------ { razorpay_payment_id, order_id, signature } -------|
+    |  POST /v1/bookings/{id}/payment/verify                                 |
+    |--------------------------------->|  signature checked with the secret  |
+    |                                  |  payment fetched from Razorpay ---->|
+    |                                  |  captured + amount matches: PAID    |
+    |<---------------------------------|  { booking: { paymentStatus } }     |
+    |                                  |<--- webhook payment.captured -------|  same result,
+    |  GET .../payment (poll) until PAID                                      |  applied once</div>
+<p>
+  The engine learns the booking is paid by reading <code>GET /v1/internal/bookings/{id}</code>
+  (<code>paymentStatus: PAID</code>, <code>paidWith: PREPAID_ONLINE</code>). Whether dispatch waits for
+  payment is decision 9.
+</p>
+
+<h3>4.3 Pay at pickup or delivery: cash or UPI QR</h3>
+<p>The engine only registers the method (<code>PAY_AT_PICKUP</code> or <code>PAY_AT_DELIVERY</code>) and reports trip statuses. Collection is between the Driver App and the payment backend:</p>
+<ol>
+  <li>The collection window opens from the engine's status reports: <code>PAY_AT_PICKUP</code> from <code>DRIVER_ARRIVED</code> until <code>DELIVERED</code>; <code>PAY_AT_DELIVERY</code> only at <code>DELIVERED</code>. The Driver App sees <code>collectionOpen: true</code> on <code>GET /v1/trips/{tripId}</code>.</li>
+  <li><strong>Cash:</strong> <code>POST /v1/trips/{tripId}/collections {method: CASH, amountPaise: fare}</code>. In one transaction the backend records the cash, takes the platform fee from the driver's wallet (<code>CASH_RIDE_FEE</code>) and marks the booking paid. If the wallet can't cover the fee: <code>409 INSUFFICIENT_BALANCE</code>, nothing is recorded; the driver recharges and retries with the same key.</li>
+  <li><strong>UPI QR:</strong> same call with <code>ONLINE_QR</code>. The backend creates a booking-linked Razorpay UPI QR; the customer pays from any UPI app; the backend learns it from the <code>qr_code.credited</code> webhook or when the Driver App polls the collection. Asking twice returns the same open QR.</li>
+  <li>Recording cash while a QR is open closes the QR first; if the QR was already paid, the cash is refused (<code>409 BOOKING_ALREADY_PAID</code>).</li>
+  <li>The engine then sends <code>COMPLETED</code>; it succeeds once the booking is paid.</li>
+</ol>
+
+<h3>4.4 Trip completion and the driver's earning</h3>
+<ul>
+  <li>The engine reports each step in order. For cash and QR bookings, expect <code>409 PAYMENT_REQUIRED</code> on <code>COMPLETED</code> while the driver is still collecting: retry on a schedule. This retry is required, not an error path.</li>
+  <li>On success: booking and trip <code>COMPLETED</code>, and exactly one driver earning: gross = fare, platform fee from the pinned rule, net = gross &minus; fee &minus; other deductions (0) &minus; TDS (0 while TDS is disabled).</li>
+  <li>Example: fare &#8377;500 &rarr; fee &#8377;50 (10%) &rarr; net &#8377;450.</li>
+</ul>
+
+<h3>4.5 Cancellation</h3>
+<ul>
+  <li>The engine calls <code>POST /v1/internal/bookings/{id}/cancel {reason}</code> for every cancellation: customer, driver, admin, or dispatch finding nobody.</li>
+  <li>The booking and its trip become <code>CANCELLED</code>; any open payment QR is closed at Razorpay.</li>
+  <li>A paid booking can still be cancelled. It is listed in the <code>paid-cancelled-bookings</code> report for refund review. <strong>Nothing is refunded automatically</strong> and there is no refund API yet.</li>
+  <li>Money arriving after cancellation is recorded and flagged; an authorized payment for a cancelled booking is never captured.</li>
+</ul>
+
+<h3>4.6 Driver wallet recharge</h3>
+<p>Driver App &rarr; <code>POST /v1/wallet/topups {amountPaise}</code> (Idempotency-Key) &rarr; Razorpay Checkout &rarr; <code>POST /v1/wallet/topups/{paymentId}/verify</code> &rarr; wallet credited (<code>TOPUP</code>). The wallet exists only so the platform fee on cash trips can be taken. It is not earnings, and it can't be withdrawn.</p>
+
+<h3>4.7 Earning to the driver's bank account</h3>
+<div class="flow">trip COMPLETED (online) ---> earning AWAITING_SETTLEMENT
+Razorpay settles the payment to Nikhil Enterprises
+  (hourly pull, settlement.processed webhook, or admin sync) ---> earning PAYABLE
+Monday 11:00 IST: scheduler pulls settlements, prepares batch "schedule:<ISO week>"
+  = every PAYABLE, settled earning whose driver has a VERIFIED bank account
+  one payout per driver; earnings IN_PAYOUT; batch PREPARED
+Admin reviews the batch and executes it (unless PAYOUT_AUTO_EXECUTE=true)
+  ---> RazorpayX payout per driver (idempotent reference) ---> SUBMITTED
+RazorpayX webhook payout.processed ---> payout PROCESSED + UTR, earnings PAID
+           payout.failed        ---> payout FAILED, earnings back to PAYABLE (next batch)
+           payout.reversed      ---> payout REVERSED, earnings ON_HOLD, bank account SUSPENDED
+Missed webhook: POST /v1/admin/payouts/{id}/sync</div>
+
+<h3>4.8 Driver bank account: OTP step-up, bank validation, admin approval</h3>
+<ol>
+  <li>Driver App &rarr; <code>POST /v1/bank-account/change-requests</code> &rarr; <code>{changeRequestId, expiresAt (10 min), stepUp: {method: FIREBASE_PHONE_REAUTH, phoneNumberHint, notBefore}}</code>.</li>
+  <li>The driver re-authenticates with a Firebase phone OTP on the registered number. The fresh ID token's <code>auth_time</code> is after the request; a stolen session can't produce that.</li>
+  <li>Driver App &rarr; <code>POST .../{id}/confirm {accountHolderName, ifsc, accountNumber, confirmAccountNumber}</code> with that token. The previous verified account is suspended in the same transaction; the new one is <code>PENDING_VERIFICATION</code> and a bank validation (penny drop) starts. Only the last 4 digits are stored.</li>
+  <li>RazorpayX reports the result (webhook): account active or invalid, the bank's registered name, and our name match against the KYC legal name: <code>MATCH</code>, <code>PARTIAL</code>, <code>MISMATCH</code> or <code>UNAVAILABLE</code>.</li>
+  <li>Admin reviews and approves (<code>VERIFIED</code>), rejects, or suspends. Anything other than an exact <code>MATCH</code> needs a written <code>mismatchResolution</code>, which is audited.</li>
+</ol>
+
+<h3>4.9 Disputes</h3>
+<p>Razorpay <code>payment.dispute.*</code> webhooks are recorded against the booking. The trip's earning is put on hold if it is still <code>AWAITING_SETTLEMENT</code> or <code>PAYABLE</code>; if it is already in a payout or paid, it is flagged for ops. Disputes show in the webhook-anomalies report.</p>
+
+<h3>4.10 Daily operations</h3>
+<p>The reconciliation reports in section 7.9 should normally be empty. Each non-empty one is a task for a person: refund review, a missed webhook to sync, a stuck payout, a driver owed money without a verified bank account.</p>
+
+<div class="page"></div>
+<h2>5. The fare</h2>
+
+<h3>5.1 How it works today</h3>
+<p>Checked in the current code of the Customer App and <code>engine-v2</code>:</p>
+<ol>
+  <li>The Customer App's fare screen calls the engine's <code>GET /fare/estimate</code> with the pickup, <strong>the first drop only</strong> and the weight. It does not send the vehicle type or the other drops.</li>
+  <li>The app sends that number as <code>fare</code> in <code>POST /rides</code>.</li>
+  <li>The engine calculates the correct multi-drop fare, then ignores it: <code>const fare = dto.fare || fareEstimate.fare</code>. <strong>The app's number wins.</strong></li>
+</ol>
+<table>
+  <tr><th style="width:30%">Effect</th><th>Why it matters with real money</th></tr>
+  <tr><td>The client sets the price</td><td>A modified app can book any job for &#8377;1.</td></tr>
+  <tr><td>Extra drops aren't charged</td><td>A 5-drop job is priced as pickup to the first drop; the extra legs and the &#8377;10 per extra stop are lost.</td></tr>
+  <tr><td>Vehicle type isn't applied</td><td>The multiplier (0.8 two-wheeler to 2.0 pickup truck) is never used, so trucks are priced like three-wheelers.</td></tr>
+  <tr><td>Straight-line distance</td><td>Haversine distance is shorter than the road distance, so long or winding routes are underpriced.</td></tr>
+  <tr><td>Pricing is hard-coded</td><td>Base &#8377;30, &#8377;12/km, &#8377;10 per extra stop, vehicle and weight multipliers are constants in <code>FareService</code>. The admin panel's pricing pages can't change anything.</td></tr>
+</table>
+
+<h3>5.2 What the payment backend needs</h3>
+<p>Whatever you decide about where the fare is calculated, the payment backend's contract doesn't change: it receives <strong>one integer</strong>, <code>confirmedFarePaise</code>, at registration, and freezes it. It never recalculates, adjusts or adds to it. Surcharges, extra stops and anything else the customer pays must already be inside that number.</p>
+
+<h3>5.3 Proposed: a server-side quote <span class="tag ask">decision 1</span></h3>
+<p>Recommended: the engine stays the fare authority, because it already has the route, stops, vehicle and weight. The change is to make its number the only number:</p>
+<div class="flow">Customer App                     Trip Engine                               Payment Backend
+  POST /v1/fare/quotes             calculate with the current pricing version
+  { pickup, drops[1..5],           store the quote: customer, inputs, result,
+    vehicleCategory, weightKg }    pricingVersion, expiresAt (e.g. 10 min)
+  <------------------------------- { quoteId, farePaise, breakdown, distanceKm,
+                                     durationMin, expiresAt }
+
+  POST /v1/bookings                load the quote: same customer, not expired,
+  { quoteId, paymentMethod,        not used, same inputs; mark it used
+    contacts, goods }              booking.farePaise = quote.farePaise
+  (no amount)                      POST /v1/internal/bookings ----------------> fare frozen
+  <------------------------------- { bookingRef, paymentBookingId, farePaise }</div>
+<ul>
+  <li><strong>Expired quote:</strong> <code>409</code> (e.g. <code>QUOTE_EXPIRED</code>). The app re-quotes and shows the new price before the customer confirms. The customer always pays exactly the price they saw.</li>
+  <li><strong>Pricing rules move into the engine's database,</strong> edited from the admin panel's Fare &amp; Pricing and Surcharges pages. Make them <strong>versioned</strong>, never edited in place: a change is a new version with an effective time, and each quote records the version it used, so any fare can be explained later. This is the same model the payment backend uses for fee rules.</li>
+  <li><strong>Distance on the server.</strong> Never take a distance from the app. Road distance (for example Google's Distance Matrix, called from the engine with a server key) is fairer than straight-line; that is decision 2.</li>
+  <li>Compute in paise, round once per the pricing rules, and send the integer.</li>
+</ul>
+<p><strong>The alternative</strong> is calculating the fare inside the payment backend. Not recommended: it would need locations, stops, goods and road distance, which the payment backend deliberately doesn't hold; pricing changes would mean deploying the money service; and it changes a tested system. The contract with the engine would stay the same either way.</p>
+
+<h3>5.4 Pricing is not commission</h3>
+<table>
+  <tr><th style="width:18%">Concept</th><th style="width:22%">Lives in</th><th>What it decides</th></tr>
+  <tr><td>Pricing</td><td>engine (proposed)</td><td>What the customer pays: base fare, per km, extra stops, weight, vehicle, minimum fare, surcharges.</td></tr>
+  <tr><td>Commission</td><td>payment backend <code>fee_rules</code></td><td>How the fare is split: platform fee, and the driver's share. Changing it never changes the customer's price.</td></tr>
+</table>
+<div class="box ask">
+  <span class="t">Three pricing items in the admin panel need a decision before they're built</span>
+  <ul>
+    <li><strong>Surcharges</strong> (traffic, rain): allowed only if applied inside the quote. V1 has no price changes after confirmation.</li>
+    <li><strong>Insurance premium:</strong> if it goes inside the fare, the platform fee and the driver's share would be taken from the premium too. It needs its own design (decision 8).</li>
+    <li><strong>Cancellation charges:</strong> V1 has none, and there are no refunds yet. Part of the refund policy (decision 7).</li>
+  </ul>
+</div>
+
+<div class="page"></div>
+<h2>6. Engine API (internal)</h2>
+
+<h3>6.1 Conventions</h3>
+<table>
+  <tr><th style="width:22%">Item</th><th>Value</th></tr>
+  <tr><td>Base path</td><td><code>{PAYMENTS_BASE_URL}/v1/internal</code>, HTTPS in production</td></tr>
+  <tr><td>Auth</td><td><code>X-Internal-Api-Key</code> on every call</td></tr>
+  <tr><td>Rate limit</td><td>1,200 requests per minute for this group</td></tr>
+  <tr><td>Body</td><td>JSON, under 100 KB. Unknown fields are rejected (<code>400 VALIDATION_FAILED</code>).</td></tr>
+  <tr><td>Ids in paths</td><td>UUID v4 (the payment backend's <code>bookingId</code> and <code>tripId</code>)</td></tr>
+</table>
+
+<h3>6.2 Endpoints</h3>
+<table class="long">
+  <tr><th style="width:42%">Endpoint</th><th>When</th><th style="width:28%">Result</th></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/internal/bookings</td><td>The customer confirms</td><td><code>201</code> created, <code>200</code> already registered</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/internal/bookings/{bookingId}</td><td>Read state: payment, trip</td><td><code>200</code></td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/internal/bookings/by-ref/{externalRef}</td><td>Recover the id if a response was lost</td><td><code>200</code></td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/internal/bookings/{bookingId}/searching</td><td>Dispatch starts (optional)</td><td><code>200</code>, idempotent</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/internal/bookings/{bookingId}/assign</td><td>A driver accepts</td><td><code>200</code> with <code>trip</code></td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/internal/trips/{tripId}/status</td><td>Every trip step</td><td><code>200</code></td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/internal/bookings/{bookingId}/cancel</td><td>Any cancellation</td><td><code>200</code>, idempotent</td></tr>
+</table>
+
+<h4>Register a booking</h4>
+<pre><code>POST /v1/internal/bookings
+{
+  "externalRef":        "b3f1c2a4-5d6e-4f70-8a91-2c3d4e5f6a7b",
+  "customerSubject":    "WKdfBt7SjnYQituspkbiYThyj4G3",
+  "vehicleCategory":    "MINI_TRUCK",
+  "paymentMethod":      "PREPAID_UPI",
+  "confirmedFarePaise": 50000
+}</code></pre>
+<table>
+  <tr><th style="width:24%">Field</th><th>Rule</th></tr>
+  <tr><td><code>externalRef</code></td><td>Your booking id. <code>/^[A-Za-z0-9_.:-]{1,100}$/</code>; a UUID fits. Unique forever. It is the idempotency key of this call.</td></tr>
+  <tr><td><code>customerSubject</code></td><td>The customer's Firebase UID, from the verified token.</td></tr>
+  <tr><td><code>vehicleCategory</code></td><td>Optional. <code>/^[A-Z][A-Z0-9_]{0,49}$/</code>. Selects the fee rule.</td></tr>
+  <tr><td><code>paymentMethod</code></td><td><code>PREPAID_UPI</code> | <code>PAY_AT_PICKUP</code> | <code>PAY_AT_DELIVERY</code></td></tr>
+  <tr><td><code>confirmedFarePaise</code></td><td>Integer, 100 to 50,000,000 (&#8377;1 to &#8377;5,00,000). Frozen from here on.</td></tr>
+</table>
+<p>Same <code>externalRef</code> with the same terms returns the same booking (safe to retry). Different fare, method, category or customer: <code>409 BOOKING_REF_CONFLICT</code>. The fee rule is the active one for the category, or the default rule if the category has none.</p>
+
+<h4>Booking response (every booking endpoint)</h4>
+<pre><code>InternalBookingResponse {
+  bookingId:          uuid            // store as paymentBookingId
+  externalRef:        string
+  status:             CREATED | SEARCHING_DRIVER | DRIVER_ASSIGNED | COMPLETED | CANCELLED
+  paymentMethod:      PREPAID_UPI | PAY_AT_PICKUP | PAY_AT_DELIVERY
+  paymentStatus:      UNPAID | PAID | REFUND_PENDING | REFUNDED
+  paidWith:           PREPAID_ONLINE | CASH | ONLINE_QR | null    // set once PAID
+  farePaise:          integer
+  vehicleCategory:    string | null
+  feeRuleId:          uuid
+  confirmedAt:        ISO-8601
+  completedAt, cancelledAt: ISO-8601 | null
+  cancellationReason: string | null
+  trip:               TripResponse | null
+}
+TripResponse {
+  tripId:    uuid                 // store it: every status update needs it
+  bookingId: uuid
+  driverId:  uuid                 // the payment backend's driver id (admin endpoints take it)
+  status: DRIVER_ASSIGNED .. COMPLETED | CANCELLED
+  assignedAt, arrivedAt, pickupVerifiedAt, startedAt, deliveredAt,
+  paymentConfirmedAt, completedAt, cancelledAt: ISO-8601 | null
+}</code></pre>
+
+<h4>Assign, status, cancel</h4>
+<pre><code>POST /v1/internal/bookings/{bookingId}/assign   { "driverSubject": "&lt;driver Firebase UID&gt;" }
+POST /v1/internal/trips/{tripId}/status         { "status": "DRIVER_ARRIVED" }
+       allowed: DRIVER_ARRIVED | PICKUP_VERIFIED | IN_TRANSIT | DROP_PROGRESS | DELIVERED | COMPLETED
+POST /v1/internal/bookings/{bookingId}/cancel   { "reason": "No driver accepted the request" }
+       reason: 3..200 characters, stored on the booking</code></pre>
+
+<h4>Errors the engine must handle</h4>
+<table class="long">
+  <tr><th style="width:9%">HTTP</th><th style="width:30%">Code</th><th>Meaning and action</th></tr>
+  <tr><td>400</td><td><code>VALIDATION_FAILED</code>, <code>AMOUNT_OUT_OF_RANGE</code></td><td>A bug or a fare outside &#8377;1 to &#8377;5,00,000. Don't retry.</td></tr>
+  <tr><td>401</td><td><code>INTERNAL_AUTH_INVALID</code></td><td>Wrong or missing key.</td></tr>
+  <tr><td>404</td><td><code>BOOKING_NOT_FOUND</code>, <code>TRIP_NOT_FOUND</code></td><td>Wrong id.</td></tr>
+  <tr><td>409</td><td><code>BOOKING_REF_CONFLICT</code></td><td>Ref reused with different terms. Investigate.</td></tr>
+  <tr><td>409</td><td><code>TRIP_ALREADY_ASSIGNED</code></td><td>Another driver already has this booking (see decision 5).</td></tr>
+  <tr><td>409</td><td><code>INVALID_TRIP_TRANSITION</code></td><td>Out of order, or the trip is cancelled. Read the booking and resume from its state.</td></tr>
+  <tr><td>409</td><td><code>PAYMENT_REQUIRED</code></td><td>Completion before payment. <strong>Retry later</strong>; expected for cash and QR.</td></tr>
+  <tr><td>409</td><td><code>BOOKING_CLOSED</code></td><td>Already completed or cancelled.</td></tr>
+  <tr><td>409</td><td><code>FEE_RULE_NOT_CONFIGURED</code></td><td>No fee rule covers the booking. Ops issue.</td></tr>
+  <tr><td>422</td><td><code>CUSTOMER_NOT_FOUND</code></td><td>The UID isn't an active customer in the payment backend.</td></tr>
+  <tr><td>422</td><td><code>DRIVER_NOT_FOUND</code>, <code>DRIVER_NOT_APPROVED</code></td><td>The driver can't take jobs. Offer to the next driver; tell ops.</td></tr>
+  <tr><td>503</td><td><code>SERVICE_UNAVAILABLE</code></td><td>Transient. Retry with backoff.</td></tr>
+</table>
+
+<div class="box">
+  <span class="t">Ids the engine must store on each booking</span>
+  <ul>
+    <li><strong>Customer and driver Firebase UIDs</strong>: the shared identity.</li>
+    <li><strong><code>paymentBookingId</code></strong> (from register): needed for every later call, by the Customer App to pay, and by the admin panel to open the money trail.</li>
+    <li><strong><code>tripId</code></strong> (from assign): needed for every status update.</li>
+    <li><strong>The payment backend's <code>driverId</code></strong> (in <code>trip.driverId</code>): what the admin earnings, wallet and payout endpoints take.</li>
+  </ul>
+</div>
+
+<div class="page"></div>
+<h2>7. Admin API</h2>
+
+<h3>7.1 Conventions for the admin panel</h3>
+<table>
+  <tr><th style="width:22%">Item</th><th>Rule</th></tr>
+  <tr><td>Auth</td><td><code>Authorization: Bearer &lt;Firebase ID token&gt;</code> of a user with role <code>ADMIN</code>. Get the token from the Firebase web SDK on every request (<code>getIdToken()</code>); don't store it yourself. On <code>401 AUTH_INVALID_TOKEN</code>, retry once with a forced refresh. <code>403 FORBIDDEN</code> means signed in but not an admin.</td></tr>
+  <tr><td>Browser access (CORS)</td><td>The panel's origin must be listed in the backend's <code>CORS_ORIGINS</code>. Allowed methods: <strong>GET and POST only</strong>. Allowed headers: <code>Authorization</code>, <code>Content-Type</code>, <code>Idempotency-Key</code>, <code>X-Request-Id</code>. No cookies.</td></tr>
+  <tr><td>Idempotency-Key</td><td>Required on <code>POST /v1/admin/wallets/{id}/adjustments</code> and <code>POST /v1/admin/payout-batches</code>. Format <code>/^[A-Za-z0-9_-]{16,64}$/</code>; a UUID is fine. Generate one per user action; reuse it on retry.</td></tr>
+  <tr><td>Reasons</td><td>Every money action takes a <code>reason</code> of 10 to 500 characters (ticket, approval reference). It's stored and audited, so make the field required in the UI.</td></tr>
+  <tr><td>Pagination</td><td>Cursor-based where offered: <code>?limit=1..100&amp;cursor=&lt;nextCursor&gt;</code> &rarr; <code>{ items, nextCursor }</code>. No page numbers or totals. Other lists return a plain array (bank accounts, batches, fee rules, settlements, reports).</td></tr>
+  <tr><td>Money and time</td><td>Amounts are integer paise. Timestamps are ISO-8601 UTC. Show rupees and IST in the UI.</td></tr>
+  <tr><td>Rate limits</td><td>120 requests per minute per admin by default; money actions are lower (shown per endpoint). Over the limit: <code>429 RATE_LIMITED</code>.</td></tr>
+</table>
+
+<h3>7.2 Commission: platform fee rules</h3>
+<table class="long">
+  <tr><th style="width:44%">Endpoint</th><th>Purpose</th></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/fee-rules?activeOnly=true</td><td>All rule versions, newest first</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/fee-rules/{ruleId}</td><td>One rule</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/fee-rules/preview?farePaise=&amp;category=</td><td>The fee a fare would get today, and the rule that decides it</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/fee-rules</td><td>New version; closes the previous rule for that category at its start. 10/min</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/fee-rules/{ruleId}/deactivate</td><td>Kill switch for a rule created by mistake. 10/min</td></tr>
+</table>
+<pre><code>CreateFeeRuleRequest {
+  category?:     string          // e.g. MINI_TRUCK; omit for the default rule (every category)
+  ruleType:      PERCENTAGE | FIXED
+  value:         string          // PERCENTAGE: "10" = 10%.  FIXED: paise.  Up to 4 decimals
+  roundingMode?: HALF_UP         // the only value accepted
+  effectiveFrom?: ISO-8601       // defaults to now; can't be back-dated
+  reason:        string          // 10..500
+}
+CreateFeeRuleResponse { rule: FeeRuleResponse, superseded: FeeRuleResponse | null }
+FeeRuleResponse {
+  id, category | null, ruleType, value ("10.0000"), roundingMode, effectiveFrom, effectiveTo | null,
+  active, reason, createdByUserId | null, deactivatedAt | null, deactivationReason | null, createdAt
+}
+FeePreviewResponse { rule: FeeRuleResponse, farePaise, feePaise, driverSharePaise }</code></pre>
+<div class="box warn">
+  <span class="t">The Commission page must create versions, not edit a number</span>
+  <p>The mock stores one <code>platformCommissionPercentage</code> and overwrites it. The backend can't do that by design: every booking pins the rule in force at confirmation, and the database doesn't let the API change a rule's value. "Save" becomes <code>POST /v1/admin/fee-rules</code> with a reason; show the history and which rule is in force. Errors: <code>FEE_RULE_INVALID</code>, <code>FEE_RULE_OVERLAP</code>, <code>FEE_RULE_NOT_FOUND</code>.</p>
+</div>
+
+<h3>7.3 Driver bank accounts</h3>
+<table class="long">
+  <tr><th style="width:52%">Endpoint</th><th>Purpose</th></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/bank-accounts?status=</td><td>Queue; filter <code>PENDING_VERIFICATION</code> for approvals</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/bank-accounts/{bankAccountId}</td><td>Account, KYC name, OTP evidence, every validation</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/bank-accounts/{id}/approve</td><td>Approve or reinstate. 30/min</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/bank-accounts/{id}/reject</td><td><code>{ reason }</code>. 30/min</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/bank-accounts/{id}/suspend</td><td><code>{ reason }</code>. Stops payouts. 30/min</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/bank-accounts/{id}/validations</td><td>Start a new bank validation (pending or suspended accounts). 10/min</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/bank-accounts/{id}/validations/{validationId}/refresh</td><td>Re-read a validation when its webhook was missed. 30/min</td></tr>
+</table>
+<pre><code>AdminBankAccountResponse {
+  bankAccountId, driverId, accountHolderName, ifsc, accountNumberLast4,
+  status: PENDING_VERIFICATION | VERIFIED | REJECTED | SUSPENDED,
+  payoutsEnabled (true only for VERIFIED),
+  validationStatus: NOT_STARTED | IN_PROGRESS | COMPLETED | FAILED,
+  verifiedAt | null, statusReason | null, createdAt,
+  provider, providerContactId, providerFundAccountId, changeRequestId | null,
+  verifiedByUserId | null, verificationReference | null, approvedVerificationId | null,
+  nameMatchResolution | null, statusChangedByUserId | null
+}
+AdminBankAccountDetailResponse = AdminBankAccountResponse + {
+  driverLegalName | null,                       // KYC name the bank name is compared with
+  changeRequest: { changeRequestId, stepUpMethod, stepUpAuthTime,     // the OTP step-up evidence
+                   stepUpVerifiedAt, requestedAt } | null,
+  validations: BankValidationResponse[]          // newest first
+}
+BankValidationResponse {
+  validationId, provider, providerValidationId, method, status: CREATED | COMPLETED | FAILED,
+  accountStatus: ACTIVE | INVALID | null, registeredName | null, nameMatchScore | null,
+  nameMatchResult: MATCH | PARTIAL | MISMATCH | UNAVAILABLE | null, comparedName | null,
+  utr | null, failureReason | null, requestedByUserId | null, completedAt | null, createdAt
+}
+ApproveBankAccountRequest {
+  verificationId?:     uuid      // defaults to the latest validation
+  mismatchResolution?: string    // 10..500, required unless the name is an exact MATCH
+}</code></pre>
+<p>Approval errors: <code>BANK_VALIDATION_NOT_ACCEPTABLE</code> (not completed, or account not active), <code>BANK_NAME_MISMATCH_UNRESOLVED</code>, <code>DRIVER_KYC_NAME_MISSING</code>, <code>BANK_ACCOUNT_INVALID_STATE</code>. Show both names side by side with the match result; that comparison is what the admin is approving.</p>
+
+<h3>7.4 Payout schedule, batches and payouts</h3>
+<table class="long">
+  <tr><th style="width:46%">Endpoint</th><th>Purpose</th></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/payout-schedule</td><td>Weekday, time, time zone, auto-execute, last and next run</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/payout-schedule/run</td><td>Run this week's schedule now if its time has passed. 5/min</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/payout-batches</td><td>Prepare an extra batch. Idempotency-Key; <code>{ cutoffAt? }</code>. 5/min</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/payout-batches</td><td>All batches</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/payout-batches/{batchId}</td><td>A batch with every payout: the Monday review screen</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/payout-batches/{batchId}/execute</td><td>Send to RazorpayX. Safe to repeat. 5/min</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/payouts?status=&amp;driverId=&amp;limit=</td><td>Newest first; limit 1..100, default 50</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/payouts/{payoutId}</td><td>One payout with its items</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/payouts/{payoutId}/sync</td><td>Re-read from RazorpayX when a webhook was missed. 30/min</td></tr>
+</table>
+<pre><code>PayoutScheduleResponse { enabled, weekday (1 = Monday), weekdayName, time "11:00", timeZone,
+                         autoExecute, lastRunAt, lastRunKey, nextRunAt }
+PayoutBatchResponse    { batchId, cycleKey, origin, cutoffAt, status: PREPARED | EXECUTING | COMPLETED,
+                         payoutCount, totalAmountPaise, createdByUserId | null, executedAt | null,
+                         completedAt | null, createdAt }
+PayoutBatchDetailResponse = PayoutBatchResponse + { payouts: AdminPayoutResponse[] }
+AdminPayoutResponse    { payoutId, batchId, driverId, bankAccountId, grossAmountPaise, tdsAmountPaise,
+                         otherDeductionsPaise, tdsPolicy, taxRuleId | null,
+                         amountPaise (transferred), mode,
+                         status: PREPARED | SUBMITTING | SUBMITTED | PROCESSED | FAILED | REVERSED,
+                         provider, providerPayoutId | null, providerStatus | null, utr | null,
+                         failureReason | null, attempts, submittedAt, processedAt, failedAt, reversedAt,
+                         createdAt, items: { earningId, amountPaise, status }[] }
+PrepareBatchResponse   { batch: PayoutBatchResponse, created: boolean }   // 201 created, 200 replay
+RunScheduleResponse    { batch: PayoutBatchResponse | null }
+ExecuteBatchResponse   { batch: PayoutBatchResponse,
+                         results: { payoutId, result }[] }
+                         // result: SUBMITTED | PROCESSED | FAILED | SKIPPED | PENDING_RETRY
+SyncPayoutResponse     { payout: AdminPayoutResponse, outcome: string }</code></pre>
+<p>Execute and validation need RazorpayX switched on (<code>PAYOUT_PROVIDER_NOT_CONFIGURED</code> otherwise). Make "Execute" a confirmed action that shows the batch total and payout count first.</p>
+
+<h3>7.5 Earnings</h3>
+<table class="long">
+  <tr><th style="width:52%">Endpoint</th><th>Purpose</th></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/earnings?status=&amp;driverId=&amp;limit=&amp;cursor=</td><td>Paged list; limit 1..100</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/earnings/{earningId}</td><td>One earning</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/drivers/{driverId}/earnings/summary</td><td>Totals by status for one driver</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/earnings/{earningId}/hold</td><td><code>{ reason }</code>; from AWAITING_SETTLEMENT or PAYABLE. 30/min</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/earnings/{earningId}/release</td><td><code>{ reason }</code>; back to PAYABLE or AWAITING_SETTLEMENT. 30/min</td></tr>
+</table>
+<pre><code>AdminEarningResponse {
+  earningId, bookingId, tripId, driverId, settlement: ONLINE | CASH,
+  status: AWAITING_SETTLEMENT | PAYABLE | ON_HOLD | IN_PAYOUT | PAID | SETTLED_IN_CASH,
+  grossAmountPaise, platformFeePaise, otherDeductionsPaise, tdsAmountPaise, tdsPolicy, netAmountPaise,
+  merchantSettled, payableAt | null, paidAt | null, holdReason | null, createdAt,
+  feeRuleId, taxRuleId | null, paymentId | null, collectionId | null, paymentSettlementId | null,
+  heldAt | null, heldByUserId | null
+}
+EarningSummaryResponse { awaitingSettlementPaise, payablePaise, inPayoutPaise, onHoldPaise, paidPaise,
+                         settledInCashPaise, grossPaise, platformFeePaise, tripCount }</code></pre>
+
+<h3>7.6 Merchant settlements</h3>
+<table class="long">
+  <tr><th style="width:46%">Endpoint</th><th>Purpose</th></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/settlements/sync</td><td>Pull Razorpay settlement data. <code>{ from?, to? }</code> India dates (YYYY-MM-DD), at most 31 days. 5/min</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/settlements?bookingId=</td><td>Recorded settlements</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/settlements/overdue-earnings</td><td>Online earnings still unsettled after the overdue window (5 days by default)</td></tr>
+</table>
+<pre><code>SettlementSyncResponse { enabled, trigger, days[], seen, recorded, alreadyRecorded, notBookingPayments,
+                         unknownPayments, amountMismatches, earningsPromoted, earningsLinkedOnHold }
+SettlementResponse     { settlementId, provider, providerPaymentId, providerSettlementId,
+                         settlementUtr | null, settledAt, amountPaise, feePaise, taxPaise, bookingId,
+                         paymentId | null, collectionId | null, source, recordedAt }</code></pre>
+<p><code>amountMismatches</code> above zero always needs a person. While settlement tracking is off (it stays off until verified on the live account), the admin sync answers <code>503 SETTLEMENT_TRACKING_DISABLED</code>. Every admin sync is recorded in the audit trail.</p>
+
+<h3>7.7 Driver wallets</h3>
+<table class="long">
+  <tr><th style="width:50%">Endpoint</th><th>Purpose</th></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/drivers/{driverId}/wallet</td><td>A driver's wallet</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/wallets/{walletId}</td><td>By wallet id</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/wallets/{walletId}/transactions?limit=&amp;cursor=</td><td>The ledger, newest first; limit 1..100</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/wallets/{walletId}/adjustments</td><td>Manual credit or debit. Idempotency-Key. 30/min</td></tr>
+</table>
+<pre><code>AdminWalletResponse { walletId, driverId, status: ACTIVE | LOW_BALANCE | BLOCKED,
+                      balancePaise, currency, version, updatedAt, createdAt }
+AdminWalletTransactionResponse { id, type: TOPUP | CASH_RIDE_FEE | REFUND_REVERSAL | ADJUSTMENT,
+                      direction: CREDIT | DEBIT, amountPaise (always positive), balanceAfterPaise,
+                      sequence (1, 2, 3 ... no gaps), referenceType, referenceId,
+                      providerPaymentId | null,
+                      providerOrderId | null, providerEventId | null, reason | null,
+                      performedByUserId | null, idempotencyKey, createdAt }
+CreateAdjustmentRequest { direction: CREDIT | DEBIT, amountPaise (capped by ADMIN_ADJUSTMENT_MAX_PAISE),
+                          reason: string (10..500) }
+AdjustmentResponse { transaction, wallet, replayed: boolean }</code></pre>
+<p>A debit can't take the balance below zero. Adjustments are ledger entries, never edits: a mistake is fixed with a second, opposite adjustment.</p>
+
+<h3>7.8 Payments, collections and the booking money trail</h3>
+<table class="long">
+  <tr><th style="width:46%">Endpoint</th><th>Purpose</th></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/payments/{paymentId}</td><td>A booking payment or wallet top-up</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/payments/{paymentId}/sync</td><td>Re-read from Razorpay; applies a captured payment that every callback missed. 30/min</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/collections/{collectionId}</td><td>A cash or QR collection</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/admin/collections/{collectionId}/sync</td><td>Re-read a QR from Razorpay. 30/min</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/admin/bookings/{bookingId}</td><td>Everything money-related for one booking (by <code>paymentBookingId</code>)</td></tr>
+</table>
+<pre><code>AdminPaymentResponse { paymentId, userId, purpose, bookingId | null,
+                       status: PENDING | PAID | FAILED | REFUND_PENDING | REFUNDED,
+                       amountPaise, currency, razorpayOrderId | null, providerPaymentId | null,
+                       paymentMethod | null, checkout | null, createdAt, updatedAt }
+SyncPaymentResponse  { payment, attempts: { providerPaymentId, providerStatus, outcome }[] }
+AdminCollectionResponse { collectionId, bookingId, tripId, stage, method: CASH | ONLINE_QR, status,
+                       amountPaise, platformFeePaise | null, qr | null, providerPaymentId | null,
+                       paymentMethod | null, failureReason | null, completedAt | null, createdAt,
+                       collectedByDriverId, provider | null, providerReferenceId | null,
+                       providerOrderId | null, feeRuleId | null, walletTransactionId | null,
+                       idempotencyKey }
+SyncCollectionResponse { collection, outcome }
+
+GET /v1/admin/bookings/{bookingId} -&gt; {
+  booking:            { bookingId, externalRef, status, paymentMethod, paymentStatus,
+                        confirmedFarePaise, finalFarePaise, confirmedAt, completedAt, cancelledAt },
+  feeRule:            { feeRuleId, category, ruleType, value, roundingMode },
+  trip:               { tripId, driverId, status, deliveredAt, paymentConfirmedAt, completedAt } | null,
+  customerPayments:   [{ paymentId, status, amountPaise, razorpayOrderId, razorpayPaymentId,
+                         paymentMethod, createdAt }],
+  collections:        [{ collectionId, stage, method, status, amountPaise, platformFeePaise,
+                         providerProduct, providerReferenceId, providerPaymentId,
+                         walletDebit | null, failureReason, completedAt }],
+  disputes:           [{ providerDisputeId, providerPaymentId, status, amountPaise }],
+  merchantSettlement: { settlementId, providerSettlementId, settlementUtr, settledAt,
+                        amountPaise, feePaise, taxPaise, ... } | null,
+  earning:            { earningId, settlement, status, grossAmountPaise, platformFeePaise,
+                        netAmountPaise, merchantSettled, payableAt, paidAt, holdReason, paidOut,
+                        payoutHistory: [{ payoutId, payoutStatus, providerPayoutId, utr,
+                                          batchId, cycleKey, ... }],
+                        currentPayoutId } | null
+}</code></pre>
+<p>This answers "was the driver paid for this trip, how much, when, and through which transfer" from one call. It's the money tab of the booking detail page.</p>
+
+<h3>7.9 Reconciliation reports</h3>
+<p>All are <code>GET</code>, return a plain array, and should normally be empty.</p>
+<table class="long">
+  <tr><th style="width:40%">Path under <code>/v1/admin/reconciliation/</code></th><th style="width:20%">Row shape</th><th>What a row means</th></tr>
+  <tr><td class="ep">wallet-mismatches</td><td>WalletMismatch</td><td>A wallet balance doesn't equal its ledger</td></tr>
+  <tr><td class="ep">unprocessed-webhooks</td><td>WebhookEvent</td><td>A verified Razorpay webhook not processed yet</td></tr>
+  <tr><td class="ep">webhook-anomalies</td><td>WebhookEvent</td><td>Processed with a problem: amount mismatch, duplicate, dispute, paid after cancellation</td></tr>
+  <tr><td class="ep">pending-payments?olderThanMinutes=30</td><td>PendingPayment</td><td>A payment still unconfirmed (0..10,080 minutes)</td></tr>
+  <tr><td class="ep">duplicate-provider-payments</td><td>Duplicate</td><td>One Razorpay payment on two ledger entries</td></tr>
+  <tr><td class="ep">earning-mismatches</td><td>Finding</td><td>An earning disagrees with its booking, trip or payout items</td></tr>
+  <tr><td class="ep">payout-mismatches</td><td>Finding</td><td>A payout disagrees with its items, or is stuck</td></tr>
+  <tr><td class="ep">failed-payouts</td><td>Finding</td><td>Failed payouts (their earnings ride the next batch)</td></tr>
+  <tr><td class="ep">paid-cancelled-bookings</td><td>Finding</td><td>Cancelled but paid: refund review</td></tr>
+  <tr><td class="ep">cash-fee-mismatches</td><td>Finding</td><td>A cash fee and its wallet debit disagree</td></tr>
+  <tr><td class="ep">stale-collections</td><td>Finding</td><td>A QR still pending after expiry: sync it</td></tr>
+  <tr><td class="ep">payable-without-bank-account</td><td>DriverPayable</td><td>A driver owed money with no verified account</td></tr>
+  <tr><td class="ep">unprocessed-payout-webhooks</td><td>Finding</td><td>A RazorpayX webhook not processed yet</td></tr>
+  <tr><td class="ep">payout-webhook-anomalies</td><td>Finding</td><td>A RazorpayX webhook processed with a problem</td></tr>
+</table>
+<pre><code>WalletMismatch  { walletId, driverId, storedBalancePaise, ledgerBalancePaise, storedVersion,
+                  ledgerEntryCount, highestEntryVersion }
+WebhookEvent    { id, eventId, eventType, paymentId | null, outcome | null, attempts,
+                  processingError | null, createdAt, processedAt | null }
+PendingPayment  { id, userId, purpose, razorpayOrderId | null, amountPaise, createdAt }
+Duplicate       { provider, providerPaymentId, occurrences }
+Finding         { problem (stable code), bookingId | null, earningId | null, payoutId | null,
+                  collectionId | null, amountPaise | null, detail | null }
+DriverPayable   { driverId, payablePaise, earningCount }</code></pre>
+
+<div class="page"></div>
+<h2>8. App endpoints, webhooks, health</h2>
+<p>For context: what the apps and Razorpay call. All under <code>/v1</code> with the user's Firebase token unless noted.</p>
+
+<h3>8.1 Customer App <span class="tag exists">exists</span></h3>
+<table class="long">
+  <tr><th style="width:48%">Endpoint</th><th>Purpose</th></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/bookings/{bookingId}</td><td>The customer's own booking: status, payment method and status, fare</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/bookings/{bookingId}/payment</td><td>Start or resume payment; returns the Razorpay Checkout values. Idempotency-Key. 10/min</td></tr>
+  <tr><td class="ep"><span class="tag get">get</span>/v1/bookings/{bookingId}/payment</td><td>Booking and latest payment, for polling</td></tr>
+  <tr><td class="ep"><span class="tag post">post</span>/v1/bookings/{bookingId}/payment/verify</td><td>Submit the Checkout result. 30/min</td></tr>
+</table>
+<p>Another customer's booking behaves like a missing one (<code>404</code>). Pay-at-pickup and pay-at-delivery bookings answer <code>409 BOOKING_NOT_PAYABLE</code>.</p>
+
+<h3>8.2 Driver App <span class="tag exists">exists</span></h3>
+<table class="long">
+  <tr><th style="width:48%">Endpoint</th><th>Purpose</th></tr>
+  <tr><td class="ep">GET /v1/wallet, GET /v1/wallet/transactions</td><td>Balance and ledger</td></tr>
+  <tr><td class="ep">POST /v1/wallet/topups, GET /v1/wallet/topups/{id}, POST .../verify</td><td>Recharge through Razorpay Checkout</td></tr>
+  <tr><td class="ep">GET /v1/trips?active=true, GET /v1/trips/{tripId}</td><td>The driver's trips, with fare, fee, share and whether collection is open</td></tr>
+  <tr><td class="ep">POST /v1/trips/{tripId}/collections, GET .../{collectionId}</td><td>Record cash or show a UPI QR; poll the QR</td></tr>
+  <tr><td class="ep">GET /v1/earnings, /v1/earnings/summary, /v1/earnings/{id}</td><td>Earnings by status</td></tr>
+  <tr><td class="ep">GET /v1/bank-account; POST /v1/bank-account/change-requests; POST .../{id}/confirm; POST .../{id}/cancel</td><td>Bank account with OTP step-up (5 requests/hour, 10 confirms/hour)</td></tr>
+  <tr><td class="ep">GET /v1/payouts, GET /v1/payouts/{payoutId}</td><td>Weekly payouts with UTR</td></tr>
+</table>
+
+<h3>8.3 Webhooks, health, development tools</h3>
+<table class="long">
+  <tr><th style="width:36%">Endpoint</th><th>Notes</th></tr>
+  <tr><td class="ep">POST /v1/webhooks/razorpay</td><td>Public, signed. <code>payment.authorized</code>, <code>payment.captured</code>, <code>payment.failed</code>, <code>order.paid</code>, <code>payment_link.*</code>, <code>qr_code.credited</code>, <code>qr_code.closed</code>, <code>payment.dispute.*</code>, <code>settlement.processed</code>. 600/min</td></tr>
+  <tr><td class="ep">POST /v1/webhooks/razorpayx</td><td>Public, signed. <code>payout.*</code>, <code>fund_account.validation.completed</code>, <code>fund_account.validation.failed</code>. 600/min</td></tr>
+  <tr><td class="ep">GET /health/live, GET /health/ready</td><td>Public, unversioned. <code>ready</code> checks the database.</td></tr>
+  <tr><td class="ep">POST /v1/dev/simulate/...</td><td>Settlements, bank validations, payouts. Mounted only when a simulated provider is configured; never in production.</td></tr>
+  <tr><td class="ep">GET /docs, /docs/openapi.json</td><td>Swagger, when <code>SWAGGER_ENABLED=true</code> (development only). The internal API and webhooks are deliberately left out of it; section 6 covers them.</td></tr>
+</table>
+
+<div class="page"></div>
+<h2>9. Admin panel pages &rarr; backend</h2>
+<p>Page by page against <code>admin_panel_v1</code>. "Engine" means endpoints you build in the engine; "PB" means the payment backend.</p>
+<table class="long">
+  <tr><th style="width:17%">Page</th><th style="width:47%">Served by</th><th>Status</th></tr>
+  <tr><td>Login</td><td>Firebase web SDK; admin role checked by the PB on every call</td><td><span class="tag build">to build</span>replace the in-browser password check</td></tr>
+  <tr><td>Dashboard</td><td>Engine: bookings, active trips, online drivers, customers. PB: revenue, platform fees</td><td><span class="tag build">to build</span>aggregate endpoints on both</td></tr>
+  <tr><td>Customers</td><td>Profiles: nowhere yet. Account status: PB <code>users</code> (read-only to the API)</td><td><span class="tag ask">decision 3</span></td></tr>
+  <tr><td>Drivers</td><td>Profile, online status, vehicle: engine. Approval: PB (CLI only). Wallet: <code>GET /v1/admin/drivers/{id}/wallet</code>. Earnings: <code>.../earnings/summary</code>. Payouts: <code>GET /v1/admin/payouts?driverId=</code></td><td>money parts <span class="tag exists">exist</span>, the rest <span class="tag build">to build</span></td></tr>
+  <tr><td>KYC Verification</td><td>Nowhere yet. The approved legal name must reach PB <code>drivers.legal_name</code> (bank name matching depends on it)</td><td><span class="tag ask">decision 3</span></td></tr>
+  <tr><td>Vehicles, Vehicle Categories</td><td>Engine. Category codes must equal the PB fee-rule categories (e.g. <code>MINI_TRUCK</code>)</td><td><span class="tag build">to build</span></td></tr>
+  <tr><td>Fare &amp; Pricing, Surcharges</td><td>Engine pricing rules, versioned (section 5)</td><td><span class="tag build">to build</span><span class="tag ask">decision 1</span></td></tr>
+  <tr><td>Commission</td><td>PB fee rules (section 7.2)</td><td><span class="tag exists">exists</span>rework the page to versions</td></tr>
+  <tr><td>Cancellation Rules</td><td>Nothing: V1 has no cancellation charges</td><td><span class="tag ask">decision 7</span></td></tr>
+  <tr><td>Bookings</td><td>Engine for operations (stops, goods, timeline, notes). Money tab: <code>GET /v1/admin/bookings/{paymentBookingId}</code>. PB list: missing</td><td>money tab <span class="tag exists">exists</span>, the rest <span class="tag build">to build</span></td></tr>
+  <tr><td>Booking actions</td><td><strong>Cancel:</strong> engine admin cancel, which calls PB <code>/cancel</code>. <strong>Reassign:</strong> refused by PB after assignment. <strong>Update status:</strong> must not exist for trip or payment states. <strong>Notes:</strong> engine</td><td><span class="tag ask">decisions 5, 6</span></td></tr>
+  <tr><td>Live Trips</td><td>Engine, real time</td><td><span class="tag build">to build</span></td></tr>
+  <tr><td>Reports</td><td>Bookings, cancellations, drivers, vehicles: engine. Revenue, commission, payments, wallet: PB aggregates</td><td><span class="tag build">to build</span></td></tr>
+  <tr><td>Driver Instructions</td><td>Engine</td><td><span class="tag build">to build</span></td></tr>
+  <tr><td>Audit Logs</td><td>PB records every admin money action; the read endpoint is missing. The engine needs its own for ops actions</td><td><span class="tag build">to build</span>Raj's side</td></tr>
+  <tr><td>Wallet (disabled in the menu)</td><td>PB wallet endpoints per driver (section 7.7). A list of all wallets is missing</td><td><span class="tag exists">exists</span>list to build</td></tr>
+  <tr><td>Payments (disabled in the menu)</td><td>PB payment detail and sync, pending-payments report. A payments list is missing</td><td><span class="tag exists">exists</span>list to build</td></tr>
+</table>
+<div class="box ask">
+  <span class="t">Pages the panel doesn't have yet, but money needs</span>
+  <p>Drivers get paid only if someone can do these. The APIs <strong>exist</strong> (section 7); the screens don't:</p>
+  <ul>
+    <li><strong>Bank account approvals</strong> (7.3). Without approval, a driver is never included in a payout.</li>
+    <li><strong>Monday payout review and execute</strong> (7.4). Auto-execute is off on purpose, so a person must press execute every week.</li>
+    <li><strong>Earnings holds</strong> (7.5), <strong>settlements</strong> (7.6), <strong>reconciliation reports</strong> (7.9), and <strong>refunds</strong> once the backend has them.</li>
+  </ul>
+  <p>Who builds these screens, you or Raj's side, is still open.</p>
+</div>
+
+<h2>10. What's missing and who builds it</h2>
+
+<h3>10.1 Engine <span class="tag build">your side</span></h3>
+<p>Suggested paths; name them as you like, but keep the rules: identity from the token, no amounts from apps, versioned pricing.</p>
+<table class="long">
+  <tr><th style="width:15%">Caller</th><th>Endpoints</th></tr>
+  <tr><td>Customer</td><td><code>POST /v1/fare/quotes</code> &middot; <code>POST /v1/bookings</code> (with <code>quoteId</code>) &middot; <code>GET /v1/bookings</code>, <code>GET /v1/bookings/{ref}</code> &middot; <code>POST /v1/bookings/{ref}/cancel</code> &middot; tracking (polling or socket)</td></tr>
+  <tr><td>Driver</td><td>Availability and location (driver from the token) &middot; <code>GET</code> offers, <code>POST</code> accept / reject (dispatch on the server) &middot; trip steps: arrive, pickup OTP, start, stop arrive, stop OTP, delivery proof, complete</td></tr>
+  <tr><td>Admin (ops)</td><td>Bookings list and detail with server-side filters and pagination &middot; admin cancel &middot; notes &middot; drivers list and detail &middot; live operations &middot; pricing rules (create a version, list, deactivate) &middot; vehicle categories &middot; surcharges &middot; service areas &middot; driver instructions</td></tr>
+  <tr><td>To the PB</td><td>The six internal calls (section 6) through a persistent outbox, the <code>COMPLETED</code> retry, and a sweep for trips stuck at <code>DELIVERED</code></td></tr>
+</table>
+
+<h3>10.2 Payment backend <span class="tag build">Raj's side</span></h3>
+<p>Planned; shapes may still change.</p>
+<table class="long">
+  <tr><th style="width:44%">Endpoint</th><th>Purpose</th></tr>
+  <tr><td class="ep">GET /v1/admin/audit-logs</td><td>Admin action trail. Filters: action, target, actor; cursor pagination</td></tr>
+  <tr><td class="ep">GET /v1/admin/payments</td><td>Payments list: status, purpose, dates</td></tr>
+  <tr><td class="ep">GET /v1/admin/bookings</td><td>Payment view of bookings: status, payment status and method, dates</td></tr>
+  <tr><td class="ep">GET /v1/admin/collections</td><td>Collections list: status, method</td></tr>
+  <tr><td class="ep">GET /v1/admin/wallets</td><td>Wallets list, e.g. low balance</td></tr>
+  <tr><td class="ep">GET /v1/admin/drivers?subject=&amp;phone=</td><td>Map a Firebase UID or phone to the PB <code>driverId</code>, approval and legal name</td></tr>
+  <tr><td class="ep">GET /v1/admin/reports/summary</td><td>Collected by method, platform fees, driver earnings, paid out</td></tr>
+  <tr><td class="ep">POST /v1/admin/bookings/{id}/refunds</td><td>Refunds through Razorpay, confirmed by webhook (after decision 7)</td></tr>
+  <tr><td>Identity endpoints</td><td>Customer sign-up, driver approve and suspend, KYC legal name, user suspend (after decision 3)</td></tr>
+  <tr><td>Config</td><td><code>CORS_ORIGINS</code> for the panel's domain</td></tr>
+</table>
+
+<h3>10.3 Admin panel <span class="tag build">your side</span></h3>
+<ul>
+  <li>Replace each mock service with calls to the engine or the PB, per section 9.</li>
+  <li>Firebase web login; treat <code>403 FORBIDDEN</code> from the PB as "not an admin".</li>
+  <li>Rework the Commission page to fee-rule versions (7.2).</li>
+  <li>Use cursor pagination for PB lists; only GET and POST toward the PB.</li>
+  <li>Paise in the API, rupees in the UI; UTC in the API, IST in the UI.</li>
+</ul>
+
+<div class="page"></div>
+<h2>11. Decisions to agree before building</h2>
+<table class="long">
+  <tr><th style="width:4%">#</th><th style="width:22%">Question</th><th>Options and recommendation</th><th style="width:18%">Blocks</th></tr>
+  <tr><td>1</td><td><strong>Where is the fare calculated?</strong></td><td>Engine (recommended; it has the route, stops, vehicle, weight) or the PB. Either way the PB receives one frozen integer.</td><td>Quote endpoint, pricing pages</td></tr>
+  <tr><td>2</td><td><strong>Which distance?</strong></td><td>Road distance from the engine's server (recommended) or straight line. Never from the app.</td><td>Fare accuracy</td></tr>
+  <tr><td>3</td><td><strong>Who owns identity and profiles?</strong></td><td>Customers, drivers, KYC, vehicles, admin users, and how sign-up, driver approval and the legal name reach the PB (its API is read-only on identity today). Option A: the PB keeps the money-relevant identity (UID, role, status, approval, legal name) and adds endpoints; the engine keeps profiles, KYC documents and vehicles. Option B: a separate core service owns all identity and provisions the PB. Note: one phone number is one account with one role.</td><td>Customers, Drivers, KYC pages; customer sign-up</td></tr>
+  <tr><td>4</td><td><strong>How does the engine know an admin?</strong></td><td>Roles live in the PB's database, not in tokens. Options: the engine keeps its own admin list; the PB adds an internal lookup of a UID's role; Firebase custom claims (the PB would still check its database).</td><td>Engine admin endpoints</td></tr>
+  <tr><td>5</td><td><strong>Reassigning a driver after acceptance</strong></td><td>The PB allows one trip per booking (<code>409 TRIP_ALREADY_ASSIGNED</code>). Options: cancel and rebook at the same fare, or the PB adds "reassign before pickup when nothing was collected".</td><td>Reassign action</td></tr>
+  <tr><td>6</td><td><strong>Manual status changes by admins</strong></td><td>Recommended: none for trip or payment states; admins can cancel. Trip status comes only from the engine's reporting; money states only from the PB.</td><td>Booking actions</td></tr>
+  <tr><td>7</td><td><strong>Refunds and cancellation charges</strong></td><td>Full refund or a fee; automatic or manual; who approves.</td><td>PB refund API, Cancellation Rules page</td></tr>
+  <tr><td>8</td><td><strong>Insurance premium</strong></td><td>Inside the fare (then the fee and driver share apply to it) or a separate line and payment.</td><td>Quote, booking</td></tr>
+  <tr><td>9</td><td><strong>When does a prepaid customer pay?</strong></td><td>Before dispatch (master specification) or after a driver accepts. Same calls, different order.</td><td>Dispatch sequencing</td></tr>
+  <tr><td>10</td><td><strong>Admin roles</strong></td><td>The panel has owner and supervisor; the PB has one ADMIN role. If a supervisor must not execute payouts, the PB needs role levels.</td><td>Admin permissions</td></tr>
+</table>
+
+<h2>12. Setup and handover</h2>
+
+<h3>12.1 Local development</h3>
+<ul>
+  <li><strong>Payment backend:</strong> PostgreSQL from <code>docker compose</code> on <code>127.0.0.1:5433</code>; <code>npm run db:migrate</code>; <code>npm run build</code>; <code>npm start</code> on port 3000.</li>
+  <li><strong>API docs:</strong> with <code>SWAGGER_ENABLED=true</code>, Swagger UI is at <code>http://localhost:3000/docs</code> and the OpenAPI JSON at <code>/docs/openapi.json</code>. You can generate a typed client from it.</li>
+  <li><strong>Admin panel:</strong> run Next on another port (<code>next dev -p 3001</code>) and set <code>CORS_ORIGINS=http://localhost:3001</code> in the backend's <code>.env</code>.</li>
+  <li><strong>Engine:</strong> needs the backend URL and an <code>INTERNAL_API_KEYS</code> value, issued by Raj per environment and shared over a secure channel.</li>
+</ul>
+
+<h3>12.2 Test accounts (ops CLI, run by Raj's side)</h3>
+<pre><code>node dist/cli/provision.js create-customer --phone &lt;E.164&gt; --subject &lt;uid&gt;
+node dist/cli/provision.js create-driver   --phone &lt;E.164&gt; --subject &lt;uid&gt; --approve --name "Legal Name"
+node dist/cli/provision.js create-admin    --phone &lt;E.164&gt; --subject &lt;uid&gt;
+node dist/cli/provision.js approve-driver  --phone &lt;E.164&gt;
+node dist/cli/provision.js set-legal-name  --phone &lt;E.164&gt; --name "Legal Name"
+node dist/cli/provision.js create-fee-rule --type PERCENTAGE --value 10 --reason "V1 platform fee"
+
+&lt;E.164&gt; is a phone like +919876543210; &lt;uid&gt; is the person's Firebase UID.</code></pre>
+<p>Phone numbers are unique: test the customer, driver and admin with three different numbers. Firebase test phone numbers avoid real SMS.</p>
+
+<h3>12.3 Razorpay test mode limits</h3>
+<ul>
+  <li>UPI QR codes can't be paid in test mode; payment links can, so test mode uses a payment-link QR. Live mode refuses the payment-link QR and needs QR Codes enabled on the account.</li>
+  <li>Test payments never settle, so online earnings stay <code>AWAITING_SETTLEMENT</code> unless the development simulator is used.</li>
+  <li>Bank account validation isn't available in test mode; RazorpayX test payouts stay processing until moved by hand or by the simulator.</li>
+</ul>
+
+<h3>12.4 Production</h3>
+<ul>
+  <li>HTTPS only; <code>CORS_ORIGINS</code> lists only the admin panel's domain; Swagger off.</li>
+  <li>Secrets (Razorpay keys, webhook secrets, internal key) in a secret store; the internal key only on the engine's server.</li>
+  <li>The backend logs the production-readiness items still open at startup: Razorpay live activation, QR Codes, RazorpayX, settlement verification, TDS.</li>
+</ul>
+
+<footer>
+  MultipleRide / Pick Up, Nikhil Enterprises, Jodhpur. Payment backend architecture and API reference v1,
+  October 2026. Endpoint shapes are taken from <code>raj_backend</code>'s code and its generated OpenAPI
+  document. Items marked "to build" don't exist yet; items marked "decision" need Raj's agreement before
+  they're built.
+</footer>
+
+</body>
+</html>
