@@ -1,0 +1,5 @@
+# Prototype files Phase 8 (engine integration) barely touches keep their original formatting, so
+# the integration diff stays focused. Format them in a separate change.
+src/fare/fare.service.ts
+src/drivers/drivers.types.ts
+src/generated/

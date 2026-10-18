@@ -1,0 +1,12 @@
+{
+  // Jest-only compiler settings (same as raj_backend). Jest runs test code as CommonJS and cannot
+  // execute native dynamic import() without experimental Node flags. The generated Prisma client
+  // loads its query compiler with import(); compiling to CommonJS turns that into require().
+  // Production builds keep using tsconfig.build.json (NodeNext).
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node10",
+    "resolvePackageJsonExports": false
+  }
+}

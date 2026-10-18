@@ -113,14 +113,12 @@ export class FareService {
 
     // Calculate legs: pickup → drop1 → drop2 → drop3...
     const points: LocationLike[] = [pickup, ...drops];
-    let totalDistanceKm = 0;
     const legs: MultiDropFareEstimate['legs']  = [];
 
     for (let i = 0; i < points.length - 1; i++) {
       const from = points[i];
       const to = points[i + 1];
       const legDistance = haversineDistance(from.latitude, from.longitude, to.latitude, to.longitude);
-      totalDistanceKm += legDistance;
 
       const fromLabel = i === 0 ? (from.address || 'Pickup') : (from.address || `Drop ${i}`);
       const toLabel = to.address || `Drop ${i + 1}`;

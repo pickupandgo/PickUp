@@ -1,144 +1,106 @@
-import {
-  Controller,
-  Post,
-  Get,
-  Param,
-  Body,
-  BadRequestException,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { CurrentSubject } from '../auth/decorators';
 import { RidesService } from './rides.service';
-import { CreateRideDto } from './rides.types';
 
+/**
+ * Bookings ("rides") for the Customer and Driver apps. Every route needs a verified Firebase
+ * token; the customer or driver is the token's subject.
+ *
+ * POST /rides/:rideId/verify-otp was removed: it told anyone whether a pickup OTP was right
+ * without the payment gate. The pickup OTP is checked only by POST /trips/:id/pickup/verify-otp,
+ * after the payment backend allows the handover.
+ */
 @Controller()
 export class RidesController {
   constructor(private readonly ridesService: RidesService) {}
 
+  /** The customer confirms a fare quote: registered with the payment backend, then offered. */
   @Post('rides')
-  createRide(@Body() dto: CreateRideDto) {
-    const ride = this.ridesService.createRide(dto);
+  async createRide(@CurrentSubject() subject: string, @Body() body: unknown) {
     return {
       success: true,
-      ride: {
-        id: ride.id,
-        status: ride.status,
-        requestedDriverId: ride.requestedDriverId,
-        fare: ride.fare,
-        weight: ride.weight,
-        otp: ride.otp,          // pickup OTP
-        drops: ride.drops,      // all drop locations
-        stopOtps: ride.stopOtps, // per-stop OTPs (customer sees these)
-      },
+      ride: await this.ridesService.createRide(subject, body),
     };
   }
 
   @Get('rides/:rideId')
-  getRideStatus(@Param('rideId') rideId: string) {
-    const ride = this.ridesService.findById(rideId);
+  async getRideStatus(
+    @CurrentSubject() subject: string,
+    @Param('rideId') rideId: string,
+  ) {
     return {
       success: true,
-      ride: {
-        id: ride.id,
-        status: ride.status,
-        assignedDriverId: ride.assignedDriverId,
-        requestedDriverId: ride.requestedDriverId,
-        fare: ride.fare,
-        weight: ride.weight,
-        otp: ride.otp,
-        pickup: ride.pickup,
-        drop: ride.drop,
-        drops: ride.drops,
-        stopOtps: ride.stopOtps,
-        vehicleType: ride.vehicleType,
-      },
+      ride: await this.ridesService.getRide(subject, rideId),
     };
   }
 
   @Get('rides/:rideId/trip')
-  getRideTrip(@Param('rideId') rideId: string) {
-    const trip = this.ridesService.getTripForRide(rideId);
-    return { success: true, trip };
+  async getRideTrip(
+    @CurrentSubject() subject: string,
+    @Param('rideId') rideId: string,
+  ) {
+    return {
+      success: true,
+      trip: await this.ridesService.getRideTrip(subject, rideId),
+    };
+  }
+
+  /** The handover OTPs for the customer, withheld until the payment backend allows each handover. */
+  @Get('rides/:rideId/otps')
+  async getOtps(
+    @CurrentSubject() subject: string,
+    @Param('rideId') rideId: string,
+  ) {
+    return {
+      success: true,
+      ...(await this.ridesService.getOtps(subject, rideId)),
+    };
   }
 
   @Get('ride-requests/:driverId')
-  getPendingRequests(@Param('driverId') driverId: string) {
-    const requests = this.ridesService.findPendingForDriver(driverId);
+  async getPendingRequests(
+    @CurrentSubject() subject: string,
+    @Param('driverId') driverId: string,
+  ) {
     return {
       success: true,
-      requests: requests.map((r) => ({
-        rideId: r.id,
-        customerId: r.customerId,
-        pickup: r.pickup,
-        drop: r.drop,
-        drops: r.drops,       // all drops for driver
-        vehicleType: r.vehicleType,
-        weight: r.weight,
-        fare: r.fare,
-        status: r.status,
-        createdAt: r.createdAt,
-      })),
+      requests: await this.ridesService.findPendingForDriver(subject, driverId),
     };
   }
 
   @Post('rides/:rideId/accept')
-  acceptRide(
+  async acceptRide(
+    @CurrentSubject() subject: string,
     @Param('rideId') rideId: string,
-    @Body('driverId') driverId: string,
+    @Body('driverId') driverId?: string,
   ) {
-    if (!driverId) {
-      throw new BadRequestException('driverId is required');
-    }
-
-    const ride = this.ridesService.acceptRide(rideId, driverId);
     return {
       success: true,
-      ride: {
-        id: ride.id,
-        status: ride.status,
-        assignedDriverId: ride.assignedDriverId,
-        fare: ride.fare,
-        weight: ride.weight,
-        pickup: ride.pickup,
-        drop: ride.drop,
-        drops: ride.drops,
-        // Driver does NOT get OTPs - they receive them verbally at each stop
-      },
+      ...(await this.ridesService.acceptRide(subject, rideId, driverId)),
     };
   }
 
   @Post('rides/:rideId/cancel')
-  cancelRide(@Param('rideId') rideId: string) {
-    const ride = this.ridesService.cancelRide(rideId);
+  async cancelRide(
+    @CurrentSubject() subject: string,
+    @Param('rideId') rideId: string,
+    @Body() body: unknown,
+  ) {
     return {
       success: true,
-      ride: { id: ride.id, status: ride.status },
+      ride: await this.ridesService.cancelRide(subject, rideId, body),
     };
   }
 
   @Post('rides/:rideId/reject')
-  rejectRide(
+  async rejectRide(
+    @CurrentSubject() subject: string,
     @Param('rideId') rideId: string,
-    @Body('driverId') driverId: string,
+    @Body('driverId') driverId?: string,
   ) {
-    if (!driverId) {
-      throw new BadRequestException('driverId is required');
-    }
-
-    const ride = this.ridesService.rejectRide(rideId, driverId);
     return {
       success: true,
-      ride: { id: ride.id, status: ride.status },
+      ride: await this.ridesService.rejectRide(subject, rideId, driverId),
     };
-  }
-
-  @Post('rides/:rideId/verify-otp')
-  verifyOtp(
-    @Param('rideId') rideId: string,
-    @Body('otp') otp: string,
-  ) {
-    if (!otp) {
-      throw new BadRequestException('otp is required');
-    }
-    const result = this.ridesService.verifyOtp(rideId, otp);
-    return { success: true, valid: result.valid };
   }
 }

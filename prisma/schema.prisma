@@ -1,0 +1,268 @@
+// MultipleRide trip engine (engine-v2): the operational state it owns, kept across restarts, and
+// the durable outbox through which it reports to the payment backend (raj_backend).
+//
+// Ownership (docs: README.md, "Engine and payment backend"):
+//   - The engine owns dispatch, offers, the trip and stop movement, and the OTP flow.
+//   - The payment backend owns the fare, payment, collections, the payment gate, earnings,
+//     settlements, payouts, refunds and the financial audit. Amounts stored here are display
+//     copies of the backend's fare quote; the engine never sends an amount anywhere.
+//
+// CHECK constraints and the outbox delete guard live in prisma/migrations/*/migration.sql
+// because the Prisma schema language cannot express them.
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  moduleFormat    = "cjs"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// An engine booking. PENDING_REGISTRATION until the payment backend registered it; it is
+/// offered to drivers only once REGISTERED (status OPEN).
+enum EngineBookingStatus {
+  PENDING_REGISTRATION
+  REGISTRATION_FAILED
+  OPEN
+  ASSIGNED
+  COMPLETED
+  CANCELLED
+
+  @@map("engine_booking_status")
+}
+
+enum EnginePaymentMethod {
+  PAY_AT_PICKUP
+  PAY_AT_DELIVERY
+
+  @@map("engine_payment_method")
+}
+
+/// An offer of a booking to one driver.
+enum EngineOfferStatus {
+  REQUESTED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CANCELLED
+  /// The payment backend refused the assignment (driver not provisioned or not approved, ...).
+  FAILED
+
+  @@map("engine_offer_status")
+}
+
+/// The engine's operational trip state. Between drops it returns to IN_TRANSIT.
+enum EngineTripStatus {
+  DRIVER_ASSIGNED
+  DRIVER_ARRIVED
+  PICKUP_VERIFIED
+  IN_TRANSIT
+  DROP_PROGRESS
+  DELIVERED
+  COMPLETED
+  CANCELLED
+
+  @@map("engine_trip_status")
+}
+
+enum EngineStopStatus {
+  PENDING
+  IN_TRANSIT
+  ARRIVED
+  DELIVERED
+  DELIVERY_FAILED
+  /// Closed without delivery by an admin of the payment backend (never by the engine).
+  UNDELIVERED
+  CANCELLED
+
+  @@map("engine_stop_status")
+}
+
+enum OutboxKind {
+  SEARCHING
+  ASSIGN
+  TRIP_STATUS
+  STOP_STATUS
+  CANCEL
+
+  @@map("engine_outbox_kind")
+}
+
+enum OutboxMode {
+  /// Backend first: the engine applies the transition only once the backend accepted it.
+  COMMAND
+  /// The engine already committed the change; the backend is told about it.
+  EVENT
+
+  @@map("engine_outbox_mode")
+}
+
+enum OutboxStatus {
+  PENDING
+  DELIVERED
+  /// A definitive answer other than success (or superseded): never sent again on its own.
+  REFUSED
+
+  @@map("engine_outbox_status")
+}
+
+model EngineBooking {
+  /// Also the public ride id.
+  id                 String              @id @db.Uuid
+  /// Stable and unique: registering it again returns the same payment booking.
+  externalRef        String              @unique(map: "uq_engine_bookings_external_ref") @map("external_ref") @db.VarChar(100)
+  /// The payment backend's fare quote: the only fare reference. Unique per customer: the
+  /// backend redeems a quote once, for its own customer only (another customer's attempt is
+  /// recorded as REGISTRATION_FAILED and blocks nobody).
+  quoteId            String              @map("quote_id") @db.Uuid
+  /// Firebase UID of the customer, from the verified token.
+  customerSubject    String              @map("customer_subject") @db.VarChar(128)
+  paymentMethod      EnginePaymentMethod @map("payment_method")
+  status             EngineBookingStatus @default(PENDING_REGISTRATION)
+  paymentBookingId   String?             @unique(map: "uq_engine_bookings_payment_booking") @map("payment_booking_id") @db.Uuid
+  /// The payment backend's error code when it refused the registration.
+  registrationError  String?             @map("registration_error") @db.VarChar(60)
+  vehicleCategory    String              @map("vehicle_category") @db.VarChar(40)
+  weightGrams        Int                 @map("weight_grams")
+  pickupLatitude     Float               @map("pickup_latitude")
+  pickupLongitude    Float               @map("pickup_longitude")
+  pickupAddress      String?             @map("pickup_address") @db.VarChar(300)
+  pickupOtp          String              @map("pickup_otp") @db.VarChar(4)
+  distanceMeters     Int                 @map("distance_meters")
+  /// Display copy of the quote's payable amount; never sent anywhere.
+  payablePaise       BigInt              @map("payable_paise")
+  quoteExpiresAt     DateTime            @map("quote_expires_at") @db.Timestamptz(6)
+  registeredAt       DateTime?           @map("registered_at") @db.Timestamptz(6)
+  cancelledAt        DateTime?           @map("cancelled_at") @db.Timestamptz(6)
+  cancelledBy        String?             @map("cancelled_by") @db.VarChar(20)
+  cancellationReason String?             @map("cancellation_reason") @db.VarChar(200)
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  stops  EngineStop[]
+  offers EngineOffer[]
+  trips  EngineTrip[]
+  outbox EngineOutbox[]
+
+  @@unique([quoteId, customerSubject], map: "uq_engine_bookings_quote_customer")
+  @@index([customerSubject, createdAt(sort: Desc)], map: "idx_engine_bookings_customer")
+  @@map("engine_bookings")
+}
+
+/// A drop of a booking, in the quote's order. Coordinates and amounts come from the quote.
+model EngineStop {
+  id               String           @id @db.Uuid
+  bookingId        String           @map("booking_id") @db.Uuid
+  sequence         Int
+  latitude         Float
+  longitude        Float
+  address          String?          @db.VarChar(300)
+  receiverName     String?          @map("receiver_name") @db.VarChar(100)
+  receiverPhone    String?          @map("receiver_phone") @db.VarChar(20)
+  distanceMeters   Int              @map("distance_meters")
+  /// Display copy of what this drop's receiver pays (pay at delivery); never sent anywhere.
+  payablePaise     BigInt           @map("payable_paise")
+  status           EngineStopStatus @default(PENDING)
+  otp              String           @db.VarChar(4)
+  otpVerified      Boolean          @default(false) @map("otp_verified")
+  proofUri         String?          @map("proof_uri") @db.VarChar(1000)
+  proofSubmittedAt DateTime?        @map("proof_submitted_at") @db.Timestamptz(6)
+  arrivedAt        DateTime?        @map("arrived_at") @db.Timestamptz(6)
+  deliveredAt      DateTime?        @map("delivered_at") @db.Timestamptz(6)
+  failedAt         DateTime?        @map("failed_at") @db.Timestamptz(6)
+  failureReason    String?          @map("failure_reason") @db.VarChar(200)
+  resolvedAt       DateTime?        @map("resolved_at") @db.Timestamptz(6)
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking EngineBooking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([bookingId, sequence], map: "uq_engine_stops_booking_sequence")
+  @@map("engine_stops")
+}
+
+model EngineOffer {
+  id            String            @id @db.Uuid
+  bookingId     String            @map("booking_id") @db.Uuid
+  /// Firebase UID of the driver the booking is offered to.
+  driverSubject String            @map("driver_subject") @db.VarChar(128)
+  status        EngineOfferStatus @default(REQUESTED)
+  expiresAt     DateTime          @map("expires_at") @db.Timestamptz(6)
+  respondedAt   DateTime?         @map("responded_at") @db.Timestamptz(6)
+  failureCode   String?           @map("failure_code") @db.VarChar(60)
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking EngineBooking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([bookingId], map: "uq_engine_offers_live", where: raw("(status = 'REQUESTED'::engine_offer_status)"))
+  @@index([driverSubject, status], map: "idx_engine_offers_driver")
+  @@index([bookingId, createdAt], map: "idx_engine_offers_booking")
+  @@map("engine_offers")
+}
+
+/// The single trip of a booking (M6). A trip the payment backend refused to assign is kept as
+/// CANCELLED, and the booking can be offered again.
+model EngineTrip {
+  id                    String           @id @db.Uuid
+  bookingId             String           @map("booking_id") @db.Uuid
+  driverSubject         String           @map("driver_subject") @db.VarChar(128)
+  /// The payment backend's trip id, once it accepted the assignment.
+  paymentTripId         String?          @unique(map: "uq_engine_trips_payment_trip") @map("payment_trip_id") @db.Uuid
+  status                EngineTripStatus @default(DRIVER_ASSIGNED)
+  currentStopIndex      Int              @default(0) @map("current_stop_index")
+  arrivedAt             DateTime?        @map("arrived_at") @db.Timestamptz(6)
+  pickupVerifiedAt      DateTime?        @map("pickup_verified_at") @db.Timestamptz(6)
+  startedAt             DateTime?        @map("started_at") @db.Timestamptz(6)
+  deliveredAt           DateTime?        @map("delivered_at") @db.Timestamptz(6)
+  completionRequestedAt DateTime?        @map("completion_requested_at") @db.Timestamptz(6)
+  completedAt           DateTime?        @map("completed_at") @db.Timestamptz(6)
+  cancelledAt           DateTime?        @map("cancelled_at") @db.Timestamptz(6)
+  cancelledBy           String?          @map("cancelled_by") @db.VarChar(20)
+  cancellationReason    String?          @map("cancellation_reason") @db.VarChar(200)
+  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking EngineBooking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([bookingId], map: "uq_engine_trips_booking_live", where: raw("(status <> 'CANCELLED'::engine_trip_status)"))
+  @@unique([driverSubject], map: "uq_engine_trips_driver_active", where: raw("(status <> ALL (ARRAY['COMPLETED'::engine_trip_status, 'CANCELLED'::engine_trip_status]))"))
+  @@index([driverSubject, createdAt(sort: Desc)], map: "idx_engine_trips_driver")
+  @@map("engine_trips")
+}
+
+/// Engine to payment backend calls, delivered in order per booking, retried until the backend
+/// gives a definitive answer. Never deleted while pending.
+model EngineOutbox {
+  id             BigInt       @id @default(autoincrement())
+  bookingId      String       @map("booking_id") @db.Uuid
+  kind           OutboxKind
+  mode           OutboxMode
+  /// What to send (status, stop sequence, reason, driver), resolved into a request at send time.
+  payload        Json
+  status         OutboxStatus @default(PENDING)
+  attempts       Int          @default(0)
+  nextAttemptAt  DateTime     @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  /// Claimed by a sender until then (one sender at a time, across instances).
+  lockedUntil    DateTime?    @map("locked_until") @db.Timestamptz(6)
+  claimId        String?      @map("claim_id") @db.Uuid
+  lastHttpStatus Int?         @map("last_http_status")
+  lastErrorCode  String?      @map("last_error_code") @db.VarChar(60)
+  lastError      String?      @map("last_error") @db.VarChar(500)
+  /// The backend's answer once final (summary: trip id, statuses, payment gate, error details).
+  result         Json?
+  alertedAt      DateTime?    @map("alerted_at") @db.Timestamptz(6)
+  deliveredAt    DateTime?    @map("delivered_at") @db.Timestamptz(6)
+  refusedAt      DateTime?    @map("refused_at") @db.Timestamptz(6)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking EngineBooking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([bookingId, id], map: "idx_engine_outbox_booking")
+  @@index([nextAttemptAt], map: "idx_engine_outbox_due", where: raw("(status = 'PENDING'::engine_outbox_status)"))
+  @@map("engine_outbox")
+}

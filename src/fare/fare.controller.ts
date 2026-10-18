@@ -1,6 +1,20 @@
-import { Controller, Get, Post, Query, Body, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Query,
+  Body,
+  BadRequestException,
+} from '@nestjs/common';
 import { FareService } from './fare.service';
+import { Public } from '../auth/decorators';
 
+/**
+ * The prototype's distance estimates, for display only. They are never used for a booking: a
+ * booking's fare is the payment backend's quote (POST /v1/fare/quotes on raj_backend), and the
+ * engine never sends or recalculates an amount.
+ */
+@Public()
 @Controller('fare')
 export class FareController {
   constructor(private readonly fareService: FareService) {}
@@ -22,22 +36,37 @@ export class FareController {
     const weightKg = weight ? parseFloat(weight) : 10;
 
     if (isNaN(pLat) || isNaN(pLng) || isNaN(dLat) || isNaN(dLng)) {
-      throw new BadRequestException('Valid pickup and drop coordinates are required');
+      throw new BadRequestException(
+        'Valid pickup and drop coordinates are required',
+      );
     }
 
-    const result = this.fareService.estimate(pLat, pLng, dLat, dLng, weightKg, vehicleType);
+    const result = this.fareService.estimate(
+      pLat,
+      pLng,
+      dLat,
+      dLng,
+      weightKg,
+      vehicleType,
+    );
     return { success: true, ...result };
   }
 
   // Multi-drop fare estimate (POST)
   @Post('estimate-multi')
   estimateMultiDrop(
-    @Body('pickup') pickup: { latitude: number; longitude: number; address?: string },
-    @Body('drops') drops: { latitude: number; longitude: number; address?: string }[],
+    @Body('pickup')
+    pickup: { latitude: number; longitude: number; address?: string },
+    @Body('drops')
+    drops: { latitude: number; longitude: number; address?: string }[],
     @Body('weight') weight?: number,
     @Body('vehicleType') vehicleType?: string,
   ) {
-    if (!pickup || typeof pickup.latitude !== 'number' || typeof pickup.longitude !== 'number') {
+    if (
+      !pickup ||
+      typeof pickup.latitude !== 'number' ||
+      typeof pickup.longitude !== 'number'
+    ) {
       throw new BadRequestException('Valid pickup location is required');
     }
     if (!drops || !Array.isArray(drops) || drops.length === 0) {
@@ -48,7 +77,12 @@ export class FareController {
     }
 
     const weightKg = weight || 10;
-    const result = this.fareService.estimateMultiDrop(pickup, drops, weightKg, vehicleType);
+    const result = this.fareService.estimateMultiDrop(
+      pickup,
+      drops,
+      weightKg,
+      vehicleType,
+    );
     return { success: true, ...result };
   }
 }

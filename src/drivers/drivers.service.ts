@@ -1,18 +1,30 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { Driver, NearbyDriverResult, NearbySearchParams } from './drivers.types';
+import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Driver,
+  NearbyDriverResult,
+  NearbySearchParams,
+} from './drivers.types';
 import { MOCK_DRIVERS } from '../data/mock-drivers';
 import { haversineDistance } from '../utils/distance';
+import { PrismaService } from '../prisma/prisma.service';
 
+/**
+ * Driver presence (online, location, vehicle) stays in memory: it is live state that drivers
+ * re-send after a restart. Whether a driver is busy comes from the database (an active trip), so
+ * a restart never makes a driver on a trip look free.
+ */
 @Injectable()
 export class DriversService {
   private drivers: Driver[] = [...MOCK_DRIVERS];
+
+  constructor(private readonly prisma: PrismaService) {}
 
   findAll(): Driver[] {
     return this.drivers;
   }
 
   findById(id: string): Driver {
-    let driver = this.drivers.find(d => d.id === id);
+    let driver = this.drivers.find((d) => d.id === id);
     if (!driver) {
       // Lazily create driver for the prototype
       // Deterministically pick a vehicle based on the last char of the ID
@@ -39,14 +51,31 @@ export class DriversService {
     return driver;
   }
 
+  /** After a trip ends (completed, cancelled, or its assignment refused). */
+  markAvailable(id: string): void {
+    this.updateAvailability(id, true);
+  }
+
+  /** True while the driver has a trip that is neither completed nor cancelled. */
+  async hasActiveTrip(id: string): Promise<boolean> {
+    const active = await this.prisma.engineTrip.findFirst({
+      where: {
+        driverSubject: id,
+        status: { notIn: ['COMPLETED', 'CANCELLED'] },
+      },
+      select: { id: true },
+    });
+    return active !== null;
+  }
+
   updateLocation(id: string, latitude: number, longitude: number): Driver {
     if (latitude < -90 || latitude > 90) {
-        throw new BadRequestException('Invalid latitude');
+      throw new BadRequestException('Invalid latitude');
     }
     if (longitude < -180 || longitude > 180) {
-        throw new BadRequestException('Invalid longitude');
+      throw new BadRequestException('Invalid longitude');
     }
-    
+
     const driver = this.findById(id);
     driver.latitude = latitude;
     driver.longitude = longitude;
@@ -55,9 +84,17 @@ export class DriversService {
   }
 
   updateVehicleType(id: string, vehicleType: string): Driver {
-    const allowed = ['2 Wheeler', '3 Wheeler', '4 Wheeler', 'Mini Truck', 'Pickup Truck'];
+    const allowed = [
+      '2 Wheeler',
+      '3 Wheeler',
+      '4 Wheeler',
+      'Mini Truck',
+      'Pickup Truck',
+    ];
     if (!allowed.includes(vehicleType)) {
-      throw new BadRequestException(`Invalid vehicle type. Allowed: ${allowed.join(', ')}`);
+      throw new BadRequestException(
+        `Invalid vehicle type. Allowed: ${allowed.join(', ')}`,
+      );
     }
     const driver = this.findById(id);
     driver.vehicleType = vehicleType;
@@ -65,25 +102,38 @@ export class DriversService {
     return driver;
   }
 
-  findNearby(params: NearbySearchParams): NearbyDriverResult[] {
+  async findNearby(params: NearbySearchParams): Promise<NearbyDriverResult[]> {
     const { latitude, longitude, radiusKm, vehicleType } = params;
     const STALE_MS = 60_000; // 60 seconds - driver must have pinged in last 60s
     const now = Date.now();
 
     // 1. Filter Available Drivers that are also recently active
-    let availableDrivers = this.drivers.filter(d => 
-      d.isAvailable && d.lastSeen && (now - d.lastSeen) < STALE_MS
+    let availableDrivers = this.drivers.filter(
+      (d) => d.isAvailable && d.lastSeen && now - d.lastSeen < STALE_MS,
     );
 
     // 2. Filter by vehicleType if specified
     if (vehicleType) {
       availableDrivers = availableDrivers.filter(
-        d => d.vehicleType.toLowerCase() === vehicleType.toLowerCase()
+        (d) => d.vehicleType.toLowerCase() === vehicleType.toLowerCase(),
       );
     }
 
+    // A driver on a trip is never offered another booking, whatever the app says.
+    if (availableDrivers.length > 0) {
+      const busy = await this.prisma.engineTrip.findMany({
+        where: {
+          driverSubject: { in: availableDrivers.map((d) => d.id) },
+          status: { notIn: ['COMPLETED', 'CANCELLED'] },
+        },
+        select: { driverSubject: true },
+      });
+      const busyIds = new Set(busy.map((trip) => trip.driverSubject));
+      availableDrivers = availableDrivers.filter((d) => !busyIds.has(d.id));
+    }
+
     // 2. Calculate Distance
-    const driversWithDistance = availableDrivers.map(driver => {
+    const driversWithDistance = availableDrivers.map((driver) => {
       const distanceKm = haversineDistance(
         latitude,
         longitude,
@@ -96,7 +146,7 @@ export class DriversService {
 
     // 3. Remove Drivers Outside Radius
     const nearbyDrivers = driversWithDistance.filter(
-      driver => driver.distanceKm <= radiusKm,
+      (driver) => driver.distanceKm <= radiusKm,
     );
 
     // 4. Sort Nearest → Farthest
@@ -114,7 +164,10 @@ export class DriversService {
     const currentRating = driver.rating || 0;
     driver.totalRatings = currentTotal + 1;
     // Weighted average
-    driver.rating = Math.round(((currentRating * currentTotal + rating) / driver.totalRatings) * 10) / 10;
+    driver.rating =
+      Math.round(
+        ((currentRating * currentTotal + rating) / driver.totalRatings) * 10,
+      ) / 10;
     return driver;
   }
 }

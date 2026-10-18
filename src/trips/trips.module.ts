@@ -1,13 +1,13 @@
 import { Module } from '@nestjs/common';
+import { DriversModule } from '../drivers/drivers.module';
+import { OutboxModule } from '../outbox/outbox.module';
 import { TripsController } from './trips.controller';
 import { TripsService } from './trips.service';
-import { TripStateService } from './trip-state.service';
-import { DriversModule } from '../drivers/drivers.module';
 
 @Module({
-  imports: [DriversModule],
+  imports: [DriversModule, OutboxModule],
   controllers: [TripsController],
-  providers: [TripsService, TripStateService],
+  providers: [TripsService],
   exports: [TripsService],
 })
 export class TripsModule {}
