@@ -619,10 +619,12 @@ async function main() {
   });
 
   await step(1, 'Payment created (historical prepaid booking): driver assigned, Razorpay order created', async () => {
-    // The online money path below (Checkout -> settlement -> payout) runs on a historical
-    // PREPAID_UPI booking, which the API can no longer create. It is inserted as data, the way
-    // such rows exist in a database migrated from before quotes. Phase 11 replaces this flow with
-    // pay at pickup by QR.
+    // Phase 11 note: the pay-at-pickup-by-QR online money path that supersedes this one is proven
+    // end to end in steps 13 and 15 (QR collection -> settlement -> payout) on a real booking the
+    // API creates. This step is kept on purpose as the historical PREPAID_UPI path: the API can no
+    // longer create such a booking, so it is inserted as data (the way rows migrated from before
+    // quotes exist) to prove the legacy Checkout -> settlement -> weekly payout still completes end
+    // to end (review I.6). The weekly scheduler it exercises is also covered in payouts.int-spec.
     const externalRef = `E2E-LEGACY-${randomUUID()}`;
     bookingId = await insertLegacyPrepaidBooking({
       externalRef,
