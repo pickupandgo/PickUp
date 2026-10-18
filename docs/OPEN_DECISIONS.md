@@ -447,7 +447,8 @@ Nikhil Enterprises approved the V1 money model. It is implemented as given; noth
 
 #### D-51 Trip engine integration
 - **Needed:** the engine (engine-v2) must call `/v1/internal/*`: register the booking when the customer confirms it, assign, report each status. Who changes the engine, and how the key is shared.
-- **Owner:** Tech lead. **Status:** Open, blocks end-to-end use.
+- **Since payment flow Phase 8 (section I):** implemented in the engine on branch `raj_engine`. It is local and not committed, and it was verified against this backend's build. The key is the engine's `PAYMENT_BACKEND_INTERNAL_API_KEY`, one of `INTERNAL_API_KEYS` here.
+- **Owner:** Tech lead. **Status:** Engine side done. Production use waits for the engine developer's review, the engine's deployment (database, key) and the app changes (Phases 9–10).
 
 #### D-52 Paid bookings that get cancelled
 - **Now:** cancellation is allowed and the booking is listed in `/v1/admin/reconciliation/paid-cancelled-bookings`. Nothing is refunded automatically (D-22), and a cash trip's fee debit stays.
@@ -898,3 +899,41 @@ Raj approved and locked Phase 6 (local commit `6ab9142`, also pushed to `origin/
 - Phase 8 and later: the trip engine, the Driver and Customer Apps, and the admin UI.
 - Alerts outside the logs (paging, email). Ops reads the summary and the open findings.
 - Any business policy (above), and live provider validation (D-46, D-56, D-58, D-72).
+
+### Phase 8: trip engine integration
+
+Raj approved and committed Phase 7 locally (`6371bda`, not pushed), then asked for Phase 8 only: the trip engine (engine-v2) integrated with this backend through the approved internal API. Phases 1–7 are frozen, and **this backend's code is unchanged**: no route, rule, migration or money behaviour. The work is in the engine, on branch `raj_engine` (from `engine-v2` 4555ade), described in its README. It is not committed yet. Status per requirement: [ARCHITECTURE_TRACEABILITY.md §16](./ARCHITECTURE_TRACEABILITY.md#16-implementation-status-payment-flow-phase-8-trip-engine-integration).
+
+| Requirement | Implementation |
+|---|---|
+| **Registration (contract F, "Customer confirms").** | `POST /rides { quoteId, paymentMethod, driverId }` with a verified Firebase token. The engine reads the quote (`GET /v1/internal/fare-quotes/:id`), stores the booking with `externalRef = ENG-<uuid>`, then registers `{ externalRef, customerSubject, quoteId, paymentMethod }`. It never sends an amount, and a client amount is refused. It dispatches only after a 201/200 that matches the quote. A retry (lost answer, timeout, restart) sends the same reference, and the backend answers 200. |
+| **Route.** | The trip runs the quote's drops in the quote's order. Coordinates the app adds must be the quote's. |
+| **Authentication (BK-2).** | Every app route needs a Firebase ID token of the same project, checked like this backend's. A `customerId` / `driverId` in a body or path must be the token's subject. Customers and drivers must exist at this backend: registration and assignment refuse anyone else. |
+| **Persistence and ids (BK-2).** | The engine's own PostgreSQL database (Prisma 7), never this backend's. Bookings, stops, offers, trips and the outbox, with UUID ids. `paymentBookingId` and `paymentTripId` are stored and shown to the apps. |
+| **Outbox (BK-2).** | Durable (same transaction as the state), FIFO per booking, one sender at a time across instances (lease), exponential backoff with jitter, alerts after N attempts and on any unexpected refusal. Repeats are safe because this backend treats them as no-ops. A pending report is never deleted (database guard). |
+| **Backend-first gates.** | `PICKUP_VERIFIED`, `IN_TRANSIT`, stop `DELIVERED` and `COMPLETED` are committed only after this backend's 2xx. `paymentGate` is read fresh before every OTP, and an OTP is checked only when `handoverAllowed`. `COMPLETED` refused with `PAYMENT_REQUIRED` is retried. Any other refusal changes nothing in the engine and is alerted. |
+| **OTPs.** | Never in ride or trip responses. Served to the customer only (`GET /rides/:id/otps`) and withheld until the handover is allowed. The pickup route without an OTP and the unauthenticated OTP check are removed. |
+| **Failed drops and admin decisions.** | `DELIVERY_FAILED` needs a reason. The driver retries with ARRIVED. The engine follows an admin's RETRY / UNDELIVERED, or a cancellation made here, with `POST /trips/:id/refresh`. |
+| **Cancellation.** | A reason is required, and it is idempotent. Pending backend-first commands are superseded, then `/cancel` is reported. No refund behaviour (D-22, D-52 unchanged). |
+| **Verification.** | The engine's unit and integration tests run against an in-process fake of the internal API. The contract E2E (`npm run test:contract` in `raj_engine`) runs the engine build against this backend's build, with a fault-injecting proxy between them, on its own databases. It covers PAY_AT_PICKUP in cash, PAY_AT_PICKUP by QR, PAY_AT_DELIVERY with 3 drops (cash, QR, and an admin UNDELIVERED), outages, lost answers, an engine crash, duplicates and security. It found one mismatch, fixed in the engine's fake: `DRIVER_NOT_APPROVED` is a 422 here. |
+
+**D-51 and BK-2.** The engine work of D-51 and BK-2 is done locally. The engine registers, assigns and reports every status, and the key is configured as `PAYMENT_BACKEND_INTERNAL_API_KEY` there (one of `INTERNAL_API_KEYS` here). Still needed before production use:
+1. Review of branch `raj_engine` by the engine developer, then its commit.
+2. An engine database in each environment (Render's disk is not persistent), migrated with `prisma migrate deploy`.
+3. The internal key shared server to server.
+4. The Driver and Customer app changes (Phases 9–10): the token on every call, the new `POST /rides` body, OTPs from `GET /rides/:id/otps`, and `paymentTripId` for collections.
+
+**Technical defaults introduced in Phase 8.** None is a business decision.
+
+| Default | Where | Decision it waits for |
+|---|---|---|
+| A driver has 15 s to answer an offer (`OFFER_TTL_SECONDS`, the prototype's timeout); the customer offers the ride to a chosen driver, as in the prototype | engine config | D-30 |
+| The engine's own drop limit (5) is gone: drops must be the quote's, and this backend's quote rules bound them | engine | N7 |
+| Outbox: every 1 s, lease 30 s, backoff 1 s up to 5 min, alert after 8 attempts | engine config | ops |
+| Driver presence (online, location) stays in memory; one engine instance until it is shared. Busy drivers come from the database. | engine | none |
+| 4-digit OTPs (the prototype's format), without an attempt limit. Only the assigned driver can try them, and only after the handover is allowed. | engine | product / security |
+
+**Not in Phase 8.**
+- The Driver and Customer Apps (Phases 9–10), and their use of the new engine API.
+- The standalone engine docs (`engine-payment-integration/spec.html`, `architecture.html` and the PDFs) still describe the pre-quote contract. Updating them is Phase 12.
+- Any business policy, live provider validation, and any change to this backend.

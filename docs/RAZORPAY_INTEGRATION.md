@@ -282,6 +282,16 @@ It is derived on every read and never stored.
 
 `customerSubject` / `driverSubject` are Firebase UIDs of provisioned accounts (`npm run provision -- create-customer|create-driver`).
 
+**The trip engine (payment flow Phase 8).** Branch `raj_engine` implements this contract. Its README has the details; this backend is unchanged.
+- It stores each booking before registering it (`externalRef: ENG-<uuid>`), so a retry is a replay.
+- It reports through a durable outbox, in order per booking, and retries with backoff until it gets an answer. Repeats are no-ops here.
+- It reads `paymentGate` fresh before every OTP and checks the OTP only when `handoverAllowed` is true.
+- It sends `PICKUP_VERIFIED`, `IN_TRANSIT`, stop `DELIVERED` and `COMPLETED` before committing them, and applies nothing that was refused.
+- Its `X-Request-Id`s are `eng-quote-…`, `eng-reg-<rideId>`, `eng-gate-<tripId>`, `eng-otp-<rideId>` and `eng-ob-<outboxId>-<attempt>`.
+- A 401/403 here (the key refused) is retried and logged as `"alert":"PAYMENT_BACKEND_AUTH_FAILED"`.
+
+`npm run test:contract` in `raj_engine` runs the engine build against this backend's build on their own databases.
+
 ## 11. Customer app: paying a historical prepaid booking
 
 New bookings are never paid in the app: they pay at pickup or at delivery (sections 10 and 12). This flow exists only for historical `PREPAID_UPI` bookings (`paymentModel: LEGACY_BOOKING_LEVEL`, registered before quotes), so they can still be paid. For any other booking every route below answers `409 BOOKING_NOT_PAYABLE`, and the webhook and the admin sync never capture or apply a payment for one (the database refuses such a payment row too).
