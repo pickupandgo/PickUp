@@ -3,7 +3,23 @@ import type { PrismaService } from '../prisma/prisma.service';
 
 describe('NotificationsService', () => {
   let service: NotificationsService;
-  let mockPrisma: any;
+  let mockPrisma: {
+    deviceToken: {
+      upsert: jest.Mock;
+      updateMany: jest.Mock;
+      findMany: jest.Mock;
+    };
+    notificationPreference: {
+      findUnique: jest.Mock;
+      upsert: jest.Mock;
+    };
+    customer: {
+      findUnique: jest.Mock;
+    };
+    driver: {
+      findUnique: jest.Mock;
+    };
+  };
 
   beforeEach(() => {
     mockPrisma = {
@@ -96,9 +112,7 @@ describe('NotificationsService', () => {
         pushEnabled: true,
         language: 'hi',
       });
-      mockPrisma.deviceToken.findMany.mockResolvedValue([
-        { token: 'tok-hi-1', language: 'hi' },
-      ]);
+      mockPrisma.deviceToken.findMany.mockResolvedValue([{ token: 'tok-hi-1', language: 'hi' }]);
 
       const sentCount = await service.sendNotification('user-1', 'CUSTOMER', 'DRIVER_ASSIGNED', {
         driverName: 'राकेश',

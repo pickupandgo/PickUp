@@ -1,17 +1,10 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Post,
-  Put,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentPrincipal, SignedIn } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
 import {
+  DeviceTokenResponse,
+  NotificationPreferencesResponse,
   RegisterDeviceTokenDto,
   UnregisterDeviceTokenDto,
   UpdateNotificationPreferencesDto,
@@ -29,18 +22,20 @@ export class NotificationsController {
   async registerToken(
     @CurrentPrincipal() principal: Principal,
     @Body() dto: RegisterDeviceTokenDto,
-  ) {
+  ): Promise<DeviceTokenResponse> {
     return this.notificationsService.registerToken(principal.userId, dto);
   }
 
   @Delete('tokens')
   @HttpCode(HttpStatus.OK)
-  async unregisterToken(@Body() dto: UnregisterDeviceTokenDto) {
+  async unregisterToken(@Body() dto: UnregisterDeviceTokenDto): Promise<{ success: boolean }> {
     return this.notificationsService.unregisterToken(dto.token);
   }
 
   @Get('preferences')
-  async getPreferences(@CurrentPrincipal() principal: Principal) {
+  async getPreferences(
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<NotificationPreferencesResponse> {
     return this.notificationsService.getPreferences(principal.userId);
   }
 
@@ -48,7 +43,7 @@ export class NotificationsController {
   async updatePreferences(
     @CurrentPrincipal() principal: Principal,
     @Body() dto: UpdateNotificationPreferencesDto,
-  ) {
+  ): Promise<NotificationPreferencesResponse> {
     return this.notificationsService.updatePreferences(principal.userId, dto);
   }
 }

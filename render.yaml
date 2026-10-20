@@ -1,0 +1,75 @@
+services:
+  - type: web
+    name: raj-backend
+    runtime: node
+    plan: starter
+    region: singapore
+    branch: integration/backend-raj-merge
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /health/live
+    autoDeploy: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: LOG_LEVEL
+        value: info
+      - key: TRUST_PROXY_HOPS
+        value: 1
+      - key: SWAGGER_ENABLED
+        value: false
+      - key: DATABASE_POOL_MAX
+        value: 10
+      - key: AUTH_PROVIDER
+        value: firebase
+      - key: AUTH_JWKS_URL
+        value: https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com
+      - key: AUTH_ISSUER
+        sync: false
+      - key: AUTH_AUDIENCE
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: WALLET_TOPUP_MIN_PAISE
+        value: 100
+      - key: WALLET_TOPUP_MAX_PAISE
+        value: 50000000
+      - key: ADMIN_ADJUSTMENT_MAX_PAISE
+        value: 10000000
+      - key: COLLECTION_LINK_PROVIDER
+        value: disabled
+      - key: SETTLEMENT_PROVIDER
+        value: disabled
+      - key: REFUND_PROVIDER
+        value: disabled
+      - key: PAYOUT_PROVIDER
+        value: disabled
+      - key: TDS_ENABLED
+        value: false
+      - key: REFUND_AUTO_ON_CANCEL
+        value: false
+      - key: REFUND_PARTIAL_ALLOWED
+        value: false
+      - key: EARNINGS_UNDELIVERED_DROP_HOLD
+        value: true
+      - key: FARE_QUOTE_TTL_SECONDS
+        value: 600
+      - key: FARE_MAX_DROPS
+        value: 5
+      - key: DATABASE_URL
+        fromDatabase:
+          name: raj-backend-postgres
+          property: connectionString
+
+databases:
+  - name: raj-backend-postgres
+    databaseName: multipleride
+    user: multipleride
+    plan: starter
+    region: singapore

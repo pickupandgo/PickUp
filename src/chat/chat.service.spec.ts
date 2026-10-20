@@ -1,4 +1,3 @@
-import { HttpStatus } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { NotificationsService } from '../notifications/notifications.service';
@@ -7,8 +6,14 @@ import { AppError } from '../common/errors/app-error';
 
 describe('ChatService', () => {
   let service: ChatService;
-  let mockPrisma: any;
-  let mockNotifications: any;
+  let mockPrisma: {
+    booking: { findUnique: jest.Mock };
+    trip: { findUnique: jest.Mock };
+    chatMessage: { findMany: jest.Mock; create: jest.Mock; updateMany: jest.Mock };
+  };
+  let mockNotifications: {
+    sendNotification: jest.Mock;
+  };
 
   const mockBooking = {
     id: 'b-123',
@@ -82,9 +87,9 @@ describe('ChatService', () => {
 
       const strangerPrincipal = makePrincipal('stranger-user-99', 'CUSTOMER');
 
-      await expect(
-        service.requireAuthorizedBooking('b-123', strangerPrincipal),
-      ).rejects.toThrow(AppError);
+      await expect(service.requireAuthorizedBooking('b-123', strangerPrincipal)).rejects.toThrow(
+        AppError,
+      );
     });
   });
 

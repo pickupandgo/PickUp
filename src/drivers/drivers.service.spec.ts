@@ -7,7 +7,12 @@ import { ErrorCode } from '../common/errors/error-codes';
 
 describe('DriversService', () => {
   let service: DriversService;
-  let mockPrisma: any;
+  let mockPrisma: {
+    $queryRaw: jest.Mock;
+    driver: {
+      findUniqueOrThrow: jest.Mock;
+    };
+  };
 
   beforeEach(() => {
     mockPrisma = {

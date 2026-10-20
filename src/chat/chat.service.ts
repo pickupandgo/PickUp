@@ -6,6 +6,18 @@ import { NotificationsService } from '../notifications/notifications.service';
 import type { Principal } from '../auth/principal';
 import { ChatMessageDto, SendChatMessageDto } from './chat.dto';
 
+interface ChatRecord {
+  id: string;
+  bookingId: string;
+  senderUserId: string;
+  senderRole: string;
+  text: string;
+  imageUrl?: string | null;
+  status?: string | null;
+  createdAt: Date | string;
+  readAt?: Date | string | null;
+}
+
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
@@ -81,14 +93,15 @@ export class ChatService {
     await this.requireAuthorizedBooking(bookingId, principal);
 
     try {
-      const records = await (this.prisma as any).chatMessage.findMany({
+      const records = await this.prisma.chatMessage.findMany({
         where: { bookingId },
         orderBy: { createdAt: 'asc' },
       });
 
       return records.map(this.toDto);
-    } catch (err: any) {
-      this.logger.warn(`Could not read ChatMessage table: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Could not read ChatMessage table: ${message}`);
       return [];
     }
   }
@@ -104,10 +117,10 @@ export class ChatService {
     const context = await this.requireAuthorizedBooking(bookingId, principal);
 
     const now = new Date();
-    let savedMessage: any;
+    let savedMessage: ChatRecord;
 
     try {
-      savedMessage = await (this.prisma as any).chatMessage.create({
+      savedMessage = await this.prisma.chatMessage.create({
         data: {
           bookingId,
           senderUserId: principal.userId,
@@ -119,8 +132,9 @@ export class ChatService {
           updatedAt: now,
         },
       });
-    } catch (err: any) {
-      this.logger.warn(`Fallback in-memory chat message: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Fallback in-memory chat message: ${message}`);
       savedMessage = {
         id: `msg-${Date.now()}`,
         bookingId,
@@ -131,7 +145,6 @@ export class ChatService {
         status: 'SENT',
         readAt: null,
         createdAt: now,
-        updatedAt: now,
       };
     }
 
@@ -178,7 +191,7 @@ export class ChatService {
     await this.requireAuthorizedBooking(bookingId, principal);
 
     try {
-      const result = await (this.prisma as any).chatMessage.updateMany({
+      const result = await this.prisma.chatMessage.updateMany({
         where: {
           bookingId,
           senderUserId: { not: principal.userId },
@@ -196,29 +209,37 @@ export class ChatService {
     }
   }
 
-  private toDto(record: any): ChatMessageDto {
+  private toDto = (record: ChatRecord): ChatMessageDto => {
     const rawStatus = (record.status || 'SENT').toLowerCase();
     const status: ChatMessageDto['status'] =
       rawStatus === 'read'
         ? 'read'
         : rawStatus === 'delivered'
-        ? 'delivered'
-        : rawStatus === 'sending'
-        ? 'sending'
-        : rawStatus === 'error'
-        ? 'error'
-        : 'sent';
+          ? 'delivered'
+          : rawStatus === 'sending'
+            ? 'sending'
+            : rawStatus === 'error'
+              ? 'error'
+              : 'sent';
 
     return {
       id: record.id,
       bookingId: record.bookingId,
       senderUserId: record.senderUserId,
-      senderRole: record.senderRole,
+      senderRole: record.senderRole as 'CUSTOMER' | 'DRIVER' | 'SYSTEM',
       text: record.text,
       imageUrl: record.imageUrl,
       status,
-      timestamp: record.createdAt instanceof Date ? record.createdAt.toISOString() : record.createdAt,
-      readAt: record.readAt instanceof Date ? record.readAt.toISOString() : record.readAt,
+      timestamp:
+        record.createdAt instanceof Date
+          ? record.createdAt.toISOString()
+          : String(record.createdAt),
+      readAt:
+        record.readAt instanceof Date
+          ? record.readAt.toISOString()
+          : record.readAt
+            ? String(record.readAt)
+            : null,
     };
-  }
+  };
 }

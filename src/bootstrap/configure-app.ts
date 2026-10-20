@@ -36,7 +36,7 @@ export function configureApp(app: NestExpressApplication, config: AppConfig): vo
   if (config.corsOrigins.length > 0) {
     app.enableCors({
       origin: [...config.corsOrigins],
-      methods: ['GET', 'POST'],
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'X-Request-Id'],
       exposedHeaders: ['X-Request-Id'],
       credentials: false,

@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  DeviceTokenResponse,
+  NotificationPreferencesResponse,
   RegisterDeviceTokenDto,
   UpdateNotificationPreferencesDto,
 } from './notifications.dto';
@@ -23,18 +25,63 @@ export interface NotificationPayload {
   readonly data: Record<string, string>;
 }
 
+export interface TemplateVariables {
+  pickup?: string;
+  driverName?: string;
+  vehicleType?: string;
+  stopNumber?: number | string;
+  reason?: string;
+  senderName?: string;
+  text?: string;
+  [key: string]: unknown;
+}
+
+export interface DeviceTokenRecord {
+  id?: string;
+  token: string;
+  userId: string;
+  role: 'CUSTOMER' | 'DRIVER';
+  platform?: string;
+  language?: string;
+  isActive?: boolean;
+  lastSeenAt?: Date;
+}
+
+export interface NotificationPreferenceRecord {
+  userId: string;
+  pushEnabled: boolean;
+  soundEnabled: boolean;
+  language: string;
+}
+
+interface NotificationPrismaClient {
+  deviceToken?: {
+    upsert: (args: unknown) => Promise<DeviceTokenRecord>;
+    updateMany: (args: unknown) => Promise<{ count: number }>;
+    findMany: (args: unknown) => Promise<DeviceTokenRecord[]>;
+  };
+  notificationPreference?: {
+    findUnique: (args: unknown) => Promise<NotificationPreferenceRecord | null>;
+    upsert: (args: unknown) => Promise<NotificationPreferenceRecord>;
+  };
+}
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
   constructor(private readonly prisma: PrismaService) {}
 
+  private get notificationPrisma(): NotificationPrismaClient {
+    return this.prisma as unknown as NotificationPrismaClient;
+  }
+
   // Bilingual templates (English and pure Devanagari Hindi)
   private readonly templates: Record<
     BackendNotificationType,
     {
-      en: (vars: Record<string, any>) => { title: string; body: string };
-      hi: (vars: Record<string, any>) => { title: string; body: string };
+      en: (vars: TemplateVariables) => { title: string; body: string };
+      hi: (vars: TemplateVariables) => { title: string; body: string };
       channelId: string;
     }
   > = {
@@ -129,11 +176,19 @@ export class NotificationsService {
     NEW_CHAT_MESSAGE: {
       en: (v) => ({
         title: `New message from ${v.senderName || 'Driver'}`,
-        body: v.text ? (v.text.length > 80 ? `${v.text.slice(0, 77)}...` : v.text) : 'New message received',
+        body: v.text
+          ? v.text.length > 80
+            ? `${v.text.slice(0, 77)}...`
+            : v.text
+          : 'New message received',
       }),
       hi: (v) => ({
         title: `${v.senderName || 'चालक'} से नया संदेश`,
-        body: v.text ? (v.text.length > 80 ? `${v.text.slice(0, 77)}...` : v.text) : 'नया संदेश प्राप्त हुआ',
+        body: v.text
+          ? v.text.length > 80
+            ? `${v.text.slice(0, 77)}...`
+            : v.text
+          : 'नया संदेश प्राप्त हुआ',
       }),
       channelId: 'chat_messages',
     },
@@ -142,62 +197,91 @@ export class NotificationsService {
   /**
    * Registers/refreshes an FCM device token for an authenticated user.
    */
-  async registerToken(userId: string, dto: RegisterDeviceTokenDto) {
+  async registerToken(userId: string, dto: RegisterDeviceTokenDto): Promise<DeviceTokenResponse> {
     try {
-      const token = await (this.prisma as any).deviceToken.upsert({
-        where: { token: dto.token },
-        create: {
-          userId,
-          token: dto.token,
-          role: dto.role,
-          platform: dto.platform || 'ANDROID',
-          language: dto.language || 'en',
-          isActive: true,
-          lastSeenAt: new Date(),
-        },
-        update: {
-          userId,
-          role: dto.role,
-          platform: dto.platform || 'ANDROID',
-          language: dto.language || 'en',
-          isActive: true,
-          lastSeenAt: new Date(),
-        },
-      });
-      this.logger.log(`Registered device token for user ${userId} (${dto.role})`);
-      return token;
-    } catch (err: any) {
-      this.logger.warn(`DeviceToken table fallback in memory: ${err.message}`);
-      return { token: dto.token, userId, role: dto.role, platform: dto.platform, language: dto.language };
+      const tokenDelegate = this.notificationPrisma.deviceToken;
+      if (tokenDelegate) {
+        const token = await tokenDelegate.upsert({
+          where: { token: dto.token },
+          create: {
+            userId,
+            token: dto.token,
+            role: dto.role,
+            platform: dto.platform || 'ANDROID',
+            language: dto.language || 'en',
+            isActive: true,
+            lastSeenAt: new Date(),
+          },
+          update: {
+            userId,
+            role: dto.role,
+            platform: dto.platform || 'ANDROID',
+            language: dto.language || 'en',
+            isActive: true,
+            lastSeenAt: new Date(),
+          },
+        });
+        this.logger.log(`Registered device token for user ${userId} (${dto.role})`);
+        return {
+          token: token.token,
+          userId: token.userId,
+          role: token.role,
+          platform: token.platform,
+          language: token.language,
+        };
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`DeviceToken table fallback in memory: ${message}`);
     }
+    return {
+      token: dto.token,
+      userId,
+      role: dto.role,
+      platform: dto.platform,
+      language: dto.language,
+    };
   }
 
   /**
    * Unregisters an FCM device token on logout.
    */
-  async unregisterToken(token: string) {
+  async unregisterToken(token: string): Promise<{ success: boolean }> {
     try {
-      await (this.prisma as any).deviceToken.updateMany({
-        where: { token },
-        data: { isActive: false },
-      });
+      const tokenDelegate = this.notificationPrisma.deviceToken;
+      if (tokenDelegate) {
+        await tokenDelegate.updateMany({
+          where: { token },
+          data: { isActive: false },
+        });
+      }
       this.logger.log(`Unregistered device token: ${token.slice(0, 10)}...`);
-      return { success: true };
-    } catch (err: any) {
-      this.logger.warn(`Could not unregister token in DB: ${err.message}`);
-      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Could not unregister token in DB: ${message}`);
     }
+    return { success: true };
   }
 
   /**
    * Retrieves notification preferences for a user.
    */
-  async getPreferences(userId: string) {
+  async getPreferences(userId: string): Promise<NotificationPreferencesResponse> {
     try {
-      const prefs = await (this.prisma as any).notificationPreference.findUnique({
-        where: { userId },
-      });
-      if (prefs) return prefs;
+      const prefDelegate = this.notificationPrisma.notificationPreference;
+      if (prefDelegate) {
+        const prefs = await prefDelegate.findUnique({
+          where: { userId },
+        });
+        if (prefs) {
+          return {
+            userId: prefs.userId,
+            pushEnabled: prefs.pushEnabled,
+            soundEnabled: prefs.soundEnabled,
+            language: prefs.language,
+          };
+        }
+      }
     } catch {
       // Ignore if table not yet migrated
     }
@@ -212,43 +296,68 @@ export class NotificationsService {
   /**
    * Updates notification preferences for a user.
    */
-  async updatePreferences(userId: string, dto: UpdateNotificationPreferencesDto) {
+  async updatePreferences(
+    userId: string,
+    dto: UpdateNotificationPreferencesDto,
+  ): Promise<NotificationPreferencesResponse> {
     try {
-      return await (this.prisma as any).notificationPreference.upsert({
-        where: { userId },
-        create: {
-          userId,
-          pushEnabled: dto.pushEnabled ?? true,
-          soundEnabled: dto.soundEnabled ?? true,
-          language: dto.language || 'en',
-        },
-        update: {
-          ...(dto.pushEnabled !== undefined ? { pushEnabled: dto.pushEnabled } : {}),
-          ...(dto.soundEnabled !== undefined ? { soundEnabled: dto.soundEnabled } : {}),
-          ...(dto.language ? { language: dto.language } : {}),
-        },
-      });
-    } catch (err: any) {
-      this.logger.warn(`Could not save notification preferences: ${err.message}`);
-      return { userId, ...dto };
+      const prefDelegate = this.notificationPrisma.notificationPreference;
+      if (prefDelegate) {
+        const updated = await prefDelegate.upsert({
+          where: { userId },
+          create: {
+            userId,
+            pushEnabled: dto.pushEnabled ?? true,
+            soundEnabled: dto.soundEnabled ?? true,
+            language: dto.language || 'en',
+          },
+          update: {
+            ...(dto.pushEnabled !== undefined ? { pushEnabled: dto.pushEnabled } : {}),
+            ...(dto.soundEnabled !== undefined ? { soundEnabled: dto.soundEnabled } : {}),
+            ...(dto.language ? { language: dto.language } : {}),
+          },
+        });
+        return {
+          userId: updated.userId,
+          pushEnabled: updated.pushEnabled,
+          soundEnabled: updated.soundEnabled,
+          language: updated.language,
+        };
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Could not save notification preferences: ${message}`);
     }
+    return {
+      userId,
+      pushEnabled: dto.pushEnabled ?? true,
+      soundEnabled: dto.soundEnabled ?? true,
+      language: dto.language ?? 'en',
+    };
   }
 
   /**
    * Finds active device tokens for a user.
    */
-  async getActiveTokens(userId: string, role?: 'CUSTOMER' | 'DRIVER') {
+  async getActiveTokens(
+    userId: string,
+    role?: 'CUSTOMER' | 'DRIVER',
+  ): Promise<DeviceTokenRecord[]> {
     try {
-      return await (this.prisma as any).deviceToken.findMany({
-        where: {
-          userId,
-          isActive: true,
-          ...(role ? { role } : {}),
-        },
-      });
+      const tokenDelegate = this.notificationPrisma.deviceToken;
+      if (tokenDelegate) {
+        return await tokenDelegate.findMany({
+          where: {
+            userId,
+            isActive: true,
+            ...(role ? { role } : {}),
+          },
+        });
+      }
     } catch {
-      return [];
+      // Ignore if table not yet migrated
     }
+    return [];
   }
 
   /**
@@ -295,7 +404,7 @@ export class NotificationsService {
     targetId: string,
     role: 'CUSTOMER' | 'DRIVER',
     type: BackendNotificationType,
-    variables: Record<string, any> = {},
+    variables: TemplateVariables = {},
     customData: Record<string, string> = {},
   ): Promise<number> {
     const userId = await this.resolveUserId(targetId, role);
@@ -379,8 +488,9 @@ export class NotificationsService {
           }
           return false;
         }
-      } catch (err: any) {
-        this.logger.error(`Failed to send FCM: ${err.message}`);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Failed to send FCM: ${message}`);
         return false;
       }
     }

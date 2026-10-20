@@ -36,3 +36,18 @@ export class UpdateNotificationPreferencesDto {
   @IsOptional()
   language?: 'en' | 'hi';
 }
+
+export interface DeviceTokenResponse {
+  token: string;
+  userId: string;
+  role: 'CUSTOMER' | 'DRIVER';
+  platform?: string;
+  language?: string;
+}
+
+export interface NotificationPreferencesResponse {
+  userId: string;
+  pushEnabled: boolean;
+  soundEnabled: boolean;
+  language: string;
+}
