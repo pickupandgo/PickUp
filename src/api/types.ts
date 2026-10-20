@@ -113,6 +113,7 @@ export interface TripStop {
 export interface Trip {
   readonly id: string;
   readonly rideId: string;
+  readonly bookingId?: string;
   readonly customerId: string;
   readonly driverId: string;
   readonly pickup: GeoPoint;

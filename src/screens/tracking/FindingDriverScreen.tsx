@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Pressable,
   Easing,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -15,11 +16,13 @@ import Feather from 'react-native-vector-icons/Feather';
 import MapCanvas, { NEIGHBORHOOD_DELTA } from '../../components/map/MapCanvas';
 import { useBooking, toGeoPoint } from '../../state/BookingContext';
 import { findDriverAndCreateRide, NoDriversAvailableError } from '../../api/matching';
-import { getRideTrip } from '../../api/engine';
+import { cancelRide, cancelTrip, getRideTrip } from '../../api/engine';
 import { toApiError } from '../../api/http';
+import { useActiveBookingCancellation } from '../../hooks/useActiveBookingCancellation';
 
-import type { GeoPoint } from '../../api/types';
+import type { GeoPoint, Ride, Trip } from '../../api/types';
 import { MIN_DRIVER_SEARCH_DURATION_MS } from '../../config/constants';
+import { useI18n } from '../../i18n';
 
 export interface FindingDriverScreenProps {
   readonly onCancel?: () => void;
@@ -31,13 +34,59 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
   onBack,
   navigation,
 }) => {
+  const { t } = useI18n();
   const [pulseAnim] = useState(new Animated.Value(0));
   const [progressAnim] = useState(new Animated.Value(0));
 
-  const { draft, primaryDrop, customerId, setRide, setTrip, setAssignedDriver, ride, trip } = useBooking();
-  const [statusText, setStatusText] = useState('Searching for nearby drivers…');
+  const { draft, primaryDrop, customerId, setRide, setTrip, setAssignedDriver, ride, trip, clearActiveRide } = useBooking();
+  const [statusText, setStatusText] = useState(t('tracking.findingNearbyDriver'));
   const [failure, setFailure] = useState<string>();
   const abortRef = useRef<AbortController | undefined>(undefined);
+  const isSearchingRef = useRef(false);
+  const currentRideRef = useRef<Ride | undefined>(undefined);
+  const currentTripRef = useRef<Trip | undefined>(undefined);
+
+  /**
+   * Cancellation handler called only when customer confirms "Cancel Booking" in dialog.
+   * Calls real backend cancellation API and cleans up active search / listeners.
+   */
+  const handleCancelConfirm = useCallback(async () => {
+    // 1. Abort driver search loop & local timers immediately
+    abortRef.current?.abort();
+    isSearchingRef.current = false;
+
+    const activeTripId = currentTripRef.current?.id || trip?.id;
+    const activeRideId = currentRideRef.current?.id || ride?.id;
+
+    if (activeTripId && customerId) {
+      await cancelTrip(activeTripId, customerId, 'Customer cancelled booking');
+    } else if (activeRideId) {
+      try {
+        await cancelRide(activeRideId);
+      } catch (err) {
+        // If ride was already accepted into a trip, attempt trip cancellation
+        if (customerId) {
+          const matchedTrip = await getRideTrip(activeRideId).catch(() => null);
+          if (matchedTrip?.id) {
+            await cancelTrip(matchedTrip.id, customerId, 'Customer cancelled booking');
+            clearActiveRide();
+            return;
+          }
+        }
+        throw err;
+      }
+    }
+
+    // 2. Clear booking state
+    clearActiveRide();
+  }, [customerId, trip?.id, ride?.id, clearActiveRide]);
+
+  const { isCancelling, requestCancellation } = useActiveBookingCancellation({
+    navigation,
+    isBookingActive: true,
+    onCancelConfirm: handleCancelConfirm,
+    allowedNextRoutes: ['DriverFoundScreen', 'NoDriversAvailableScreen'],
+  });
 
   /**
    * Runs the client-side dispatch: nearby drivers, then offer the ride to each
@@ -45,10 +94,19 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
    */
   useEffect(() => {
     const pickup = draft.pickup;
-    if (!pickup || !primaryDrop || !customerId) {
-      setFailure('Pickup and drop are required before booking.');
+    if (!pickup || !primaryDrop) {
+      setFailure(t('booking.pickupDropRequired'));
       return;
     }
+    if (!customerId) {
+      // Waiting for customerId to load
+      return;
+    }
+    if (isSearchingRef.current) {
+      return;
+    }
+    isSearchingRef.current = true;
+    setFailure(undefined);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -59,7 +117,7 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
 
     (async () => {
       try {
-        const { ride, driver } = await findDriverAndCreateRide(
+        const { ride: foundRide, driver } = await findDriverAndCreateRide(
           {
             customerId,
             pickup,
@@ -72,27 +130,42 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
           {
             signal: controller.signal,
             searchCenter: pickup,
+            onRideCreated: (createdRide) => {
+              if (cancelled) return;
+              currentRideRef.current = createdRide;
+              setRide(createdRide);
+            },
             onProgress: ({ attempt, totalCandidates, driver: candidate }) => {
               if (cancelled) return;
               setStatusText(
-                `Contacting ${candidate.name} · ${candidate.distanceKm.toFixed(1)} km away (${attempt} of ${totalCandidates})`
+                t('tracking.contactingDriver', {
+                  name: candidate.name,
+                  distance: candidate.distanceKm.toFixed(1),
+                  attempt,
+                  total: totalCandidates,
+                })
               );
             },
           }
         );
 
         if (cancelled) return;
-        setRide(ride);
+        currentRideRef.current = foundRide;
+        setRide(foundRide);
         setAssignedDriver(driver);
 
         // The trip is created the moment the driver accepts.
-        const trip = await getRideTrip(ride.id, controller.signal);
+        const foundTrip = await getRideTrip(foundRide.id, controller.signal);
         if (cancelled) return;
-        if (trip) setTrip(trip);
+        if (foundTrip) {
+          currentTripRef.current = foundTrip;
+          setTrip(foundTrip);
+        }
 
         // 5. Driver found has priority - immediately go to next screen
         navigation?.navigate('DriverFoundScreen');
       } catch (caught) {
+        isSearchingRef.current = false;
         // 2. Handle AbortError Explicitly
         if (
           cancelled ||
@@ -113,7 +186,7 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
         const remaining = MIN_DRIVER_SEARCH_DURATION_MS - elapsed;
 
         if (remaining > 0) {
-          setStatusText('Finding Driver');
+          setStatusText(t('tracking.findingADriver'));
           try {
             await new Promise<void>((resolve, reject) => {
               const timerId = setTimeout(resolve, remaining);
@@ -140,16 +213,11 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
 
     return () => {
       cancelled = true;
+      isSearchingRef.current = false;
       controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId, draft.pickup?.latitude, draft.pickup?.longitude]);
-
-  const handleCancel = () => {
-    abortRef.current?.abort();
-    if (onCancel) return onCancel();
-    navigation?.navigate('CancellationReasonScreen');
-  };
 
   useEffect(() => {
     // Indeterminate progress bar animation
@@ -177,26 +245,43 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
   const currentVehicle = ride?.vehicleType || draft.vehicleType || 'Any Vehicle';
   const vehicleData = mockVehicleTypes.find((v) => v.name === currentVehicle || v.id === currentVehicle);
 
+  const paymentMethodLabel = (() => {
+    switch (draft.paymentMethod) {
+      case 'upi':
+        return t('payment.online');
+      case 'pickup':
+        return t('payment.cashAtPickup');
+      case 'cod':
+      default:
+        return t('payment.cashOnDelivery');
+    }
+  })();
+
   return (
     <View style={styles.container}>
       <MapCanvas
         style={styles.mapCanvas}
         center={draft.pickup ?? undefined}
         zoomDelta={NEIGHBORHOOD_DELTA}
-        markers={draft.pickup ? [{ id: 'pickup', coordinate: draft.pickup, kind: 'pickup', title: 'Pickup' }] : []}
+        markers={draft.pickup ? [{ id: 'pickup', coordinate: draft.pickup, kind: 'pickup', title: t('home.pickup') }] : []}
       />
 
       {/* Top App Bar */}
       <SafeAreaView edges={['top']} style={styles.headerSafeArea} pointerEvents="box-none">
         <View style={styles.header} pointerEvents="box-none">
           <Pressable
-            style={styles.iconButton}
-            onPress={() => (onBack ? onBack() : navigation?.goBack())}
+            style={[styles.iconButton, isCancelling && { opacity: 0.5 }]}
+            onPress={() => {
+              if (isCancelling) return;
+              if (onBack) onBack();
+              else requestCancellation();
+            }}
             accessibilityRole="button"
+            disabled={isCancelling}
           >
             <Feather name="arrow-left" size={22} color={colors.primary} />
           </Pressable>
-          <Text style={styles.headerTitle}>Finding a Driver</Text>
+          <Text style={styles.headerTitle}>{t('tracking.findingADriver')}</Text>
           <View style={styles.headerSpacer} />
         </View>
       </SafeAreaView>
@@ -209,9 +294,9 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
             {/* Status Section */}
             <View style={styles.statusSection}>
               <View style={styles.statusHeaderRow}>
-                <Text style={styles.statusLabel}>STATUS</Text>
+                <Text style={styles.statusLabel}>{t('common.status').toUpperCase()}</Text>
                 <View style={styles.statusBadge}>
-                  <Text style={styles.statusBadgeText}>In progress</Text>
+                  <Text style={styles.statusBadgeText}>{t('tracking.inProgress')}</Text>
                 </View>
               </View>
               <Text style={styles.statusTitle}>{failure ?? statusText}</Text>
@@ -234,8 +319,8 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
               <View style={styles.pickupRow}>
                 <Feather name="map-pin" size={20} color={colors.onSurfaceVariant} />
                 <View style={styles.pickupInfo}>
-                  <Text style={styles.pickupLabel}>Searching near</Text>
-                  <Text style={styles.pickupText}>{draft.pickup?.address || 'Selected Pickup'}</Text>
+                  <Text style={styles.pickupLabel}>{t('tracking.searchingNear')}</Text>
+                  <Text style={styles.pickupText}>{draft.pickup?.address || t('tracking.selectedPickup')}</Text>
                 </View>
               </View>
 
@@ -247,12 +332,12 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
                     <Feather name="truck" size={20} color={colors.onSurfaceVariant} />
                   )}
                   <View>
-                    <Text style={styles.vehicleLabel}>Vehicle</Text>
+                    <Text style={styles.vehicleLabel}>{t('trip.vehicle')}</Text>
                     <Text style={styles.vehicleText}>{currentVehicle}</Text>
                   </View>
                 </View>
                 <View style={styles.fareInfo}>
-                  <Text style={styles.fareLabel}>Est. Fare</Text>
+                  <Text style={styles.fareLabel}>{paymentMethodLabel}</Text>
                   <Text style={styles.fareText}>{currentFare != null ? `₹${currentFare}` : '...'}</Text>
                 </View>
               </View>
@@ -260,8 +345,24 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
           </View>
 
           {/* Cancel Action */}
-          <Pressable style={styles.cancelButton} onPress={handleCancel} accessibilityRole="button">
-            <Text style={styles.cancelButtonText}>CANCEL BOOKING</Text>
+          <Pressable
+            style={[styles.cancelButton, isCancelling && { opacity: 0.7 }]}
+            onPress={() => {
+              if (isCancelling) return;
+              if (onCancel) onCancel();
+              else requestCancellation();
+            }}
+            accessibilityRole="button"
+            disabled={isCancelling}
+          >
+            {isCancelling ? (
+              <View style={styles.cancelButtonContent}>
+                <ActivityIndicator size="small" color={colors.onSurface} style={{ marginRight: spacing.sm }} />
+                <Text style={styles.cancelButtonText}>{t('tracking.cancelling').toUpperCase()}</Text>
+              </View>
+            ) : (
+              <Text style={styles.cancelButtonText}>{t('tracking.cancelBooking').toUpperCase()}</Text>
+            )}
           </Pressable>
         </View>
       </SafeAreaView>
@@ -473,6 +574,11 @@ const styles = StyleSheet.create({
     color: colors.onSurface,
     fontFamily: typography.labelSm.fontFamily,
     textTransform: 'uppercase',
+  },
+  cancelButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 

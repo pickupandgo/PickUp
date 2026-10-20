@@ -12,6 +12,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { mockActiveTrip } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 
 export interface DriverRatingScreenProps {
   readonly onClose?: () => void;
@@ -19,19 +20,19 @@ export interface DriverRatingScreenProps {
   readonly onSkip?: () => void;
 }
 
-const FEEDBACK_OPTIONS = [
-  'Professionalism',
-  'Punctuality',
-  'Careful Handling',
-  'Navigation',
+const FEEDBACK_OPTION_KEYS = [
+  'feedback.topicProfessionalism',
+  'rating.punctuality',
+  'rating.carefulHandling',
+  'feedback.topicNavigation',
 ];
 
-const RATING_DESCRIPTIONS: Record<number, string> = {
-  1: 'Terrible',
-  2: 'Poor',
-  3: 'Okay',
-  4: 'Good',
-  5: 'Excellent',
+const RATING_DESC_KEYS: Record<number, string> = {
+  1: 'rating.terrible',
+  2: 'rating.poor',
+  3: 'rating.okay',
+  4: 'rating.good',
+  5: 'rating.excellent',
 };
 
 const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any }> = ({
@@ -40,6 +41,7 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any 
   onSkip,
   navigation,
 }) => {
+  const { t } = useI18n();
   const [rating, setRating] = useState(0);
   const [selectedFeedback, setSelectedFeedback] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -70,14 +72,18 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any 
           <Pressable
             style={styles.iconButton}
             onPress={() => (onClose ? onClose() : navigation?.goBack())}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.close')}
           >
             <Feather name="x" size={24} color={colors.onSurfaceVariant} />
           </Pressable>
-          <Text style={styles.headerTitle}>Pick Up</Text>
+          <Text style={styles.headerTitle}>{t('home.appName')}</Text>
         </View>
         <Pressable
           style={styles.iconButton}
           onPress={() => navigation?.navigate('NotificationCenterScreen')}
+          accessibilityRole="button"
+          accessibilityLabel={t('notifications.title')}
         >
           <Feather name="bell" size={24} color={colors.onSurfaceVariant} />
         </Pressable>
@@ -85,9 +91,9 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any 
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.titleContainer}>
-          <Text style={styles.title}>How was your delivery?</Text>
+          <Text style={styles.title}>{t('rating.howWasDelivery')}</Text>
           <Text style={styles.subtitle}>
-            Trip Ref: <Text style={styles.monoText}>#{mockActiveTrip.id}</Text>
+            {t('rating.tripRef', { ref: mockActiveTrip.id })}
           </Text>
         </View>
 
@@ -112,7 +118,12 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any 
         <View style={styles.ratingSection}>
           <View style={styles.starsContainer}>
             {[1, 2, 3, 4, 5].map((starValue) => (
-              <Pressable key={starValue} onPress={() => setRating(starValue)}>
+              <Pressable
+                key={starValue}
+                onPress={() => setRating(starValue)}
+                accessibilityRole="button"
+                accessibilityLabel={`${starValue} star`}
+              >
                 <MaterialIcons
                   name={starValue <= rating ? 'star' : 'star-outline'}
                   size={48}
@@ -122,25 +133,27 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any 
             ))}
           </View>
           <Text style={styles.ratingText}>
-            {rating > 0 ? RATING_DESCRIPTIONS[rating] : ''}
+            {rating > 0 && RATING_DESC_KEYS[rating] ? t(RATING_DESC_KEYS[rating]) : ''}
           </Text>
         </View>
 
         {/* Feedback Chips */}
         <View style={[styles.feedbackSection, rating === 0 && styles.disabledSection]}>
-          <Text style={styles.feedbackTitle}>What went well?</Text>
+          <Text style={styles.feedbackTitle}>{t('rating.whatWentWell')}</Text>
           <View style={styles.chipsContainer}>
-            {FEEDBACK_OPTIONS.map((option) => {
-              const isSelected = selectedFeedback.includes(option);
+            {FEEDBACK_OPTION_KEYS.map((key) => {
+              const optionText = t(key);
+              const isSelected = selectedFeedback.includes(optionText);
               return (
                 <Pressable
-                  key={option}
+                  key={key}
                   style={[styles.chip, isSelected && styles.chipSelected]}
-                  onPress={() => handleFeedbackToggle(option)}
+                  onPress={() => handleFeedbackToggle(optionText)}
                   disabled={rating === 0}
+                  accessibilityRole="button"
                 >
                   <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-                    {option}
+                    {optionText}
                   </Text>
                 </Pressable>
               );
@@ -157,11 +170,12 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any 
             style={[styles.submitButton, rating === 0 && styles.submitButtonDisabled]}
             onPress={handleSubmit}
             disabled={rating === 0 || isSubmitting}
+            accessibilityRole="button"
           >
             {isSubmitting ? (
               <Feather name="loader" size={24} color={colors.onPrimary} style={{ opacity: 0.8 }} /> // simulated spinner
             ) : (
-              <Text style={styles.submitButtonText}>SUBMIT RATING</Text>
+              <Text style={styles.submitButtonText}>{t('trip.rateDriverCaps')}</Text>
             )}
           </Pressable>
           <Pressable
@@ -169,8 +183,10 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any 
             onPress={() =>
               onSkip ? onSkip() : navigation?.navigate('TripCompletedSummaryScreen')
             }
+            accessibilityRole="button"
+            accessibilityLabel={t('common.skip')}
           >
-            <Text style={styles.skipButtonText}>Skip</Text>
+            <Text style={styles.skipButtonText}>{t('common.skip')}</Text>
           </Pressable>
         </View>
       </ScrollView>

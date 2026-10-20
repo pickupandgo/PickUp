@@ -14,8 +14,10 @@ import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import BottomNavBar from '../../components/BottomNavBar';
 import { navigateToTab } from '../../navigation/tabRoutes';
+import { useI18n } from '../../i18n';
 
 const LiveTrackingExceptionsScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
+  const { t } = useI18n();
   const pulseValue = useRef(new Animated.Value(1)).current;
   const slideValue = useRef(new Animated.Value(0)).current;
   const spinValue = useRef(new Animated.Value(0)).current;
@@ -89,7 +91,7 @@ const LiveTrackingExceptionsScreen: React.FC<{ navigation?: any }> = ({ navigati
             >
               <Feather name="arrow-left" size={24} color={colors.primary} />
             </Pressable>
-            <Text style={styles.headerTitle}>Pick Up</Text>
+            <Text style={styles.headerTitle}>{t('home.appName')}</Text>
           </View>
           <Pressable
             style={styles.iconButton}
@@ -110,8 +112,8 @@ const LiveTrackingExceptionsScreen: React.FC<{ navigation?: any }> = ({ navigati
           <View style={styles.toast}>
             <Feather name="wifi-off" size={20} color={colors.error} />
             <View style={styles.toastTextContainer}>
-              <Text style={styles.toastTitle}>Network disconnected</Text>
-              <Text style={styles.toastSubtitle}>Reconnecting...</Text>
+              <Text style={styles.toastTitle}>{t('tracking.networkDisconnected')}</Text>
+              <Text style={styles.toastSubtitle}>{t('common.reconnecting')}</Text>
             </View>
             <Animated.View style={[styles.spinner, { transform: [{ rotate: spin }] }]} />
           </View>
@@ -128,13 +130,13 @@ const LiveTrackingExceptionsScreen: React.FC<{ navigation?: any }> = ({ navigati
             </View>
             <View style={styles.overlayTextContainer}>
               <View style={styles.rowAlign}>
-                <Text style={styles.overlayTitle}>Driver Approaching</Text>
+                <Text style={styles.overlayTitle}>{t('tracking.driverApproaching')}</Text>
                 <View style={styles.liveBadge}>
                   <Animated.View style={[styles.liveDot, { opacity: pulseValue }]} />
-                  <Text style={styles.liveBadgeText}>LIVE</Text>
+                  <Text style={styles.liveBadgeText}>{t('tracking.live')}</Text>
                 </View>
               </View>
-              <Text style={styles.overlaySubtitle}>Location updating...</Text>
+              <Text style={styles.overlaySubtitle}>{t('tracking.locationUpdating')}</Text>
             </View>
           </View>
 
@@ -146,7 +148,7 @@ const LiveTrackingExceptionsScreen: React.FC<{ navigation?: any }> = ({ navigati
               </View>
             </View>
             <View style={styles.overlayTextContainer}>
-              <Text style={[styles.overlayTitle, { color: colors.onSurfaceVariant }]}>Last Known Location</Text>
+              <Text style={[styles.overlayTitle, { color: colors.onSurfaceVariant }]}>{t('tracking.lastKnownLocation')}</Text>
               <View style={styles.rowAlignSub}>
                 <Feather name="clock" size={12} color={colors.outline} />
                 <Text style={styles.overlaySubtitleSmall}>Last seen at 14th St & Broadway • 2 mins ago</Text>
@@ -161,8 +163,8 @@ const LiveTrackingExceptionsScreen: React.FC<{ navigation?: any }> = ({ navigati
                 <MaterialIcons name="satellite" size={20} color={colors.error} />
               </View>
               <View>
-                <Text style={styles.overlayTitle}>Poor GPS Signal</Text>
-                <Text style={styles.overlaySubtitle}>Location accuracy reduced</Text>
+                <Text style={styles.overlayTitle}>{t('tracking.poorGps')}</Text>
+                <Text style={styles.overlaySubtitle}>{t('tracking.locationAccuracyReduced')}</Text>
               </View>
             </View>
           </View>
@@ -173,15 +175,15 @@ const LiveTrackingExceptionsScreen: React.FC<{ navigation?: any }> = ({ navigati
               <MaterialIcons name="location-disabled" size={24} color={colors.onSurfaceVariant} />
             </View>
             <View style={styles.largeTextContainer}>
-              <Text style={styles.largeTitle}>Live Tracking Unavailable</Text>
-              <Text style={styles.largeSubtitle}>We've temporarily lost connection with the vehicle. The driver is still en route to your destination.</Text>
+              <Text style={styles.largeTitle}>{t('tracking.liveTrackingUnavailable')}</Text>
+              <Text style={styles.largeSubtitle}>{t('tracking.lostConnectionDesc')}</Text>
             </View>
             <Pressable
               style={styles.primaryButton}
               onPress={() => navigation?.navigate('CallDriverScreen')}
               accessibilityRole="button"
             >
-              <Text style={styles.primaryButtonText}>Call Driver</Text>
+              <Text style={styles.primaryButtonText}>{t('tracking.callDriver')}</Text>
             </Pressable>
           </View>
         </ScrollView>

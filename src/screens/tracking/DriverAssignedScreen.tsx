@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -12,10 +12,12 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
 import { useBooking } from '../../state/BookingContext';
 import { useTripStatus } from '../../hooks/useTripStatus';
-import { getDriver, getRide } from '../../api/engine';
+import { cancelTrip, getDriver, getRide } from '../../api/engine';
+import { useActiveBookingCancellation } from '../../hooks/useActiveBookingCancellation';
 import type { GeoPoint } from '../../api/types';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
 import { useRoute } from '../../hooks/useRoute';
+import { useI18n } from '../../i18n';
 
 export interface DriverAssignedScreenProps {
   readonly onMenuPress?: () => void;
@@ -29,7 +31,8 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
   onTripDetails,
   navigation,
 }) => {
-  const { assignedDriver, trip, setTrip, ride, setRide } = useBooking();
+  const { t } = useI18n();
+  const { assignedDriver, trip, setTrip, ride, setRide, customerId, clearActiveRide } = useBooking();
 
   // If the user killed the app and restarted, `ride` might be undefined, but `trip` exists.
   // We fetch `ride` to restore access to the OTPs since the `trip` object strips them.
@@ -75,6 +78,30 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
     }
   }, [status, navigation]);
 
+  const isBookingActive = Boolean(current && !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(current.status));
+
+  const handleCancelConfirm = useCallback(async () => {
+    if (current?.id && customerId) {
+      await cancelTrip(current.id, customerId, 'Customer cancelled booking');
+    }
+    clearActiveRide();
+  }, [current?.id, customerId, clearActiveRide]);
+
+  const { isCancelling, requestCancellation } = useActiveBookingCancellation({
+    navigation,
+    isBookingActive,
+    onCancelConfirm: handleCancelConfirm,
+    allowedNextRoutes: [
+      'PickupOtpVerificationScreen',
+      'CustomerLiveTrackingScreen',
+      'TripCompletedScreen',
+      'TripCancelledStatusScreen',
+      'DriverAssignedExpandedScreen',
+      'CallDriverScreen',
+      'ActiveTripChatScreen',
+    ],
+  });
+
   // Live driver location. Polled here rather than pushed because the engine has
   // no WebSocket channel; the driver app PATCHes their position every ~5s.
   const [driverPoint, setDriverPoint] = useState<GeoPoint | undefined>(
@@ -116,7 +143,7 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
         id: 'pickup',
         kind: 'pickup',
         coordinate: current.pickup,
-        title: 'Pickup',
+        title: t('home.pickup'),
         description: current.pickup.address,
       });
     }
@@ -126,7 +153,7 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
           id: `drop-${index}`,
           kind: 'drop',
           coordinate: stop.location,
-          title: `Drop ${index + 1}`,
+          title: `${t('home.drop')} ${index + 1}`,
           description: stop.location.address,
         });
       });
@@ -135,7 +162,7 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
         id: 'drop',
         kind: 'drop',
         coordinate: current.drop,
-        title: 'Drop',
+        title: t('home.drop'),
         description: current.drop.address,
       });
     }
@@ -144,12 +171,12 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
         id: 'driver',
         kind: 'driver',
         coordinate: driverPoint,
-        title: assignedDriver?.name ?? 'Driver',
+        title: assignedDriver?.name ?? t('tracking.driverAssigned'),
         description: assignedDriver?.vehicleType,
       });
     }
     return built;
-  }, [current?.pickup, current?.drop, driverPoint, assignedDriver]);
+  }, [current?.pickup, current?.drop, current?.stops, driverPoint, assignedDriver, t]);
 
   return (
     <View style={styles.container}>
@@ -164,13 +191,18 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.header}>
           <Pressable
-            style={styles.iconButton}
-            onPress={() => (onMenuPress ? onMenuPress() : navigation?.goBack())}
+            style={[styles.iconButton, isCancelling && { opacity: 0.5 }]}
+            onPress={() => {
+              if (isCancelling) return;
+              if (onMenuPress) onMenuPress();
+              else requestCancellation();
+            }}
             accessibilityRole="button"
+            disabled={isCancelling}
           >
             <Feather name="menu" size={24} color={colors.primary} />
           </Pressable>
-          <Text style={styles.headerTitle}>Pick Up</Text>
+          <Text style={styles.headerTitle}>{t('home.appName')}</Text>
           <View style={styles.profileIconBox}>
             <Feather name="user" size={16} color={colors.onSurfaceVariant} />
           </View>
@@ -186,8 +218,8 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
         {/* Status Header */}
         <View style={styles.statusHeaderRow}>
           <View style={styles.statusTextCol}>
-            <Text style={styles.statusTitle}>Driver Assigned</Text>
-            <Text style={styles.statusSubtitle}>Heading to your pickup point</Text>
+            <Text style={styles.statusTitle}>{t('tracking.driverAssigned')}</Text>
+            <Text style={styles.statusSubtitle}>{t('tracking.headingToPickup')}</Text>
           </View>
         </View>
 
@@ -197,7 +229,7 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
             <Feather name="user" size={32} color={colors.onSurfaceVariant} />
           </View>
           <View style={styles.driverInfoText}>
-            <Text style={styles.driverName}>{assignedDriver?.name ?? 'Driver assigned'}</Text>
+            <Text style={styles.driverName}>{assignedDriver?.name ?? t('tracking.driverAssigned')}</Text>
             <Text style={styles.vehicleType}>{assignedDriver?.vehicleType ?? '—'}</Text>
           </View>
           {typeof assignedDriver?.distanceKm === 'number' && (
@@ -212,7 +244,7 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
         {/* The engine gives the OTP to the customer to read out to the driver. */}
         {(trip?.otp ?? ride?.otp) && (
           <View style={styles.otpRow}>
-            <Text style={styles.otpLabel}>PICKUP OTP</Text>
+            <Text style={styles.otpLabel}>{t('logistics.pickupOtp').toUpperCase()}</Text>
             <Text style={styles.otpValue}>{trip?.otp ?? ride?.otp}</Text>
           </View>
         )}
@@ -220,14 +252,14 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
         {/* Actions */}
         <View style={styles.actionsContainer}>
           <Button
-            label="Contact Driver"
+            label={t('tracking.contactDriver')}
             onPress={() => (onContactDriver ? onContactDriver() : navigation?.navigate('CallDriverScreen'))}
             variant="primary"
             fullWidth
             icon={<MaterialIcons name="call" size={20} color={colors.onPrimary} />}
           />
           <Button
-            label="Trip Details"
+            label={t('trip.tripDetails')}
             onPress={() => (onTripDetails ? onTripDetails() : navigation?.navigate('DriverAssignedExpandedScreen'))}
             variant="secondary"
             fullWidth

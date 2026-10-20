@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useI18n } from '../../i18n';
 
 export interface CustomerSettingsScreenProps {
   readonly onBack?: () => void;
@@ -25,29 +26,44 @@ interface SettingsItem {
   readonly value?: string;
 }
 
-const SETTINGS_ITEMS: readonly SettingsItem[] = [
-  { id: 'profile', title: 'Profile', icon: 'user', route: 'EditProfileScreen' },
-  { id: 'addresses', title: 'Saved Addresses', icon: 'map-pin', route: 'SavedAddressesScreen' },
-  { id: 'notifications', title: 'Notifications', icon: 'bell', route: 'NotificationCenterScreen' },
-  { id: 'history', title: 'Booking History', icon: 'clock', route: 'TripHistoryScreen' },
-  { id: 'language', title: 'Language', icon: 'globe', value: 'English' },
-  { id: 'account', title: 'Account', icon: 'settings', route: 'ProfileScreen' },
-];
-
 const CustomerSettingsScreen: React.FC<CustomerSettingsScreenProps & { navigation?: any }> = ({
   onBack,
   onLogout,
   navigation,
 }) => {
+  const { t, locale } = useI18n();
+
+  const settingsItems: readonly SettingsItem[] = useMemo(
+    () => [
+      { id: 'profile', title: t('settings.profile'), icon: 'user', route: 'EditProfileScreen' },
+      { id: 'addresses', title: t('settings.savedAddresses'), icon: 'map-pin', route: 'SavedAddressesScreen' },
+      { id: 'notifications', title: t('settings.notifications'), icon: 'bell', route: 'NotificationCenterScreen' },
+      { id: 'history', title: t('settings.bookingHistory'), icon: 'clock', route: 'TripHistoryScreen' },
+      {
+        id: 'language',
+        title: t('settings.language'),
+        icon: 'globe',
+        value: locale === 'hi' ? 'हिन्दी' : 'English',
+        route: 'LanguageSelectionScreen',
+      },
+      { id: 'account', title: t('settings.account'), icon: 'settings', route: 'ProfileScreen' },
+    ],
+    [t, locale],
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top App Bar */}
       <View style={styles.header}>
-        <Pressable style={styles.iconButton} onPress={() => (onBack ? onBack() : navigation?.goBack())}>
+        <Pressable
+          style={styles.iconButton}
+          onPress={() => (onBack ? onBack() : navigation?.goBack())}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.back')}
+        >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Settings</Text>
+        <Text style={styles.headerTitle}>{t('settings.title')}</Text>
         {/* Spacer keeps the title centred */}
         <View style={styles.iconButton} />
       </View>
@@ -55,9 +71,9 @@ const CustomerSettingsScreen: React.FC<CustomerSettingsScreenProps & { navigatio
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Settings List */}
         <View style={styles.settingsList}>
-          {SETTINGS_ITEMS.map((item, index) => {
+          {settingsItems.map((item, index) => {
             const isFirst = index === 0;
-            const isLast = index === SETTINGS_ITEMS.length - 1;
+            const isLast = index === settingsItems.length - 1;
             const rowStyle = [
               styles.settingRow,
               isFirst && styles.settingRowFirst,
@@ -69,7 +85,7 @@ const CustomerSettingsScreen: React.FC<CustomerSettingsScreenProps & { navigatio
                   <Feather name={item.icon as any} size={24} color={colors.onSurfaceVariant} />
                   <Text style={styles.rowTitle}>{item.title}</Text>
                 </View>
-                
+
                 <View style={styles.rowRight}>
                   {item.value && (
                     <Text style={styles.rowValue}>{item.value}</Text>
@@ -93,6 +109,8 @@ const CustomerSettingsScreen: React.FC<CustomerSettingsScreenProps & { navigatio
                 key={item.id}
                 style={rowStyle}
                 onPress={() => navigation?.navigate(item.route)}
+                accessibilityRole="button"
+                accessibilityLabel={item.title}
               >
                 {rowContent}
               </Pressable>
@@ -105,9 +123,11 @@ const CustomerSettingsScreen: React.FC<CustomerSettingsScreenProps & { navigatio
           <Pressable
             style={styles.logoutButton}
             onPress={() => (onLogout ? onLogout() : navigation?.navigate('LogoutConfirmationScreen'))}
+            accessibilityRole="button"
+            accessibilityLabel={t('profile.logout')}
           >
             <MaterialIcons name="logout" size={24} color={colors.error} />
-            <Text style={styles.logoutText}>Logout</Text>
+            <Text style={styles.logoutText}>{t('profile.logout')}</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -146,7 +166,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.marginMobile,
     paddingVertical: spacing.lg,
   },
-  
+
   // Settings List
   settingsList: {
     flexDirection: 'column',

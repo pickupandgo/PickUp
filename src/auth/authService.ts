@@ -12,6 +12,8 @@ import {
   GoogleAuthProvider,
   AppleAuthProvider,
   OAuthProvider,
+  EmailAuthProvider,
+  linkWithCredential,
   type User,
   type ConfirmationResult,
   type UserCredential,
@@ -69,6 +71,20 @@ export const hasActiveSession = (phone?: string): boolean => {
   return true;
 };
 
+export const getActivePhoneNumber = (): string | null => activePhoneNumber;
+
+export const setActivePhoneNumber = (phone: string | null): void => {
+  if (!phone) {
+    activePhoneNumber = null;
+    return;
+  }
+  try {
+    activePhoneNumber = formatToE164(phone);
+  } catch {
+    activePhoneNumber = phone;
+  }
+};
+
 /** Normalizes and validates Indian phone numbers into E.164 (+91XXXXXXXXXX) format */
 export const formatToE164 = (phoneNumber: string): string => {
   const trimmed = phoneNumber.trim();
@@ -84,6 +100,22 @@ export const formatToE164 = (phoneNumber: string): string => {
     return `+${digitsOnly}`;
   }
   throw new Error('Please enter a valid 10-digit mobile number.');
+};
+
+/** Normalizes any valid phone string into E.164 format (+91XXXXXXXXXX) safely without throwing */
+export const normalizePhoneNumber = (phone?: string | null): string | null => {
+  if (!phone) return null;
+  const trimmed = phone.trim();
+  if (!trimmed) return null;
+  try {
+    return formatToE164(trimmed);
+  } catch {
+    const digitsOnly = trimmed.replace(/\D/g, '');
+    if (digitsOnly.length === 10) return `+91${digitsOnly}`;
+    if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) return `+${digitsOnly}`;
+    if (trimmed.startsWith('+') && digitsOnly.length >= 10 && digitsOnly.length <= 15) return `+${digitsOnly}`;
+    return null;
+  }
 };
 
 /** Masks a phone number for privacy in logs (e.g. +91******1234) */
@@ -117,7 +149,13 @@ export const mapFirebaseAuthError = (error: any): string => {
     case 'auth/captcha-check-failed':
       return 'App verification failed. Please try again.';
     case 'auth/email-already-in-use':
-      return 'An account already exists with this email address. Please log in instead.';
+      return 'An account already exists with this email address. Please use a different email or log in with that account.';
+    case 'auth/credential-already-in-use':
+      return 'This email is already associated with another account. Please use a different email or log in with that account.';
+    case 'auth/provider-already-linked':
+      return 'An email and password credential is already linked to this account.';
+    case 'auth/requires-recent-login':
+      return 'Security verification required. Please log in again before linking a password.';
     case 'auth/invalid-email':
       return 'Please enter a valid email address.';
     case 'auth/wrong-password':
@@ -136,6 +174,37 @@ export const mapFirebaseAuthError = (error: any): string => {
       return 'Sign-in was cancelled.';
     default:
       return error?.message || 'Authentication failed. Please try again.';
+  }
+};
+
+/** Links an Email and Password credential to the currently authenticated Firebase user */
+export const linkEmailPassword = async (
+  user: User,
+  email: string,
+  password: string,
+): Promise<UserCredential> => {
+  const cleanEmail = email.trim();
+  if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+    throw new Error('Please enter a valid email address.');
+  }
+  if (!password || password.length < 6) {
+    throw new Error('Password must be at least 6 characters.');
+  }
+
+  const credential = EmailAuthProvider.credential(cleanEmail, password);
+  console.log('[AUTH] Linking Email/Password credential to existing user UID:', user.uid);
+  try {
+    let result: UserCredential;
+    if (typeof (user as any).linkWithCredential === 'function') {
+      result = await (user as any).linkWithCredential(credential);
+    } else {
+      result = await linkWithCredential(user, credential);
+    }
+    console.log('[AUTH] Email/Password linked successfully. Preserved UID:', result.user.uid);
+    return result;
+  } catch (error: any) {
+    console.warn('[AUTH] Email/Password linking failed:', error?.code || error?.message);
+    throw error;
   }
 };
 
@@ -401,7 +470,14 @@ export const verifyOTP = async (otp: string, phoneNumber?: string): Promise<void
   console.log('[AUTH] OTP confirmation started');
   try {
     await currentConfirmationResult.confirm(cleanOtp);
-    console.log('[AUTH] OTP confirmation succeeded');
+    if (phoneNumber) {
+      try {
+        activePhoneNumber = formatToE164(phoneNumber);
+      } catch {
+        activePhoneNumber = phoneNumber;
+      }
+    }
+    console.log('[AUTH] OTP confirmation succeeded for', activePhoneNumber);
   } catch (error: any) {
     console.warn('[AUTH] OTP confirmation failed:', error?.code || error?.message);
     throw error;

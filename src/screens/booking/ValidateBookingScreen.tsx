@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useI18n } from '../../i18n';
 
 export interface ValidateBookingScreenProps {
   readonly onBack?: () => void;
@@ -22,6 +23,8 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
   onHelp,
   navigation,
 }) => {
+  const { t } = useI18n();
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top App Bar */}
@@ -29,7 +32,7 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
         <Pressable style={styles.iconButton} onPress={() => (onBack ? onBack() : navigation?.goBack())}>
           <Feather name="arrow-left" size={24} color={colors.onSurfaceVariant} />
         </Pressable>
-        <Text style={styles.headerTitle}>Validate Booking</Text>
+        <Text style={styles.headerTitle}>{t('booking.validateBooking')}</Text>
         <Pressable
           style={styles.iconButton}
           onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
@@ -41,12 +44,12 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Section 1: Route Validation */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>ROUTE VALIDATION</Text>
+          <Text style={styles.sectionTitle}>{t('booking.routeValidation')}</Text>
           
           <View style={styles.inputCard}>
             <MaterialIcons name="my-location" size={16} color={colors.primary} />
             <View style={styles.inputContent}>
-              <Text style={styles.inputLabel}>Pickup</Text>
+              <Text style={styles.inputLabel}>{t('home.pickup')}</Text>
               <Text style={styles.inputText} numberOfLines={1}>123 Main St, San Francisco, CA 94105</Text>
             </View>
           </View>
@@ -59,10 +62,10 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
             <View style={[styles.inputCard, styles.errorBorder]}>
               <MaterialIcons name="location-on" size={16} color={colors.outline} />
               <View style={styles.inputContent}>
-                <Text style={styles.errorLabel}>Drop</Text>
+                <Text style={styles.errorLabel}>{t('home.drop')}</Text>
                 <TextInput
                   style={styles.disabledInput}
-                  placeholder="Enter drop location"
+                  placeholder={t('home.enterDrop')}
                   placeholderTextColor={colors.outline}
                   editable={false}
                 />
@@ -70,19 +73,19 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
             </View>
             <View style={styles.errorTextRow}>
               <MaterialIcons name="error" size={14}  />
-              <Text style={styles.errorText}>Drop location is required</Text>
+              <Text style={styles.errorText}>{t('booking.dropLocationRequired')}</Text>
             </View>
           </View>
         </View>
 
         {/* Section 2: Receiver Info */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>RECEIVER INFO</Text>
+          <Text style={styles.sectionTitle}>{t('booking.receiverInfo')}</Text>
           
           <View style={styles.fieldGroup}>
             <View style={styles.inputCard}>
               <View style={styles.inputContent}>
-                <Text style={styles.inputLabel}>Name</Text>
+                <Text style={styles.inputLabel}>{t('booking.name')}</Text>
                 <Text style={styles.inputText}>John Doe</Text>
               </View>
             </View>
@@ -91,29 +94,28 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
           <View style={styles.fieldGroup}>
             <View style={[styles.inputCard, styles.errorBorder]}>
               <View style={styles.inputContent}>
-                <Text style={styles.errorLabel}>Phone Number</Text>
+                <Text style={styles.errorLabel}>{t('booking.phone')}</Text>
                 <TextInput
                   style={styles.disabledInput}
                   value="555-123"
                   editable={false}
-                  
                 />
               </View>
             </View>
             <View style={styles.errorTextRow}>
               <MaterialIcons name="error" size={14}  />
-              <Text style={styles.errorText}>Enter a valid 10-digit number</Text>
+              <Text style={styles.errorText}>{t('booking.valid10Digit')}</Text>
             </View>
           </View>
         </View>
 
         {/* Section 3: Vehicle Selection */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>VEHICLE SELECTION</Text>
+          <Text style={styles.sectionTitle}>{t('booking.selectVehicle').toUpperCase()}</Text>
           
           <View style={styles.infoBanner}>
             <MaterialIcons name="info" size={16} color={colors.onErrorContainer} />
-            <Text style={styles.infoBannerText}>Please select a vehicle to continue</Text>
+            <Text style={styles.infoBannerText}>{t('booking.selectVehicleToContinue')}</Text>
           </View>
 
           <View style={styles.vehicleGrid}>
@@ -134,12 +136,12 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
 
         {/* Section 4: Goods Details */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>GOODS DETAILS</Text>
+          <Text style={styles.sectionTitle}>{t('booking.goodsDetails').toUpperCase()}</Text>
           
           <View style={styles.fieldGroup}>
             <View style={[styles.inputCard, styles.errorBorder]}>
               <View style={styles.inputContent}>
-                <Text style={styles.errorLabel}>Goods Description</Text>
+                <Text style={styles.errorLabel}>{t('booking.goodsDescription')}</Text>
                 <TextInput
                   style={styles.disabledInput}
                   placeholder="e.g. Electronics, Furniture"
@@ -150,7 +152,7 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
             </View>
             <View style={styles.errorTextRow}>
               <MaterialIcons name="error" size={14}  />
-              <Text style={styles.errorText}>Description required</Text>
+              <Text style={styles.errorText}>{t('booking.descriptionRequired')}</Text>
             </View>
           </View>
 
@@ -158,12 +160,11 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
             <View style={styles.rowGridItem}>
               <View style={[styles.inputCard, styles.errorBorder]}>
                 <View style={styles.inputContent}>
-                  <Text style={styles.errorLabel}>Weight (kg)</Text>
+                  <Text style={styles.errorLabel}>{t('booking.weightKg')}</Text>
                   <TextInput
                     style={styles.disabledInput}
                     value="0"
                     editable={false}
-                    
                   />
                 </View>
               </View>
@@ -176,12 +177,11 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
             <View style={styles.rowGridItem}>
               <View style={[styles.inputCard, styles.errorBorder]}>
                 <View style={styles.inputContent}>
-                  <Text style={styles.errorLabel}>Value ($)</Text>
+                  <Text style={styles.errorLabel}>Value (₹)</Text>
                   <TextInput
                     style={styles.disabledInput}
                     value="-100"
                     editable={false}
-                    
                   />
                 </View>
               </View>
@@ -201,9 +201,9 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
           style={styles.confirmButton}
           onPress={() => navigation?.navigate('BookingConfirmedScreen')}
           accessibilityRole="button"
-          accessibilityLabel="Confirm and book"
+          accessibilityLabel={t('booking.confirmAndBook')}
         >
-          <Text style={styles.confirmText}>CONFIRM &amp; BOOK</Text>
+          <Text style={styles.confirmText}>{t('booking.confirmAndBook')}</Text>
           <Feather name="arrow-right" size={18} color={colors.onPrimary} />
         </Pressable>
       </View>

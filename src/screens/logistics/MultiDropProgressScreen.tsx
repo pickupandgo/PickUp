@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { mockActiveTrip } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 
 export interface MultiDropProgressScreenProps {
   readonly onBack?: () => void;
@@ -21,6 +22,7 @@ const MultiDropProgressScreen: React.FC<MultiDropProgressScreenProps & { navigat
   onMore,
   navigation,
 }) => {
+  const { t } = useI18n();
   const stops = mockActiveTrip.stops;
 
   return (
@@ -31,10 +33,11 @@ const MultiDropProgressScreen: React.FC<MultiDropProgressScreenProps & { navigat
           style={styles.iconButton}
           onPress={() => (onBack ? onBack() : navigation?.goBack())}
           accessibilityRole="button"
+          accessibilityLabel={t('common.goBack')}
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Route</Text>
+        <Text style={styles.headerTitle}>{t('logistics.route')}</Text>
         <Pressable
           style={styles.iconButton}
           onPress={() => (onMore ? onMore() : navigation?.navigate('ShareTrackingSheetScreen'))}
@@ -53,12 +56,12 @@ const MultiDropProgressScreen: React.FC<MultiDropProgressScreenProps & { navigat
               <View style={styles.liveDotCore} />
             </View>
             <View>
-              <Text style={styles.liveBannerTitle}>Trip Status: Live</Text>
-              <Text style={styles.liveBannerSubtitle}>Last updated 30s ago</Text>
+              <Text style={styles.liveBannerTitle}>{t('logistics.tripStatusLive')}</Text>
+              <Text style={styles.liveBannerSubtitle}>{t('logistics.lastUpdatedSeconds', { seconds: 30 })}</Text>
             </View>
           </View>
           <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>En Route</Text>
+            <Text style={styles.statusBadgeText}>{t('tracking.enRoute')}</Text>
           </View>
         </View>
 
@@ -72,10 +75,10 @@ const MultiDropProgressScreen: React.FC<MultiDropProgressScreenProps & { navigat
             const isPending = stop.status === 'upcoming';
             
             // Note: Since stops[0] is pickup, drops start from index 1.
-            let stopLabel = 'Drop';
-            if (index === 0) stopLabel = 'Pickup';
-            else if (index === stops.length - 1) stopLabel = 'Final Drop';
-            else stopLabel = `Drop ${index} of ${stops.length - 1}`;
+            let stopLabel = t('booking.dropStop');
+            if (index === 0) stopLabel = t('booking.pickup');
+            else if (index === stops.length - 1) stopLabel = t('logistics.finalDrop');
+            else stopLabel = t('logistics.dropProgress', { current: index, total: stops.length - 1 });
 
             if (isActive) {
               return (
@@ -96,15 +99,15 @@ const MultiDropProgressScreen: React.FC<MultiDropProgressScreenProps & { navigat
                   
                   <View style={styles.activeContent}>
                     <View style={styles.activeContentHeader}>
-                      <Text style={styles.activeLabelCaps}>Current {stopLabel}</Text>
+                      <Text style={styles.activeLabelCaps}>{t('logistics.currentStop', { stop: stopLabel })}</Text>
                       <View style={styles.etaBadge}>
-                        <Text style={styles.etaBadgeText}>ETA: 12 mins</Text>
+                        <Text style={styles.etaBadgeText}>{t('logistics.etaMins', { count: 12 })}</Text>
                       </View>
                     </View>
                     <Text style={styles.activeAddress}>{stop.address}</Text>
                     <View style={styles.transitStatusRow}>
                       <Feather name="navigation" size={14} color={colors.onSurfaceVariant} />
-                      <Text style={styles.transitStatusText}>In Transit</Text>
+                      <Text style={styles.transitStatusText}>{t('tracking.inTransit')}</Text>
                     </View>
                   </View>
                 </Pressable>
@@ -139,7 +142,7 @@ const MultiDropProgressScreen: React.FC<MultiDropProgressScreenProps & { navigat
                     {stop.address}
                   </Text>
                   <Text style={styles.standardTime}>
-                    {isCompleted ? 'Completed at 10:15 AM' : 'Pending'}
+                    {isCompleted ? t('logistics.completedAt', { time: '10:15 AM' }) : t('logistics.pending')}
                   </Text>
                 </View>
               </Pressable>

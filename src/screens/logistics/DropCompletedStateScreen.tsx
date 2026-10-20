@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { mockActiveTrip } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 
 export interface DropCompletedStateScreenProps {
   readonly onBack?: () => void;
@@ -24,6 +25,7 @@ const DropCompletedStateScreen: React.FC<DropCompletedStateScreenProps & { navig
   onTrackNextStop,
   navigation,
 }) => {
+  const { t } = useI18n();
   const currentDrop = mockActiveTrip.stops[1]; // Drop 1 in the data
   const nextDrop = mockActiveTrip.stops[2]; // Drop 2 in the data
 
@@ -38,13 +40,13 @@ const DropCompletedStateScreen: React.FC<DropCompletedStateScreenProps & { navig
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Trip Progress</Text>
+        <Text style={styles.headerTitle}>{t('logistics.tripProgress')}</Text>
         <Pressable
           style={styles.helpButton}
           onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
           accessibilityRole="button"
         >
-          <Text style={styles.helpButtonText}>Help</Text>
+          <Text style={styles.helpButtonText}>{t('common.help')}</Text>
         </Pressable>
       </View>
 
@@ -54,8 +56,8 @@ const DropCompletedStateScreen: React.FC<DropCompletedStateScreenProps & { navig
           <View style={styles.successIconCircle}>
             <Feather name="check" size={24} color="#ffffff" />
           </View>
-          <Text style={styles.successTitle}>DROP COMPLETED</Text>
-          <Text style={styles.successSubtitle}>Delivery successfully handed over.</Text>
+          <Text style={styles.successTitle}>{t('logistics.dropCompletedCaps')}</Text>
+          <Text style={styles.successSubtitle}>{t('logistics.deliveryHandedOver')}</Text>
         </View>
 
         {/* Stop Details Card */}
@@ -63,7 +65,7 @@ const DropCompletedStateScreen: React.FC<DropCompletedStateScreenProps & { navig
           {/* Destination */}
           <View style={styles.detailsRow}>
             <View style={styles.detailsTextContainer}>
-              <Text style={styles.labelCaps}>DESTINATION</Text>
+              <Text style={styles.labelCaps}>{t('logistics.destination')}</Text>
               <Text style={styles.valueText}>{currentDrop?.address}</Text>
               <Text style={styles.timeText}>10:45 AM, Oct 24</Text>
             </View>
@@ -77,7 +79,7 @@ const DropCompletedStateScreen: React.FC<DropCompletedStateScreenProps & { navig
               <Feather name="user" size={20} color={colors.onSecondaryContainer} />
             </View>
             <View style={styles.detailsTextContainer}>
-              <Text style={styles.labelCaps}>RECEIVER</Text>
+              <Text style={styles.labelCaps}>{t('logistics.receiverNameCaps')}</Text>
               <Text style={styles.valueText}>{currentDrop?.contactName}</Text>
             </View>
           </View>
@@ -86,15 +88,15 @@ const DropCompletedStateScreen: React.FC<DropCompletedStateScreenProps & { navig
 
           {/* Delivery Proof */}
           <View style={styles.proofSection}>
-            <Text style={styles.labelCaps}>DELIVERY PROOF</Text>
+            <Text style={styles.labelCaps}>{t('logistics.deliveryProof')}</Text>
             <View style={styles.proofCard}>
               <Image
                 source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDYHXtLNRxeITV8r4LMLNBHPsD3JBUASih7-9196z6kCBVEAvoQJBS4-TCzaKtDD0SOjPNAONo79X7rHWdB5Zm2ecEu44_2FcBXzrbM3UICr78N1QW3AISu5iNvwrQ70NNJMh1Z0nDs-iCgdiqlqnBNsrDipR-QS3MzdyIbZJ-YMEkrFIbEQdMlzH_3ROiOKkIBDXY0v0VQFcM1P6yEidAB05iSYylfJvburUZ-9E7EDANlIJBcgifS' }}
                 style={styles.proofImage}
               />
               <View style={styles.proofTextContainer}>
-                <Text style={styles.proofTitle}>Verified & Photo Uploaded</Text>
-                <Text style={styles.proofSubtitle}>System timestamp: 10:46 AM</Text>
+                <Text style={styles.proofTitle}>{t('logistics.verifiedPhotoUploaded')}</Text>
+                <Text style={styles.proofSubtitle}>{t('logistics.systemTimestamp', { time: '10:46 AM' })}</Text>
               </View>
               <Feather name="check-circle" size={24} color="#4caf50" />
             </View>
@@ -104,16 +106,16 @@ const DropCompletedStateScreen: React.FC<DropCompletedStateScreenProps & { navig
         {/* Next Stop Section */}
         {nextDrop && (
           <View style={styles.nextStopCard}>
-            <Text style={styles.nextStopLabel}>NEXT STOP</Text>
-            <Text style={styles.nextStopTitle}>Drop 2: {nextDrop.address}</Text>
-            <Text style={styles.nextStopSubtitle}>Est. 12 mins away (4.2 km)</Text>
+            <Text style={styles.nextStopLabel}>{t('logistics.nextStop')}</Text>
+            <Text style={styles.nextStopTitle}>{t('logistics.nextStopWithAddress', { number: 2, address: nextDrop.address })}</Text>
+            <Text style={styles.nextStopSubtitle}>{t('logistics.estDistanceAway', { mins: 12, km: '4.2' })}</Text>
 
             <Pressable
               style={styles.trackButton}
               onPress={() => (onTrackNextStop ? onTrackNextStop() : navigation?.navigate('NextDropScreen'))}
               accessibilityRole="button"
             >
-              <Text style={styles.trackButtonText}>Track Next Stop</Text>
+              <Text style={styles.trackButtonText}>{t('logistics.trackNextStop')}</Text>
               <Feather name="navigation" size={20} color={colors.onPrimary} />
             </Pressable>
           </View>
@@ -125,7 +127,7 @@ const DropCompletedStateScreen: React.FC<DropCompletedStateScreenProps & { navig
           onPress={() => navigation?.navigate('FinalDeliverySummaryScreen')}
           accessibilityRole="button"
         >
-          <Text style={styles.summaryButtonText}>VIEW DELIVERY SUMMARY</Text>
+          <Text style={styles.summaryButtonText}>{t('logistics.viewDeliverySummary')}</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

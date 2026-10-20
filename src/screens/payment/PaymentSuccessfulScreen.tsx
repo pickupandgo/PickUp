@@ -11,6 +11,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface PaymentSuccessfulScreenProps {
   readonly amount?: string;
@@ -27,6 +28,7 @@ const PaymentSuccessfulScreen: React.FC<PaymentSuccessfulScreenProps & { navigat
   onHome,
   navigation,
 }) => {
+  const { t } = useI18n();
   const { ride, trip, draft } = useBooking();
   const currentFare = trip?.fare || ride?.fare || draft.fareEstimate?.fare;
   const amount = currentFare ? `₹ ${currentFare.toString()}` : '--';
@@ -48,7 +50,7 @@ const PaymentSuccessfulScreen: React.FC<PaymentSuccessfulScreenProps & { navigat
           </View>
 
           {/* Headline */}
-          <Text style={styles.headline}>Payment Successful</Text>
+          <Text style={styles.headline}>{t('payment.successful')}</Text>
 
           {/* Amount */}
           <Text style={styles.amountValue}>{amount}</Text>
@@ -56,15 +58,15 @@ const PaymentSuccessfulScreen: React.FC<PaymentSuccessfulScreenProps & { navigat
           {/* Details Card */}
           <View style={styles.detailsCard}>
             <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Transaction ID</Text>
+              <Text style={styles.detailLabel}>{t('payment.transactionId')}</Text>
               <Text style={styles.monoValue}>{transactionId}</Text>
             </View>
             <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Date</Text>
+              <Text style={styles.detailLabel}>{t('payment.date')}</Text>
               <Text style={styles.detailValue}>{date}</Text>
             </View>
             <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Payment Method</Text>
+              <Text style={styles.detailLabel}>{t('payment.paymentMethod')}</Text>
               <View style={styles.methodContainer}>
                 <MaterialIcons name="payment" size={16} color={colors.onSurface} />
                 <Text style={styles.detailValue}>{paymentMethod}</Text>
@@ -74,7 +76,7 @@ const PaymentSuccessfulScreen: React.FC<PaymentSuccessfulScreenProps & { navigat
 
           {/* Action Buttons */}
           <Button
-            label="View Booking"
+            label={t('payment.viewBooking')}
             onPress={() =>
               onViewBooking ? onViewBooking() : navigation?.navigate('PaymentConfirmationScreen')
             }
@@ -86,7 +88,7 @@ const PaymentSuccessfulScreen: React.FC<PaymentSuccessfulScreenProps & { navigat
             style={styles.homeButton}
             onPress={() => (onHome ? onHome() : navigation?.navigate('MainTabs', { screen: 'HomeScreen' }))}
           >
-            <Text style={styles.homeButtonText}>Back to Home</Text>
+            <Text style={styles.homeButtonText}>{t('payment.backToHome')}</Text>
           </Pressable>
         </View>
       </View>

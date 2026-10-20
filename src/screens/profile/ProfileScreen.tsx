@@ -4,7 +4,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { colors, spacing, borderRadius, typography } from '../../theme';
-import { strings, mockUser } from '../../data/mockData';
+import { strings } from '../../data/mockData';
+import { useSession } from '../../state/SessionContext';
+import { useI18n } from '../../i18n';
+import { getAuth } from '@react-native-firebase/auth';
+import { getActivePhoneNumber, normalizePhoneNumber } from '../../auth/authService';
 import TopAppBar from '../../components/organisms/TopAppBar';
 import Card from '../../components/molecules/Card';
 import ListRow from '../../components/molecules/ListRow';
@@ -41,10 +45,21 @@ const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any }> = ({
   onNotificationPress,
   navigation,
 }) => {
+  const { userProfile } = useSession();
+  const { t } = useI18n();
+  const currentUser = getAuth().currentUser;
+
+  const displayName = userProfile?.fullName || currentUser?.displayName || t('profile.customerFallback');
+  const displayPhone =
+    normalizePhoneNumber(userProfile?.phone) ||
+    normalizePhoneNumber(currentUser?.phoneNumber) ||
+    normalizePhoneNumber(getActivePhoneNumber()) ||
+    t('profile.noVerifiedNumber');
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <TopAppBar
-        title={strings.profile.title}
+        title={t('profile.title')}
         leadingIcon={
           <View style={styles.avatarSmall}>
             <Feather name="user" size={16} color={colors.primary} />
@@ -67,19 +82,19 @@ const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any }> = ({
           <View style={styles.avatarLarge}>
             <Feather name="user" size={40} color={colors.onSurfaceVariant} />
           </View>
-          <Text style={styles.userName}>{mockUser.fullName}</Text>
+          <Text style={styles.userName}>{displayName}</Text>
           <View style={styles.phoneRow}>
             <Feather name="phone" size={14} color={colors.onSurfaceVariant} />
-            <Text style={styles.phoneText}>{mockUser.phone}</Text>
+            <Text style={styles.phoneText}>{displayPhone}</Text>
           </View>
           <Pressable
             style={styles.editButton}
             onPress={() => (onEditProfile ? onEditProfile() : navigation?.navigate('EditProfileScreen'))}
             accessibilityRole="button"
-            accessibilityLabel="Edit Profile"
+            accessibilityLabel={t('profile.editProfile')}
           >
             <Text style={styles.editButtonText}>
-              {strings.profile.editProfile}
+              {t('profile.editProfile')}
             </Text>
           </Pressable>
         </View>
@@ -87,21 +102,21 @@ const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any }> = ({
         {/* Menu Card */}
         <Card variant="outlined" padding="none">
           <ListRow
-            title={strings.profile.savedAddresses}
+            title={t('profile.savedAddresses')}
             leading={<MenuIcon name="map-pin" />}
             trailing={<Chevron />}
             onPress={() => (onSavedAddresses ? onSavedAddresses() : navigation?.navigate('SavedAddressesScreen'))}
           />
           <Divider />
           <ListRow
-            title="Booking History"
+            title={t('profile.bookingHistory')}
             leading={<MenuIcon name="clock" />}
             trailing={<Chevron />}
             onPress={() => (onBookingHistory ? onBookingHistory() : navigation?.navigate('TripHistoryScreen'))}
           />
           <Divider />
           <ListRow
-            title={strings.profile.notifications}
+            title={t('profile.notifications')}
             leading={<MenuIcon name="bell" />}
             trailing={<Chevron />}
             onPress={() =>
@@ -110,7 +125,7 @@ const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any }> = ({
           />
           <Divider />
           <ListRow
-            title="Settings"
+            title={t('settings.title')}
             leading={<MenuIcon name="settings" />}
             trailing={<Chevron />}
             onPress={() => (onSettings ? onSettings() : navigation?.navigate('CustomerSettingsScreen'))}
@@ -122,10 +137,10 @@ const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any }> = ({
           style={styles.logoutButton}
           onPress={() => (onLogout ? onLogout() : navigation?.navigate('LogoutConfirmationScreen'))}
           accessibilityRole="button"
-          accessibilityLabel="Logout"
+          accessibilityLabel={t('profile.logout')}
         >
           <MaterialIcons name="logout" size={20} color={colors.error} />
-          <Text style={styles.logoutText}>{strings.profile.logout}</Text>
+          <Text style={styles.logoutText}>{t('profile.logout')}</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

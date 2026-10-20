@@ -22,6 +22,7 @@ expo-env.d.ts
 .kotlin/
 *.orig.*
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
@@ -48,10 +49,9 @@ yarn-error.*
 *.tsbuildinfo
 
 # generated native folders
-android/app/src/main/assets/
 
-# scratch scripts
-fix.js
-new_place.txt
-update*.py
-update*.js
+# Play Store Screenshots
+screenshots/
+
+# Android generated assets bundle
+android/app/src/main/assets/

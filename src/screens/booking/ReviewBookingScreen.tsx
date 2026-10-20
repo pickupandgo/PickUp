@@ -3,6 +3,7 @@ import { View, Text, ScrollView, StyleSheet, Image, Pressable } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { strings, mockBookingReview, mockVehicleTypes } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 import { useBooking } from '../../state/BookingContext';
 import TopAppBar from '../../components/organisms/TopAppBar';
 import Card from '../../components/molecules/Card';
@@ -31,8 +32,23 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
   navigation,
 }) => {
   const { draft } = useBooking();
+  const { t } = useI18n();
   const estimate = draft.fareEstimate;
   const [isAddressExpanded, setIsAddressExpanded] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Dynamic payment method label based on customer draft choice
+  const paymentMethodLabel = (() => {
+    switch (draft.paymentMethod) {
+      case 'upi':
+        return t('payment.online');
+      case 'pickup':
+        return t('payment.cashAtPickup');
+      case 'cod':
+      default:
+        return t('payment.cashOnDelivery');
+    }
+  })();
 
   // Fallback vehicle info if somehow unselected, but we assume select vehicle always passes one
   const vehicleName = draft.vehicleType ?? mockBookingReview.vehicleType;
@@ -47,10 +63,26 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
   const estimatedFare = estimate ? `₹${estimate.fare}` : mockBookingReview.estimatedFare;
   const etaMinutes = estimate?.durationMin ?? (parseInt(vehicle.eta) || 30);
 
+  const handleStartBooking = () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    onConfirm?.();
+    navigation?.reset({
+      index: 1,
+      routes: [
+        { name: 'MainTabs' },
+        {
+          name: 'ActiveTripStack',
+          state: { routes: [{ name: 'FindingDriverScreen' }] },
+        },
+      ],
+    });
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <TopAppBar
-        title="Review Booking"
+        title={t('booking.reviewBooking')}
         leadingIcon={<Feather name="arrow-left" size={24} color={colors.onSurface} />}
         onLeadingPress={() => (onBack ? onBack() : navigation?.goBack())}
       />
@@ -67,13 +99,13 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
             <View style={styles.vehicleInfo}>
               <Text style={styles.vehicleName}>{vehicleName}</Text>
               <Pressable onPress={() => setIsAddressExpanded(!isAddressExpanded)} style={styles.viewAddressBtn}>
-                <Text style={styles.viewAddressText}>View Address Details</Text>
+                <Text style={styles.viewAddressText}>{t('booking.viewAddressDetails')}</Text>
                 <Feather name={isAddressExpanded ? 'chevron-up' : 'chevron-right'} size={16} color={colors.primary} />
               </Pressable>
             </View>
             <View style={styles.etaBadge}>
               <Text style={styles.etaValue}>{etaMinutes}</Text>
-              <Text style={styles.etaLabel}>mins</Text>
+              <Text style={styles.etaLabel}>{t('common.mins', { count: '' }).trim()}</Text>
             </View>
           </View>
 
@@ -82,7 +114,7 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
               <Divider />
               <View style={styles.accordionContent}>
                 <LocationInputRow
-                  label="Pickup"
+                  label={t('home.pickup')}
                   address={pickupAddress}
                   dotColor={colors.statusGreen}
                   onPress={() => (onEditPickup ? onEditPickup() : navigation?.navigate('SelectLocationScreen'))}
@@ -91,7 +123,7 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
                 {dropAddresses.map((drop, i) => (
                   <LocationInputRow
                     key={`drop-${i}`}
-                    label={`Drop ${i + 1}`}
+                    label={t('booking.dropN', { n: i + 1 })}
                     address={drop}
                     dotColor={colors.onSurface}
                     onPress={() => (onEditDrop ? onEditDrop() : navigation?.navigate('SelectDropLocationScreen'))}
@@ -105,20 +137,20 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
           <View style={styles.loadingInfoBox}>
             <Feather name="clock" size={16} color={colors.onSurfaceVariant} />
             <Text style={styles.loadingInfoText}>
-              Free <Text style={styles.loadingInfoBold}>70 mins</Text> of loading-unloading time included.
+              {t('booking.loadingTimeNotice')}
             </Text>
           </View>
         </Card>
 
 
         {/* Offers and Discounts */}
-        <Text style={styles.sectionTitle}>Offers and Discounts</Text>
+        <Text style={styles.sectionTitle}>{t('booking.offersDiscounts')}</Text>
         <Card variant="outlined" padding="md" style={styles.offerCard}>
           <View style={styles.offerRow}>
             <View style={styles.offerIconWrapper}>
               <Feather name="tag" size={20} color={colors.statusGreen} />
             </View>
-            <Text style={styles.offerText}>Apply Coupon</Text>
+            <Text style={styles.offerText}>{t('booking.applyCoupon')}</Text>
             <Feather name="chevron-right" size={20} color={colors.onSurfaceVariant} />
           </View>
         </Card>
@@ -127,7 +159,7 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
         {/* Declared Value & Insurance */}
         <Card variant="outlined" padding="none" style={styles.extraServicesCard}>
           <ListRow
-            title="Declared Value"
+            title={t('booking.declaredValue')}
             subtitle={draft.declaredValue ?? mockBookingReview.declaredValue}
             leading={<Feather name="tag" size={20} color={colors.onSurfaceVariant} />}
             trailing={<Feather name="chevron-right" size={20} color={colors.onSurfaceVariant} />}
@@ -135,8 +167,8 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
           />
           <Divider />
           <ListRow
-            title="Insurance"
-            subtitle={draft.insured ? 'Active' : mockBookingReview.insurance}
+            title={t('booking.goodsInsurance')}
+            subtitle={draft.insured ? t('booking.active') : mockBookingReview.insurance}
             leading={<Feather name="shield" size={20} color={colors.onSurfaceVariant} />}
             trailing={<Feather name="chevron-right" size={20} color={colors.onSurfaceVariant} />}
             onPress={() => navigation?.navigate('GoodsInsuranceScreen')}
@@ -145,7 +177,7 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
 
         {/* Terms & Privacy */}
         <Text style={styles.termsText}>
-          By booking you agree to our new <Text style={styles.linkText}>terms of service</Text> and <Text style={styles.linkText}>privacy policy</Text>
+          {t('booking.agreeTerms')}
         </Text>
 
       </ScrollView>
@@ -156,28 +188,26 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
           <View style={styles.paymentLeft}>
             <Feather name="dollar-sign" size={20} color={colors.statusGreen} />
             <View style={styles.paymentMethodInfo}>
-              <Text style={styles.paymentTitle}>Choose Payment Method</Text>
+              <Text style={styles.paymentTitle}>{t('booking.choosePaymentMethod')}</Text>
               <Pressable style={styles.paymentSelector} onPress={() => (onChangePayment ? onChangePayment() : navigation?.navigate('PaymentMethodScreen'))}>
-                <Text style={styles.paymentMethodText}>{mockBookingReview.paymentMethod}</Text>
+                <Text style={styles.paymentMethodText}>{paymentMethodLabel}</Text>
                 <Feather name="chevron-down" size={16} color={colors.onSurface} />
               </Pressable>
             </View>
           </View>
           <View style={styles.paymentRight}>
             <Text style={styles.totalFareText}>{estimatedFare}</Text>
-            <Text style={styles.viewBreakupText}>View Breakup</Text>
+            <Text style={styles.viewBreakupText}>{t('booking.viewBreakup')}</Text>
           </View>
         </View>
 
         <Button
-          label={`Book ${vehicleName}`}
-          onPress={() => {
-            onConfirm?.();
-            navigation?.navigate('BookingConfirmedScreen');
-          }}
+          label={t('home.startBooking')}
+          onPress={handleStartBooking}
           variant="primary"
           size="lg"
           fullWidth
+          disabled={isSubmitting}
         />
       </View>
     </SafeAreaView>

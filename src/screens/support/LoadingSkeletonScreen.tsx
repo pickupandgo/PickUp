@@ -11,6 +11,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Animated, Easing } from 'react-native';
+import { useI18n } from '../../i18n';
 
 export interface LoadingSkeletonScreenProps {
   readonly onBack?: () => void;
@@ -22,6 +23,8 @@ const LoadingSkeletonScreen: React.FC<LoadingSkeletonScreenProps & { navigation?
   onProfile,
   navigation,
 }) => {
+  const { t } = useI18n();
+
   // Animation values for skeleton pulse
   const pulseOpacity = React.useRef(new Animated.Value(0.5)).current;
 
@@ -81,7 +84,7 @@ const LoadingSkeletonScreen: React.FC<LoadingSkeletonScreenProps & { navigation?
             <Feather name="menu" size={24} color={colors.onSurfaceVariant} />
           </Pressable>
         </View>
-        <Text style={styles.headerTitle}>Pick Up</Text>
+        <Text style={styles.headerTitle}>{t('home.appName')}</Text>
         <Pressable
           style={styles.profileButton}
           onPress={() => (onProfile ? onProfile() : navigation?.navigate('ProfileScreen'))}
@@ -92,20 +95,20 @@ const LoadingSkeletonScreen: React.FC<LoadingSkeletonScreenProps & { navigation?
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.pageHeader}>
-          <Text style={styles.pageTitle}>Loading States</Text>
-          <Text style={styles.pageSubtitle}>Reference library for asynchronous operations.</Text>
+          <Text style={styles.pageTitle}>{t('loading.loadingStates')}</Text>
+          <Text style={styles.pageSubtitle}>{t('loading.referenceLibrary')}</Text>
         </View>
 
         {/* 1. Global Process Loading */}
         <View style={styles.card}>
           <View style={styles.cardTitleRow}>
             <MaterialIcons name="loop" size={18} color={colors.primary} />
-            <Text style={styles.cardTitle}>Global Process Loading</Text>
+            <Text style={styles.cardTitle}>{t('loading.globalProcessLoading')}</Text>
           </View>
-          <Text style={styles.cardSubtitle}>Used for primary actions requiring network latency.</Text>
+          <Text style={styles.cardSubtitle}>{t('loading.usedForPrimaryActions')}</Text>
           
           <View style={styles.primaryLoadingButton}>
-            <Text style={styles.primaryLoadingText}>Processing Request...</Text>
+            <Text style={styles.primaryLoadingText}>{t('loading.processingRequest')}</Text>
             <View style={styles.linearTrack}>
               <Animated.View style={[styles.linearIndicator, animatedLinearStyle]} />
             </View>
@@ -115,7 +118,7 @@ const LoadingSkeletonScreen: React.FC<LoadingSkeletonScreenProps & { navigation?
         <View style={styles.gridContainer}>
           {/* 2. Trip History Item Skeleton */}
           <View style={styles.smallCard}>
-            <Text style={styles.sectionLabel}>TRIP HISTORY ITEM</Text>
+            <Text style={styles.sectionLabel}>{t('loading.tripHistoryItem')}</Text>
             <Animated.View style={[styles.skeletonRow, animatedSkeletonStyle]}>
               <View style={styles.skeletonIconBox} />
               <View style={styles.skeletonColumnLeft}>
@@ -131,7 +134,7 @@ const LoadingSkeletonScreen: React.FC<LoadingSkeletonScreenProps & { navigation?
 
           {/* 2b. Address Search Result Skeleton */}
           <View style={styles.smallCard}>
-            <Text style={styles.sectionLabel}>ADDRESS SEARCH</Text>
+            <Text style={styles.sectionLabel}>{t('loading.addressSearch')}</Text>
             <Animated.View style={[styles.skeletonList, animatedSkeletonStyle]}>
               <View style={styles.skeletonRowAlign}>
                 <View style={styles.skeletonCircle} />
@@ -152,7 +155,7 @@ const LoadingSkeletonScreen: React.FC<LoadingSkeletonScreenProps & { navigation?
 
           {/* 2c. Fare Breakdown Skeleton */}
           <View style={styles.smallCard}>
-            <Text style={styles.sectionLabel}>FARE BREAKDOWN</Text>
+            <Text style={styles.sectionLabel}>{t('loading.fareBreakdown')}</Text>
             <Animated.View style={[styles.skeletonList, animatedSkeletonStyle]}>
               <View style={styles.skeletonSpaceBetween}>
                 <View style={[styles.skeletonLine, { width: '33%', height: 12, backgroundColor: colors.surfaceContainerHigh }]} />
@@ -172,7 +175,7 @@ const LoadingSkeletonScreen: React.FC<LoadingSkeletonScreenProps & { navigation?
 
           {/* 4b. Payment Processing Skeleton */}
           <View style={styles.smallCard}>
-            <Text style={styles.sectionLabel}>PAYMENT ACTIVE</Text>
+            <Text style={styles.sectionLabel}>{t('loading.paymentActive')}</Text>
             <Animated.View style={[styles.paymentBox, animatedSkeletonStyle]}>
               <View style={styles.skeletonRowAlign}>
                 <View style={styles.skeletonPaymentIcon} />

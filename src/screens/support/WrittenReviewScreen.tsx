@@ -16,6 +16,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import BottomNavBar from '../../components/BottomNavBar';
 import { navigateToTab } from '../../navigation/tabRoutes';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface WrittenReviewScreenProps {
   readonly onBack?: () => void;
@@ -28,11 +29,11 @@ export interface WrittenReviewScreenProps {
   readonly onTabPress?: (tabId: string) => void;
 }
 
-const SUGGESTED_TOPICS = [
-  'Vehicle Cleanliness',
-  'Driving Smoothness',
-  'Navigation',
-  'Professionalism',
+const SUGGESTED_TOPIC_KEYS = [
+  'feedback.topicCleanliness',
+  'feedback.topicDriving',
+  'feedback.topicNavigation',
+  'feedback.topicProfessionalism',
 ];
 
 const MAX_CHARS = 500;
@@ -48,6 +49,7 @@ const WrittenReviewScreen: React.FC<WrittenReviewScreenProps & { navigation?: an
   navigation,
 }) => {
   const { clearActiveRide } = useBooking();
+  const { t } = useI18n();
   const [reviewText, setReviewText] = useState('');
   const [isFocused, setIsFocused] = useState(false);
 
@@ -72,26 +74,30 @@ const WrittenReviewScreen: React.FC<WrittenReviewScreenProps & { navigation?: an
           <Pressable
             style={styles.iconButton}
             onPress={() => (onBack ? onBack() : navigation?.goBack())}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.goBack')}
           >
             <Feather name="arrow-left" size={24} color={colors.onSurfaceVariant} />
           </Pressable>
-          <Text style={styles.headerTitle}>Write a Review</Text>
+          <Text style={styles.headerTitle}>{t('trip.writeReview')}</Text>
           <Pressable
             style={styles.skipHeaderButton}
             onPress={() =>
               onSkip ? onSkip() : navigation?.navigate('TripCompletedSummaryScreen')
             }
+            accessibilityRole="button"
+            accessibilityLabel={t('common.skip')}
           >
-            <Text style={styles.skipHeaderText}>Skip</Text>
+            <Text style={styles.skipHeaderText}>{t('common.skip')}</Text>
           </Pressable>
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* Header Text */}
           <View style={styles.textHeader}>
-            <Text style={styles.title}>How can we improve?</Text>
+            <Text style={styles.title}>{t('feedback.howCanWeImprove')}</Text>
             <Text style={styles.subtitle}>
-              Your detailed feedback helps us ensure a premium experience for everyone on the platform.
+              {t('feedback.improveSubtitle')}
             </Text>
           </View>
 
@@ -99,7 +105,7 @@ const WrittenReviewScreen: React.FC<WrittenReviewScreenProps & { navigation?: an
           <View style={[styles.inputContainer, isFocused && styles.inputContainerFocused]}>
             <TextInput
               style={styles.textInput}
-              placeholder="Tell us more about your experience..."
+              placeholder={t('feedback.tellUsMorePlaceholder')}
               placeholderTextColor={colors.outlineVariant}
               multiline
               maxLength={MAX_CHARS}
@@ -108,6 +114,7 @@ const WrittenReviewScreen: React.FC<WrittenReviewScreenProps & { navigation?: an
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
               textAlignVertical="top"
+              accessibilityLabel={t('feedback.tellUsMorePlaceholder')}
             />
             
             {/* Footer of Text Area */}
@@ -140,17 +147,21 @@ const WrittenReviewScreen: React.FC<WrittenReviewScreenProps & { navigation?: an
 
           {/* Contextual Tags */}
           <View style={styles.tagsContainer}>
-            <Text style={styles.tagsLabel}>SUGGESTED TOPICS</Text>
+            <Text style={styles.tagsLabel}>{t('feedback.suggestedTopics')}</Text>
             <View style={styles.tagsRow}>
-              {SUGGESTED_TOPICS.map((topic) => (
-                <Pressable
-                  key={topic}
-                  style={styles.tagChip}
-                  onPress={() => handleTopicPress(topic)}
-                >
-                  <Text style={styles.tagChipText}>{topic}</Text>
-                </Pressable>
-              ))}
+              {SUGGESTED_TOPIC_KEYS.map((key) => {
+                const topicText = t(key);
+                return (
+                  <Pressable
+                    key={key}
+                    style={styles.tagChip}
+                    onPress={() => handleTopicPress(topicText)}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.tagChipText}>{topicText}</Text>
+                  </Pressable>
+                );
+              })}
             </View>
           </View>
 
@@ -171,8 +182,9 @@ const WrittenReviewScreen: React.FC<WrittenReviewScreenProps & { navigation?: an
               );
             }}
             disabled={isSubmitDisabled}
+            accessibilityRole="button"
           >
-            <Text style={styles.submitButtonText}>SUBMIT REVIEW</Text>
+            <Text style={styles.submitButtonText}>{t('trip.submitReview').toUpperCase()}</Text>
             <Feather name="send" size={18} color={colors.onPrimary} />
           </Pressable>
         </ScrollView>

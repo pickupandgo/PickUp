@@ -12,6 +12,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import BottomNavBar from '../../components/BottomNavBar';
 import Button from '../../components/atoms/Button';
 import { navigateToTab } from '../../navigation/tabRoutes';
+import { useI18n } from '../../i18n';
 
 export interface RouteUnavailableScreenProps {
   readonly onRetry?: () => void;
@@ -23,6 +24,7 @@ const RouteUnavailableScreen: React.FC<RouteUnavailableScreenProps & { navigatio
   onChangeLocation,
   navigation,
 }) => {
+  const { t } = useI18n();
   return (
     <View style={styles.container}>
       {/* Top App Bar */}
@@ -32,7 +34,7 @@ const RouteUnavailableScreen: React.FC<RouteUnavailableScreenProps & { navigatio
             <View style={styles.profileIconBox}>
               <Feather name="user" size={16} color={colors.onSurfaceVariant} />
             </View>
-            <Text style={styles.headerTitle}>Pick Up</Text>
+            <Text style={styles.headerTitle}>{t('home.appName')}</Text>
           </View>
           <Pressable
             style={styles.iconButton}
@@ -57,14 +59,14 @@ const RouteUnavailableScreen: React.FC<RouteUnavailableScreenProps & { navigatio
               <Feather name="map" size={32} color={colors.onErrorContainer} />
             </View>
             
-            <Text style={styles.title}>Route unavailable</Text>
+            <Text style={styles.title}>{t('errors.routeUnavailable')}</Text>
             <Text style={styles.subtitle}>
-              We couldn't calculate a valid route for the selected locations. Please verify the addresses or try again later.
+              {t('errors.routeUnavailableSubtitle')}
             </Text>
 
             <View style={styles.actionsContainer}>
               <Button
-                label="Retry"
+                label={t('common.retry')}
                 onPress={() =>
                   onRetry ? onRetry() : navigation?.navigate('MultiDropProgressScreen')
                 }
@@ -79,7 +81,7 @@ const RouteUnavailableScreen: React.FC<RouteUnavailableScreenProps & { navigatio
                     : navigation?.navigate('SelectDropLocationScreen')
                 }
               >
-                <Text style={styles.secondaryButtonText}>Change location</Text>
+                <Text style={styles.secondaryButtonText}>{t('booking.changeLocation')}</Text>
               </Pressable>
             </View>
           </View>

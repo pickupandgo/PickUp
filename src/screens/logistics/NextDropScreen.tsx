@@ -12,6 +12,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { useI18n } from '../../i18n';
 
 export interface NextDropScreenProps {
   readonly onBack?: () => void;
@@ -29,6 +30,7 @@ const NextDropScreen: React.FC<NextDropScreenProps & { navigation?: any }> = ({
   onChat,
   navigation,
 }) => {
+  const { t } = useI18n();
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top App Bar */}
@@ -37,14 +39,16 @@ const NextDropScreen: React.FC<NextDropScreenProps & { navigation?: any }> = ({
           style={styles.iconButton}
           onPress={() => (onBack ? onBack() : navigation?.goBack())}
           accessibilityRole="button"
+          accessibilityLabel={t('common.goBack')}
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Trip Progress</Text>
+        <Text style={styles.headerTitle}>{t('logistics.tripProgress')}</Text>
         <Pressable
           style={styles.iconButton}
           onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
           accessibilityRole="button"
+          accessibilityLabel={t('common.help')}
         >
           <Feather name="help-circle" size={24} color={colors.primary} />
         </Pressable>
@@ -55,7 +59,7 @@ const NextDropScreen: React.FC<NextDropScreenProps & { navigation?: any }> = ({
         <View style={styles.statusBannerContainer}>
           <View style={styles.statusBanner}>
             <MaterialIcons name="local-shipping" size={16} color={colors.onSecondaryContainer} />
-            <Text style={styles.statusBannerText}>On the way to Drop 3</Text>
+            <Text style={styles.statusBannerText}>{t('logistics.onWayToDrop', { number: 3 })}</Text>
           </View>
         </View>
 
@@ -63,13 +67,13 @@ const NextDropScreen: React.FC<NextDropScreenProps & { navigation?: any }> = ({
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.cardHeaderTextContainer}>
-              <Text style={styles.dropLabel}>Drop 3 of 3</Text>
+              <Text style={styles.dropLabel}>{t('logistics.dropProgress', { current: 3, total: 3 })}</Text>
               <Text style={styles.dropAddress}>Basni Phase II, Jodhpur</Text>
-              <Text style={styles.dropReceiver}>Receiver: Vikram Singh</Text>
+              <Text style={styles.dropReceiver}>{t('logistics.receiverColon', { name: 'Vikram Singh' })}</Text>
             </View>
             <View style={styles.etaBadge}>
               <Text style={styles.etaTime}>12</Text>
-              <Text style={styles.etaUnit}>MINS</Text>
+              <Text style={styles.etaUnit}>{t('common.minsCaps')}</Text>
             </View>
           </View>
 
@@ -80,14 +84,14 @@ const NextDropScreen: React.FC<NextDropScreenProps & { navigation?: any }> = ({
               <Feather name="user" size={24} color={colors.onSurfaceVariant} />
             </View>
             <View style={styles.driverInfo}>
-              <Text style={styles.driverStatus}>In Transit</Text>
-              <Text style={styles.driverName}>Ramesh is driving to your location</Text>
+              <Text style={styles.driverStatus}>{t('tracking.inTransit')}</Text>
+              <Text style={styles.driverName}>{t('tracking.driverHeadingToLocation', { name: 'Ramesh' })}</Text>
             </View>
           </View>
 
           <View style={styles.actionsContainer}>
             <Button
-              label="Track Driver"
+              label={t('tracking.trackDriver')}
               onPress={() => (onTrackDriver ? onTrackDriver() : navigation?.navigate('CustomerLiveTrackingScreen'))}
               variant="primary"
               fullWidth
@@ -99,7 +103,7 @@ const NextDropScreen: React.FC<NextDropScreenProps & { navigation?: any }> = ({
                 accessibilityRole="button"
               >
                 <Feather name="phone" size={18} color={colors.onSecondaryContainer} />
-                <Text style={styles.secondaryBtnText}>Call</Text>
+                <Text style={styles.secondaryBtnText}>{t('common.call')}</Text>
               </Pressable>
               <Pressable
                 style={styles.secondaryBtn}
@@ -107,7 +111,7 @@ const NextDropScreen: React.FC<NextDropScreenProps & { navigation?: any }> = ({
                 accessibilityRole="button"
               >
                 <Feather name="message-circle" size={18} color={colors.onSecondaryContainer} />
-                <Text style={styles.secondaryBtnText}>Chat</Text>
+                <Text style={styles.secondaryBtnText}>{t('common.chat')}</Text>
               </Pressable>
             </View>
           </View>
@@ -115,7 +119,7 @@ const NextDropScreen: React.FC<NextDropScreenProps & { navigation?: any }> = ({
 
         {/* Route Context Timeline */}
         <View style={styles.card}>
-          <Text style={styles.timelineTitle}>Journey Details</Text>
+          <Text style={styles.timelineTitle}>{t('logistics.journeyDetails')}</Text>
           
           <View style={styles.timelineContainer}>
             {/* Drop 2 */}
@@ -124,8 +128,8 @@ const NextDropScreen: React.FC<NextDropScreenProps & { navigation?: any }> = ({
                 <View style={styles.timelineDotInner} />
               </View>
               <View style={styles.timelineContent}>
-                <Text style={styles.timelineItemTitleCompleted}>Drop 2</Text>
-                <Text style={styles.timelineItemSubtitleCompleted}>Completed at 10:45 AM</Text>
+                <Text style={styles.timelineItemTitleCompleted}>{t('logistics.dropStopWithNumber', { number: 2 })}</Text>
+                <Text style={styles.timelineItemSubtitleCompleted}>{t('logistics.completedAt', { time: '10:45 AM' })}</Text>
               </View>
             </View>
 
@@ -136,8 +140,8 @@ const NextDropScreen: React.FC<NextDropScreenProps & { navigation?: any }> = ({
             <View style={[styles.timelineItem, styles.timelineItemLast]}>
               <View style={styles.timelineDotActive} />
               <View style={styles.timelineContent}>
-                <Text style={styles.timelineItemTitleActive}>Drop 3</Text>
-                <Text style={styles.timelineItemSubtitleActive}>Next Stop</Text>
+                <Text style={styles.timelineItemTitleActive}>{t('logistics.dropStopWithNumber', { number: 3 })}</Text>
+                <Text style={styles.timelineItemSubtitleActive}>{t('logistics.nextStop')}</Text>
               </View>
             </View>
           </View>

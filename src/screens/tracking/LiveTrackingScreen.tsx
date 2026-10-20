@@ -5,6 +5,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import { mockActiveTrip } from '../../data/mockData';
 import TopAppBar from '../../components/organisms/TopAppBar';
 import StatusBadge from '../../components/atoms/StatusBadge';
+import { useI18n } from '../../i18n';
 
 export interface LiveTrackingScreenProps {
   readonly onBack?: () => void;
@@ -20,17 +21,18 @@ const LiveTrackingScreen: React.FC<LiveTrackingScreenProps & { navigation?: any 
   onShare,
   navigation,
 }) => {
+  const { t } = useI18n();
   return (
     <SafeAreaView style={styles.safeArea}>
       {/* Header */}
       <TopAppBar
-        title="Live Tracking"
+        title={t('tracking.liveTracking')}
         leadingIcon={<Text style={styles.backIcon}>←</Text>}
         onLeadingPress={() => (onBack ? onBack() : navigation?.goBack())}
         trailingIcon={
           <View style={styles.liveBadge}>
             <View style={styles.liveDot} />
-            <Text style={styles.liveText}>LIVE</Text>
+            <Text style={styles.liveText}>{t('tracking.live')}</Text>
           </View>
         }
       />
@@ -41,7 +43,7 @@ const LiveTrackingScreen: React.FC<LiveTrackingScreenProps & { navigation?: any 
           {/* Pickup marker */}
           <View style={[styles.marker, styles.pickupMarker]}>
             <View style={styles.markerDot} />
-            <Text style={styles.markerLabel}>Pickup</Text>
+            <Text style={styles.markerLabel}>{t('home.pickup')}</Text>
           </View>
 
           {/* Route line */}
@@ -52,7 +54,7 @@ const LiveTrackingScreen: React.FC<LiveTrackingScreenProps & { navigation?: any 
             <View style={styles.driverDotOuter}>
               <Text style={styles.driverDotIcon}>🚚</Text>
             </View>
-            <Text style={styles.driverTimeLabel}>10s ago</Text>
+            <Text style={styles.driverTimeLabel}>{t('tracking.secondsAgo', { seconds: 10 })}</Text>
           </View>
 
           {/* Drop marker */}
@@ -74,14 +76,13 @@ const LiveTrackingScreen: React.FC<LiveTrackingScreenProps & { navigation?: any 
         <View style={styles.dropInfoRow}>
           <View style={styles.dropInfoText}>
             <Text style={styles.dropTitle}>
-              Drop {mockActiveTrip.stops.findIndex(s => s.status === 'current') + 1} of {mockActiveTrip.stops.length}
+              {t('home.drop')} {mockActiveTrip.stops.findIndex(s => s.status === 'current') + 1} {t('common.of')} {mockActiveTrip.stops.length}
             </Text>
             <Text style={styles.dropSubtitle}>
-              Arriving at {mockActiveTrip.stops[1].address.split(',')[0]} in{' '}
-              <Text style={styles.boldText}>8 mins</Text>
+              {t('tracking.arrivingAt')} {mockActiveTrip.stops[1].address.split(',')[0]} {t('tracking.inMins', { count: 8 })}
             </Text>
           </View>
-          <StatusBadge label="On time" variant="success" />
+          <StatusBadge label={t('tracking.onTime')} variant="success" />
         </View>
 
         {/* Progress Bar */}
@@ -116,16 +117,16 @@ const LiveTrackingScreen: React.FC<LiveTrackingScreenProps & { navigation?: any 
             accessibilityLabel="Call driver"
           >
             <Text style={styles.actionIcon}>📞</Text>
-            <Text style={styles.actionLabel}>Call</Text>
+            <Text style={styles.actionLabel}>{t('common.call')}</Text>
           </Pressable>
           <Pressable
             style={styles.actionButton}
             onPress={() => (onChat ? onChat() : navigation?.navigate('ActiveTripChatScreen'))}
             accessibilityRole="button"
-            accessibilityLabel="Chat with driver"
+            accessibilityLabel={t('common.chat')}
           >
             <Text style={styles.actionIcon}>💬</Text>
-            <Text style={styles.actionLabel}>Chat</Text>
+            <Text style={styles.actionLabel}>{t('common.chat')}</Text>
           </Pressable>
           <Pressable
             style={styles.actionButtonCircle}

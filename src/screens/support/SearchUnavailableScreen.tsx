@@ -12,6 +12,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import BottomNavBar from '../../components/BottomNavBar';
 import LocationInputRow from '../../components/molecules/LocationInputRow';
 import { navigateToTab } from '../../navigation/tabRoutes';
+import { useI18n } from '../../i18n';
 
 export interface SearchUnavailableScreenProps {
   readonly onRetry?: () => void;
@@ -23,6 +24,7 @@ const SearchUnavailableScreen: React.FC<SearchUnavailableScreenProps & { navigat
   onManualEntry,
   navigation,
 }) => {
+  const { t } = useI18n();
   return (
     <View style={styles.container}>
       {/* Top App Bar */}
@@ -50,14 +52,14 @@ const SearchUnavailableScreen: React.FC<SearchUnavailableScreenProps & { navigat
         <View style={styles.searchContainerMockup}>
           <View style={styles.searchCard}>
             <LocationInputRow
-              label="Pickup"
-              address="Current Location"
+              label={t('booking.pickup')}
+              address={t('booking.currentLocation')}
               dotColor={colors.statusGreen}
               showConnector
             />
             <LocationInputRow
-              label="Drop-off"
-              placeholder="Where to?"
+              label={t('booking.drop')}
+              placeholder={t('home.searchPlaceholder')}
               dotColor={colors.statusRed}
             />
           </View>
@@ -75,9 +77,9 @@ const SearchUnavailableScreen: React.FC<SearchUnavailableScreenProps & { navigat
                   <Feather name="wifi-off" size={32} color={colors.onErrorContainer} />
                 </View>
 
-                <Text style={styles.title}>Search temporarily unavailable</Text>
+                <Text style={styles.title}>{t('errors.searchUnavailable')}</Text>
                 <Text style={styles.subtitle}>
-                  We're having trouble connecting to the network. Please check your connection and try again.
+                  {t('errors.searchUnavailableSubtitle')}
                 </Text>
 
                 <View style={styles.actionsContainer}>
@@ -86,7 +88,7 @@ const SearchUnavailableScreen: React.FC<SearchUnavailableScreenProps & { navigat
                     onPress={() => (onRetry ? onRetry() : navigation?.goBack())}
                   >
                     <Feather name="refresh-cw" size={18} color={colors.onPrimary} />
-                    <Text style={styles.primaryButtonText}>Retry Connection</Text>
+                    <Text style={styles.primaryButtonText}>{t('errors.retryConnection')}</Text>
                   </Pressable>
                   
                   <Pressable
@@ -95,7 +97,7 @@ const SearchUnavailableScreen: React.FC<SearchUnavailableScreenProps & { navigat
                       onManualEntry ? onManualEntry() : navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' })
                     }
                   >
-                    <Text style={styles.secondaryButtonText}>Enter address manually</Text>
+                    <Text style={styles.secondaryButtonText}>{t('errors.enterAddressManually')}</Text>
                   </Pressable>
                 </View>
 

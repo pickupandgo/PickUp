@@ -12,6 +12,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import { getCustomerHistory } from '../../api/engine';
 import { useBooking } from '../../state/BookingContext';
 import type { Trip } from '../../api/types';
+import { useI18n } from '../../i18n';
 
 export interface TripHistoryScreenProps {
   readonly onBack?: () => void;
@@ -23,6 +24,7 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
   onTripSelect,
   navigation,
 }) => {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<'Recent' | 'Scheduled'>('Recent');
   const { customerId } = useBooking();
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -50,6 +52,12 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
   const renderTripCard = (trip: Trip) => {
     const isCompleted = trip.status === 'COMPLETED';
     const isCancelled = trip.status === 'CANCELLED';
+
+    const statusLabel = isCompleted
+      ? t('trip.completed')
+      : isCancelled
+      ? t('trip.cancelled')
+      : trip.status;
 
     return (
       <Pressable
@@ -85,7 +93,7 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
                   isCancelled && styles.statusTextCancelled,
                 ]}
               >
-                {trip.status.toUpperCase()}
+                {statusLabel}
               </Text>
             </View>
             <Text style={styles.dateText}>{new Date(trip.createdAt).toLocaleDateString()}</Text>
@@ -93,7 +101,7 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
 
           <View style={styles.cardHeaderRight}>
             <Text style={[styles.amountText, isCancelled && styles.amountTextCancelled]}>
-              ?{trip.fare ?? 0}
+              ₹{trip.fare ?? 0}
             </Text>
             <Text
               style={[
@@ -101,7 +109,7 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
                 isCancelled && styles.paymentTextCancelled,
               ]}
             >
-              {isCancelled ? 'Cancelled by User' : 'CASH'}
+              {isCancelled ? t('cancellation.cancelledByUser') : t('payment.cash')}
             </Text>
           </View>
         </View>
@@ -114,7 +122,7 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
           </View>
           <View style={styles.routeLocations}>
             <Text style={styles.locationText}>{trip.pickup?.address}</Text>
-            <Text style={styles.locationText}>{trip.stops?.[trip.stops.length - 1]?.location?.address || 'No Drop Location'}</Text>
+            <Text style={styles.locationText}>{trip.stops?.[trip.stops.length - 1]?.location?.address || t('booking.dropLocation')}</Text>
           </View>
         </View>
 
@@ -140,7 +148,7 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Trip History</Text>
+        <Text style={styles.headerTitle}>{t('profile.bookingHistory')}</Text>
         {/* Decorative: there is no filter surface in this prototype */}
         <View style={styles.iconButton}>
           <Feather name="filter" size={22} color={colors.primary} />
@@ -159,7 +167,7 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
             onPress={() => setActiveTab('Recent')}
           >
             <Text style={[styles.tabText, activeTab === 'Recent' && styles.tabTextActive]}>
-              Recent
+              {t('common.recent')}
             </Text>
           </Pressable>
           <Pressable
@@ -167,7 +175,7 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
             onPress={() => setActiveTab('Scheduled')}
           >
             <Text style={[styles.tabText, activeTab === 'Scheduled' && styles.tabTextActive]}>
-              Scheduled
+              {t('common.scheduled')}
             </Text>
           </Pressable>
         </View>

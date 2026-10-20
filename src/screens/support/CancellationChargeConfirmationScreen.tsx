@@ -8,6 +8,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useI18n } from '../../i18n';
 
 export interface CancellationChargeConfirmationScreenProps {
   readonly feeAmount?: string;
@@ -18,11 +19,14 @@ export interface CancellationChargeConfirmationScreenProps {
 
 const CancellationChargeConfirmationScreen: React.FC<CancellationChargeConfirmationScreenProps & { navigation?: any }> = ({
   feeAmount = '₹112.50',
-  policyText = 'A cancellation fee applies because the driver is close to your pickup location, as per the current cancellation policy.',
+  policyText,
   onCancelAccept,
   onKeepTrip,
   navigation,
 }) => {
+  const { t } = useI18n();
+  const effectivePolicy = policyText || t('cancellation.proximityPolicy');
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Background Dim (Simulating modal overlay) */}
@@ -42,19 +46,19 @@ const CancellationChargeConfirmationScreen: React.FC<CancellationChargeConfirmat
               <MaterialIcons name="warning" size={24} color={colors.error} />
             </View>
             <View style={styles.headerTexts}>
-              <Text style={styles.headerTitle}>Cancel this trip?</Text>
-              <Text style={styles.headerSubtitle}>Cancellation Charge</Text>
+              <Text style={styles.headerTitle}>{t('cancellation.cancelThisTripQuestion')}</Text>
+              <Text style={styles.headerSubtitle}>{t('cancellation.cancellationCharge')}</Text>
             </View>
           </View>
 
           {/* Charge Breakdown Card */}
           <View style={styles.chargeCard}>
             <View style={styles.feeRow}>
-              <Text style={styles.feeLabel}>Fee Amount</Text>
+              <Text style={styles.feeLabel}>{t('cancellation.feeAmount')}</Text>
               <Text style={styles.feeValue}>{feeAmount}</Text>
             </View>
             <View style={styles.divider} />
-            <Text style={styles.policyText}>{policyText}</Text>
+            <Text style={styles.policyText}>{effectivePolicy}</Text>
           </View>
 
           {/* Actions */}
@@ -65,14 +69,16 @@ const CancellationChargeConfirmationScreen: React.FC<CancellationChargeConfirmat
                 onCancelAccept?.();
                 navigation?.navigate('CancellationConfirmationScreen');
               }}
+              accessibilityRole="button"
             >
-              <Text style={styles.cancelButtonText}>CANCEL & ACCEPT CHARGE</Text>
+              <Text style={styles.cancelButtonText}>{t('cancellation.cancelAndAcceptCharge')}</Text>
             </Pressable>
             <Pressable
               style={[styles.customButton, styles.keepButton]}
               onPress={() => (onKeepTrip ? onKeepTrip() : navigation?.goBack())}
+              accessibilityRole="button"
             >
-              <Text style={styles.keepButtonText}>KEEP TRIP</Text>
+              <Text style={styles.keepButtonText}>{t('cancellation.keepTripCaps')}</Text>
             </Pressable>
           </View>
         </View>

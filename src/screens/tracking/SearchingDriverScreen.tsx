@@ -12,6 +12,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { useI18n } from '../../i18n';
 
 export interface SearchingDriverScreenProps {
   readonly onCancel?: () => void;
@@ -23,6 +24,7 @@ const SearchingDriverScreen: React.FC<SearchingDriverScreenProps & { navigation?
   onMenu,
   navigation,
 }) => {
+  const { t } = useI18n();
   const pulse1 = useRef(new Animated.Value(0)).current;
   const pulse2 = useRef(new Animated.Value(0)).current;
   const spinValue = useRef(new Animated.Value(0)).current;
@@ -93,7 +95,7 @@ const SearchingDriverScreen: React.FC<SearchingDriverScreenProps & { navigation?
             >
               <Feather name="menu" size={24} color={colors.primary} />
             </Pressable>
-            <Text style={styles.headerTitle}>Pick Up</Text>
+            <Text style={styles.headerTitle}>{t('home.appName')}</Text>
           </View>
           <View style={styles.profileIconBox}>
             <Feather name="user" size={16} color={colors.onSurfaceVariant} />
@@ -157,7 +159,7 @@ const SearchingDriverScreen: React.FC<SearchingDriverScreenProps & { navigation?
               <Animated.View style={{ transform: [{ rotate: spin }] }}>
                 <Feather name="loader" size={24} color={colors.primary} />
               </Animated.View>
-              <Text style={styles.statusTitle}>Finding a Driver...</Text>
+              <Text style={styles.statusTitle}>{t('tracking.findingDriver')}</Text>
             </View>
 
             <View style={styles.scanningList}>
@@ -170,22 +172,22 @@ const SearchingDriverScreen: React.FC<SearchingDriverScreenProps & { navigation?
               
               <View style={styles.vehicleItem}>
                 <MaterialIcons name="directions-car" size={28} color={colors.outline} />
-                <Text style={styles.vehicleLabel}>AUTO</Text>
+                <Text style={styles.vehicleLabel}>{t('vehicle.auto').toUpperCase()}</Text>
               </View>
               <View style={styles.divider} />
               <View style={styles.vehicleItem}>
                 <MaterialIcons name="local-taxi" size={28} color={colors.outline} />
-                <Text style={styles.vehicleLabel}>CAB</Text>
+                <Text style={styles.vehicleLabel}>{t('vehicle.cab').toUpperCase()}</Text>
               </View>
               <View style={styles.divider} />
               <View style={styles.vehicleItem}>
                 <MaterialIcons name="airport-shuttle" size={28} color={colors.outline} />
-                <Text style={styles.vehicleLabel}>VAN</Text>
+                <Text style={styles.vehicleLabel}>{t('vehicle.van').toUpperCase()}</Text>
               </View>
             </View>
 
             <Button
-              label="Cancel"
+              label={t('common.cancel')}
               onPress={() => (onCancel ? onCancel() : navigation?.navigate('CancellationReasonScreen'))}
               variant="outline"
               fullWidth

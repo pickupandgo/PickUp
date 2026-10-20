@@ -12,6 +12,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
 
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface PaymentFailedScreenProps {
   readonly amountDue?: string;
@@ -27,6 +28,7 @@ const PaymentFailedScreen: React.FC<PaymentFailedScreenProps & { navigation?: an
   onBack,
   navigation,
 }) => {
+  const { t } = useI18n();
   const { draft, trip, ride } = useBooking();
   const currentFare = trip?.fare || ride?.fare || draft.fareEstimate?.fare;
   const actualAmount = currentFare ? `₹ ${currentFare.toString()}` : '--';
@@ -41,7 +43,7 @@ const PaymentFailedScreen: React.FC<PaymentFailedScreenProps & { navigation?: an
         >
           <Feather name="arrow-left" size={24} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.headerTitle}>Pick Up</Text>
+        <Text style={styles.headerTitle}>{t('home.appName')}</Text>
         <View style={styles.iconButton} />
       </View>
 
@@ -53,14 +55,14 @@ const PaymentFailedScreen: React.FC<PaymentFailedScreenProps & { navigation?: an
           </View>
           
           {/* Status Headers */}
-          <Text style={styles.statusTitle}>Payment Failed</Text>
+          <Text style={styles.statusTitle}>{t('payment.failed')}</Text>
           <Text style={styles.statusSubtitle}>
-            We couldn't process your payment. Please check your connection or try a different payment method.
+            {t('payment.failedMessage')}
           </Text>
 
           {/* Amount Detail */}
           <View style={styles.amountContainer}>
-            <Text style={styles.amountLabel}>Amount Due</Text>
+            <Text style={styles.amountLabel}>{t('payment.amountDue')}</Text>
             <Text style={styles.amountValue}>{actualAmount}</Text>
           </View>
         </View>
@@ -68,7 +70,7 @@ const PaymentFailedScreen: React.FC<PaymentFailedScreenProps & { navigation?: an
         {/* Action Buttons */}
         <View style={styles.actionsContainer}>
           <Button
-            label="Retry Payment"
+            label={t('payment.retryPayment')}
             onPress={() =>
               onRetry ? onRetry() : navigation?.navigate('PaymentMethodSelectedScreen')
             }
@@ -77,7 +79,7 @@ const PaymentFailedScreen: React.FC<PaymentFailedScreenProps & { navigation?: an
             size="lg"
           />
           <Button
-            label="Change Payment Method"
+            label={t('payment.changePaymentMethod')}
             onPress={() =>
               onChangeMethod ? onChangeMethod() : navigation?.navigate('PaymentSelectionScreen')
             }

@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface PaymentProcessingScreenProps {
   readonly amount?: string;
@@ -18,6 +19,7 @@ export interface PaymentProcessingScreenProps {
 const PaymentProcessingScreen: React.FC<PaymentProcessingScreenProps & { navigation?: any }> = ({
   navigation,
 }) => {
+  const { t } = useI18n();
   const { draft } = useBooking();
   const amount = draft.fareEstimate ? `₹ ${draft.fareEstimate.fare.toFixed(2)}` : '--';
   
@@ -86,7 +88,7 @@ const PaymentProcessingScreen: React.FC<PaymentProcessingScreenProps & { navigat
         <View style={styles.content}>
           {/* Amount Display */}
           <View style={styles.amountCard}>
-            <Text style={styles.amountLabel}>AMOUNT</Text>
+            <Text style={styles.amountLabel}>{t('payment.amount')}</Text>
             <Text style={styles.amountText}>{amount}</Text>
           </View>
 
@@ -129,10 +131,8 @@ const PaymentProcessingScreen: React.FC<PaymentProcessingScreenProps & { navigat
 
           {/* Typography & Status */}
           <View style={styles.textContainer}>
-            <Text style={styles.title}>Processing Payment...</Text>
-            <Text style={styles.subtitle}>
-              Please do not close the app or hit the back button.
-            </Text>
+            <Text style={styles.title}>{t('payment.processingTitle')}</Text>
+            <Text style={styles.subtitle}>{t('payment.doNotClose')}</Text>
           </View>
 
           {/* Progress Indicator Dots */}

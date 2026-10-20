@@ -2,8 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography } from '../../theme';
-import { strings } from '../../data/mockData';
 import Button from '../../components/atoms/Button';
+import { useI18n } from '../../i18n';
 
 export interface ErrorScreenProps {
   readonly variant: 'noInternet' | 'serverUnavailable' | 'connectionLost';
@@ -17,16 +17,16 @@ const iconMap = {
   connectionLost: '🔌',
 } as const;
 
-const titleMap = {
-  noInternet: 'No Internet Connection',
-  serverUnavailable: 'Server Unavailable',
-  connectionLost: 'Connection Lost',
+const titleKeyMap = {
+  noInternet: 'errors.noInternet',
+  serverUnavailable: 'errors.serverUnavailable',
+  connectionLost: 'errors.connectionLost',
 } as const;
 
-const subtitleMap = {
-  noInternet: 'Please check your connection and try again.',
-  serverUnavailable: "We're working on it. Please try again later.",
-  connectionLost: 'Attempting to reconnect...',
+const subtitleKeyMap = {
+  noInternet: 'errors.noInternetSubtitle',
+  serverUnavailable: 'errors.serverUnavailableSubtitle',
+  connectionLost: 'errors.connectionLostSubtitle',
 } as const;
 
 const ErrorScreen: React.FC<ErrorScreenProps & { navigation?: any }> = ({
@@ -35,26 +35,28 @@ const ErrorScreen: React.FC<ErrorScreenProps & { navigation?: any }> = ({
   onGoBack,
   navigation,
 }) => {
+  const { t } = useI18n();
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.content}>
         <View style={styles.iconCircle}>
           <Text style={styles.icon}>{iconMap[variant]}</Text>
         </View>
-        <Text style={styles.title}>{titleMap[variant]}</Text>
-        <Text style={styles.subtitle}>{subtitleMap[variant]}</Text>
+        <Text style={styles.title}>{t(titleKeyMap[variant])}</Text>
+        <Text style={styles.subtitle}>{t(subtitleKeyMap[variant])}</Text>
       </View>
 
       <View style={styles.footer}>
         <Button
-          label={strings.errors.retry}
+          label={t('common.retry')}
           onPress={() => (onRetry ? onRetry() : navigation?.goBack())}
           variant="primary"
           size="lg"
           fullWidth
         />
         <Button
-          label={strings.errors.goBack}
+          label={t('common.goBack')}
           onPress={() => (onGoBack ? onGoBack() : navigation?.goBack())}
           variant="ghost"
           size="lg"

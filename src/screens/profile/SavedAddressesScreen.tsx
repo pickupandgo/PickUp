@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useI18n } from '../../i18n';
 
 export interface SavedAddress {
   id: string;
@@ -61,11 +62,18 @@ const SavedAddressesScreen: React.FC<SavedAddressesScreenProps & { navigation?: 
   onAddAddress,
   navigation,
 }) => {
+  const { t } = useI18n();
   const [addresses, setAddresses] = useState<SavedAddress[]>(MOCK_ADDRESSES);
 
   const handleDelete = (addressId: string) => {
     onDeleteAddress?.(addressId);
     setAddresses((prev) => prev.filter((item) => item.id !== addressId));
+  };
+
+  const getAddressTitle = (title: string) => {
+    if (title === 'Home') return t('profile.homeAddress');
+    if (title === 'Office') return t('profile.officeAddress');
+    return title;
   };
 
   return (
@@ -76,7 +84,7 @@ const SavedAddressesScreen: React.FC<SavedAddressesScreenProps & { navigation?: 
           <Pressable style={styles.iconButton} onPress={() => navigation?.goBack()}>
             <Feather name="arrow-left" size={24} color={colors.primary} />
           </Pressable>
-          <Text style={styles.headerTitle}>Saved Addresses</Text>
+          <Text style={styles.headerTitle}>{t('profile.savedAddresses')}</Text>
         </View>
         <Pressable
           style={styles.iconButton}
@@ -101,9 +109,9 @@ const SavedAddressesScreen: React.FC<SavedAddressesScreenProps & { navigation?: 
                   />
                 </View>
                 <View>
-                  <Text style={styles.cardTitle}>{address.title}</Text>
+                  <Text style={styles.cardTitle}>{getAddressTitle(address.title)}</Text>
                   {address.isPrimary && (
-                    <Text style={styles.primaryBadge}>PRIMARY</Text>
+                    <Text style={styles.primaryBadge}>{t('profile.primaryAddress')}</Text>
                   )}
                 </View>
               </View>
@@ -148,7 +156,7 @@ const SavedAddressesScreen: React.FC<SavedAddressesScreenProps & { navigation?: 
           onPress={() => (onAddAddress ? onAddAddress() : navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' }))}
         >
           <Feather name="plus" size={24} color={colors.onPrimary} />
-          <Text style={styles.addButtonText}>Add New Address</Text>
+          <Text style={styles.addButtonText}>{t('profile.addNewAddress')}</Text>
         </Pressable>
       </View>
     </SafeAreaView>

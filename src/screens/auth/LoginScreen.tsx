@@ -10,6 +10,7 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
@@ -29,12 +30,15 @@ import {
   usePhoneCooldown,
 } from '../../auth/authService';
 
+import { useI18n } from '../../i18n';
+
 export interface LoginScreenProps {
   readonly onGetOtp?: (phone: string) => void;
   readonly navigation?: any;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }) => {
+  const { t, locale } = useI18n();
   const [authMethod, setAuthMethod] = useState<'phone' | 'email'>('phone');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -63,7 +67,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
   const handleGetOtp = useCallback(async () => {
     if (isSubmittingRef.current || busy || isCoolingDown || cooldownRemaining > 0) return;
     if (!isValidPhone) {
-      setError('Please enter a valid 10-digit mobile number.');
+      setError(t('auth.invalidPhone'));
       return;
     }
 
@@ -96,17 +100,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
       isSubmittingRef.current = false;
       setLoading(false);
     }
-  }, [cleanPhone, isValidPhone, busy, isCoolingDown, cooldownRemaining, onGetOtp, navigation]);
+  }, [cleanPhone, isValidPhone, busy, isCoolingDown, cooldownRemaining, onGetOtp, navigation, t]);
 
   // Email Login
   const handleEmailLogin = useCallback(async () => {
     if (isSubmittingRef.current || busy) return;
     if (!isValidEmail) {
-      setError('Please enter a valid email address.');
+      setError(t('auth.invalidEmail'));
       return;
     }
     if (!password) {
-      setError('Password is required.');
+      setError(t('auth.passwordRequired'));
       return;
     }
 
@@ -124,12 +128,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
       isSubmittingRef.current = false;
       setLoading(false);
     }
-  }, [busy, isValidEmail, email, password]);
+  }, [busy, isValidEmail, email, password, t]);
 
   // Forgot Password
   const handleForgotPassword = useCallback(async () => {
     if (!isValidEmail) {
-      setError('Please enter your registered email address above first.');
+      setError(t('auth.enterEmailFirst'));
       return;
     }
 
@@ -139,13 +143,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
 
     try {
       await sendPasswordReset(email);
-      setResetMessage(`Password reset link sent to ${email.trim()}. Please check your inbox.`);
+      setResetMessage(t('auth.resetLinkSent', { email: email.trim() }));
     } catch (e: any) {
       setError(mapFirebaseAuthError(e));
     } finally {
       setLoading(false);
     }
-  }, [isValidEmail, email]);
+  }, [isValidEmail, email, t]);
 
   // Google Sign-In
   const handleGoogleSignIn = useCallback(async () => {
@@ -196,28 +200,46 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Language Switcher Pill */}
+          <View style={styles.topBar}>
+            <Pressable
+              style={styles.langPill}
+              onPress={() => navigation?.navigate('LanguageSelectionScreen')}
+              hitSlop={8}
+            >
+              <Feather name="globe" size={14} color={colors.primary} />
+              <Text style={styles.langPillText}>{locale === 'hi' ? 'हिन्दी' : 'English'}</Text>
+            </Pressable>
+          </View>
+
           {/* Logo & Header */}
           <View style={styles.heroSection}>
             <View style={styles.logoContainer}>
               <View style={styles.logoInner}>
-                <Text style={styles.logoIcon}>📦</Text>
+                <Image
+                  source={require('../../../assets/logo.png')}
+                  style={{ width: 38, height: 38 }}
+                  resizeMode="contain"
+                  accessibilityRole="image"
+                  accessibilityLabel="Multiple Ride Logo"
+                />
               </View>
             </View>
-            <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Log in to book rides and track deliveries</Text>
+            <Text style={styles.title}>{t('auth.welcomeBack')}</Text>
+            <Text style={styles.subtitle}>{t('auth.loginSubtitle')}</Text>
           </View>
 
           {/* Flow Mode Switcher: Log In vs Sign Up */}
           <View style={styles.entryModeContainer}>
             <View style={[styles.entryModeTab, styles.entryModeActive]}>
-              <Text style={styles.entryModeActiveText}>Log In</Text>
+              <Text style={styles.entryModeActiveText}>{t('auth.loginTab')}</Text>
             </View>
             <Pressable
               style={styles.entryModeTab}
               onPress={() => navigation?.navigate('SignUpScreen')}
               hitSlop={8}
             >
-              <Text style={styles.entryModeInactiveText}>Sign Up</Text>
+              <Text style={styles.entryModeInactiveText}>{t('auth.signupTab')}</Text>
             </Pressable>
           </View>
 
@@ -232,7 +254,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
               }}
             >
               <Text style={[styles.tabText, authMethod === 'phone' && styles.activeTabText]}>
-                Mobile OTP
+                {t('auth.mobileOtpTab')}
               </Text>
             </Pressable>
             <Pressable
@@ -244,7 +266,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
               }}
             >
               <Text style={[styles.tabText, authMethod === 'email' && styles.activeTabText]}>
-                Email & Password
+                {t('auth.emailPasswordTab')}
               </Text>
             </Pressable>
           </View>
@@ -266,17 +288,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
           {/* Phone Form */}
           {authMethod === 'phone' ? (
             <View style={styles.formSection}>
-              <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
+              <Text style={styles.inputLabel}>{t('auth.mobileNumber')}</Text>
               <View style={styles.phoneRow}>
                 <View style={styles.countryCode}>
                   <Text style={styles.countryCodeText}>+91</Text>
                 </View>
                 <View style={styles.phoneInputWrapper}>
                   <InputField
-                    placeholder="Enter 10-digit number"
+                    placeholder={t('auth.enterMobileNumber')}
                     value={phone}
-                    onChangeText={(t) => {
-                      setPhone(t);
+                    onChangeText={(tVal) => {
+                      setPhone(tVal);
                       if (error) setError(null);
                     }}
                     keyboardType="phone-pad"
@@ -289,13 +311,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
               {isValidPhone && cooldownRemaining > 0 && (
                 <View style={styles.cooldownContainer}>
                   <Text style={styles.cooldownText}>
-                    Request a new OTP in {cooldownRemaining} {cooldownRemaining === 1 ? 'second' : 'seconds'}
+                    {t('auth.cooldown', {
+                      seconds: cooldownRemaining,
+                      unit: cooldownRemaining === 1 ? t('auth.second') : t('auth.seconds'),
+                    })}
                   </Text>
                 </View>
               )}
 
               <Button
-                label={loading ? 'Sending OTP...' : 'Get OTP'}
+                label={loading ? t('auth.sendingOtp') : t('auth.getOtp')}
                 onPress={handleGetOtp}
                 variant="primary"
                 size="lg"
@@ -308,13 +333,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
           ) : (
             /* Email Form */
             <View style={styles.formSection}>
-              <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
+              <Text style={styles.inputLabel}>{t('auth.emailAddress')}</Text>
               <View style={styles.inputWrapper}>
                 <InputField
                   placeholder="name@example.com"
                   value={email}
-                  onChangeText={(t) => {
-                    setEmail(t);
+                  onChangeText={(tVal) => {
+                    setEmail(tVal);
                     if (error) setError(null);
                   }}
                   keyboardType="email-address"
@@ -324,19 +349,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
               </View>
 
               <View style={styles.passwordHeaderRow}>
-                <Text style={styles.inputLabel}>PASSWORD</Text>
+                <Text style={styles.inputLabel}>{t('auth.password')}</Text>
                 <Pressable onPress={handleForgotPassword} hitSlop={8}>
-                  <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+                  <Text style={styles.forgotPasswordText}>{t('auth.forgotPassword')}</Text>
                 </Pressable>
               </View>
               <View style={styles.passwordRow}>
                 <TextInput
                   style={styles.passwordInput}
-                  placeholder="Enter your password"
+                  placeholder={t('auth.enterPassword')}
                   placeholderTextColor={colors.onSurfaceVariant}
                   value={password}
-                  onChangeText={(t) => {
-                    setPassword(t);
+                  onChangeText={(tVal) => {
+                    setPassword(tVal);
                     if (error) setError(null);
                   }}
                   secureTextEntry={!showPassword}
@@ -358,7 +383,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
               </View>
 
               <Button
-                label={loading ? 'Logging In...' : 'Log In with Email'}
+                label={loading ? t('auth.loggingIn') : t('auth.loginWithEmail')}
                 onPress={handleEmailLogin}
                 variant="primary"
                 size="lg"
@@ -373,7 +398,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
           {/* Social Divider */}
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Or continue with</Text>
+            <Text style={styles.dividerText}>{t('auth.orContinueWith')}</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -389,7 +414,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
               ) : (
                 <>
                   <Text style={styles.socialIconText}>G</Text>
-                  <Text style={styles.socialButtonText}>Continue with Google</Text>
+                  <Text style={styles.socialButtonText}>{t('auth.continueWithGoogle')}</Text>
                 </>
               )}
             </Pressable>
@@ -404,7 +429,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
               ) : (
                 <>
                   <Feather name="shield" size={18} color={colors.onSurface} style={styles.socialIcon} />
-                  <Text style={styles.socialButtonText}>Continue with Apple</Text>
+                  <Text style={styles.socialButtonText}>{t('auth.continueWithApple')}</Text>
                 </>
               )}
             </Pressable>
@@ -413,23 +438,24 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }
           {/* Switch to Sign Up */}
           <View style={styles.switchRow}>
             <Text style={styles.switchPrompt}>
-              Don't have an account?{' '}
+              {t('auth.dontHaveAccount')}
               <Text
                 style={styles.switchLink}
                 onPress={() => {
                   navigation?.navigate('SignUpScreen');
                 }}
               >
-                Sign Up
+                {t('auth.signupTab')}
               </Text>
             </Text>
           </View>
 
           {/* Terms Footer */}
           <Text style={styles.termsText}>
-            By continuing, you agree to our{' '}
-            <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
-            <Text style={styles.termsLink}>Privacy Policy</Text>.
+            {t('auth.termsPrefix')}
+            <Text style={styles.termsLink}>{t('auth.termsOfService')}</Text>
+            {t('auth.termsAnd')}
+            <Text style={styles.termsLink}>{t('auth.privacyPolicy')}</Text>.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -449,6 +475,28 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.marginMobile,
     paddingBottom: spacing.xxl,
+  },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xs,
+  },
+  langPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: colors.outlineHairline,
+  },
+  langPillText: {
+    fontSize: typography.labelSm.fontSize,
+    fontWeight: '600',
+    color: colors.primary,
   },
   heroSection: {
     alignItems: 'center',

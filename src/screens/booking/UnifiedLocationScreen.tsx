@@ -16,6 +16,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 import Button from '../../components/atoms/Button';
 import DraggableBottomSheet from '../../components/organisms/DraggableBottomSheet';
 
@@ -43,6 +44,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
     setPendingDrop,
     commitPendingDrop,
   } = useBooking();
+  const { t } = useI18n();
 
   const insets = useSafeAreaInsets();
   
@@ -236,7 +238,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
         <Feather name="search" size={20} color={colors.onSurfaceVariant} style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search location"
+          placeholder={t('booking.searchDropPlaceholder')}
           placeholderTextColor={colors.onSurfaceVariant}
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -252,13 +254,13 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
   );
 
   const renderForm = () => {
-    let headerLabel = 'LOCATION';
-    if (activeType === 'pickup') headerLabel = 'PICKUP';
+    let headerLabel = t('booking.selectLocation').toUpperCase();
+    if (activeType === 'pickup') headerLabel = t('home.pickup').toUpperCase();
     if (activeType === 'drop') {
       if (editTarget?.index !== undefined) {
-        headerLabel = `DROP ${editTarget.index + 1}`;
+        headerLabel = t('booking.dropN', { n: editTarget.index + 1 }).toUpperCase();
       } else {
-        headerLabel = `DROP ${draft.drops.length + 1}`;
+        headerLabel = t('booking.dropN', { n: draft.drops.length + 1 }).toUpperCase();
       }
     }
 
@@ -267,7 +269,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
         <View style={styles.sheetHeader}>
           <Text style={styles.dropIndex}>{headerLabel}</Text>
           <Text style={styles.locationTitle} numberOfLines={2}>
-            {isResolving ? 'Locating…' : (tempPlace?.address ?? 'No location selected')}
+            {isResolving ? t('home.findingLocation') : (tempPlace?.address ?? t('booking.noDropLocation'))}
           </Text>
         </View>
 
@@ -275,7 +277,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
           <View style={styles.inputWrapper}>
             <TextInput
               style={styles.inputField}
-              placeholder="House / Apartment / Shop (optional)"
+              placeholder={t('booking.addressOptional')}
               placeholderTextColor={colors.onSurfaceVariant}
               value={instructions}
               onChangeText={setInstructions}
@@ -283,11 +285,11 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
           </View>
 
           <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>{activeType === 'pickup' ? "Sender's Name" : "Receiver's Name"}</Text>
+            <Text style={styles.inputLabel}>{activeType === 'pickup' ? t('logistics.senderName') : t('logistics.receiverName')}</Text>
             <View style={styles.inputRow}>
               <TextInput
                 style={styles.inputFieldInner}
-                placeholder="Enter name"
+                placeholder={t('auth.enterFullName')}
                 placeholderTextColor={colors.onSurfaceVariant}
                 value={personName}
                 onChangeText={setPersonName}
@@ -297,10 +299,10 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
           </View>
 
           <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>{activeType === 'pickup' ? "Sender's Mobile number" : "Receiver's Mobile number"}</Text>
+            <Text style={styles.inputLabel}>{activeType === 'pickup' ? t('logistics.senderMobile') : t('logistics.receiverMobile')}</Text>
             <TextInput
               style={styles.inputFieldInner}
-              placeholder="Enter mobile number"
+              placeholder={t('auth.enterMobileNumber')}
               placeholderTextColor={colors.onSurfaceVariant}
               value={personPhone}
               onChangeText={setPersonPhone}
@@ -312,7 +314,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
 
         <View style={styles.actionsContainer}>
           <Button
-            label={mode === 'edit' && editTarget ? "Save Changes" : "Confirm and Proceed"}
+            label={mode === 'edit' && editTarget ? t('common.saveChanges') : t('booking.confirmAndProceed')}
             onPress={handleConfirm}
             variant="primary"
             fullWidth
@@ -325,7 +327,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
               disabled={isResolving || !isFormValid}
             >
               <Feather name="plus" size={18} color={isResolving || !isFormValid ? colors.onSurfaceVariant : colors.primary} />
-              <Text style={[styles.addDropText, (isResolving || !isFormValid) && { color: colors.onSurfaceVariant }]}>Add another drop</Text>
+              <Text style={[styles.addDropText, (isResolving || !isFormValid) && { color: colors.onSurfaceVariant }]}>{t('home.addAnotherDrop')}</Text>
             </Pressable>
           )}
         </View>
@@ -337,7 +339,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
     // Shows Pickup and all Drops so user can tap to edit them.
     return (
       <View style={styles.sheetContent}>
-        <Text style={styles.timelineHeader}>Edit Route</Text>
+        <Text style={styles.timelineHeader}>{t('booking.editRoute')}</Text>
         <View style={styles.timelineContainer}>
           <View style={styles.timelineLine} />
           
@@ -353,8 +355,8 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
               onPress={() => setEditTarget({ type: 'pickup' })}
             >
               <View style={styles.stopCardContent}>
-                <Text style={styles.stopLabel}>PICKUP</Text>
-                <Text style={styles.stopTitle}>{draft.pickup?.address || 'Current Location'}</Text>
+                <Text style={styles.stopLabel}>{t('home.pickup').toUpperCase()}</Text>
+                <Text style={styles.stopTitle}>{draft.pickup?.address || t('booking.currentLocation')}</Text>
               </View>
               <Feather name="edit-2" size={18} color={colors.primary} style={{ alignSelf: 'center' }} />
             </Pressable>
@@ -373,7 +375,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
                 onPress={() => setEditTarget({ type: 'drop', index })}
               >
                 <View style={styles.stopCardContent}>
-                  <Text style={styles.stopLabel}>DROP {index + 1}</Text>
+                  <Text style={styles.stopLabel}>{t('booking.dropN', { n: index + 1 }).toUpperCase()}</Text>
                   <Text style={styles.stopTitle}>{drop.address}</Text>
                 </View>
                 <Feather name="edit-2" size={18} color={colors.primary} style={{ alignSelf: 'center' }} />
@@ -386,12 +388,12 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
                 onPress={() => setEditTarget({ type: 'drop', index: draft.drops.length })}
               >
                 <Feather name="plus" size={20} color={colors.primary} />
-                <Text style={styles.addDropText}>Add Drop</Text>
+                <Text style={styles.addDropText}>{t('booking.addStop')}</Text>
               </Pressable>
             )}
           </View>
-<Button
-label="Done Editing"
+        <Button
+          label={t('booking.doneEditing')}
           onPress={() => navigation?.goBack()}
           variant="primary"
           fullWidth

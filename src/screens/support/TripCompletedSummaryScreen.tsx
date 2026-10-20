@@ -11,6 +11,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import { mockActiveTrip } from '../../data/mockData';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface TripCompletedSummaryScreenProps {
   readonly onBack?: () => void;
@@ -29,6 +30,7 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
   navigation,
 }) => {
   const { clearActiveRide } = useBooking();
+  const { t } = useI18n();
   const stops = mockActiveTrip.stops;
 
   return (
@@ -39,15 +41,19 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
           <Pressable
             style={styles.iconButton}
             onPress={() => (onBack ? onBack() : navigation?.goBack())}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.goBack')}
           >
             <Feather name="arrow-left" size={24} color={colors.primary} />
           </Pressable>
-          <Text style={styles.headerTitle}>Trip Completed</Text>
+          <Text style={styles.headerTitle}>{t('trip.completed')}</Text>
           <Pressable
             style={styles.iconButton}
             onPress={() =>
               onMore ? onMore() : navigation?.navigate('ShareTrackingSheetScreen')
             }
+            accessibilityRole="button"
+            accessibilityLabel={t('common.more')}
           >
             <Feather name="more-vertical" size={24} color={colors.primary} />
           </Pressable>
@@ -59,7 +65,7 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
         {/* Success Banner */}
         <View style={styles.successBanner}>
           <Feather name="check-circle" size={24} color={colors.onSuccessContainer} />
-          <Text style={styles.successBannerText}>✓ TRIP COMPLETED</Text>
+          <Text style={styles.successBannerText}>{t('trip.completedCaps')}</Text>
         </View>
 
         {/* High Fidelity Card */}
@@ -73,10 +79,10 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
               const isLast = index === stops.length - 1;
               const isPrimaryNode = isFirst || isLast;
               
-              let stopLabel = 'Drop';
-              if (isFirst) stopLabel = 'Pickup';
-              else if (isLast) stopLabel = 'Final Drop';
-              else stopLabel = `Drop ${index}`;
+              let stopLabel = t('booking.dropStop');
+              if (isFirst) stopLabel = t('booking.pickup');
+              else if (isLast) stopLabel = t('logistics.finalDrop');
+              else stopLabel = t('logistics.dropStopWithNumber', { number: index });
 
               return (
                 <View key={index} style={styles.timelineRow}>
@@ -108,20 +114,20 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
           {/* Details Grid */}
           <View style={styles.gridContainer}>
             <View style={styles.gridItemHalf}>
-              <Text style={styles.gridLabel}>Vehicle</Text>
+              <Text style={styles.gridLabel}>{t('trip.vehicle')}</Text>
               <Text style={styles.gridValueMono}>
                 {mockActiveTrip.vehicleType} | {mockActiveTrip.vehicleNumber}
               </Text>
             </View>
             <View style={styles.gridItemHalf}>
-              <Text style={styles.gridLabel}>Completion Time</Text>
+              <Text style={styles.gridLabel}>{t('trip.completionTime')}</Text>
               <Text style={styles.gridValueMono}>Oct 24, 2023 • 11:30 AM</Text>
             </View>
             <View style={styles.gridItemFull}>
-              <Text style={styles.gridLabel}>Payment Status</Text>
+              <Text style={styles.gridLabel}>{t('common.status')}</Text>
               <View style={styles.paymentStatusRow}>
                 <View style={styles.statusDot} />
-                <Text style={styles.gridValueMono}>Paid • {mockActiveTrip.fare}</Text>
+                <Text style={styles.gridValueMono}>{t('payment.paid')} • {mockActiveTrip.fare}</Text>
               </View>
             </View>
           </View>
@@ -129,7 +135,7 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
           {/* Receipt Info */}
           <View style={styles.receiptInfoBox}>
             <Feather name="file-text" size={16} color={colors.onSurfaceVariant} />
-            <Text style={styles.receiptInfoText}>Digital receipt is now available.</Text>
+            <Text style={styles.receiptInfoText}>{t('payment.digitalReceiptAvailable')}</Text>
           </View>
         </View>
 
@@ -140,9 +146,10 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
             onPress={() =>
               onRateDriver ? onRateDriver() : navigation?.navigate('DriverRatingScreen')
             }
+            accessibilityRole="button"
           >
             <Feather name="star" size={20} color={colors.onPrimary} />
-            <Text style={styles.rateButtonText}>RATE DRIVER</Text>
+            <Text style={styles.rateButtonText}>{t('trip.rateDriverCaps')}</Text>
           </Pressable>
           
           <Pressable
@@ -150,9 +157,10 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
             onPress={() =>
               onViewReceipt ? onViewReceipt() : navigation?.navigate('DigitalReceiptScreen')
             }
+            accessibilityRole="button"
           >
             <Feather name="file-text" size={20} color={colors.onSecondaryContainer} />
-            <Text style={styles.receiptButtonText}>VIEW RECEIPT</Text>
+            <Text style={styles.receiptButtonText}>{t('payment.viewReceiptCaps')}</Text>
           </Pressable>
           
           <Pressable
@@ -162,8 +170,9 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
               if (onBackToHome) onBackToHome();
               else navigation?.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
             }}
+            accessibilityRole="button"
           >
-            <Text style={styles.homeButtonText}>BACK TO HOME</Text>
+            <Text style={styles.homeButtonText}>{t('common.backToHomeCaps')}</Text>
           </Pressable>
         </View>
       </ScrollView>

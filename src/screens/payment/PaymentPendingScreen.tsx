@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface PaymentPendingScreenProps {
   readonly amount?: string;
@@ -25,6 +26,7 @@ const PaymentPendingScreen: React.FC<PaymentPendingScreenProps & { navigation?: 
   onCancelPayment,
   navigation,
 }) => {
+  const { t } = useI18n();
   const { draft } = useBooking();
   const amount = draft.fareEstimate ? `₹ ${draft.fareEstimate.fare.toFixed(2)}` : '--';
 
@@ -74,7 +76,7 @@ const PaymentPendingScreen: React.FC<PaymentPendingScreenProps & { navigation?: 
           >
             <Feather name="x" size={24} color={colors.primary} />
           </Pressable>
-          <Text style={styles.headerTitle}>Pick Up</Text>
+          <Text style={styles.headerTitle}>{t('home.appName')}</Text>
           <View style={{ width: 40 }} />
         </View>
 
@@ -107,14 +109,14 @@ const PaymentPendingScreen: React.FC<PaymentPendingScreenProps & { navigation?: 
           </View>
 
           {/* Text Content */}
-          <Text style={styles.title}>Payment Pending</Text>
+          <Text style={styles.title}>{t('payment.pendingTitle')}</Text>
           <Text style={styles.subtitle}>
-            We are waiting for confirmation from your bank or UPI app. This usually takes a few seconds.
+            {t('payment.pendingSubtitle')}
           </Text>
 
           {/* Amount Card */}
           <View style={styles.amountCard}>
-            <Text style={styles.amountLabel}>AMOUNT</Text>
+            <Text style={styles.amountLabel}>{t('payment.amount')}</Text>
             <Text style={styles.amountValue}>{amount}</Text>
           </View>
 
@@ -127,7 +129,7 @@ const PaymentPendingScreen: React.FC<PaymentPendingScreenProps & { navigation?: 
               }
             >
               <Feather name="refresh-cw" size={20} color={colors.onPrimary} />
-              <Text style={styles.checkButtonText}>Check Status</Text>
+              <Text style={styles.checkButtonText}>{t('payment.checkStatus')}</Text>
             </Pressable>
             
             <Pressable
@@ -136,7 +138,7 @@ const PaymentPendingScreen: React.FC<PaymentPendingScreenProps & { navigation?: 
                 onCancelPayment ? onCancelPayment() : navigation?.navigate('PaymentFailedScreen')
               }
             >
-              <Text style={styles.cancelButtonText}>Cancel Payment</Text>
+              <Text style={styles.cancelButtonText}>{t('payment.cancelPayment')}</Text>
             </Pressable>
           </View>
         </View>

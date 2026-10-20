@@ -12,6 +12,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface TripCancelledStatusScreenProps {
   readonly tripId?: string;
@@ -28,8 +29,8 @@ export interface TripCancelledStatusScreenProps {
 
 const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { navigation?: any }> = ({
   tripId = 'BK-849201',
-  feeTitle = 'No cancellation fee applies',
-  feeSubtitle = 'You cancelled within the grace period. No payment was captured.',
+  feeTitle,
+  feeSubtitle,
   pickupLocation = 'Tech Park West',
   pickupTime = '10:45 AM',
   dropLocation = 'Airport Terminal 2',
@@ -40,6 +41,9 @@ const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { nav
   navigation,
 }) => {
   const { clearActiveRide } = useBooking();
+  const { t } = useI18n();
+  const effectiveFeeTitle = feeTitle || t('cancellation.noCancellationFee');
+  const effectiveFeeSubtitle = feeSubtitle || t('cancellation.gracePeriodNotice');
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -48,10 +52,12 @@ const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { nav
         <Pressable
           style={styles.iconButton}
           onPress={() => (onBack ? onBack() : navigation?.goBack())}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.goBack')}
         >
           <Feather name="arrow-left" size={24} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.headerTitle}>Trip Cancelled</Text>
+        <Text style={styles.headerTitle}>{t('cancellation.tripCancelled')}</Text>
         <View style={styles.iconButton} />
       </View>
 
@@ -61,8 +67,8 @@ const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { nav
           <View style={styles.cancelIconBox}>
             <MaterialIcons name="cancel" size={40} color={colors.onErrorContainer} />
           </View>
-          <Text style={styles.statusTitle}>Trip Cancelled</Text>
-          <Text style={styles.statusSubtitle}>This booking has been successfully cancelled.</Text>
+          <Text style={styles.statusTitle}>{t('cancellation.tripCancelled')}</Text>
+          <Text style={styles.statusSubtitle}>{t('cancellation.bookingCancelledSuccessfully')}</Text>
           <View style={styles.tripIdBadge}>
             <Text style={styles.tripIdText}>ID: {tripId}</Text>
           </View>
@@ -73,15 +79,15 @@ const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { nav
           <View style={styles.infoRow}>
             <MaterialIcons name="info" size={20} color={colors.secondary} style={styles.infoIcon} />
             <View style={styles.infoTexts}>
-              <Text style={styles.infoTitle}>{feeTitle}</Text>
-              <Text style={styles.infoSubtitle}>{feeSubtitle}</Text>
+              <Text style={styles.infoTitle}>{effectiveFeeTitle}</Text>
+              <Text style={styles.infoSubtitle}>{effectiveFeeSubtitle}</Text>
             </View>
           </View>
         </View>
 
         {/* Trip Summary */}
         <View style={styles.summarySection}>
-          <Text style={styles.sectionTitle}>Trip Summary</Text>
+          <Text style={styles.sectionTitle}>{t('logistics.tripSummary')}</Text>
           
           <View style={styles.routeContainer}>
             <View style={styles.routeTimeline}>
@@ -108,7 +114,7 @@ const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { nav
         {/* Actions */}
         <View style={styles.actionsContainer}>
           <Button
-            label="Back to Home"
+            label={t('common.backToHome')}
             onPress={() => {
               clearActiveRide();
               if (onHome) onHome();
@@ -119,7 +125,7 @@ const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { nav
             size="lg"
           />
           <Button
-            label="View Trip History"
+            label={t('history.viewTripHistory')}
             onPress={() =>
               onViewHistory ? onViewHistory() : navigation?.navigate('TripHistoryScreen')
             }

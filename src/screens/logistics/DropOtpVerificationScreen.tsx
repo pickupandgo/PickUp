@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { mockActiveTrip } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 
 export interface DropOtpVerificationScreenProps {
   readonly onBack?: () => void;
@@ -25,6 +26,7 @@ const DropOtpVerificationScreen: React.FC<DropOtpVerificationScreenProps & { nav
   onResend,
   navigation,
 }) => {
+  const { t } = useI18n();
   const [otp, setOtp] = useState(['', '', '', '']);
   const inputs = useRef<Array<TextInput | null>>([]);
   const dropDetails = mockActiveTrip.stops[1]; // assuming index 1 is Drop 1
@@ -67,7 +69,7 @@ const DropOtpVerificationScreen: React.FC<DropOtpVerificationScreenProps & { nav
           >
             <Feather name="arrow-left" size={24} color={colors.primary} />
           </Pressable>
-          <Text style={styles.headerTitle}>Delivery Verification</Text>
+          <Text style={styles.headerTitle}>{t('logistics.deliveryVerification')}</Text>
           <Pressable
             style={styles.iconButton}
             onPress={() => navigation?.navigate('ShareTrackingSheetScreen')}
@@ -85,23 +87,23 @@ const DropOtpVerificationScreen: React.FC<DropOtpVerificationScreenProps & { nav
             </View>
             
             <View style={styles.dropBadge}>
-              <Text style={styles.dropBadgeText}>Drop 1 of 3</Text>
+              <Text style={styles.dropBadgeText}>{t('logistics.dropOf', { current: 1, total: 3 })}</Text>
             </View>
             
             <View>
-              <Text style={styles.dropAddress}>{dropDetails?.address || 'Delivery Location'}</Text>
+              <Text style={styles.dropAddress}>{dropDetails?.address || t('logistics.deliveryLocation')}</Text>
               <View style={styles.contactRow}>
                 <Feather name="user" size={16} color={colors.onSurfaceVariant} />
-                <Text style={styles.contactText}>{dropDetails?.contactName || 'Receiver'}</Text>
+                <Text style={styles.contactText}>{dropDetails?.contactName || t('logistics.receiver')}</Text>
               </View>
             </View>
           </View>
 
           {/* OTP Section */}
           <View style={styles.otpSection}>
-            <Text style={styles.otpTitle}>Delivery OTP</Text>
+            <Text style={styles.otpTitle}>{t('logistics.deliveryOtp')}</Text>
             <Text style={styles.otpSubtitle}>
-              Please share this 4-digit code with the driver to confirm your delivery handover.
+              {t('logistics.shareDeliveryOtpHint')}
             </Text>
 
             <View style={styles.otpInputContainer}>
@@ -140,11 +142,11 @@ const DropOtpVerificationScreen: React.FC<DropOtpVerificationScreenProps & { nav
             disabled={!isOtpComplete}
             accessibilityRole="button"
           >
-            <Text style={styles.verifyButtonText}>VERIFY DELIVERY OTP</Text>
+            <Text style={styles.verifyButtonText}>{t('logistics.verifyDeliveryOtp')}</Text>
           </Pressable>
 
           <Pressable style={styles.resendButton} onPress={handleResend} accessibilityRole="button">
-            <Text style={styles.resendButtonText}>Resend OTP</Text>
+            <Text style={styles.resendButtonText}>{t('auth.resendOtp')}</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>

@@ -7,6 +7,7 @@ import Card from '../../components/molecules/Card';
 import ListRow from '../../components/molecules/ListRow';
 import Divider from '../../components/atoms/Divider';
 import Button from '../../components/atoms/Button';
+import { useI18n } from '../../i18n';
 
 export interface TripCompletedScreenProps {
   readonly onDone?: () => void;
@@ -18,6 +19,8 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
   onWriteReview,
   navigation,
 }) => {
+  const { t } = useI18n();
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
@@ -30,42 +33,42 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
           <View style={styles.successCircle}>
             <Text style={styles.successIcon}>✓</Text>
           </View>
-          <Text style={styles.title}>{strings.trip.completed}</Text>
+          <Text style={styles.title}>{t('trip.completed')}</Text>
           <Text style={styles.subtitle}>
-            Your delivery has been completed successfully
+            {t('trip.completedSuccessfully')}
           </Text>
         </View>
 
         {/* Trip Summary Card */}
         <Card variant="outlined" padding="none">
           <View style={styles.summaryHeader}>
-            <Text style={styles.summaryTitle}>{strings.trip.summary}</Text>
+            <Text style={styles.summaryTitle}>{t('trip.tripSummary')}</Text>
             <Text style={styles.tripId}>{mockActiveTrip.id}</Text>
           </View>
           <Divider />
           <ListRow
-            title="Distance"
+            title={t('trip.distance')}
             trailing={
               <Text style={styles.valueText}>{mockActiveTrip.distance}</Text>
             }
           />
           <Divider />
           <ListRow
-            title="Vehicle"
+            title={t('trip.vehicle')}
             trailing={
               <Text style={styles.valueText}>{mockActiveTrip.vehicleType}</Text>
             }
           />
           <Divider />
           <ListRow
-            title="Driver"
+            title={t('tracking.driver')}
             trailing={
               <Text style={styles.valueText}>{mockActiveTrip.driverName}</Text>
             }
           />
           <Divider />
           <View style={styles.fareRow}>
-            <Text style={styles.fareLabel}>Total Fare</Text>
+            <Text style={styles.fareLabel}>{t('trip.totalFare')}</Text>
             <Text style={styles.fareAmount}>{mockActiveTrip.fare}</Text>
           </View>
         </Card>
@@ -94,7 +97,7 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
       {/* Footer */}
       <View style={styles.footer}>
         <Button
-          label="Write a Review"
+          label={t('trip.writeReview')}
           onPress={() =>
             onWriteReview ? onWriteReview() : navigation?.navigate('DriverRatingScreen')
           }
@@ -103,7 +106,7 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
           fullWidth
         />
         <Button
-          label="Done"
+          label={t('common.done')}
           onPress={() => {
             onDone?.();
             navigation?.navigate('TripCompletedSummaryScreen');

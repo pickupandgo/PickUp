@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useI18n } from '../../i18n';
 import { usePlaceSearch } from '../../hooks/usePlaceSearch';
 import { useBooking } from '../../state/BookingContext';
 import { getCurrentPlace, LocationPermissionDeniedError, type PlaceSuggestion } from '../../api/geocoding';
@@ -34,6 +35,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
   navigation,
 }) => {
   const { draft, setPendingDrop } = useBooking();
+  const { t } = useI18n();
   // Bias results toward the pickup point so short queries resolve locally.
   const { query, setQuery, suggestions, isSearching, error, resolve, clear } = usePlaceSearch(
     draft.pickup
@@ -86,7 +88,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
         <Pressable style={styles.iconButton} onPress={() => (onBack ? onBack() : navigation?.goBack())}>
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Pick Up</Text>
+        <Text style={styles.headerTitle}>{t('home.appName')}</Text>
         <Pressable style={styles.iconButton} onPress={() => (onClose ? onClose() : navigation?.goBack())}>
           <Feather name="x" size={24} color={colors.primary} />
         </Pressable>
@@ -99,7 +101,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
             <Feather name="search" size={20} color={colors.onSurfaceVariant} style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search location"
+              placeholder={t('booking.searchDropPlaceholder')}
               placeholderTextColor={colors.onSurfaceVariant}
               value={query}
               onChangeText={setQuery}
@@ -109,7 +111,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
             />
             {isSearching && <ActivityIndicator size="small" color={colors.onSurfaceVariant} />}
             {hasQuery && !isSearching && (
-              <Pressable onPress={clear} style={styles.clearButton} accessibilityLabel="Clear search">
+              <Pressable onPress={clear} style={styles.clearButton} accessibilityLabel={t('common.clear')}>
                 <MaterialIcons name="cancel" size={20} color={colors.onSurfaceVariant} />
               </Pressable>
             )}
@@ -124,7 +126,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
               disabled={isResolving}
             >
               <Feather name="navigation" size={20} color={colors.primary} />
-              <Text style={styles.quickActionText}>Current Location</Text>
+              <Text style={styles.quickActionText}>{t('booking.currentLocation')}</Text>
             </Pressable>
             
             <View style={{ width: 1, backgroundColor: colors.outlineVariant, marginHorizontal: spacing.sm }} />
@@ -137,14 +139,14 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
               }}
             >
               <Feather name="map" size={20} color={colors.primary} />
-              <Text style={styles.quickActionText}>Locate on Map</Text>
+              <Text style={styles.quickActionText}>{t('booking.locateOnMap')}</Text>
             </Pressable>
           </View>
 
         {/* Live results from Google Places */}
         <View style={styles.listContainer}>
           <Text style={styles.listTitle}>
-            {hasQuery ? 'SEARCH RESULTS' : 'SEARCH FOR A DROP LOCATION'}
+            {hasQuery ? t('booking.searchResults') : t('booking.searchForDrop')}
           </Text>
 
           {(actionError || error) && (
@@ -157,12 +159,12 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
           <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
             {!hasQuery && !actionError && (
               <Text style={styles.hintText}>
-                Start typing an address, or use your current location.
+                {t('booking.startTypingHint')}
               </Text>
             )}
 
             {hasQuery && !isSearching && !suggestions.length && !error && (
-              <Text style={styles.hintText}>No places matched that search.</Text>
+              <Text style={styles.hintText}>{t('booking.noPlacesMatched')}</Text>
             )}
 
             {suggestions.map((suggestion) => (
@@ -190,7 +192,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
           {isResolving && (
             <View style={styles.messageRow}>
               <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={styles.hintText}>Getting location details…</Text>
+              <Text style={styles.hintText}>{t('booking.gettingDetails')}</Text>
             </View>
           )}
         </View>

@@ -12,6 +12,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useBooking } from '../../state/BookingContext';
 import { useTripStatus } from '../../hooks/useTripStatus';
+import { useI18n } from '../../i18n';
 
 export interface PickupOTPVerificationScreenProps {
   readonly pickupLocation?: string;
@@ -35,6 +36,7 @@ const PickupOTPVerificationScreen: React.FC<PickupOTPVerificationScreenProps & {
   isLoading = false,
   isError = false,
 }) => {
+  const { t } = useI18n();
   const { trip, setTrip } = useBooking();
 
   // Poll the trip so the screen advances the moment the driver verifies.
@@ -82,7 +84,7 @@ const PickupOTPVerificationScreen: React.FC<PickupOTPVerificationScreenProps & {
         >
           <Feather name="arrow-left" size={24} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.headerTitle}>Pickup Verification</Text>
+        <Text style={styles.headerTitle}>{t('logistics.pickupVerification')}</Text>
         <View style={styles.iconButton} />
       </View>
 
@@ -94,7 +96,7 @@ const PickupOTPVerificationScreen: React.FC<PickupOTPVerificationScreenProps & {
               <MaterialIcons name="location-on" size={20} color={colors.primary} />
             </View>
             <View style={styles.locationTextContainer}>
-              <Text style={styles.locationLabel}>Pickup Location</Text>
+              <Text style={styles.locationLabel}>{t('booking.pickupLocation')}</Text>
               <Text style={styles.locationValue}>{pickupLocation}</Text>
             </View>
           </View>
@@ -120,9 +122,9 @@ const PickupOTPVerificationScreen: React.FC<PickupOTPVerificationScreenProps & {
             driver submits it, so this displays rather than collects. */}
         <View style={styles.otpSection}>
           <View style={styles.otpHeader}>
-            <Text style={styles.otpTitle}>Share your OTP</Text>
+            <Text style={styles.otpTitle}>{t('logistics.shareYourOtp')}</Text>
             <Text style={styles.otpSubtitle}>
-              Read this 4-digit code out to your driver. They enter it to confirm pickup.
+              {t('logistics.readCodeToDriver')}
             </Text>
           </View>
 
@@ -137,7 +139,7 @@ const PickupOTPVerificationScreen: React.FC<PickupOTPVerificationScreenProps & {
           <View style={styles.waitingRow}>
             <ActivityIndicator size="small" color={colors.onSurfaceVariant} />
             <Text style={styles.waitingText}>
-              {isVerified ? 'Pickup verified' : 'Waiting for the driver to confirm…'}
+              {isVerified ? t('logistics.pickupVerified') : t('logistics.waitingDriverConfirm')}
             </Text>
           </View>
 

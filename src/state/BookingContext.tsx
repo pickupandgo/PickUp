@@ -1,4 +1,4 @@
-﻿import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { FareEstimate, GeoPoint, NearbyDriver, Ride, Trip } from '../api/types';
 import type { ResolvedPlace } from '../api/geocoding';
@@ -38,6 +38,7 @@ export interface BookingDraft {
   readonly pendingDrop?: ResolvedPlace;
   readonly vehicleType?: string;
   readonly weightKg?: number;
+  readonly goodsType?: string;
   readonly goodsDescription?: string;
   readonly declaredValue?: string;
   readonly insured?: boolean;
@@ -47,19 +48,20 @@ export interface BookingDraft {
   readonly receiverName?: string;
   readonly receiverPhone?: string;
   readonly fareEstimate?: FareEstimate;
+  readonly paymentMethod?: string;
 }
 
-const EMPTY_DRAFT: BookingDraft = { drops: [] };
+const EMPTY_DRAFT: BookingDraft = { drops: [], paymentMethod: 'cod' };
 
 interface BookingContextValue {
   readonly customerId: string | undefined;
   readonly draft: BookingDraft;
-  /** First drop â€” the only one the engine supports today. */
+  /** First drop — the only one the engine supports today. */
   readonly primaryDrop: ResolvedPlace | undefined;
   /** True when pickup + at least one drop are set. */
   readonly canEstimate: boolean;
 
-  readonly setPickup: (place: ResolvedPlace) => void;
+  readonly setPickup: (place: ResolvedPlace | ((prev: ResolvedPlace | undefined) => ResolvedPlace)) => void;
   readonly setPendingDrop: (place: ResolvedPlace | undefined) => void;
   /** Moves the pending drop into the confirmed list. Returns it, or undefined. */
   readonly commitPendingDrop: () => ResolvedPlace | undefined;
@@ -69,6 +71,7 @@ interface BookingContextValue {
   readonly setVehicleType: (vehicleType: string) => void;
   readonly setGoods: (goods: {
     readonly weightKg?: number;
+    readonly goodsType?: string;
     readonly goodsDescription?: string;
     readonly declaredValue?: string;
   }) => void;
@@ -76,6 +79,7 @@ interface BookingContextValue {
   readonly setSender: (sender: { readonly name?: string; readonly phone?: string; readonly instructions?: string }) => void;
   readonly setReceiver: (receiver: { readonly name: string; readonly phone: string }) => void;
   readonly setFareEstimate: (estimate: FareEstimate | undefined) => void;
+  readonly setPaymentMethod: (method: string) => void;
   readonly resetDraft: () => void;
   readonly startNewBooking: () => void;
 
@@ -108,9 +112,15 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
     };
   }, []);
 
-  const setPickup = useCallback((pickup: ResolvedPlace) => {
-    setDraft((d) => ({ ...d, pickup }));
-  }, []);
+  const setPickup = useCallback(
+    (pickup: ResolvedPlace | ((prev: ResolvedPlace | undefined) => ResolvedPlace)) => {
+      setDraft((d) => ({
+        ...d,
+        pickup: typeof pickup === 'function' ? pickup(d.pickup) : pickup,
+      }));
+    },
+    []
+  );
 
   const addDrop = useCallback((place: ResolvedPlace) => {
     setDraft((d) => {
@@ -158,7 +168,7 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
   }, []);
 
   const setGoods = useCallback(
-    (goods: { weightKg?: number; goodsDescription?: string; declaredValue?: string }) => {
+    (goods: { weightKg?: number; goodsType?: string; goodsDescription?: string; declaredValue?: string }) => {
       // Weight feeds the fare multiplier, so a change invalidates the quote.
       setDraft((d) => ({ ...d, ...goods, fareEstimate: undefined }));
     },
@@ -186,12 +196,17 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
     setDraft((d) => ({ ...d, fareEstimate }));
   }, []);
 
+  const setPaymentMethod = useCallback((paymentMethod: string) => {
+    setDraft((d) => ({ ...d, paymentMethod }));
+  }, []);
+
   const resetDraft = useCallback(() => setDraft(EMPTY_DRAFT), []);
 
   const startNewBooking = useCallback(() => {
     setDraft((d) => ({
       ...EMPTY_DRAFT,
       pickup: d.pickup,
+      paymentMethod: d.paymentMethod || 'cod',
     }));
     setRide(undefined);
     setTrip(undefined);
@@ -226,6 +241,7 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
       setSender,
       setReceiver,
       setFareEstimate,
+      setPaymentMethod,
       resetDraft,
       startNewBooking,
       ride,
@@ -252,6 +268,7 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
       setSender,
       setReceiver,
       setFareEstimate,
+      setPaymentMethod,
       resetDraft,
       startNewBooking,
       ride,

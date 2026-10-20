@@ -59,7 +59,7 @@ export class ApiError extends Error {
         return 'The server sent an unexpected response.';
       case 'http':
         if (this.status === 404) return 'Not found.';
-        if (this.status === 409) return 'That action is no longer possible.';
+        if (this.status === 409) return this.serverMessage ?? 'This email address is already associated with another account.';
         if (this.status === 400) return this.serverMessage ?? 'That request was rejected.';
         if (this.status && this.status >= 500) return 'The server had a problem. Please try again.';
         return this.serverMessage ?? 'Something went wrong.';
@@ -77,7 +77,7 @@ export class ApiError extends Error {
 }
 
 export interface RequestOptions {
-  readonly method?: 'GET' | 'POST' | 'PATCH';
+  readonly method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   readonly body?: unknown;
   readonly query?: Record<string, string | number | undefined>;
   readonly timeoutMs?: number;

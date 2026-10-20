@@ -6,36 +6,63 @@ import {
   Pressable,
   TextInput,
   StyleSheet,
+  Modal,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
+import { GOODS_CATEGORIES, findGoodsCategory, GoodsCategory } from '../../data/goodsCategories';
 
 export interface GoodsDetailsScreenProps {
   readonly onBack?: () => void;
   readonly onContinue?: () => void;
 }
 
-const goodsTypes = ['Furniture', 'Electronics', 'Clothing/Apparel', 'Documents', 'Other'];
-
 const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any }> = ({
   onBack,
   onContinue,
   navigation,
 }) => {
-  const { setGoods } = useBooking();
-  const [selectedType, setSelectedType] = useState<string>('');
-  const [description, setDescription] = useState('');
-  const [weight, setWeight] = useState('');
+  const { draft, setGoods } = useBooking();
+  const { t } = useI18n();
+
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>(() => {
+    if (draft.goodsType) return draft.goodsType;
+    if (draft.goodsDescription) {
+      const match = findGoodsCategory(draft.goodsDescription);
+      if (match) return match.id;
+    }
+    return '';
+  });
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [description, setDescription] = useState(() => {
+    if (!draft.goodsDescription) return '';
+    const match = findGoodsCategory(draft.goodsDescription);
+    if (match) return '';
+    return draft.goodsDescription;
+  });
+  const [weight, setWeight] = useState(draft.weightKg ? String(draft.weightKg) : '');
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lbs'>('kg');
-  const [declaredValue, setDeclaredValue] = useState('');
+  const [declaredValue, setDeclaredValue] = useState(draft.declaredValue || '');
   const [instructions, setInstructions] = useState('');
 
-  // Local-only selector: cycles through the available goods types on each tap.
-  const handleCycleGoodsType = () => {
-    const nextIndex = (goodsTypes.indexOf(selectedType) + 1) % goodsTypes.length;
-    setSelectedType(goodsTypes[nextIndex]);
+  const selectedCategory = findGoodsCategory(selectedCategoryId);
+
+  const handleOpenDropdown = () => {
+    Keyboard.dismiss();
+    setIsDropdownOpen(true);
+  };
+
+  const handleCloseDropdown = () => {
+    setIsDropdownOpen(false);
+  };
+
+  const handleSelectCategory = (category: GoodsCategory) => {
+    setSelectedCategoryId(category.id);
+    setIsDropdownOpen(false);
   };
 
   return (
@@ -46,16 +73,16 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
           style={styles.iconButton}
           onPress={() => (onBack ? onBack() : navigation?.goBack())}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t('common.goBack')}
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Goods Details</Text>
+        <Text style={styles.headerTitle}>{t('logistics.goodsDetails')}</Text>
         <Pressable
           style={styles.iconButton}
           onPress={() => navigation?.navigate('ActiveTripChatScreen')}
           accessibilityRole="button"
-          accessibilityLabel="More options"
+          accessibilityLabel={t('common.more')}
         >
           <Feather name="more-vertical" size={22} color={colors.primary} />
         </Pressable>
@@ -70,50 +97,54 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
       >
         {/* Goods Type */}
         <View style={styles.fieldGroup}>
-          <Text style={styles.fieldLabel}>Goods/Load Type</Text>
+          <Text style={styles.fieldLabel}>{t('logistics.goodsLoadType')}</Text>
           <View style={styles.selectContainer}>
             <Pressable
               style={styles.selectButton}
-              onPress={handleCycleGoodsType}
+              onPress={handleOpenDropdown}
               accessibilityRole="button"
-              accessibilityLabel="Select goods type"
+              accessibilityLabel={t('logistics.goodsLoadType')}
             >
-              <Text style={[styles.selectText, !selectedType && styles.selectPlaceholder]}>
-                {selectedType || 'Select goods type...'}
+              <Text style={[styles.selectText, !selectedCategory && styles.selectPlaceholder]}>
+                {selectedCategory ? t(selectedCategory.key) : t('logistics.selectGoodsType')}
               </Text>
-              <Feather name="chevron-down" size={20} color={colors.onSurfaceVariant} />
+              <Feather
+                name={isDropdownOpen ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={colors.onSurfaceVariant}
+              />
             </Pressable>
           </View>
         </View>
 
         {/* Goods Description */}
         <View style={styles.fieldGroup}>
-          <Text style={styles.fieldLabel}>Goods Description</Text>
+          <Text style={styles.fieldLabel}>{t('logistics.goodsDescription')}</Text>
           <TextInput
             style={[styles.textInput, styles.textArea]}
-            placeholder="e.g., '3 boxes of kitchenware, fragile items included.'"
+            placeholder={t('logistics.goodsDescriptionPlaceholder')}
             placeholderTextColor={colors.outline}
             multiline
             numberOfLines={3}
             value={description}
             onChangeText={setDescription}
             textAlignVertical="top"
-            accessibilityLabel="Goods description"
+            accessibilityLabel={t('logistics.goodsDescription')}
           />
         </View>
 
         {/* Weight */}
         <View style={styles.fieldGroup}>
-          <Text style={[styles.fieldLabel, styles.fieldLabelError]}>Approximate Weight *</Text>
+          <Text style={[styles.fieldLabel, styles.fieldLabelError]}>{t('logistics.approximateWeight')}</Text>
           <View style={styles.weightRow}>
             <TextInput
               style={[styles.textInput, styles.weightInput, styles.inputError]}
-              placeholder="Enter weight"
+              placeholder={t('logistics.enterWeight')}
               placeholderTextColor={colors.outline}
               keyboardType="numeric"
               value={weight}
               onChangeText={setWeight}
-              accessibilityLabel="Approximate weight"
+              accessibilityLabel={t('logistics.approximateWeight')}
             />
             <View style={styles.unitToggle}>
               <Pressable
@@ -130,12 +161,12 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
               </Pressable>
             </View>
           </View>
-          <Text style={styles.errorHint}>Weight is required for accurate pricing.</Text>
+          <Text style={styles.errorHint}>{t('logistics.weightRequiredHint')}</Text>
         </View>
 
         {/* Declared Value */}
         <View style={styles.fieldGroup}>
-          <Text style={styles.fieldLabel}>Declared Goods Value</Text>
+          <Text style={styles.fieldLabel}>{t('logistics.declaredGoodsValue')}</Text>
           <View style={styles.valueInputWrapper}>
             <Text style={styles.currencyPrefix}>₹</Text>
             <TextInput
@@ -145,7 +176,7 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
               keyboardType="numeric"
               value={declaredValue}
               onChangeText={setDeclaredValue}
-              accessibilityLabel="Declared goods value"
+              accessibilityLabel={t('logistics.declaredGoodsValue')}
             />
           </View>
         </View>
@@ -153,19 +184,19 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
         {/* Special Instructions */}
         <View style={styles.fieldGroup}>
           <View style={styles.labelRow}>
-            <Text style={styles.fieldLabel}>Special Instructions</Text>
-            <Text style={styles.optionalTag}>(Optional)</Text>
+            <Text style={styles.fieldLabel}>{t('logistics.specialInstructions')}</Text>
+            <Text style={styles.optionalTag}>{t('logistics.optional')}</Text>
           </View>
           <TextInput
             style={[styles.textInput, styles.textAreaSmall]}
-            placeholder="Any specific handling instructions..."
+            placeholder={t('logistics.handlingInstructionsPlaceholder')}
             placeholderTextColor={colors.outline}
             multiline
             numberOfLines={2}
             value={instructions}
             onChangeText={setInstructions}
             textAlignVertical="top"
-            accessibilityLabel="Special instructions"
+            accessibilityLabel={t('logistics.specialInstructions')}
           />
         </View>
       </ScrollView>
@@ -186,18 +217,85 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
 
             setGoods({
               weightKg,
-              goodsDescription: description || selectedType || undefined,
+              goodsType: selectedCategory?.id,
+              goodsDescription: description || (selectedCategory ? t(selectedCategory.key) : undefined),
               declaredValue: declaredValue || undefined,
             });
             onContinue?.();
             navigation?.navigate('GoodsInsuranceScreen');
           }}
           accessibilityRole="button"
-          accessibilityLabel="Continue"
+          accessibilityLabel={t('common.continue')}
         >
-          <Text style={styles.continueText}>CONTINUE</Text>
+          <Text style={styles.continueText}>{t('common.continueCaps')}</Text>
         </Pressable>
       </View>
+
+      {/* Goods Category Dropdown Modal */}
+      <Modal
+        visible={isDropdownOpen}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={handleCloseDropdown}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={handleCloseDropdown}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.close')}
+          />
+          <View style={styles.sheetContainer}>
+            {/* Drag Handle */}
+            <View style={styles.dragHandleContainer}>
+              <View style={styles.dragHandle} />
+            </View>
+
+            {/* Sheet Header */}
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>{t('logistics.goodsLoadType')}</Text>
+              <Pressable
+                style={styles.closeButton}
+                onPress={handleCloseDropdown}
+                accessibilityRole="button"
+                accessibilityLabel={t('common.close')}
+              >
+                <Feather name="x" size={20} color={colors.onSurfaceVariant} />
+              </Pressable>
+            </View>
+
+            {/* Scrollable Category List */}
+            <ScrollView
+              style={styles.categoryScroll}
+              contentContainerStyle={styles.categoryScrollContent}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled"
+            >
+              {GOODS_CATEGORIES.map((category) => {
+                const isSelected = selectedCategory?.id === category.id;
+                return (
+                  <Pressable
+                    key={category.id}
+                    style={[styles.categoryRow, isSelected && styles.categoryRowSelected]}
+                    onPress={() => handleSelectCategory(category)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={t(category.key)}
+                  >
+                    <Text style={[styles.categoryText, isSelected && styles.categoryTextSelected]}>
+                      {t(category.key)}
+                    </Text>
+                    {isSelected ? (
+                      <Feather name="check" size={20} color={colors.primary} />
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -383,6 +481,88 @@ const styles = StyleSheet.create({
     fontWeight: typography.headlineSm.fontWeight,
     color: colors.onPrimary,
     fontFamily: typography.headlineSm.fontFamily,
+  },
+
+  // Modal & Dropdown Sheet
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'transparent',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(3, 7, 29, 0.5)',
+  },
+  sheetContainer: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: borderRadius.xxl,
+    borderTopRightRadius: borderRadius.xxl,
+    maxHeight: '75%',
+    paddingBottom: spacing.xxl,
+    ...shadows.elevated,
+  },
+  dragHandleContainer: {
+    alignItems: 'center',
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.outlineVariant,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.outlineHairline,
+  },
+  sheetTitle: {
+    fontSize: typography.headlineSm.fontSize,
+    fontWeight: '600',
+    color: colors.onSurface,
+    fontFamily: typography.headlineSm.fontFamily,
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceContainerLow,
+  },
+  categoryScroll: {
+    maxHeight: 380,
+  },
+  categoryScrollContent: {
+    paddingVertical: spacing.xs,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xl,
+    paddingVertical: 14,
+    minHeight: 48,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.outlineHairline,
+  },
+  categoryRowSelected: {
+    backgroundColor: colors.secondaryContainer + '55',
+  },
+  categoryText: {
+    fontSize: typography.bodyLg.fontSize,
+    color: colors.onSurface,
+    fontFamily: typography.bodyLg.fontFamily,
+    flex: 1,
+  },
+  categoryTextSelected: {
+    color: colors.primary,
+    fontWeight: '600',
   },
 });
 

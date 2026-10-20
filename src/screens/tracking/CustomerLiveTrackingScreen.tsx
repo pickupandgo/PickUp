@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -12,10 +12,12 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
 import { useTripStatus } from '../../hooks/useTripStatus';
-import { getDriver, getRide } from '../../api/engine';
+import { cancelTrip, getDriver, getRide } from '../../api/engine';
+import { useActiveBookingCancellation } from '../../hooks/useActiveBookingCancellation';
 import type { GeoPoint } from '../../api/types';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
 import { useRoute } from '../../hooks/useRoute';
+import { useI18n } from '../../i18n';
 
 export interface CustomerLiveTrackingScreenProps {
   readonly onBack?: () => void;
@@ -29,7 +31,8 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
   onChat,
   navigation,
 }) => {
-  const { trip, setTrip, assignedDriver, ride, setRide } = useBooking();
+  const { t } = useI18n();
+  const { trip, setTrip, assignedDriver, ride, setRide, customerId, clearActiveRide } = useBooking();
 
   // If the user killed the app and restarted, `ride` might be undefined, but `trip` exists.
   // We fetch `ride` to restore access to the OTPs since the `trip` object strips them.
@@ -71,6 +74,29 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
       navigation?.replace('TripCancelledStatusScreen');
     }
   }, [status, navigation]);
+
+  const isBookingActive = Boolean(current && !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(current.status));
+
+  const handleCancelConfirm = useCallback(async () => {
+    if (current?.id && customerId) {
+      await cancelTrip(current.id, customerId, 'Customer cancelled booking');
+    }
+    clearActiveRide();
+  }, [current?.id, customerId, clearActiveRide]);
+
+  const { isCancelling, requestCancellation } = useActiveBookingCancellation({
+    navigation,
+    isBookingActive,
+    onCancelConfirm: handleCancelConfirm,
+    allowedNextRoutes: [
+      'TripCompletedScreen',
+      'TripCancelledStatusScreen',
+      'CallDriverScreen',
+      'ActiveTripChatScreen',
+      'ShareTrackingSheetScreen',
+      'LiveTrackingExceptionsScreen',
+    ],
+  });
   const [driverPoint, setDriverPoint] = useState<GeoPoint | undefined>(
     assignedDriver
       ? { latitude: assignedDriver.latitude, longitude: assignedDriver.longitude }
@@ -105,28 +131,28 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
   const markers = useMemo<readonly MapMarker[]>(() => {
     const built: MapMarker[] = [];
     if (current?.pickup) {
-      built.push({ id: 'pickup', kind: 'pickup', coordinate: current.pickup, title: 'Pickup' });
+      built.push({ id: 'pickup', kind: 'pickup', coordinate: current.pickup, title: t('home.pickup') });
     }
     if (current?.stops && current.stops.length > 0) {
       current.stops.forEach((stop, index) => {
         if (stop.status !== 'DELIVERED') {
-          built.push({ id: `drop-${index}`, kind: 'drop', coordinate: stop.location, title: `Drop ${index + 1}` });
+          built.push({ id: `drop-${index}`, kind: 'drop', coordinate: stop.location, title: `${t('home.drop')} ${index + 1}` });
         }
       });
     } else if (current?.drop) {
-      built.push({ id: 'drop', kind: 'drop', coordinate: current.drop, title: 'Drop' });
+      built.push({ id: 'drop', kind: 'drop', coordinate: current.drop, title: t('home.drop') });
     }
     if (driverPoint) {
       built.push({
         id: 'driver',
         kind: 'driver',
         coordinate: driverPoint,
-        title: assignedDriver?.name ?? 'Driver',
+        title: assignedDriver?.name ?? t('tracking.driverAssigned'),
         description: assignedDriver?.vehicleType,
       });
     }
     return built;
-  }, [current?.pickup, current?.drop, current?.stops, driverPoint, assignedDriver]);
+  }, [current?.pickup, current?.drop, current?.stops, driverPoint, assignedDriver, t]);
 
   // Route always starts from the driver so the polyline shrinks as they close
   // the distance. Destination flips from pickup to drop once the trip is under
@@ -141,21 +167,21 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
   const tripHeadline = (() => {
     switch (status) {
       case 'DRIVER_ASSIGNED':
-        return 'Driver assigned';
+        return t('tracking.driverAssigned');
       case 'DRIVER_ARRIVED':
-        return 'Driver has arrived';
+        return t('tracking.arrivedAtPickup');
       case 'PICKUP_VERIFIED':
-        return 'Pickup confirmed';
+        return t('logistics.pickupVerified');
       case 'IN_TRANSIT':
       case 'DROP_PROGRESS':
-        return 'On the way to the drop';
+        return t('tracking.onTheWayToDrop');
       case 'DELIVERED':
       case 'COMPLETED':
-        return 'Trip completed';
+        return t('trip.completedTitle');
       case 'CANCELLED':
-        return 'Trip cancelled';
+        return t('cancellation.successTitle');
       default:
-        return 'Tracking your trip';
+        return t('tracking.trackingYourTrip');
     }
   })();
 
@@ -166,8 +192,8 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
   }
 
   const tripSubtitle = preTransit
-    ? `Pickup: ${current?.pickup?.address ?? '—'}`
-    : `Drop: ${currentDropAddress}`;
+    ? `${t('home.pickup')}: ${current?.pickup?.address ?? '—'}`
+    : `${t('home.drop')}: ${currentDropAddress}`;
 
   // Bar advances as the engine reports progress.
   const progressPercent: `${number}%` =
@@ -198,17 +224,22 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Pressable
-              style={styles.iconButton}
-              onPress={() => (onBack ? onBack() : navigation?.goBack())}
+              style={[styles.iconButton, isCancelling && { opacity: 0.5 }]}
+              onPress={() => {
+                if (isCancelling) return;
+                if (onBack) onBack();
+                else requestCancellation();
+              }}
               accessibilityRole="button"
+              disabled={isCancelling}
             >
               <Feather name="arrow-left" size={24} color={colors.onSurfaceVariant} />
             </Pressable>
-            <Text style={styles.headerTitle}>Live Tracking</Text>
+            <Text style={styles.headerTitle}>{t('tracking.liveTracking')}</Text>
           </View>
           <View style={styles.liveBadge}>
             <View style={styles.liveDot} />
-            <Text style={styles.liveBadgeText}>LIVE</Text>
+            <Text style={styles.liveBadgeText}>{t('tracking.live')}</Text>
           </View>
         </View>
       </SafeAreaView>
@@ -245,7 +276,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
             {(current?.otp ?? ride?.otp) &&
               (status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED') && (
                 <View style={styles.otpRow}>
-                  <Text style={styles.otpLabel}>PICKUP OTP</Text>
+                  <Text style={styles.otpLabel}>{t('logistics.pickupOtp').toUpperCase()}</Text>
                   <Text style={styles.otpValue}>{current?.otp ?? ride?.otp}</Text>
                 </View>
               )}
@@ -256,7 +287,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
               current?.currentStop &&
               !current.currentStop.otpVerified && (
                 <View style={styles.otpRow}>
-                  <Text style={styles.otpLabel}>DELIVERY OTP</Text>
+                  <Text style={styles.otpLabel}>{t('logistics.dropOtp').toUpperCase()}</Text>
                   <Text style={styles.otpValue}>
                     {ride.stopOtps[current.currentStopIndex ?? 0]}
                   </Text>
@@ -271,7 +302,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
                   </View>
                   <View>
                     <Text style={styles.driverName}>
-                      {assignedDriver?.name ?? 'Your driver'}
+                      {assignedDriver?.name ?? t('tracking.yourDriver')}
                     </Text>
                     {assignedDriver?.vehicleType && (
                       <View style={styles.driverSubInfo}>
@@ -301,7 +332,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
                   accessibilityRole="button"
                 >
                   <Feather name="phone" size={18} color={colors.onSurface} />
-                  <Text style={styles.actionButtonText}>Call</Text>
+                  <Text style={styles.actionButtonText}>{t('common.call')}</Text>
                 </Pressable>
                 <Pressable
                   style={styles.actionButton}
@@ -309,7 +340,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
                   accessibilityRole="button"
                 >
                   <Feather name="message-circle" size={18} color={colors.onSurface} />
-                  <Text style={styles.actionButtonText}>Chat</Text>
+                  <Text style={styles.actionButtonText}>{t('common.chat')}</Text>
                 </Pressable>
               </View>
             </View>

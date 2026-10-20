@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { strings, mockRecentLocations } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 import { useBooking } from '../../state/BookingContext';
 import { getCurrentPlace, reverseGeocode } from '../../api/geocoding';
 import type { GeoPoint } from '../../api/types';
@@ -39,6 +40,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
   onActiveTripPress,
 }) => {
   const { draft, setPickup, customerId, trip, setTrip, startNewBooking } = useBooking();
+  const { t } = useI18n();
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string>();
   const blueDotRef = useRef<GeoPoint | undefined>(undefined);
@@ -56,59 +58,98 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
     void setLoggedIn();
   }, []);
 
+  const isLocatingRef = useRef(false);
+  const isLivePickupRef = useRef(true);
+  const lastGeocodedCoordRef = useRef<GeoPoint | undefined>(undefined);
+  const isGeocodingRef = useRef(false);
+
+  const updatePickupWithLiveCoord = useCallback(
+    (coord: GeoPoint, forceGeocode = false) => {
+      // 1. Immediately pin pickup coordinates to the live blue dot
+      setPickup((prev) => ({
+        latitude: coord.latitude,
+        longitude: coord.longitude,
+        address: prev?.address && prev.address !== 'Set pickup location' ? prev.address : 'Current location',
+        isLiveLocation: true,
+      }));
+      setDeviceLocation(coord);
+
+      // 2. Reverse geocode if moved > 25m or on forceGeocode
+      const last = lastGeocodedCoordRef.current;
+      const dist = last
+        ? Math.hypot(last.latitude - coord.latitude, last.longitude - coord.longitude) * 111000
+        : Infinity;
+
+      if ((dist > 25 || forceGeocode || !last) && !isGeocodingRef.current) {
+        isGeocodingRef.current = true;
+        lastGeocodedCoordRef.current = coord;
+        reverseGeocode(coord)
+          .then((addr) => {
+            if (addr && isLivePickupRef.current) {
+              setPickup((prev) => ({
+                latitude: coord.latitude,
+                longitude: coord.longitude,
+                address: addr,
+                isLiveLocation: true,
+              }));
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            isGeocodingRef.current = false;
+          });
+      }
+    },
+    [setPickup]
+  );
+
   /** Resolves the device position into the pickup point. */
   const locatePickup = useCallback(async () => {
-    console.log('[CUSTOMER_MAP] locate button pressed');
-    setIsLocating(true);
+    console.log('[CUSTOMER_MAP] locate button or auto-locate pressed');
+    isLivePickupRef.current = true;
     setLocationError(undefined);
+
+    // If map already reported the blue dot, snap directly to it!
+    if (blueDotRef.current) {
+      updatePickupWithLiveCoord(blueDotRef.current, true);
+      setForceCenterKey((k) => k + 1);
+      return;
+    }
+
+    if (isLocatingRef.current) return;
+    isLocatingRef.current = true;
+    setIsLocating(true);
     try {
-      let place = await getCurrentPlace().catch((err) => {
-        if (blueDotRef.current) {
-          return {
-            latitude: blueDotRef.current.latitude,
-            longitude: blueDotRef.current.longitude,
-            address: 'Current location'
-          };
-        }
-        throw err;
-      });
-      
-      if (blueDotRef.current) {
-        place = {
-          ...place,
-          latitude: blueDotRef.current.latitude,
-          longitude: blueDotRef.current.longitude,
-        };
+      const place = await getCurrentPlace();
+      if (isLivePickupRef.current) {
+        // If blueDot arrived in the meantime, prioritize blueDotRef.current
+        const target = blueDotRef.current || place;
+        updatePickupWithLiveCoord(target, true);
+        setForceCenterKey((k) => k + 1);
       }
-      
-      setPickup(place);
-      console.log('[DEBUG_PICKUP]', { latitude: place.latitude, longitude: place.longitude, source: 'blueDot' });
-      setForceCenterKey(k => k + 1);
     } catch (caught) {
-      const apiErr = toApiError(caught);
-      if (apiErr.kind === 'network' && caught && (caught as Error).message) {
-        setLocationError('DEBUG: ' + (caught as Error).message);
+      if (blueDotRef.current) {
+        updatePickupWithLiveCoord(blueDotRef.current, true);
+        setForceCenterKey((k) => k + 1);
       } else {
-        setLocationError(apiErr.userMessage);
+        const apiErr = toApiError(caught);
+        if (apiErr.kind === 'network' && caught && (caught as Error).message) {
+          setLocationError('DEBUG: ' + (caught as Error).message);
+        } else {
+          setLocationError(apiErr.userMessage);
+        }
       }
     } finally {
       setIsLocating(false);
+      isLocatingRef.current = false;
     }
-  }, [setPickup]);
+  }, [updatePickupWithLiveCoord]);
 
-  // Center on user on first mount without dropping a pickup pin.
-  const centerOnUser = useCallback(async () => {
-    try {
-      const place = await getCurrentPlace();
-      setDeviceLocation(place);
-      setForceCenterKey(k => k + 1);
-    } catch {
-      // Ignore background errors
-    }
-  }, []);
-
+  // Automatically take the user's current location as the pickup point on initial load
   useEffect(() => {
-    if (!draft.pickup) void centerOnUser();
+    if (!draft.pickup || draft.pickup.isLiveLocation) {
+      void locatePickup();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -173,7 +214,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
       {/* Header (Fixed on top) */}
       <View style={styles.headerWrapper}>
         <TopAppBar
-          title="Pick Up"
+          title={t('home.appName')}
           leadingIcon={
             <View style={styles.avatar}>
               <Feather name="user" size={16} color={colors.primary} />
@@ -197,7 +238,13 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
           center={draft.pickup || deviceLocation}
         markers={mapMarkers}
         showsUserLocation
-        onUserLocationChange={(loc) => { blueDotRef.current = loc; }}
+        onUserLocationChange={(loc) => {
+          blueDotRef.current = loc;
+          handleUserLocationChange(loc);
+          if (isLivePickupRef.current) {
+            updatePickupWithLiveCoord(loc);
+          }
+        }}
         zoomDelta={DEFAULT_DELTA}
         forceCenterKey={forceCenterKey}
       >
@@ -206,12 +253,20 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
             styles.mapGpsButton,
             pressed && styles.mapGpsButtonPressed,
           ]}
-          onPress={locatePickup}
+          onPress={() => {
+            isLivePickupRef.current = true;
+            if (blueDotRef.current) {
+              updatePickupWithLiveCoord(blueDotRef.current, true);
+              setForceCenterKey((k) => k + 1);
+            } else {
+              void locatePickup();
+            }
+          }}
           disabled={isLocating}
           android_ripple={{ color: colors.primaryFixed, borderless: true, radius: 22 }}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel="Recentre on my location"
+          accessibilityLabel={t('home.recentre')}
         >
           {isLocating ? (
             <ActivityIndicator size="small" color={colors.primary} />
@@ -220,11 +275,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
           )}
         </Pressable>
 
-        {/* Driver availability readout, so an empty map is explained.
-            Tappable to force an immediate refresh — useful when a driver has
-            just come online and the customer doesn't want to wait for the
-            8 s poll. Also surfaces any polling error so a broken API call
-            doesn't look identical to "no drivers online". */}
+        {/* Driver availability readout */}
         <Pressable
           style={styles.driverCountPill}
           onPress={refreshNearby}
@@ -247,18 +298,19 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
             numberOfLines={1}
           >
             {nearbyError
-              ? 'Cannot reach server · tap to retry'
+              ? t('home.cannotReachServer')
               : nearbyLoading && !nearbyDrivers.length
-              ? 'Looking for drivers…'
+              ? t('home.lookingForDrivers')
               : nearbyDrivers.length
-              ? `${nearbyDrivers.length} driver${nearbyDrivers.length === 1 ? '' : 's'} nearby`
-              : 'No drivers nearby · tap to refresh'}
+              ? nearbyDrivers.length === 1
+                ? t('home.driversNearby', { count: nearbyDrivers.length })
+                : t('home.driversNearbyPlural', { count: nearbyDrivers.length })
+              : t('home.noDriversNearby')}
           </Text>
         </Pressable>
       </MapCanvas>
 
-      {/* Active Trip Overlay Pill — only shown when the engine reports a live
-          trip for this customer. Never hardcoded mock data. */}
+      {/* Active Trip Overlay Pill */}
       {trip && trip.status !== 'DELIVERED' && trip.status !== 'COMPLETED' && trip.status !== 'CANCELLED' && (
         <View style={styles.activeTripOverlay}>
           <Card
@@ -276,10 +328,10 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
               <View style={styles.tripInfo}>
                 <View style={styles.tripStatusRow}>
                   <View style={styles.greenDot} />
-                  <Text style={styles.tripStatusText}>TRIP IN PROGRESS</Text>
+                  <Text style={styles.tripStatusText}>{t('home.tripInProgress')}</Text>
                 </View>
                 <Text style={styles.tripDriverText} numberOfLines={1}>
-                  Tap to open live tracking
+                  {t('home.tapToTrack')}
                 </Text>
               </View>
               <Feather name="chevron-right" size={20} color={colors.onSurfaceVariant} />
@@ -302,17 +354,18 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                     <View style={styles.connectingLine} />
                   </View>
                   <View style={styles.inputContentWrapper}>
-                    <Text style={styles.inputLabel}>Pickup</Text>
+                    <Text style={styles.inputLabel}>{t('home.pickup')}</Text>
                     <View style={styles.inputFieldRow}>
                       {/* `flex: 1` on the address so it truncates instead of
                           shoving the Change action off the right edge. */}
                       <Text style={styles.inputValue} numberOfLines={1}>
                         {isLocating
-                          ? 'Finding your location…'
-                          : draft.pickup?.address ?? 'Set pickup location'}
+                          ? t('home.findingLocation')
+                          : draft.pickup?.address ?? t('home.setPickup')}
                       </Text>
                       <Pressable
                         onPress={() => {
+                          isLivePickupRef.current = false;
                           startNewBooking();
                           navigation?.navigate('BookingStack', { screen: 'SelectLocationScreen' });
                         }}
@@ -320,7 +373,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                         accessibilityRole="button"
                         style={styles.changeActionButton}
                       >
-                        <Text style={styles.changeAction}>Change</Text>
+                        <Text style={styles.changeAction}>{t('home.change')}</Text>
                       </Pressable>
                     </View>
                     {locationError && (
@@ -346,7 +399,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                     navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
                   }}>
                     <View style={styles.inputFieldRow}>
-                      <Text style={styles.placeholderValue}>Enter drop location</Text>
+                      <Text style={styles.placeholderValue}>{t('home.enterDrop')}</Text>
                       <View style={styles.arrowCircle}>
                         <Feather name="arrow-right" size={12} color={colors.onSurfaceVariant} />
                       </View>
@@ -363,12 +416,12 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                   }}
                 >
                   <Feather name="plus" size={16} color={colors.onSurfaceVariant} />
-                  <Text style={styles.addDropText}>Add another drop</Text>
+                  <Text style={styles.addDropText}>{t('home.addAnotherDrop')}</Text>
                 </Pressable>
               </View>
 
               <Button
-                label={strings.home.startBooking}
+                label={t('home.startBooking')}
                 onPress={() => {
                   startNewBooking();
                   navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
@@ -382,7 +435,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
 
           {/* Recent Locations */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{strings.home.recentLocations}</Text>
+            <Text style={styles.sectionTitle}>{t('home.recentLocations')}</Text>
             <Card variant="outlined" padding="none">
               {mockRecentLocations.map((loc, index) => (
                 <React.Fragment key={loc.id}>
@@ -392,6 +445,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                     subtitle={loc.address}
                     leading={<Feather name="clock" size={18} color={colors.onSurfaceVariant} />}
                     onPress={() => {
+                      isLivePickupRef.current = false;
                       startNewBooking();
                       onRecentLocationPress?.(loc.address);
                       navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
@@ -414,8 +468,8 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                 <Feather name="file-text" size={20} color={colors.primary} />
               </View>
               <View style={styles.actionTextWrapper}>
-                <Text style={styles.actionTitle}>Trip History</Text>
-                <Text style={styles.actionSubtitle}>View past deliveries</Text>
+                <Text style={styles.actionTitle}>{t('profile.bookingHistory')}</Text>
+                <Text style={styles.actionSubtitle}>{t('home.viewPastDeliveries')}</Text>
               </View>
             </Card>
 
@@ -431,8 +485,8 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                 <Feather name="bookmark" size={20} color={colors.onSurfaceVariant} />
               </View>
               <View style={styles.actionTextWrapper}>
-                <Text style={styles.actionTitle}>Manage Addresses</Text>
-                <Text style={styles.actionSubtitle}>Saved locations</Text>
+                <Text style={styles.actionTitle}>{t('profile.savedAddresses')}</Text>
+                <Text style={styles.actionSubtitle}>{t('home.savedLocations')}</Text>
               </View>
             </Card>
           </View>

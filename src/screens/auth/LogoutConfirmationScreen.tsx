@@ -13,6 +13,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { clearSession } from '../../state/session';
 import { useSession } from '../../state/SessionContext';
+import { useI18n } from '../../i18n';
 
 const { height: screenHeight } = Dimensions.get('window');
 
@@ -27,6 +28,7 @@ const LogoutConfirmationScreen: React.FC<LogoutConfirmationScreenProps & { navig
   navigation,
 }) => {
   const { logout } = useSession();
+  const { t } = useI18n();
   return (
     <View style={styles.container}>
       {/* Background (Mockup of Settings) */}
@@ -35,7 +37,7 @@ const LogoutConfirmationScreen: React.FC<LogoutConfirmationScreenProps & { navig
           <View style={styles.mockHeader}>
             <View style={styles.mockHeaderLeft}>
               <Feather name="menu" size={24} color={colors.primary} />
-              <Text style={styles.mockHeaderTitle}>Pick Up</Text>
+              <Text style={styles.mockHeaderTitle}>{t('home.appName')}</Text>
             </View>
             <View style={styles.mockAvatar} />
           </View>
@@ -43,9 +45,9 @@ const LogoutConfirmationScreen: React.FC<LogoutConfirmationScreenProps & { navig
           <View style={styles.mockContent}>
             <View style={styles.mockCard}>
               {[
-                { icon: 'user', title: 'Account Details', subtitle: 'Update your personal information' },
-                { icon: 'bell', title: 'Notifications', subtitle: 'Manage alert preferences' },
-                { icon: 'shield', title: 'Privacy & Security', subtitle: 'Control your data sharing' },
+                { icon: 'user', title: t('settings.account'), subtitle: t('profile.editProfile') },
+                { icon: 'bell', title: t('settings.notifications'), subtitle: t('settings.notifications') },
+                { icon: 'shield', title: t('settings.privacy'), subtitle: t('settings.privacy') },
               ].map((item, index) => (
                 <View
                   key={index}
@@ -85,9 +87,9 @@ const LogoutConfirmationScreen: React.FC<LogoutConfirmationScreenProps & { navig
               </View>
 
               {/* Text */}
-              <Text style={styles.title}>Log out of Pick Up?</Text>
+              <Text style={styles.title}>{t('profile.logoutTitle')}</Text>
               <Text style={styles.subtitle}>
-                You will need to sign in again to book a trip or view your history.
+                {t('profile.logoutMessage')}
               </Text>
 
               {/* Actions */}
@@ -100,14 +102,14 @@ const LogoutConfirmationScreen: React.FC<LogoutConfirmationScreenProps & { navig
                     await logout();
                   }}
                 >
-                  <Text style={styles.logoutButtonText}>Log Out</Text>
+                  <Text style={styles.logoutButtonText}>{t('profile.logout')}</Text>
                 </Pressable>
                 
                 <Pressable
                   style={styles.cancelButton}
                   onPress={() => (onCancel ? onCancel() : navigation?.goBack())}
                 >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                  <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
                 </Pressable>
               </View>
             </View>

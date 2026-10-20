@@ -27,6 +27,7 @@ export interface PaymentMethodSelectedScreenProps {
 }
 
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 const PaymentMethodSelectedScreen: React.FC<PaymentMethodSelectedScreenProps & { navigation?: any }> = ({
   methodName = 'UPI Payment',
@@ -36,16 +37,18 @@ const PaymentMethodSelectedScreen: React.FC<PaymentMethodSelectedScreenProps & {
   onBack,
   navigation,
 }) => {
+  const { t } = useI18n();
   const { draft } = useBooking();
   const estimate = draft.fareEstimate;
   
   const baseFare = estimate ? `₹ ${estimate.baseFare}` : '--';
   const taxes = estimate ? `₹ ${(estimate.fare - estimate.baseFare).toFixed(2)}` : '--';
   const total = estimate ? `₹ ${estimate.fare}` : '--';
-  const tripTitle = draft.drops.length > 0 && draft.drops[draft.drops.length - 1].address
-    ? `Ride to ${draft.drops[draft.drops.length - 1].address?.split(',')[0]}`
-    : 'Ride to Downtown';
-  const tripDate = 'Today'; // Mocked or extracted from actual time if available
+  const destination = draft.drops.length > 0 && draft.drops[draft.drops.length - 1].address
+    ? draft.drops[draft.drops.length - 1].address?.split(',')[0]
+    : 'Downtown';
+  const tripTitle = t('trip.rideTo', { destination });
+  const tripDate = t('common.today');
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -57,7 +60,7 @@ const PaymentMethodSelectedScreen: React.FC<PaymentMethodSelectedScreenProps & {
         >
           <Feather name="arrow-left" size={24} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.headerTitle}>Payment</Text>
+        <Text style={styles.headerTitle}>{t('payment.payment')}</Text>
         <View style={styles.iconButton} />
       </View>
 
@@ -76,15 +79,15 @@ const PaymentMethodSelectedScreen: React.FC<PaymentMethodSelectedScreenProps & {
 
           <View style={styles.fareDetails}>
             <View style={styles.fareRow}>
-              <Text style={styles.fareLabel}>Base Fare</Text>
+              <Text style={styles.fareLabel}>{t('booking.baseFare')}</Text>
               <Text style={styles.monoValue}>{baseFare}</Text>
             </View>
             <View style={styles.fareRow}>
-              <Text style={styles.fareLabel}>Taxes & Fees</Text>
+              <Text style={styles.fareLabel}>{t('payment.taxesAndFees')}</Text>
               <Text style={styles.monoValue}>{taxes}</Text>
             </View>
             <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalLabel}>{t('payment.total')}</Text>
               <Text style={styles.totalValue}>{total}</Text>
             </View>
           </View>
@@ -101,7 +104,7 @@ const PaymentMethodSelectedScreen: React.FC<PaymentMethodSelectedScreenProps & {
 
         {/* Selected Payment Method Card */}
         <View style={styles.methodSection}>
-          <Text style={styles.sectionLabel}>SELECTED METHOD</Text>
+          <Text style={styles.sectionLabel}>{t('payment.selectedMethod')}</Text>
           
           <View style={styles.methodCard}>
             <View style={styles.methodLeft}>
@@ -118,7 +121,7 @@ const PaymentMethodSelectedScreen: React.FC<PaymentMethodSelectedScreenProps & {
               style={styles.changeBtn}
               onPress={() => (onChangeMethod ? onChangeMethod() : navigation?.goBack())}
             >
-              <Text style={styles.changeBtnText}>Change</Text>
+              <Text style={styles.changeBtnText}>{t('common.change')}</Text>
             </Pressable>
           </View>
         </View>
@@ -126,14 +129,14 @@ const PaymentMethodSelectedScreen: React.FC<PaymentMethodSelectedScreenProps & {
         {/* Security Badge */}
         <View style={styles.securityBadge}>
           <MaterialIcons name="verified-user" size={18} color={colors.onSurfaceVariant} />
-          <Text style={styles.securityText}>Payments are secure and encrypted</Text>
+          <Text style={styles.securityText}>{t('payment.secureEncrypted')}</Text>
         </View>
       </ScrollView>
 
       {/* Bottom Action Area */}
       <View style={styles.bottomActions}>
         <Button
-          label={`Pay ${total}`}
+          label={t('payment.payAmount', { amount: total })}
           onPress={() => {
             onPay?.();
             navigation?.navigate('PaymentProcessingScreen');

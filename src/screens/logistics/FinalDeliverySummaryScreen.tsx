@@ -9,6 +9,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { useI18n } from '../../i18n';
 
 export interface FinalDeliverySummaryScreenProps {
   readonly onBack?: () => void;
@@ -20,6 +21,8 @@ const FinalDeliverySummaryScreen: React.FC<FinalDeliverySummaryScreenProps & { n
   onConfirmPayment,
   navigation,
 }) => {
+  const { t } = useI18n();
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top App Bar */}
@@ -28,11 +31,11 @@ const FinalDeliverySummaryScreen: React.FC<FinalDeliverySummaryScreenProps & { n
           style={styles.iconButton}
           onPress={() => (onBack ? onBack() : navigation?.goBack())}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t('common.goBack')}
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Trip Summary</Text>
+        <Text style={styles.headerTitle}>{t('logistics.tripSummary')}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -45,19 +48,19 @@ const FinalDeliverySummaryScreen: React.FC<FinalDeliverySummaryScreenProps & { n
         {/* Success Banner */}
         <View style={styles.successBanner}>
           <Feather name="check-circle" size={20} color="#2e7d32" />
-          <Text style={styles.successBannerText}>ALL DELIVERIES COMPLETED</Text>
+          <Text style={styles.successBannerText}>{t('logistics.allDeliveriesCompleted')}</Text>
         </View>
 
         {/* Trip Overview Card */}
         <View style={styles.overviewCard}>
           <View style={styles.overviewHeader}>
             <View>
-              <Text style={styles.overviewTitle}>Overall Status</Text>
-              <Text style={styles.overviewSubtitle}>Total Duration: 1h 45m</Text>
+              <Text style={styles.overviewTitle}>{t('logistics.overallStatus')}</Text>
+              <Text style={styles.overviewSubtitle}>{t('logistics.totalDuration', { duration: '1h 45m' })}</Text>
             </View>
             <View style={styles.deliveredBadge}>
               <Feather name="check-square" size={14} color="#1b5e20" />
-              <Text style={styles.deliveredBadgeText}>Delivered</Text>
+              <Text style={styles.deliveredBadgeText}>{t('logistics.delivered')}</Text>
             </View>
           </View>
 
@@ -73,8 +76,8 @@ const FinalDeliverySummaryScreen: React.FC<FinalDeliverySummaryScreenProps & { n
                 <View style={styles.timelineDot} />
               </View>
               <View style={styles.timelineItemContent}>
-                <Text style={styles.timelineItemTitle}>Pickup: Sardarpura Warehouse</Text>
-                <Text style={styles.timelineItemSubtitle}>Completed at 9:30 AM</Text>
+                <Text style={styles.timelineItemTitle}>{t('logistics.stopPickup', { address: 'Sardarpura Warehouse' })}</Text>
+                <Text style={styles.timelineItemSubtitle}>{t('logistics.completedAt', { time: '9:30 AM' })}</Text>
               </View>
             </View>
 
@@ -84,8 +87,8 @@ const FinalDeliverySummaryScreen: React.FC<FinalDeliverySummaryScreenProps & { n
                 <View style={styles.timelineDot} />
               </View>
               <View style={styles.timelineItemContent}>
-                <Text style={styles.timelineItemTitle}>Drop 1: Ratanada Hub</Text>
-                <Text style={styles.timelineItemSubtitle}>Completed at 10:15 AM</Text>
+                <Text style={styles.timelineItemTitle}>{t('logistics.stopDrop', { number: 1, address: 'Ratanada Hub' })}</Text>
+                <Text style={styles.timelineItemSubtitle}>{t('logistics.completedAt', { time: '10:15 AM' })}</Text>
               </View>
             </View>
 
@@ -95,8 +98,8 @@ const FinalDeliverySummaryScreen: React.FC<FinalDeliverySummaryScreenProps & { n
                 <View style={styles.timelineDot} />
               </View>
               <View style={styles.timelineItemContent}>
-                <Text style={styles.timelineItemTitle}>Drop 2: Pal Road Business Center</Text>
-                <Text style={styles.timelineItemSubtitle}>Completed at 10:45 AM</Text>
+                <Text style={styles.timelineItemTitle}>{t('logistics.stopDrop', { number: 2, address: 'Pal Road Business Center' })}</Text>
+                <Text style={styles.timelineItemSubtitle}>{t('logistics.completedAt', { time: '10:45 AM' })}</Text>
               </View>
             </View>
 
@@ -106,8 +109,8 @@ const FinalDeliverySummaryScreen: React.FC<FinalDeliverySummaryScreenProps & { n
                 <View style={styles.timelineDot} />
               </View>
               <View style={styles.timelineItemContent}>
-                <Text style={styles.timelineItemTitle}>Drop 3: Basni Phase II</Text>
-                <Text style={styles.timelineItemSubtitle}>Completed at 11:15 AM</Text>
+                <Text style={styles.timelineItemTitle}>{t('logistics.stopDrop', { number: 3, address: 'Basni Phase II' })}</Text>
+                <Text style={styles.timelineItemSubtitle}>{t('logistics.completedAt', { time: '11:15 AM' })}</Text>
               </View>
             </View>
           </View>
@@ -117,7 +120,7 @@ const FinalDeliverySummaryScreen: React.FC<FinalDeliverySummaryScreenProps & { n
         <View style={styles.proofCard}>
           <View style={styles.proofContent}>
             <Feather name="shield" size={20} color={colors.primary} />
-            <Text style={styles.proofText}>All Delivery Proofs Verified</Text>
+            <Text style={styles.proofText}>{t('logistics.allProofsVerified')}</Text>
           </View>
           <Feather name="check" size={16} color={colors.primary} />
         </View>
@@ -133,7 +136,7 @@ const FinalDeliverySummaryScreen: React.FC<FinalDeliverySummaryScreenProps & { n
           }}
           accessibilityRole="button"
         >
-          <Text style={styles.confirmText}>CONFIRM PAYMENT & CLOSE TRIP</Text>
+          <Text style={styles.confirmText}>{t('logistics.confirmPaymentCloseTrip')}</Text>
         </Pressable>
       </View>
     </SafeAreaView>

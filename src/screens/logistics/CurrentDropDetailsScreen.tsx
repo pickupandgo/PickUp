@@ -9,6 +9,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { useI18n } from '../../i18n';
 
 export interface CurrentDropDetailsScreenProps {
   readonly onBack?: () => void;
@@ -26,6 +27,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
   onTrackMap,
   navigation,
 }) => {
+  const { t } = useI18n();
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       {/* Top App Bar */}
@@ -34,11 +36,11 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
           style={styles.iconButton}
           onPress={() => (onBack ? onBack() : navigation?.goBack())}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t('common.goBack')}
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Trip Details</Text>
+        <Text style={styles.headerTitle}>{t('logistics.tripDetails')}</Text>
         <Pressable
           style={styles.iconButton}
           onPress={() => (onMore ? onMore() : navigation?.navigate('ShareTrackingSheetScreen'))}
@@ -60,7 +62,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
           <View style={styles.highlightCardTop}>
             <View style={styles.highlightCardInfo}>
               <View style={styles.dropBadge}>
-                <Text style={styles.dropBadgeText}>DROP 2 OF 3</Text>
+                <Text style={styles.dropBadgeText}>{t('logistics.dropProgress', { current: 2, total: 3 }).toUpperCase()}</Text>
               </View>
               <Text style={styles.dropTitle}>Pal Road Business Center</Text>
               <View style={styles.dropLocationRow}>
@@ -71,13 +73,13 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
             
             <View style={styles.etaContainer}>
               <Text style={styles.etaTime}>8</Text>
-              <Text style={styles.etaLabel}>MINS</Text>
+              <Text style={styles.etaLabel}>{t('common.minsCaps')}</Text>
             </View>
           </View>
 
           <View style={styles.highlightCardBottom}>
             <View style={styles.pulseIndicator} />
-            <Text style={styles.statusText}>In Transit</Text>
+            <Text style={styles.statusText}>{t('tracking.inTransit')}</Text>
             <Text style={styles.distanceText}>2.4 km</Text>
           </View>
         </View>
@@ -89,7 +91,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
               <Feather name="user" size={20} color={colors.onSurfaceVariant} />
             </View>
             <View style={styles.receiverInfo}>
-              <Text style={styles.receiverLabel}>Receiver</Text>
+              <Text style={styles.receiverLabel}>{t('logistics.receiver')}</Text>
               <Text style={styles.receiverName}>Aravind Sharma</Text>
             </View>
           </View>
@@ -97,7 +99,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
           <View style={styles.instructionsCard}>
             <View style={styles.instructionsHeader}>
               <Feather name="file-text" size={18} color={colors.primary} />
-              <Text style={styles.instructionsTitle}>INSTRUCTIONS</Text>
+              <Text style={styles.instructionsTitle}>{t('logistics.instructions')}</Text>
             </View>
             <Text style={styles.instructionsText}>
               Leave at security gate and call upon arrival.
@@ -107,7 +109,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
 
         {/* Vertical Timeline */}
         <View style={styles.timelineCard}>
-          <Text style={styles.timelineTitle}>Trip Route</Text>
+          <Text style={styles.timelineTitle}>{t('logistics.tripRoute')}</Text>
           
           <View style={styles.timelineList}>
             {/* Connecting line */}
@@ -119,7 +121,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
                 <View style={styles.dotDoneInner} />
               </View>
               <View style={styles.timelineItemContent}>
-                <Text style={styles.timelineLabel}>Pickup</Text>
+                <Text style={styles.timelineLabel}>{t('booking.pickup')}</Text>
                 <Text style={styles.timelineTextDone}>Sardarpura Warehouse</Text>
               </View>
             </View>
@@ -130,7 +132,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
                 <View style={styles.dotDoneInner} />
               </View>
               <View style={styles.timelineItemContent}>
-                <Text style={styles.timelineLabel}>Drop 1</Text>
+                <Text style={styles.timelineLabel}>{t('logistics.dropStopWithNumber', { number: 1 })}</Text>
                 <Text style={styles.timelineTextDone}>Ratanada Hub</Text>
               </View>
             </View>
@@ -141,7 +143,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
                 <View style={styles.dotCurrentInner} />
               </View>
               <View style={styles.timelineCurrentCard}>
-                <Text style={styles.timelineCurrentLabel}>Drop 2 of 3</Text>
+                <Text style={styles.timelineCurrentLabel}>{t('logistics.dropProgress', { current: 2, total: 3 })}</Text>
                 <Text style={styles.timelineCurrentText}>Pal Road</Text>
               </View>
             </View>
@@ -150,7 +152,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
             <View style={styles.timelineItem}>
               <View style={styles.dotUpcoming} />
               <View style={styles.timelineItemContent}>
-                <Text style={styles.timelineLabel}>Drop 3</Text>
+                <Text style={styles.timelineLabel}>{t('logistics.dropStopWithNumber', { number: 3 })}</Text>
                 <Text style={styles.timelineTextUpcoming}>Basni Phase II</Text>
               </View>
             </View>
@@ -165,7 +167,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
             accessibilityRole="button"
           >
             <Feather name="phone" size={20} color={colors.primary} />
-            <Text style={styles.actionSecondaryText}>Call Driver</Text>
+            <Text style={styles.actionSecondaryText}>{t('tracking.callDriver')}</Text>
           </Pressable>
           <Pressable
             style={styles.actionSecondary}
@@ -173,7 +175,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
             accessibilityRole="button"
           >
             <Feather name="message-circle" size={20} color={colors.primary} />
-            <Text style={styles.actionSecondaryText}>Chat</Text>
+            <Text style={styles.actionSecondaryText}>{t('common.chat')}</Text>
           </Pressable>
           <Pressable
             style={styles.actionPrimary}
@@ -181,7 +183,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
             accessibilityRole="button"
           >
             <Feather name="map" size={20} color={colors.onPrimary} />
-            <Text style={styles.actionPrimaryText}>Track Map</Text>
+            <Text style={styles.actionPrimaryText}>{t('logistics.trackMap')}</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -193,7 +195,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
           onPress={() => navigation?.navigate('DropOtpVerificationScreen')}
           accessibilityRole="button"
         >
-          <Text style={styles.verifyOtpText}>VERIFY DROP OTP</Text>
+          <Text style={styles.verifyOtpText}>{t('logistics.verifyDropOtp')}</Text>
         </Pressable>
       </View>
     </SafeAreaView>

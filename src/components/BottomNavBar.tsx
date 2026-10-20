@@ -2,20 +2,23 @@ import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { colors, spacing, typography } from '../theme';
+import { useI18n } from '../i18n';
 
 interface BottomNavBarProps {
   readonly currentTab?: string;
   readonly onTabPress?: (tab: string) => void;
 }
 
-const tabs = [
-  { id: 'home', label: 'Home', icon: 'home' as const },
-  { id: 'trips', label: 'Trips', icon: 'map' as const },
-  { id: 'activity', label: 'Activity', icon: 'clock' as const },
-  { id: 'profile', label: 'Profile', icon: 'user' as const },
-];
-
 const BottomNavBar: React.FC<BottomNavBarProps> = ({ currentTab = 'home', onTabPress }) => {
+  const { t } = useI18n();
+
+  const tabs = [
+    { id: 'home', label: t('nav.home'), icon: 'home' as const },
+    { id: 'trips', label: t('nav.trips'), icon: 'map' as const },
+    { id: 'activity', label: t('nav.activity'), icon: 'clock' as const },
+    { id: 'profile', label: t('nav.profile'), icon: 'user' as const },
+  ];
+
   return (
     <View style={styles.container}>
       {tabs.map((tab) => {
@@ -25,6 +28,9 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ currentTab = 'home', onTabP
             key={tab.id}
             style={styles.tab}
             onPress={() => onTabPress?.(tab.id)}
+            accessibilityRole="tab"
+            accessibilityLabel={tab.label}
+            accessibilityState={{ selected: isActive }}
           >
             <Feather
               name={tab.icon}

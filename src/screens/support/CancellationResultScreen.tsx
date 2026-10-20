@@ -10,6 +10,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface CancellationResultScreenProps {
   readonly tripId?: string;
@@ -24,6 +25,8 @@ const CancellationResultScreen: React.FC<CancellationResultScreenProps & { navig
   navigation,
 }) => {
   const { clearActiveRide } = useBooking();
+  const { t } = useI18n();
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <View style={styles.container}>
@@ -38,13 +41,13 @@ const CancellationResultScreen: React.FC<CancellationResultScreenProps & { navig
 
         {/* Text Content */}
         <View style={styles.textContainer}>
-          <Text style={styles.title}>Trip Cancelled</Text>
+          <Text style={styles.title}>{t('cancellation.tripCancelled')}</Text>
           <View style={styles.subtitleRow}>
-            <Text style={styles.subtitleText}>Your trip </Text>
+            <Text style={styles.subtitleText}>{t('cancellation.yourTripCancelledPrefix')}</Text>
             <View style={styles.tripIdBadge}>
               <Text style={styles.tripIdText}>{tripId}</Text>
             </View>
-            <Text style={styles.subtitleText}> has been cancelled.</Text>
+            <Text style={styles.subtitleText}>{t('cancellation.yourTripCancelledSuffix')}</Text>
           </View>
 
           {/* Fee Info Box */}
@@ -52,7 +55,7 @@ const CancellationResultScreen: React.FC<CancellationResultScreenProps & { navig
             <View style={styles.infoBox}>
               <MaterialIcons name="info" size={20} color={colors.onSurfaceVariant} style={styles.infoIcon} />
               <Text style={styles.infoText}>
-                A cancellation fee of <Text style={styles.feeText}>{feeAmount}</Text> has been charged to your account.
+                {t('cancellation.feeChargedNotice', { amount: feeAmount })}
               </Text>
             </View>
           )}
@@ -61,7 +64,7 @@ const CancellationResultScreen: React.FC<CancellationResultScreenProps & { navig
         {/* Action */}
         <View style={styles.actionContainer}>
           <Button
-            label="BACK TO HOME"
+            label={t('common.backToHomeCaps')}
             onPress={() => {
               if (onHome) {
                 onHome();

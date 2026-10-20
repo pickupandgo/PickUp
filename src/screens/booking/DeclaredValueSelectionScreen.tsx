@@ -12,6 +12,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { useI18n } from '../../i18n';
 
 export interface DeclaredValueSelectionScreenProps {
   readonly onBack?: () => void;
@@ -20,10 +21,10 @@ export interface DeclaredValueSelectionScreenProps {
 }
 
 const DECLARED_VALUE_OPTIONS = [
-  { id: '1', label: 'Up to ₹5,000', requiresCustom: false },
-  { id: '2', label: '₹5,000 - ₹20,000', requiresCustom: false },
-  { id: '3', label: '₹20,000 - ₹50,000', requiresCustom: false },
-  { id: '4', label: 'Above ₹50,000', requiresCustom: true },
+  { id: '1', key: 'booking.declaredUpTo5k', defaultLabel: 'Up to ₹5,000', requiresCustom: false },
+  { id: '2', key: null, defaultLabel: '₹5,000 - ₹20,000', requiresCustom: false },
+  { id: '3', key: null, defaultLabel: '₹20,000 - ₹50,000', requiresCustom: false },
+  { id: '4', key: 'booking.declaredAbove50k', defaultLabel: 'Above ₹50,000', requiresCustom: true },
 ];
 
 const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps & { navigation?: any }> = ({
@@ -32,16 +33,21 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
   onNext,
   navigation,
 }) => {
+  const { t } = useI18n();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [customValue, setCustomValue] = useState('');
 
   const selectedOption = DECLARED_VALUE_OPTIONS.find(opt => opt.id === selectedId);
 
+  const getOptionLabel = (opt: typeof DECLARED_VALUE_OPTIONS[0]) => {
+    return opt.key ? t(opt.key) : opt.defaultLabel;
+  };
+
   const handleNext = () => {
     if (selectedOption?.requiresCustom) {
       onNext?.(customValue);
     } else if (selectedOption) {
-      onNext?.(selectedOption.label);
+      onNext?.(getOptionLabel(selectedOption));
     }
   };
 
@@ -53,7 +59,7 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
         <Pressable style={styles.iconButton} onPress={() => (onBack ? onBack() : navigation?.goBack())}>
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Pick Up</Text>
+        <Text style={styles.headerTitle}>{t('home.appName')}</Text>
         <Pressable style={styles.iconButton} onPress={() => (onClose ? onClose() : navigation?.goBack())}>
           <Feather name="x" size={24} color={colors.primary} />
         </Pressable>
@@ -61,15 +67,16 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.textSection}>
-          <Text style={styles.title}>Declared Value</Text>
+          <Text style={styles.title}>{t('booking.declaredValue')}</Text>
           <Text style={styles.subtitle}>
-            Declare the value of your goods to protect your shipment. This determines liability coverage.
+            {t('booking.declaredValueSubtitle')}
           </Text>
         </View>
 
         <View style={styles.chipsGrid}>
           {DECLARED_VALUE_OPTIONS.map((option) => {
             const isSelected = selectedId === option.id;
+            const label = getOptionLabel(option);
             return (
               <Pressable
                 key={option.id}
@@ -85,7 +92,7 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
                     isSelected ? styles.chipTextSelected : styles.chipTextUnselected,
                   ]}
                 >
-                  {option.label}
+                  {label}
                 </Text>
                 {isSelected && (
                   <MaterialIcons name="check-circle" size={20} color={colors.onPrimaryContainer} />
@@ -97,7 +104,7 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
 
         {selectedOption?.requiresCustom && (
           <View style={styles.customValueSection}>
-            <Text style={styles.customValueLabel}>Enter exact value</Text>
+            <Text style={styles.customValueLabel}>{t('booking.enterExactValue')}</Text>
             <View style={styles.inputContainer}>
               <Text style={styles.currencySymbol}>₹</Text>
               <TextInput
@@ -111,7 +118,7 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
             </View>
             <View style={styles.infoRow}>
               <Feather name="info" size={14} color={colors.outline} />
-              <Text style={styles.infoText}>Values above ₹50k require additional verification.</Text>
+              <Text style={styles.infoText}>{t('booking.declaredValueNote')}</Text>
             </View>
           </View>
         )}
@@ -119,7 +126,7 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
 
       <View style={styles.footer}>
         <Button
-          label="Next"
+          label={t('common.continue')}
           onPress={() => {
             handleNext();
             navigation?.goBack();

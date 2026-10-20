@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface DropStop {
   readonly id: string;
@@ -28,30 +29,6 @@ export interface MultiDropOverviewScreenProps {
   readonly stops?: readonly DropStop[];
 }
 
-const defaultStops: readonly DropStop[] = [
-  {
-    id: '1',
-    type: 'pickup',
-    label: 'Pickup',
-    title: 'Current Location',
-  },
-  {
-    id: '2',
-    type: 'drop',
-    label: 'Drop 1',
-    title: 'Sardarpura Warehouse',
-    landmark: 'Gate No. 2',
-    receiver: 'Akash Singh',
-  },
-  {
-    id: '3',
-    type: 'drop',
-    label: 'Drop 2',
-    title: 'Ratanada Hub',
-    receiver: 'Meera J.',
-  },
-];
-
 const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigation?: any }> = ({
   onBack,
   onContinue,
@@ -61,34 +38,60 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
   navigation,
 }) => {
   const { draft } = useBooking();
+  const { t } = useI18n();
 
   // Build the timeline from the real booking when there is one, so the review
   // reflects what the user actually chose. Falls back to sample stops for the
   // Gallery, where no booking exists.
   const stops = useMemo<readonly DropStop[]>(() => {
     if (stopsProp) return stopsProp;
-    if (!draft.pickup && !draft.drops.length) return defaultStops;
+    if (!draft.pickup && !draft.drops.length) {
+      return [
+        {
+          id: '1',
+          type: 'pickup',
+          label: t('booking.pickup'),
+          title: t('booking.currentLocation'),
+        },
+        {
+          id: '2',
+          type: 'drop',
+          label: t('logistics.dropStopWithNumber', { number: 1 }),
+          title: 'Sardarpura Warehouse',
+          landmark: 'Gate No. 2',
+          receiver: 'Akash Singh',
+        },
+        {
+          id: '3',
+          type: 'drop',
+          label: t('logistics.dropStopWithNumber', { number: 2 }),
+          title: 'Ratanada Hub',
+          receiver: 'Meera J.',
+        },
+      ];
+    }
 
     const built: DropStop[] = [];
     if (draft.pickup) {
       built.push({
         id: 'pickup',
         type: 'pickup',
-        label: 'Pickup',
-        title: draft.pickup.address || 'Current Location',
+        label: t('booking.pickup'),
+        title: draft.pickup.address || t('booking.currentLocation'),
       });
     }
     draft.drops.forEach((drop, index) => {
       built.push({
         id: `drop-${index}`,
         type: 'drop',
-        label: `Drop ${index + 1}`,
+        label: t('logistics.dropStopWithNumber', { number: index + 1 }),
         title: drop.address,
         receiver: draft.receiverName,
       });
     });
     return built;
-  }, [stopsProp, draft.pickup, draft.drops, draft.receiverName]);
+  }, [stopsProp, draft.pickup, draft.drops, draft.receiverName, t]);
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       {/* Top App Bar */}
@@ -97,11 +100,11 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
           style={styles.iconButton}
           onPress={() => (onBack ? onBack() : navigation?.goBack())}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t('common.goBack')}
         >
           <Feather name="arrow-left" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.headerTitle}>Review Route</Text>
+        <Text style={styles.headerTitle}>{t('logistics.reviewRoute')}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -139,14 +142,14 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
                     {stop.landmark && (
                       <View style={styles.detailRow}>
                         <Feather name="map-pin" size={14} color={colors.onSurfaceVariant} />
-                        <Text style={styles.detailText}>Landmark: {stop.landmark}</Text>
+                        <Text style={styles.detailText}>{t('booking.landmark')}: {stop.landmark}</Text>
                       </View>
                     )}
                     
                     {stop.receiver && (
                       <View style={styles.detailRow}>
                         <Feather name="user" size={14} color={colors.onSurfaceVariant} />
-                        <Text style={styles.detailText}>Receiver: {stop.receiver}</Text>
+                        <Text style={styles.detailText}>{t('logistics.receiverColon', { name: stop.receiver })}</Text>
                       </View>
                     )}
                   </View>
@@ -161,7 +164,7 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
                           )
                     }
                     accessibilityRole="button"
-                    accessibilityLabel={`Edit ${stop.label}`}
+                    accessibilityLabel={`${t('common.edit')} ${stop.label}`}
                   >
                     <Feather name="edit-2" size={18} color={colors.primary} />
                   </Pressable>
@@ -182,7 +185,7 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
               onPress={() => (onAddStop ? onAddStop() : navigation?.navigate('SelectDropLocationScreen'))}
               accessibilityRole="button"
             >
-              <Text style={styles.addStopText}>Add Drop Location</Text>
+              <Text style={styles.addStopText}>{t('booking.addDropLocation')}</Text>
             </Pressable>
           </View>
         </View>
@@ -197,9 +200,9 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
             navigation?.navigate('SelectVehicleScreen');
           }}
           accessibilityRole="button"
-          accessibilityLabel="Continue"
+          accessibilityLabel={t('common.continue')}
         >
-          <Text style={styles.continueText}>CONFIRM ROUTE</Text>
+          <Text style={styles.continueText}>{t('booking.confirmRoute')}</Text>
         </Pressable>
       </View>
     </SafeAreaView>

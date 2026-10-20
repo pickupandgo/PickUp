@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { strings, mockVehicleTypes } from '../../data/mockData';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 import { getFareEstimate } from '../../api/engine';
 import Feather from 'react-native-vector-icons/Feather';
 import TopAppBar from '../../components/organisms/TopAppBar';
@@ -22,6 +23,7 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
   navigation,
 }) => {
   const { draft, primaryDrop, setVehicleType } = useBooking();
+  const { t } = useI18n();
   const [selectedId, setSelectedId] = useState<string>('mini-truck');
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -44,13 +46,48 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
 
   const selectedVehicle = mockVehicleTypes.find((v) => v.id === selectedId);
 
+  const getVehicleInfo = (id: string, fallbackName: string, fallbackDesc: string, fallbackCap: string) => {
+    switch (id) {
+      case 'bike':
+        return {
+          name: t('vehicle.bike'),
+          description: t('vehicle.bikeDesc'),
+          capacity: t('vehicle.bikeCapacity'),
+        };
+      case '3-wheeler':
+        return {
+          name: t('vehicle.threeWheeler'),
+          description: t('vehicle.threeWheelerDesc'),
+          capacity: t('vehicle.threeWheelerCapacity'),
+        };
+      case 'mini-truck':
+        return {
+          name: t('vehicle.miniTruck'),
+          description: t('vehicle.miniTruckDesc'),
+          capacity: t('vehicle.miniTruckCapacity'),
+        };
+      case 'pickup':
+        return {
+          name: t('vehicle.pickup'),
+          description: t('vehicle.pickupDesc'),
+          capacity: t('vehicle.pickupCapacity'),
+        };
+      default:
+        return { name: fallbackName, description: fallbackDesc, capacity: fallbackCap };
+    }
+  };
+
+  const currentVehicleInfo = selectedVehicle
+    ? getVehicleInfo(selectedVehicle.id, selectedVehicle.name, selectedVehicle.description, selectedVehicle.capacity)
+    : null;
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <TopAppBar
-        title={strings.booking.selectVehicle}
+        title={t('booking.selectVehicle')}
         leadingIcon={<Text style={styles.backIcon}>←</Text>}
         onLeadingPress={() => (onBack ? onBack() : navigation?.goBack())}
-        trailingIcon={<Text style={styles.helpText}>Help</Text>}
+        trailingIcon={<Text style={styles.helpText}>{t('common.help')}</Text>}
         onTrailingPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
       />
 
@@ -68,10 +105,10 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
             </View>
             <View style={styles.routeItem}>
               <Text style={styles.routeItemTitle}>
-                {draft.senderName || 'Sender'} · {draft.senderPhone || 'No Number'}
+                {draft.senderName || t('logistics.sender')} · {draft.senderPhone || t('profile.noVerifiedNumber')}
               </Text>
               <Text style={styles.routeItemAddress} numberOfLines={1}>
-                {draft.pickup?.address || 'Pickup Location'}
+                {draft.pickup?.address || t('booking.pickupLocation')}
               </Text>
             </View>
           </View>
@@ -86,10 +123,10 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
                  </View>
                  <View style={styles.routeItem}>
                    <Text style={styles.routeItemTitle}>
-                     {drop.receiverName || 'Receiver'} · {drop.receiverPhone || 'No Number'}
+                     {drop.receiverName || t('logistics.receiver')} · {drop.receiverPhone || t('profile.noVerifiedNumber')}
                    </Text>
                    <Text style={styles.routeItemAddress} numberOfLines={1}>
-                     {drop.address || 'Drop Location'}
+                     {drop.address || t('booking.dropLocation')}
                    </Text>
                  </View>
                </View>
@@ -99,19 +136,19 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
           <View style={styles.routeActions}>
             <Pressable style={styles.routeActionBtn} onPress={() => navigation?.navigate('SelectDropLocationScreen', { mode: 'stop' })}>
               <Feather name="plus-circle" size={16} color={colors.primary} />
-              <Text style={styles.routeActionText}>Add Stop</Text>
+              <Text style={styles.routeActionText}>{t('booking.addStop')}</Text>
             </Pressable>
             <View style={styles.routeActionDivider} />
             <Pressable style={styles.routeActionBtn} onPress={() => navigation?.navigate('SelectLocationScreen', { mode: 'edit' })}>
               <Feather name="edit-2" size={16} color={colors.primary} />
-              <Text style={styles.routeActionText}>Edit Locations</Text>
+              <Text style={styles.routeActionText}>{t('booking.editLocations')}</Text>
             </Pressable>
           </View>
         </View>
 
         <View style={styles.subtitleContainer}>
           <Text style={styles.subtitle}>
-            Choose the right vehicle for your load.
+            {t('vehicle.chooseRightVehicle')}
           </Text>
         </View>
 
@@ -126,12 +163,14 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
                   ? `₹${Math.round(vehicle.baseFare + (distanceKm * vehicle.perKmCharge))}`
                   : `₹${parseInt(vehicle.estimatedPrice.replace(/[^0-9]/g, ''), 10) || vehicle.baseFare}`;
 
+              const info = getVehicleInfo(vehicle.id, vehicle.name, vehicle.description, vehicle.capacity);
+
               return (
                 <VehicleOptionCard
                   key={vehicle.id}
-                  name={vehicle.name}
-                  description={vehicle.description}
-                  capacity={vehicle.capacity}
+                  name={info.name}
+                  description={info.description}
+                  capacity={info.capacity}
                   estimatedPrice={displayPrice}
                   eta={vehicle.eta}
                   image={vehicle.image}
@@ -154,7 +193,11 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
             navigation?.navigate('GoodsDetailsScreen');
           }}
         >
-          <Text style={styles.ctaLabel}>Proceed With {selectedVehicle?.name?.split(' /')[0] ?? 'Vehicle'}</Text>
+          <Text style={styles.ctaLabel}>
+            {t('vehicle.proceedWithVehicle', {
+              name: currentVehicleInfo?.name?.split(' /')[0] ?? 'Vehicle',
+            })}
+          </Text>
         </Pressable>
       </View>
     </SafeAreaView>

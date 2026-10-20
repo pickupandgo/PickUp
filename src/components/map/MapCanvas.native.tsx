@@ -129,19 +129,32 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitToMarkers, markerIdsKey]);
 
+  const lastForceKeyRef = useRef(forceCenterKey);
+  const lastAnimatedCenterRef = useRef<GeoPoint | undefined>(undefined);
+
   useEffect(() => {
     if (fitToMarkers || !center || !mapRef.current) return;
-    console.log('[DEBUG_MAP_CAMERA]', { latitude: center.latitude, longitude: center.longitude });
-    mapRef.current.animateCamera(
-      {
-        center: {
-          latitude: center.latitude,
-          longitude: center.longitude,
+    const isManualForce = lastForceKeyRef.current !== forceCenterKey;
+    lastForceKeyRef.current = forceCenterKey;
+
+    const last = lastAnimatedCenterRef.current;
+    const dist = last
+      ? Math.hypot(last.latitude - center.latitude, last.longitude - center.longitude) * 111000
+      : Infinity;
+
+    if (isManualForce || dist > 50 || !last) {
+      lastAnimatedCenterRef.current = center;
+      mapRef.current.animateCamera(
+        {
+          center: {
+            latitude: center.latitude,
+            longitude: center.longitude,
+          },
+          zoom: 17,
         },
-        zoom: 17,
-      },
-      { duration: 800 }
-    );
+        { duration: 600 }
+      );
+    }
   }, [center?.latitude, center?.longitude, fitToMarkers, forceCenterKey]);
 
   // Android has a first-mount rendering quirk where custom marker views appear
@@ -218,6 +231,8 @@ const styles = StyleSheet.create({
 
   // Themed stop pin — dark filled dot on a white ring, hanging from a stem.
   pinContainer: {
+    width: 22,
+    height: 84,
     alignItems: 'center',
   },
   pinVisible: {

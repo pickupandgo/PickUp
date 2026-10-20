@@ -8,6 +8,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { useI18n } from '../../i18n';
 
 export interface EmptyStateScreenProps {
   readonly onBack?: () => void;
@@ -15,8 +16,8 @@ export interface EmptyStateScreenProps {
   
   // Empty State Content
   readonly iconName?: string;
-  readonly title: string;
-  readonly description: string;
+  readonly title?: string;
+  readonly description?: string;
   readonly buttonText?: string;
   readonly onButtonPress?: () => void;
   readonly isSecondaryButton?: boolean;
@@ -33,6 +34,9 @@ const EmptyStateScreen: React.FC<EmptyStateScreenProps & { navigation?: any }> =
   isSecondaryButton = false,
   navigation,
 }) => {
+  const { t } = useI18n();
+  const displayTitle = title ?? t('trip.noTrips');
+  const displayDesc = description ?? t('trip.noTripsSubtitle');
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top Navigation */}
@@ -43,7 +47,7 @@ const EmptyStateScreen: React.FC<EmptyStateScreenProps & { navigation?: any }> =
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Pick Up</Text>
+        <Text style={styles.headerTitle}>{t('home.appName')}</Text>
         <Pressable
           style={styles.iconButton}
           onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
@@ -58,8 +62,8 @@ const EmptyStateScreen: React.FC<EmptyStateScreenProps & { navigation?: any }> =
             <Feather name={iconName} size={32} color={colors.onSurfaceVariant} />
           </View>
           
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.subtitle}>{description}</Text>
+          <Text style={styles.title}>{displayTitle}</Text>
+          <Text style={styles.subtitle}>{displayDesc}</Text>
 
           {buttonText && onButtonPress && (
             <Pressable

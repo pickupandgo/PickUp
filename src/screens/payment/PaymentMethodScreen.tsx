@@ -19,13 +19,8 @@ export interface PaymentMethodScreenProps {
   readonly onHelp?: () => void;
 }
 
-const PAYMENT_METHODS = [
-  { id: 'upi', label: 'Pay via UPI', icon: 'account-balance' as const },
-  { id: 'cod', label: 'Cash on Delivery (COD)', icon: 'payments' as const },
-  { id: 'pickup', label: 'Cash at Pickup', icon: 'local-atm' as const },
-];
-
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 const PaymentMethodScreen: React.FC<PaymentMethodScreenProps & { navigation?: any }> = ({
   onContinue,
@@ -33,21 +28,27 @@ const PaymentMethodScreen: React.FC<PaymentMethodScreenProps & { navigation?: an
   onHelp,
   navigation,
 }) => {
-  const { draft } = useBooking();
+  const { t } = useI18n();
+  const { draft, setPaymentMethod } = useBooking();
   const estimate = draft.fareEstimate;
   const amount = estimate ? `₹ ${estimate.fare}` : '--';
 
-  const [selectedMethod, setSelectedMethod] = useState<string>('upi');
+  const paymentMethods = [
+    { id: 'upi', label: t('payment.onlineUpi'), icon: 'account-balance' as const },
+    { id: 'cod', label: t('payment.cashOnDelivery'), icon: 'payments' as const },
+    { id: 'pickup', label: t('payment.cashAtPickup'), icon: 'local-atm' as const },
+  ];
 
-  const CASH_METHOD_IDS = ['cod', 'pickup'];
+  const [selectedMethod, setSelectedMethod] = useState<string>(draft.paymentMethod || 'cod');
 
   const handleContinue = () => {
+    setPaymentMethod(selectedMethod);
     onContinue?.(selectedMethod);
-    navigation?.navigate(
-      CASH_METHOD_IDS.includes(selectedMethod)
-        ? 'CashPaymentStatusScreen'
-        : 'PaymentMethodSelectedScreen'
-    );
+    if (navigation?.canGoBack?.()) {
+      navigation.goBack();
+    } else {
+      navigation?.navigate('ReviewBookingScreen');
+    }
   };
 
   return (
@@ -60,28 +61,28 @@ const PaymentMethodScreen: React.FC<PaymentMethodScreenProps & { navigation?: an
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Delivery</Text>
+        <Text style={styles.headerTitle}>{t('booking.delivery')}</Text>
         <Pressable
           style={styles.helpButton}
           onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
         >
-          <Text style={styles.helpButtonText}>Help</Text>
+          <Text style={styles.helpButtonText}>{t('common.help')}</Text>
         </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Header & Amount */}
         <View style={styles.amountSection}>
-          <Text style={styles.sectionTitle}>Payment Method</Text>
+          <Text style={styles.sectionTitle}>{t('payment.paymentMethod')}</Text>
           <View style={styles.amountCard}>
-            <Text style={styles.amountLabel}>Amount to pay</Text>
+            <Text style={styles.amountLabel}>{t('payment.amountToPay')}</Text>
             <Text style={styles.amountValue}>{amount}</Text>
           </View>
         </View>
 
         {/* Payment Options */}
         <View style={styles.optionsList}>
-          {PAYMENT_METHODS.map((method) => {
+          {paymentMethods.map((method) => {
             const isSelected = selectedMethod === method.id;
 
             return (
@@ -122,12 +123,11 @@ const PaymentMethodScreen: React.FC<PaymentMethodScreenProps & { navigation?: an
       {/* Fixed Bottom Action */}
       <View style={styles.bottomActions}>
         <Button
-          label="CONTINUE"
+          label={t('payment.confirmMethod')}
           onPress={handleContinue}
           variant="primary"
           fullWidth
           size="lg"
-          disabled={!estimate}
         />
       </View>
     </SafeAreaView>

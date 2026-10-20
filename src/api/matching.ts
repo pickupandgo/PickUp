@@ -38,6 +38,7 @@ export interface MatchOptions {
   readonly radiusKm?: number;
   readonly perDriverTimeoutMs?: number;
   readonly onProgress?: (progress: MatchProgress) => void;
+  readonly onRideCreated?: (ride: Ride) => void;
   readonly signal?: AbortSignal;
   readonly searchCenter?: GeoPoint;
 }
@@ -143,6 +144,7 @@ export const findDriverAndCreateRide = async (
     let ride: Ride;
     try {
       ride = await createRide({ ...input, driverId: driver.id }, signal);
+      options.onRideCreated?.(ride);
     } catch (error) {
       const apiError = toApiError(error);
       // 400 here means this driver just went busy. Try the next one.
@@ -150,7 +152,15 @@ export const findDriverAndCreateRide = async (
       throw apiError;
     }
 
-    const decided = await awaitDriverDecision(ride.id, perDriverTimeoutMs, signal);
+    let decided: Ride | null = null;
+    try {
+      decided = await awaitDriverDecision(ride.id, perDriverTimeoutMs, signal);
+    } catch (err) {
+      if (isAbortError(err) || signal?.aborted) {
+        await releaseRide(ride.id);
+      }
+      throw err;
+    }
 
     if (decided?.status === 'ACCEPTED') {
       return { ride: decided, driver };

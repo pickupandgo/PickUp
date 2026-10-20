@@ -11,6 +11,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { mockActiveTrip } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 
 export interface HistoricalTripDetailScreenProps {
   readonly onBack?: () => void;
@@ -28,6 +29,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
   onRateTrip,
   navigation,
 }) => {
+  const { t } = useI18n();
   const stops = mockActiveTrip.stops;
 
   return (
@@ -37,7 +39,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
         <Pressable style={styles.iconButton} onPress={() => (onBack ? onBack() : navigation?.goBack())}>
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle} numberOfLines={1}>Trip Details</Text>
+        <Text style={styles.headerTitle} numberOfLines={1}>{t('trip.details')}</Text>
         <Pressable
           style={styles.iconButton}
           onPress={() => (onMore ? onMore() : navigation?.navigate('ShareTrackingSheetScreen'))}
@@ -52,20 +54,20 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
           <View style={styles.statusCard}>
             <Feather name="check-circle" size={24} color={colors.primary} />
             <View>
-              <Text style={styles.statusTitle}>Trip Completed</Text>
+              <Text style={styles.statusTitle}>{t('trip.completed')}</Text>
               <Text style={styles.statusTime}>Oct 24, 2023 • 11:30 AM</Text>
             </View>
           </View>
           
           <View style={styles.metaRow}>
-            <Text style={styles.metaLabel}>TRACKING ID</Text>
+            <Text style={styles.metaLabel}>{t('trip.trackingId')}</Text>
             <Text style={styles.metaValue}>#{mockActiveTrip.id}</Text>
           </View>
         </View>
 
         {/* Route Timeline */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Route Information</Text>
+          <Text style={styles.sectionTitle}>{t('booking.routeInfo')}</Text>
           
           <View style={styles.timelineContainer}>
             <View style={styles.timelineLine} />
@@ -75,10 +77,10 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
               const isLast = index === stops.length - 1;
               const isPrimaryNode = isFirst || isLast;
               
-              let stopLabel = 'Drop';
-              if (isFirst) stopLabel = 'Pickup';
-              else if (isLast) stopLabel = 'Final Drop';
-              else stopLabel = `Drop ${index}`;
+              let stopLabel = t('home.drop');
+              if (isFirst) stopLabel = t('home.pickup');
+              else if (isLast) stopLabel = t('logistics.finalDrop');
+              else stopLabel = `${t('home.drop')} ${index}`;
               
               if (stop.contactName && !isFirst) {
                 stopLabel += ` • ${stop.contactName.split(' ')[0]}`;
@@ -114,31 +116,31 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
 
         {/* Payment Summary */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Payment Summary</Text>
+          <Text style={styles.sectionTitle}>{t('trip.paymentSummary')}</Text>
           
           <View style={styles.paymentRow}>
-            <Text style={styles.paymentLabel}>Trip Fare</Text>
+            <Text style={styles.paymentLabel}>{t('booking.baseFare')}</Text>
             <Text style={styles.paymentValueMono}>{mockActiveTrip.fare}</Text>
           </View>
           <View style={styles.paymentRow}>
-            <Text style={styles.paymentLabel}>Taxes & Fees</Text>
+            <Text style={styles.paymentLabel}>{t('booking.taxes')}</Text>
             <Text style={styles.paymentValueMono}>₹45.00</Text>
           </View>
           <View style={[styles.paymentRow, styles.paymentRowTotal]}>
-            <Text style={styles.paymentTotalLabel}>Total Paid</Text>
+            <Text style={styles.paymentTotalLabel}>{t('booking.totalFare')}</Text>
             <Text style={styles.paymentTotalValue}>₹495.00</Text>
           </View>
           <View style={styles.paymentMethodRow}>
             <View style={styles.paymentMethodBadge}>
               <Feather name="credit-card" size={14} color={colors.onSurfaceVariant} />
-              <Text style={styles.paymentMethodText}>Paid via UPI</Text>
+              <Text style={styles.paymentMethodText}>{t('payment.paidViaUPI')}</Text>
             </View>
           </View>
         </View>
 
         {/* Driver Details */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Driver</Text>
+          <Text style={styles.sectionTitle}>{t('tracking.driver')}</Text>
           
           <View style={styles.driverRow}>
             <View style={styles.driverAvatar} />
@@ -155,7 +157,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
               style={styles.rateButton}
               onPress={() => (onRateTrip ? onRateTrip() : navigation?.navigate('ActiveTripStack', { screen: 'DriverRatingScreen' }))}
             >
-              <Text style={styles.rateButtonText}>Rate Trip</Text>
+              <Text style={styles.rateButtonText}>{t('trip.writeReview')}</Text>
             </Pressable>
           </View>
         </View>
@@ -169,14 +171,14 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
             }
           >
             <Feather name="download" size={20} color={colors.onPrimary} />
-            <Text style={styles.primaryActionText}>Download Invoice</Text>
+            <Text style={styles.primaryActionText}>{t('trip.downloadInvoice')}</Text>
           </Pressable>
           <Pressable
             style={styles.secondaryActionButton}
             onPress={() => (onNeedHelp ? onNeedHelp() : navigation?.navigate('ActiveTripStack', { screen: 'ActiveTripChatScreen' }))}
           >
             <Feather name="help-circle" size={20} color={colors.onSurface} />
-            <Text style={styles.secondaryActionText}>Need Help?</Text>
+            <Text style={styles.secondaryActionText}>{t('profile.helpSupport')}</Text>
           </Pressable>
         </View>
       </ScrollView>

@@ -1,5 +1,5 @@
 /**
- * Mock data layer for the Pick Up Customer App.
+ * Mock data layer for the MultipleRide Customer App.
  * All static text, image URIs, and list data is decoupled here.
  * Components MUST NOT contain hardcoded content strings.
  */
@@ -285,7 +285,7 @@ export const mockNotifications: readonly NotificationItem[] = [
   {
     id: '4',
     title: 'Promo Available',
-    message: 'Use code PICKUP20 for 20% off your next delivery!',
+    message: 'Use code MULTIPLERIDE20 for 20% off your next delivery!',
     time: '3 hrs ago',
     read: true,
     icon: 'local_offer',
@@ -358,9 +358,9 @@ export const mockBookingReview = {
 // ─── Strings / Labels ────────────────────────────────────────────────────────
 
 export const strings = {
-  appName: 'Pick Up',
+  appName: 'Multiple Ride',
   login: {
-    title: 'Welcome to Pick Up',
+    title: 'Welcome to Multiple Ride',
     subtitle: 'Your trusted logistics partner',
     phonePlaceholder: 'Enter mobile number',
     continueButton: 'Continue',
@@ -444,3 +444,5 @@ export const strings = {
     confirm: 'Log Out',
   },
 } as const;
+
+export * from './goodsCategories';

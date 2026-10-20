@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import MapCanvas from '../../components/map/MapCanvas';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { useI18n } from '../../i18n';
 
 export interface ActiveTripTrackingScreenProps {
   readonly onBack?: () => void;
@@ -27,6 +28,7 @@ const ActiveTripTrackingScreen: React.FC<ActiveTripTrackingScreenProps & { navig
   onShare,
   navigation,
 }) => {
+  const { t } = useI18n();
   return (
     <View style={styles.container}>
       {/* Real map behind the sheet. Static — the moving driver is shown on
@@ -48,13 +50,13 @@ const ActiveTripTrackingScreen: React.FC<ActiveTripTrackingScreenProps & { navig
               >
                 <Feather name="arrow-left" size={22} color={colors.onSurfaceVariant} />
               </Pressable>
-              <Text style={styles.headerTitle}>Trip Tracking</Text>
+              <Text style={styles.headerTitle}>{t('trip.tripTracking')}</Text>
             </View>
             <Pressable
               style={styles.iconButton}
               onPress={() => (onHelp ? onHelp() : navigation?.navigate('LiveTrackingExceptionsScreen'))}
               accessibilityRole="button"
-              accessibilityLabel="Help"
+              accessibilityLabel={t('common.help')}
             >
               <Feather name="help-circle" size={22} color={colors.onSurfaceVariant} />
             </Pressable>
@@ -72,14 +74,14 @@ const ActiveTripTrackingScreen: React.FC<ActiveTripTrackingScreenProps & { navig
             {/* ETA & Status Header */}
             <View style={styles.sheetHeader}>
               <View>
-                <Text style={styles.etaTitle}>Arriving in 8 mins</Text>
-                <Text style={styles.etaSubtitle}>Drop 2 • Pal Road</Text>
+                <Text style={styles.etaTitle}>{t('tracking.arrivingInMins', { count: 8 })}</Text>
+                <Text style={styles.etaSubtitle}>{t('home.drop')} 2 • Pal Road</Text>
               </View>
               <View style={styles.statusBadgeContainer}>
                 <View style={styles.statusBadge}>
-                  <Text style={styles.statusBadgeText}>On Time</Text>
+                  <Text style={styles.statusBadgeText}>{t('tracking.onTime')}</Text>
                 </View>
-                <Text style={styles.lastUpdatedText}>UPDATED 30S AGO</Text>
+                <Text style={styles.lastUpdatedText}>{t('tracking.updatedSecondsAgo', { seconds: 30 })}</Text>
               </View>
             </View>
 
@@ -101,7 +103,7 @@ const ActiveTripTrackingScreen: React.FC<ActiveTripTrackingScreenProps & { navig
                     </View>
                   </View>
                   <View style={styles.timelineTextContainer}>
-                    <Text style={styles.timelineTextStrikethrough}>Pickup</Text>
+                    <Text style={styles.timelineTextStrikethrough}>{t('home.pickup')}</Text>
                     <Text style={styles.timelineTextDone}>Sardarpura Warehouse</Text>
                   </View>
                 </View>
@@ -114,7 +116,7 @@ const ActiveTripTrackingScreen: React.FC<ActiveTripTrackingScreenProps & { navig
                     </View>
                   </View>
                   <View style={styles.timelineTextContainer}>
-                    <Text style={styles.timelineTextStrikethrough}>Drop 1</Text>
+                    <Text style={styles.timelineTextStrikethrough}>{t('home.drop')} 1</Text>
                     <Text style={styles.timelineTextDone}>Ratanada Hub</Text>
                   </View>
                 </View>
@@ -127,7 +129,7 @@ const ActiveTripTrackingScreen: React.FC<ActiveTripTrackingScreenProps & { navig
                     </View>
                   </View>
                   <View style={styles.timelineTextContainer}>
-                    <Text style={styles.timelineCurrentLabel}>Drop 2 (Current)</Text>
+                    <Text style={styles.timelineCurrentLabel}>{t('home.drop')} 2 ({t('tracking.current')})</Text>
                     <Text style={styles.timelineCurrentTitle}>Pal Road</Text>
                   </View>
                 </View>
@@ -138,7 +140,7 @@ const ActiveTripTrackingScreen: React.FC<ActiveTripTrackingScreenProps & { navig
                     <View style={styles.iconUpcomingInner} />
                   </View>
                   <View style={styles.timelineTextContainer}>
-                    <Text style={styles.timelineUpcomingLabel}>Drop 3</Text>
+                    <Text style={styles.timelineUpcomingLabel}>{t('home.drop')} 3</Text>
                     <Text style={styles.timelineUpcomingTitle}>Basni Phase II</Text>
                   </View>
                 </View>
@@ -153,7 +155,7 @@ const ActiveTripTrackingScreen: React.FC<ActiveTripTrackingScreenProps & { navig
                 accessibilityRole="button"
               >
                 <Feather name="phone" size={20} color={colors.onSecondaryContainer} />
-                <Text style={styles.actionButtonText}>Call</Text>
+                <Text style={styles.actionButtonText}>{t('common.call')}</Text>
               </Pressable>
               <Pressable
                 style={styles.actionButton}
@@ -161,7 +163,7 @@ const ActiveTripTrackingScreen: React.FC<ActiveTripTrackingScreenProps & { navig
                 accessibilityRole="button"
               >
                 <Feather name="message-circle" size={20} color={colors.onSecondaryContainer} />
-                <Text style={styles.actionButtonText}>Chat</Text>
+                <Text style={styles.actionButtonText}>{t('common.chat')}</Text>
               </Pressable>
               <Pressable
                 style={styles.iconAction}

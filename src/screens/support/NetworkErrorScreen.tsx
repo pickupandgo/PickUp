@@ -8,6 +8,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { useI18n } from '../../i18n';
 
 export interface NetworkErrorScreenProps {
   readonly onBack?: () => void;
@@ -23,6 +24,8 @@ const NetworkErrorScreen: React.FC<NetworkErrorScreenProps & { navigation?: any 
   onCheckSettings,
   navigation,
 }) => {
+  const { t } = useI18n();
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top Navigation */}
@@ -33,7 +36,7 @@ const NetworkErrorScreen: React.FC<NetworkErrorScreenProps & { navigation?: any 
         >
           <Feather name="arrow-left" size={24} color={colors.onSurfaceVariant} />
         </Pressable>
-        <Text style={styles.headerTitle}>Pick Up</Text>
+        <Text style={styles.headerTitle}>{t('home.appName')}</Text>
         <Pressable
           style={styles.iconButton}
           onPress={() => (onMore ? onMore() : navigation?.goBack())}
@@ -51,9 +54,9 @@ const NetworkErrorScreen: React.FC<NetworkErrorScreenProps & { navigation?: any 
             <Feather name="cloud-off" size={48} color={colors.outline} />
           </View>
           
-          <Text style={styles.title}>No Internet Connection</Text>
+          <Text style={styles.title}>{t('errors.noInternet')}</Text>
           <Text style={styles.subtitle}>
-            Please check your connection and try again.
+            {t('errors.noInternetSubtitle')}
           </Text>
 
           <View style={styles.actionContainer}>
@@ -64,7 +67,7 @@ const NetworkErrorScreen: React.FC<NetworkErrorScreenProps & { navigation?: any 
               }
             >
               <Feather name="refresh-cw" size={18} color={colors.onPrimary} />
-              <Text style={styles.primaryButtonText}>Retry</Text>
+              <Text style={styles.primaryButtonText}>{t('common.retry')}</Text>
             </Pressable>
             
             <Pressable
@@ -75,7 +78,7 @@ const NetworkErrorScreen: React.FC<NetworkErrorScreenProps & { navigation?: any 
                   : navigation?.navigate('RouteUnavailableScreen')
               }
             >
-              <Text style={styles.secondaryButtonText}>Check Network Settings</Text>
+              <Text style={styles.secondaryButtonText}>{t('errors.checkNetworkSettings')}</Text>
             </Pressable>
           </View>
         </View>

@@ -1,5 +1,5 @@
 /**
- * Theme tokens extracted from the Pick Up Design System Stitch project.
+ * Theme tokens extracted from the MultipleRide Design System Stitch project.
  * Source: tailwind.config in `.stitch/designs/*.html`
  *
  * ALL color, spacing, typography, and border-radius values used in components

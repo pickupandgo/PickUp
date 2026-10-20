@@ -10,6 +10,7 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
@@ -28,12 +29,14 @@ import {
   usePhoneCooldown,
 } from '../../auth/authService';
 import { clearProfileComplete } from '../../state/session';
+import { useI18n } from '../../i18n';
 
 export interface SignUpScreenProps {
   readonly navigation?: any;
 }
 
 export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
+  const { t, locale } = useI18n();
   const [authMethod, setAuthMethod] = useState<'phone' | 'email'>('phone');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -61,7 +64,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
   const handleGetOtp = useCallback(async () => {
     if (isSubmittingRef.current || busy || isCoolingDown || cooldownRemaining > 0) return;
     if (!isValidPhone) {
-      setError('Please enter a valid 10-digit mobile number.');
+      setError(t('auth.invalidPhone'));
       return;
     }
 
@@ -92,17 +95,17 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
       isSubmittingRef.current = false;
       setLoading(false);
     }
-  }, [cleanPhone, isValidPhone, busy, isCoolingDown, cooldownRemaining, navigation]);
+  }, [cleanPhone, isValidPhone, busy, isCoolingDown, cooldownRemaining, navigation, t]);
 
   // Email Sign-Up
   const handleEmailSignUp = useCallback(async () => {
     if (isSubmittingRef.current || busy) return;
     if (!isValidEmail) {
-      setError('Please enter a valid email address.');
+      setError(t('auth.invalidEmail'));
       return;
     }
     if (!isValidPassword) {
-      setError('Password must be at least 6 characters.');
+      setError(t('auth.passwordMinLength'));
       return;
     }
 
@@ -120,7 +123,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
       isSubmittingRef.current = false;
       setLoading(false);
     }
-  }, [busy, isValidEmail, isValidPassword, email, password]);
+  }, [busy, isValidEmail, isValidPassword, email, password, t]);
 
   // Google Sign-In
   const handleGoogleSignIn = useCallback(async () => {
@@ -169,15 +172,33 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Language Switcher Pill */}
+          <View style={styles.topBar}>
+            <Pressable
+              style={styles.langPill}
+              onPress={() => navigation?.navigate('LanguageSelectionScreen')}
+              hitSlop={8}
+            >
+              <Feather name="globe" size={14} color={colors.primary} />
+              <Text style={styles.langPillText}>{locale === 'hi' ? 'हिन्दी' : 'English'}</Text>
+            </Pressable>
+          </View>
+
           {/* Logo & Header */}
           <View style={styles.heroSection}>
             <View style={styles.logoContainer}>
               <View style={styles.logoInner}>
-                <Text style={styles.logoIcon}>📦</Text>
+                <Image
+                  source={require('../../../assets/logo.png')}
+                  style={{ width: 38, height: 38 }}
+                  resizeMode="contain"
+                  accessibilityRole="image"
+                  accessibilityLabel="Multiple Ride Logo"
+                />
               </View>
             </View>
-            <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Sign up to start booking rides and package deliveries</Text>
+            <Text style={styles.title}>{t('auth.createAccountTitle')}</Text>
+            <Text style={styles.subtitle}>{t('auth.createAccountSub')}</Text>
           </View>
 
           {/* Flow Mode Switcher: Log In vs Sign Up */}
@@ -187,10 +208,10 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
               onPress={() => navigation?.navigate('LoginScreen')}
               hitSlop={8}
             >
-              <Text style={styles.entryModeInactiveText}>Log In</Text>
+              <Text style={styles.entryModeInactiveText}>{t('auth.loginTab')}</Text>
             </Pressable>
             <View style={[styles.entryModeTab, styles.entryModeActive]}>
-              <Text style={styles.entryModeActiveText}>Sign Up</Text>
+              <Text style={styles.entryModeActiveText}>{t('auth.signupTab')}</Text>
             </View>
           </View>
 
@@ -204,7 +225,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
               }}
             >
               <Text style={[styles.tabText, authMethod === 'phone' && styles.activeTabText]}>
-                Mobile OTP
+                {t('auth.mobileOtpTab')}
               </Text>
             </Pressable>
             <Pressable
@@ -215,7 +236,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
               }}
             >
               <Text style={[styles.tabText, authMethod === 'email' && styles.activeTabText]}>
-                Email & Password
+                {t('auth.emailPasswordTab')}
               </Text>
             </Pressable>
           </View>
@@ -230,17 +251,17 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
           {/* Phone Form */}
           {authMethod === 'phone' ? (
             <View style={styles.formSection}>
-              <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
+              <Text style={styles.inputLabel}>{t('auth.mobileNumber')}</Text>
               <View style={styles.phoneRow}>
                 <View style={styles.countryCode}>
                   <Text style={styles.countryCodeText}>+91</Text>
                 </View>
                 <View style={styles.phoneInputWrapper}>
                   <InputField
-                    placeholder="Enter 10-digit number"
+                    placeholder={t('auth.enterMobileNumber')}
                     value={phone}
-                    onChangeText={(t) => {
-                      setPhone(t);
+                    onChangeText={(tVal) => {
+                      setPhone(tVal);
                       if (error) setError(null);
                     }}
                     keyboardType="phone-pad"
@@ -253,13 +274,16 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
               {isValidPhone && cooldownRemaining > 0 && (
                 <View style={styles.cooldownContainer}>
                   <Text style={styles.cooldownText}>
-                    Request a new OTP in {cooldownRemaining} {cooldownRemaining === 1 ? 'second' : 'seconds'}
+                    {t('auth.cooldown', {
+                      seconds: cooldownRemaining,
+                      unit: cooldownRemaining === 1 ? t('auth.second') : t('auth.seconds'),
+                    })}
                   </Text>
                 </View>
               )}
 
               <Button
-                label={loading ? 'Sending OTP...' : 'Get OTP'}
+                label={loading ? t('auth.sendingOtp') : t('auth.getOtp')}
                 onPress={handleGetOtp}
                 variant="primary"
                 size="lg"
@@ -272,13 +296,13 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
           ) : (
             /* Email Form */
             <View style={styles.formSection}>
-              <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
+              <Text style={styles.inputLabel}>{t('auth.emailAddress')}</Text>
               <View style={styles.inputWrapper}>
                 <InputField
                   placeholder="name@example.com"
                   value={email}
-                  onChangeText={(t) => {
-                    setEmail(t);
+                  onChangeText={(tVal) => {
+                    setEmail(tVal);
                     if (error) setError(null);
                   }}
                   keyboardType="email-address"
@@ -287,15 +311,15 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
                 />
               </View>
 
-              <Text style={[styles.inputLabel, { marginTop: spacing.md }]}>PASSWORD</Text>
+              <Text style={[styles.inputLabel, { marginTop: spacing.md }]}>{t('auth.password')}</Text>
               <View style={styles.passwordRow}>
                 <TextInput
                   style={styles.passwordInput}
-                  placeholder="At least 6 characters"
+                  placeholder={t('auth.passwordMinPlaceholder')}
                   placeholderTextColor={colors.onSurfaceVariant}
                   value={password}
-                  onChangeText={(t) => {
-                    setPassword(t);
+                  onChangeText={(tVal) => {
+                    setPassword(tVal);
                     if (error) setError(null);
                   }}
                   secureTextEntry={!showPassword}
@@ -316,7 +340,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
               </View>
 
               <Button
-                label={loading ? 'Creating Account...' : 'Sign Up with Email'}
+                label={loading ? t('auth.creatingAccount') : t('auth.signUpWithEmail')}
                 onPress={handleEmailSignUp}
                 variant="primary"
                 size="lg"
@@ -331,7 +355,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
           {/* Social Divider */}
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Or continue with</Text>
+            <Text style={styles.dividerText}>{t('auth.orContinueWith')}</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -347,7 +371,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
               ) : (
                 <>
                   <Text style={styles.socialIconText}>G</Text>
-                  <Text style={styles.socialButtonText}>Continue with Google</Text>
+                  <Text style={styles.socialButtonText}>{t('auth.continueWithGoogle')}</Text>
                 </>
               )}
             </Pressable>
@@ -362,7 +386,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
               ) : (
                 <>
                   <Feather name="shield" size={18} color={colors.onSurface} style={styles.socialIcon} />
-                  <Text style={styles.socialButtonText}>Continue with Apple</Text>
+                  <Text style={styles.socialButtonText}>{t('auth.continueWithApple')}</Text>
                 </>
               )}
             </Pressable>
@@ -371,23 +395,24 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
           {/* Switch to Log In */}
           <View style={styles.switchRow}>
             <Text style={styles.switchPrompt}>
-              Already have an account?{' '}
+              {t('auth.alreadyHaveAccount')}
               <Text
                 style={styles.switchLink}
                 onPress={() => {
                   navigation?.navigate('LoginScreen');
                 }}
               >
-                Log In
+                {t('auth.loginTab')}
               </Text>
             </Text>
           </View>
 
           {/* Terms Footer */}
           <Text style={styles.termsText}>
-            By signing up, you agree to our{' '}
-            <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
-            <Text style={styles.termsLink}>Privacy Policy</Text>.
+            {t('auth.bySigningUp')}
+            <Text style={styles.termsLink}>{t('auth.termsOfService')}</Text>
+            {t('auth.termsAnd')}
+            <Text style={styles.termsLink}>{t('auth.privacyPolicy')}</Text>.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -407,6 +432,28 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.marginMobile,
     paddingBottom: spacing.xxl,
+  },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xs,
+  },
+  langPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: colors.outlineHairline,
+  },
+  langPillText: {
+    fontSize: typography.labelSm.fontSize,
+    fontWeight: '600',
+    color: colors.primary,
   },
   heroSection: {
     alignItems: 'center',

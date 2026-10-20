@@ -9,6 +9,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { useI18n } from '../../i18n';
 
 export interface ReconnectingScreenProps {
   readonly lastSignalTime?: string;
@@ -18,6 +19,7 @@ const ReconnectingScreen: React.FC<ReconnectingScreenProps & { navigation?: any 
   lastSignalTime = '14:02', // mock default
   navigation,
 }) => {
+  const { t } = useI18n();
   // Animations
   const spinValue = useRef(new Animated.Value(0)).current;
   const pulseValue = useRef(new Animated.Value(1)).current;
@@ -111,9 +113,9 @@ const ReconnectingScreen: React.FC<ReconnectingScreenProps & { navigation?: any 
             </Animated.View>
           </View>
 
-          <Text style={styles.title}>Connection Lost</Text>
+          <Text style={styles.title}>{t('tracking.connectionLost')}</Text>
           <Animated.Text style={[styles.subtitle, { opacity: pulseValue }]}>
-            Reconnecting to Pick Up...
+            {t('tracking.reconnectingToApp')}
           </Animated.Text>
 
           {/* Indeterminate Progress Bar */}
@@ -128,7 +130,7 @@ const ReconnectingScreen: React.FC<ReconnectingScreenProps & { navigation?: any 
 
           <View style={styles.statusBadge}>
             <Feather name="wifi-off" size={14} color={colors.outline} />
-            <Text style={styles.statusText}>Signal lost at {lastSignalTime}</Text>
+            <Text style={styles.statusText}>{t('tracking.signalLostAt', { time: lastSignalTime })}</Text>
           </View>
         </View>
       </View>

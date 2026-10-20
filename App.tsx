@@ -9,6 +9,9 @@ import { BookingProvider, useBooking } from './src/state/BookingContext';
 import { SessionProvider, useSession } from './src/state/SessionContext';
 import { AuthProvider } from './src/auth/AuthProvider';
 import { colors } from './src/theme';
+import { I18nProvider, useI18n } from './src/i18n';
+import LanguageSelectionScreen from './src/screens/profile/LanguageSelectionScreen';
+import { notificationService } from './src/services/notifications/NotificationService';
 
 import ActiveTripChatScreen from './src/screens/support/ActiveTripChatScreen';
 import ActiveTripTrackingScreen from './src/screens/tracking/ActiveTripTrackingScreen';
@@ -93,11 +96,12 @@ const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function EmptyStateRoute(props: any) {
+  const { t } = useI18n();
   return (
     <EmptyStateScreen
-      title="No trips yet"
-      description="Your completed and cancelled trips will show up here."
-      buttonText="Start Booking"
+      title={t('trip.noTripsYet')}
+      description={t('trip.noTripsDesc')}
+      buttonText={t('home.startBooking')}
       {...props}
       onButtonPress={() => props.navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' })}
     />
@@ -114,7 +118,7 @@ function GalleryScreen({ navigation }: any) {
       <Text style={styles.header}>Screen Gallery (76 Screens)</Text>
       <FlatList
         data={[
-          'ActiveTripChatScreen', 'ActiveTripTrackingScreen', 'AddressSearchScreen', 'AssignmentFailedScreen', 'BookingConfirmedScreen', 'BookingReviewScreen', 'CallDriverScreen', 'CancellationChargeConfirmationScreen', 'CancellationConfirmationScreen', 'CancellationReasonScreen', 'CancellationResultScreen', 'CashPaymentStatusScreen', 'ChangeProfilePhotoScreen', 'CreateProfileScreen', 'CurrentDropDetailsScreen', 'CustomerLiveTrackingScreen', 'CustomerSettingsScreen', 'DeclaredValueSelectionScreen', 'DigitalReceiptScreen', 'DriverAssignedExpandedScreen', 'DriverAssignedScreen', 'DriverFoundScreen', 'DriverRatingScreen', 'DropCompletedStateScreen', 'DropOtpVerificationScreen', 'EditProfileScreen', 'EmptyStateScreen', 'ErrorScreen', 'FareEstimateScreen', 'FinalDeliverySummaryScreen', 'FindingDriverScreen', 'GoodsDetailsScreen', 'GoodsInsuranceScreen', 'HistoricalTripDetailScreen', 'HomeScreen', 'LiveTrackingExceptionsScreen', 'LiveTrackingScreen', 'LoadingSkeletonScreen', 'LoginScreen', 'LogoutConfirmationScreen', 'MapLoadingScreen', 'MultiDropOverviewScreen', 'MultiDropProgressScreen', 'NetworkErrorScreen', 'NextDropScreen', 'NoDriversAvailableScreen', 'NotificationCenterScreen', 'OtpVerificationScreen', 'PaymentConfirmationScreen', 'PaymentFailedScreen', 'PaymentMethodScreen', 'PaymentMethodSelectedScreen', 'PaymentPendingScreen', 'PaymentProcessingScreen', 'PaymentSelectionScreen', 'PaymentSuccessfulScreen', 'PickupOtpVerificationScreen', 'PickupVerifiedSuccessScreen', 'ProfileScreen', 'ReceiverDetailsScreen', 'ReconnectingScreen', 'ReviewBookingScreen', 'RouteUnavailableScreen', 'SavedAddressesScreen', 'SearchingDriverScreen', 'SearchUnavailableScreen', 'SelectDropLocationScreen', 'SelectLocationScreen', 'SelectVehicleScreen', 'ShareTrackingSheetScreen', 'TripCancelledStatusScreen', 'TripCompletedScreen', 'TripCompletedSummaryScreen', 'TripHistoryScreen', 'ValidateBookingScreen', 'VehicleSelectionScreen', 'WrittenReviewScreen'
+          'ActiveTripChatScreen', 'ActiveTripTrackingScreen', 'AddressSearchScreen', 'AssignmentFailedScreen', 'BookingConfirmedScreen', 'BookingReviewScreen', 'CallDriverScreen', 'CancellationChargeConfirmationScreen', 'CancellationConfirmationScreen', 'CancellationReasonScreen', 'CancellationResultScreen', 'CashPaymentStatusScreen', 'ChangeProfilePhotoScreen', 'CreateProfileScreen', 'CurrentDropDetailsScreen', 'CustomerLiveTrackingScreen', 'CustomerSettingsScreen', 'DeclaredValueSelectionScreen', 'DigitalReceiptScreen', 'DriverAssignedExpandedScreen', 'DriverAssignedScreen', 'DriverFoundScreen', 'DriverRatingScreen', 'DropCompletedStateScreen', 'DropOtpVerificationScreen', 'EditProfileScreen', 'EmptyStateScreen', 'ErrorScreen', 'FareEstimateScreen', 'FinalDeliverySummaryScreen', 'FindingDriverScreen', 'GoodsDetailsScreen', 'GoodsInsuranceScreen', 'HistoricalTripDetailScreen', 'HomeScreen', 'LanguageSelectionScreen', 'LiveTrackingExceptionsScreen', 'LiveTrackingScreen', 'LoadingSkeletonScreen', 'LoginScreen', 'LogoutConfirmationScreen', 'MapLoadingScreen', 'MultiDropOverviewScreen', 'MultiDropProgressScreen', 'NetworkErrorScreen', 'NextDropScreen', 'NoDriversAvailableScreen', 'NotificationCenterScreen', 'OtpVerificationScreen', 'PaymentConfirmationScreen', 'PaymentFailedScreen', 'PaymentMethodScreen', 'PaymentMethodSelectedScreen', 'PaymentPendingScreen', 'PaymentProcessingScreen', 'PaymentSelectionScreen', 'PaymentSuccessfulScreen', 'PickupOtpVerificationScreen', 'PickupVerifiedSuccessScreen', 'ProfileScreen', 'ReceiverDetailsScreen', 'ReconnectingScreen', 'ReviewBookingScreen', 'RouteUnavailableScreen', 'SavedAddressesScreen', 'SearchingDriverScreen', 'SearchUnavailableScreen', 'SelectDropLocationScreen', 'SelectLocationScreen', 'SelectVehicleScreen', 'ShareTrackingSheetScreen', 'TripCancelledStatusScreen', 'TripCompletedScreen', 'TripCompletedSummaryScreen', 'TripHistoryScreen', 'ValidateBookingScreen', 'VehicleSelectionScreen', 'WrittenReviewScreen'
         ]}
         keyExtractor={item => item}
         renderItem={({item}) => (
@@ -134,11 +138,13 @@ function AuthNavigator() {
       <Stack.Screen name="SignUpScreen" component={SignUpScreen} />
       <Stack.Screen name="OtpVerificationScreen" component={OtpVerificationScreen} />
       <Stack.Screen name="CreateProfileScreen" component={CreateProfileScreen} />
+      <Stack.Screen name="LanguageSelectionScreen" component={LanguageSelectionScreen} />
     </Stack.Navigator>
   );
 }
 
 function MainTabNavigator() {
+  const { t } = useI18n();
   return (
     <Tab.Navigator
       screenOptions={{
@@ -156,7 +162,7 @@ function MainTabNavigator() {
         name="HomeScreen" 
         component={HomeScreen} 
         options={{
-          tabBarLabel: 'Home',
+          tabBarLabel: t('nav.home'),
           tabBarIcon: ({ color, size }) => <Feather name="home" size={size} color={color} />
         }}
       />
@@ -164,7 +170,7 @@ function MainTabNavigator() {
         name="TripHistoryScreen" 
         component={TripHistoryScreen} 
         options={{
-          tabBarLabel: 'Trips',
+          tabBarLabel: t('nav.trips'),
           tabBarIcon: ({ color, size }) => <Feather name="clock" size={size} color={color} />
         }}
       />
@@ -172,7 +178,7 @@ function MainTabNavigator() {
         name="ProfileScreen" 
         component={ProfileScreen} 
         options={{
-          tabBarLabel: 'Profile',
+          tabBarLabel: t('nav.profile'),
           tabBarIcon: ({ color, size }) => <Feather name="user" size={size} color={color} />
         }}
       />
@@ -262,6 +268,7 @@ function MainNavigator() {
       
       {/* Global Modals/Screens in Main */}
       <Stack.Screen name="CustomerSettingsScreen" component={CustomerSettingsScreen} />
+      <Stack.Screen name="LanguageSelectionScreen" component={LanguageSelectionScreen} />
       <Stack.Screen name="ChangeProfilePhotoScreen" component={ChangeProfilePhotoScreen} options={{ presentation: 'transparentModal', animation: 'fade' }} />
       <Stack.Screen name="EditProfileScreen" component={EditProfileScreen} />
       <Stack.Screen name="SavedAddressesScreen" component={SavedAddressesScreen} />
@@ -285,12 +292,32 @@ function OnboardingNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="CreateProfileScreen" component={CreateProfileScreen} />
+      <Stack.Screen
+        name="ChangeProfilePhotoScreen"
+        component={ChangeProfilePhotoScreen}
+        options={{ presentation: 'transparentModal', animation: 'fade' }}
+      />
     </Stack.Navigator>
   );
 }
 
 function RootNavigator() {
   const { isLoggedIn, hasProfile } = useSession();
+  const { locale } = useI18n();
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      notificationService.requestPermission().then(() => {
+        notificationService.registerDeviceToken(locale as 'en' | 'hi');
+      });
+      const unsubscribe = notificationService.initListeners();
+      return () => {
+        unsubscribe();
+      };
+    } else if (isLoggedIn === false) {
+      notificationService.unregisterDeviceToken();
+    }
+  }, [isLoggedIn, locale]);
 
   if (isLoggedIn === null) {
     return (
@@ -301,7 +328,7 @@ function RootNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={(ref) => notificationService.setNavigationRef(ref)}>
       {!isLoggedIn ? (
         <AuthNavigator />
       ) : hasProfile ? (
@@ -316,14 +343,16 @@ function RootNavigator() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
-      <AuthProvider>
-        <SessionProvider>
-          <BookingProvider>
-            <RootNavigator />
-          </BookingProvider>
-        </SessionProvider>
-      </AuthProvider>
+      <I18nProvider>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
+        <AuthProvider>
+          <SessionProvider>
+            <BookingProvider>
+              <RootNavigator />
+            </BookingProvider>
+          </SessionProvider>
+        </AuthProvider>
+      </I18nProvider>
     </SafeAreaProvider>
   );
 }

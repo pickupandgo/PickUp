@@ -34,9 +34,12 @@
         "android": "react-native run-android",
         "ios": "react-native run-ios",
         "typecheck": "tsc --noEmit",
+        "test:i18n": "node scripts/test-i18n.js",
+        "test:dropdown": "node scripts/test-goods-dropdown.js",
+        "test": "node scripts/test-i18n.js && node scripts/test-goods-dropdown.js",
         "check:wiring": "node scripts/check-wiring.js",
         "check:text": "node scripts/check-text-nodes.js",
-        "check": "npm run typecheck && npm run check:wiring && npm run check:text"
+        "check": "npm run typecheck && npm run test && npm run check:text"
     },
     "private": true
 }

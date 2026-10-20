@@ -10,6 +10,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { useI18n } from '../../i18n';
 
 export interface CancellationConfirmationScreenProps {
   readonly eta?: string;
@@ -23,16 +24,21 @@ export interface CancellationConfirmationScreenProps {
 }
 
 const CancellationConfirmationScreen: React.FC<CancellationConfirmationScreenProps & { navigation?: any }> = ({
-  eta = 'Driver is 5 mins away',
+  eta,
   vehicleInfo = 'Tata Ace • RJ 19 XX 1234',
   cancelFee = '₹112.50',
-  feeNote = '(25% of fare)',
-  policyText = "A cancellation fee may apply based on the driver's proximity to the pickup. Charges are determined by the current cancellation policy.",
+  feeNote,
+  policyText,
   onCancelTrip,
   onKeepTrip,
   onClose,
   navigation,
 }) => {
+  const { t } = useI18n();
+  const effectiveEta = eta || t('common.minsAway', { count: 5 });
+  const effectiveFeeNote = feeNote || t('cancellation.percentOfFare', { percent: 25 });
+  const effectivePolicy = policyText || t('cancellation.policyNote');
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Background Dim (Simulating modal) */}
@@ -48,10 +54,12 @@ const CancellationConfirmationScreen: React.FC<CancellationConfirmationScreenPro
         <View style={styles.contentPadding}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Cancel Trip?</Text>
+            <Text style={styles.headerTitle}>{t('cancellation.cancelTripQuestion')}</Text>
             <Pressable
               style={styles.closeButton}
               onPress={() => (onClose ? onClose() : navigation?.goBack())}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.close')}
             >
               <Feather name="x" size={20} color={colors.onSurfaceVariant} />
             </Pressable>
@@ -63,7 +71,7 @@ const CancellationConfirmationScreen: React.FC<CancellationConfirmationScreenPro
               <MaterialIcons name="local-shipping" size={24} color={colors.onSecondaryContainer} />
             </View>
             <View style={styles.contextTexts}>
-              <Text style={styles.etaText}>{eta}</Text>
+              <Text style={styles.etaText}>{effectiveEta}</Text>
               <Text style={styles.vehicleText}>{vehicleInfo}</Text>
             </View>
           </View>
@@ -73,19 +81,19 @@ const CancellationConfirmationScreen: React.FC<CancellationConfirmationScreenPro
             <View style={styles.warningHeader}>
               <MaterialIcons name="warning" size={20} color={colors.error} style={styles.warningIcon} />
               <View style={styles.warningTexts}>
-                <Text style={styles.warningTitle}>Estimated Cancellation Fee: {cancelFee}</Text>
-                <Text style={styles.warningSubtitle}>{feeNote}</Text>
+                <Text style={styles.warningTitle}>{t('cancellation.estCancellationFee', { fee: cancelFee })}</Text>
+                <Text style={styles.warningSubtitle}>{effectiveFeeNote}</Text>
               </View>
             </View>
             <View style={styles.policyBox}>
-              <Text style={styles.policyText}>{policyText}</Text>
+              <Text style={styles.policyText}>{effectivePolicy}</Text>
             </View>
           </View>
 
           {/* Actions */}
           <View style={styles.actionsContainer}>
             <Button
-              label="CANCEL TRIP"
+              label={t('cancellation.cancelTripCaps')}
               onPress={() => {
                 onCancelTrip?.();
                 navigation?.navigate('CancellationResultScreen');
@@ -96,7 +104,7 @@ const CancellationConfirmationScreen: React.FC<CancellationConfirmationScreenPro
               style={styles.cancelButton}
             />
             <Button
-              label="KEEP TRIP"
+              label={t('cancellation.keepTripCaps')}
               onPress={() => (onKeepTrip ? onKeepTrip() : navigation?.goBack())}
               variant="secondary"
               fullWidth

@@ -47,6 +47,7 @@ export interface ResolvedPlace extends GeoPoint {
   readonly receiverName?: string;
   readonly receiverPhone?: string;
   readonly instructions?: string;
+  readonly isLiveLocation?: boolean;
 }
 
 const assertKey = (): void => {

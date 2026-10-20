@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { useI18n } from '../../i18n';
 
 export interface DriverAssignedExpandedScreenProps {
   readonly onBack?: () => void;
@@ -28,6 +29,7 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
   onCancelBooking,
   navigation,
 }) => {
+  const { t } = useI18n();
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       {/* Top App Bar */}
@@ -40,7 +42,7 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
           >
             <Feather name="arrow-left" size={22} color={colors.onSurfaceVariant} />
           </Pressable>
-          <Text style={styles.headerTitle}>Trip Details</Text>
+          <Text style={styles.headerTitle}>{t('trip.tripDetails')}</Text>
         </View>
       </View>
 
@@ -63,7 +65,7 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
                 <Feather name="truck" size={16} color={colors.primary} />
               </View>
               <View style={styles.etaPill}>
-                <Text style={styles.etaPillText}>4 MIN</Text>
+                <Text style={styles.etaPillText}>{t('common.mins', { count: 4 }).toUpperCase()}</Text>
               </View>
             </View>
 
@@ -84,9 +86,9 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
               <View style={styles.clockIconContainer}>
                 <Feather name="clock" size={14} color={colors.onSecondaryContainer} />
               </View>
-              <Text style={styles.statusTitle}>Arriving in 4 mins</Text>
+              <Text style={styles.statusTitle}>{t('tracking.arrivingInMins', { count: 4 })}</Text>
             </View>
-            <Text style={styles.statusSubtitle}>Driver is on the way to your pickup location.</Text>
+            <Text style={styles.statusSubtitle}>{t('tracking.driverOnWayToPickup')}</Text>
           </View>
 
           {/* Driver Info Card */}
@@ -121,7 +123,7 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
                 onPress={() => (onTrackDriver ? onTrackDriver() : navigation?.navigate('CustomerLiveTrackingScreen'))}
                 accessibilityRole="button"
               >
-                <Text style={styles.trackButtonText}>Track Driver</Text>
+                <Text style={styles.trackButtonText}>{t('tracking.trackDriver')}</Text>
               </Pressable>
               
               <Pressable
@@ -140,12 +142,12 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
                 <Feather name="message-circle" size={20} color={colors.onSecondaryContainer} />
               </Pressable>
             </View>
-            <Text style={styles.privacyNote}>Calls are masked for your privacy</Text>
+            <Text style={styles.privacyNote}>{t('tracking.callsMasked')}</Text>
           </View>
 
           {/* Logistics Details */}
           <View style={styles.logisticsCard}>
-            <Text style={styles.logisticsTitle}>Logistics Details</Text>
+            <Text style={styles.logisticsTitle}>{t('logistics.details')}</Text>
             
             <View style={styles.timelineList}>
               <View style={styles.timelineLine} />
@@ -154,7 +156,7 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
               <View style={styles.timelineItem}>
                 <View style={styles.timelineDotPickup} />
                 <View style={styles.timelineContent}>
-                  <Text style={styles.timelineLabel}>PICKUP</Text>
+                  <Text style={styles.timelineLabel}>{t('home.pickup').toUpperCase()}</Text>
                   <Text style={styles.timelineText}>Sardarpura Warehouse</Text>
                 </View>
               </View>
@@ -164,9 +166,9 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
                 <View style={styles.timelineDotDrops} />
                 <View style={styles.timelineContent}>
                   <View style={styles.dropsHeaderRow}>
-                    <Text style={styles.timelineLabel}>DROPS</Text>
+                    <Text style={styles.timelineLabel}>{t('home.drop').toUpperCase()}S</Text>
                     <View style={styles.dropsBadge}>
-                      <Text style={styles.dropsBadgeText}>3 Locations</Text>
+                      <Text style={styles.dropsBadgeText}>{t('booking.locationsCount', { count: 3 })}</Text>
                     </View>
                   </View>
                   <Text style={styles.timelineTextSub}>1. Ratanada Hub</Text>
@@ -183,7 +185,7 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
             onPress={() => (onCancelBooking ? onCancelBooking() : navigation?.navigate('CancellationReasonScreen'))}
             accessibilityRole="button"
           >
-            <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+            <Text style={styles.cancelButtonText}>{t('tracking.cancelBooking')}</Text>
           </Pressable>
 
         </View>

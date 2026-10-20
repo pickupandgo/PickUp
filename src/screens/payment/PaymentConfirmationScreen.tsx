@@ -12,6 +12,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface PaymentConfirmationScreenProps {
   readonly amount?: string;
@@ -31,6 +32,7 @@ const PaymentConfirmationScreen: React.FC<PaymentConfirmationScreenProps & { nav
   onMoreOptions,
   navigation,
 }) => {
+  const { t } = useI18n();
   const { ride, trip, draft } = useBooking();
   
   const currentFare = trip?.fare || ride?.fare || draft.fareEstimate?.fare;
@@ -55,7 +57,7 @@ const PaymentConfirmationScreen: React.FC<PaymentConfirmationScreenProps & { nav
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Trip Payment</Text>
+        <Text style={styles.headerTitle}>{t('payment.tripPayment')}</Text>
         <Pressable
           style={styles.iconButton}
           onPress={() =>
@@ -72,19 +74,19 @@ const PaymentConfirmationScreen: React.FC<PaymentConfirmationScreenProps & { nav
           <View style={styles.successIconBox}>
             <Feather name="check-circle" size={32} color={colors.onSecondaryFixed} />
           </View>
-          <Text style={styles.statusTitle}>Payment Successful</Text>
-          <Text style={styles.statusSubtitle}>Your transaction was completed.</Text>
+          <Text style={styles.statusTitle}>{t('payment.successful')}</Text>
+          <Text style={styles.statusSubtitle}>{t('payment.transactionCompleted')}</Text>
         </View>
 
         {/* Payment Details */}
         <View style={styles.detailsCard}>
           <View style={styles.amountSection}>
-            <Text style={styles.amountLabel}>Final Amount</Text>
+            <Text style={styles.amountLabel}>{t('payment.finalAmount')}</Text>
             <Text style={styles.amountValue}>{amount}</Text>
           </View>
           
           <View style={styles.detailsRow}>
-            <Text style={styles.detailLabel}>Payment Method</Text>
+            <Text style={styles.detailLabel}>{t('payment.paymentMethod')}</Text>
             <View style={styles.paymentMethodContainer}>
               <MaterialIcons name="account-balance" size={16} color={colors.onSurface} />
               <Text style={styles.detailValue}>{paymentMethod}</Text>
@@ -92,29 +94,29 @@ const PaymentConfirmationScreen: React.FC<PaymentConfirmationScreenProps & { nav
           </View>
 
           <View style={styles.detailsRow}>
-            <Text style={styles.detailLabel}>Status</Text>
+            <Text style={styles.detailLabel}>{t('common.status')}</Text>
             <View style={styles.statusBadge}>
-              <Text style={styles.statusBadgeText}>Paid</Text>
+              <Text style={styles.statusBadgeText}>{t('payment.statusPaid')}</Text>
             </View>
           </View>
         </View>
 
         {/* Trip Summary */}
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Trip Summary</Text>
+          <Text style={styles.summaryTitle}>{t('trip.tripSummary')}</Text>
           
           <View style={styles.summaryRow}>
-            <Text style={styles.detailLabel}>Trip ID</Text>
+            <Text style={styles.detailLabel}>{t('trip.tripId')}</Text>
             <Text style={styles.monoValue}>{tripId}</Text>
           </View>
           
           <View style={styles.summaryRow}>
-            <Text style={styles.detailLabel}>Date</Text>
+            <Text style={styles.detailLabel}>{t('payment.date')}</Text>
             <Text style={styles.detailValue}>{date}</Text>
           </View>
           
           <View style={styles.summaryRow}>
-            <Text style={styles.detailLabel}>Distance</Text>
+            <Text style={styles.detailLabel}>{t('trip.distance')}</Text>
             <Text style={styles.detailValue}>{distance}</Text>
           </View>
         </View>
@@ -123,7 +125,7 @@ const PaymentConfirmationScreen: React.FC<PaymentConfirmationScreenProps & { nav
       {/* Action Buttons */}
       <View style={styles.bottomActions}>
         <Button
-          label="DONE"
+          label={t('common.done')}
           onPress={() => {
             onDone?.();
             navigation?.navigate('TripCompletedScreen');

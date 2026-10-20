@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,15 @@ import {
   Pressable,
   ImageBackground,
   Easing,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { useBooking } from '../../state/BookingContext';
+import { cancelRide, cancelTrip } from '../../api/engine';
+import { useActiveBookingCancellation } from '../../hooks/useActiveBookingCancellation';
+import { useI18n } from '../../i18n';
 
 export interface DriverFoundScreenProps {
   readonly onCancel?: () => void;
@@ -20,6 +25,24 @@ const DriverFoundScreen: React.FC<DriverFoundScreenProps & { navigation?: any }>
   onCancel,
   navigation,
 }) => {
+  const { t } = useI18n();
+  const { trip, ride, customerId, clearActiveRide } = useBooking();
+
+  const handleCancelConfirm = useCallback(async () => {
+    if (trip?.id && customerId) {
+      await cancelTrip(trip.id, customerId, 'Customer cancelled booking');
+    } else if (ride?.id) {
+      await cancelRide(ride.id);
+    }
+    clearActiveRide();
+  }, [trip?.id, ride?.id, customerId, clearActiveRide]);
+
+  const { isCancelling, requestCancellation } = useActiveBookingCancellation({
+    navigation,
+    isBookingActive: true,
+    onCancelConfirm: handleCancelConfirm,
+    allowedNextRoutes: ['DriverAssignedScreen'],
+  });
   const [pulseAnim] = useState(new Animated.Value(0));
   const [slideDownAnim] = useState(new Animated.Value(-100)); // for toast
   const [slideUpAnim] = useState(new Animated.Value(200)); // for bottom sheet
@@ -107,7 +130,7 @@ const DriverFoundScreen: React.FC<DriverFoundScreenProps & { navigation?: any }>
         >
           <View style={styles.toast}>
             <Feather name="check-circle" size={24} color={colors.primary} />
-            <Text style={styles.toastText}>Driver Found!</Text>
+            <Text style={styles.toastText}>{t('tracking.driverFound')}</Text>
           </View>
         </Animated.View>
 
@@ -148,8 +171,8 @@ const DriverFoundScreen: React.FC<DriverFoundScreenProps & { navigation?: any }>
               <View style={styles.statusRow}>
                 <Animated.View style={[styles.spinner, { transform: [{ rotate: spin }] }]} />
                 <View style={styles.statusTextCol}>
-                  <Text style={styles.statusTitle}>Assigning driver to your trip...</Text>
-                  <Text style={styles.statusSubtitle}>Matching you with the best vehicle nearby.</Text>
+                  <Text style={styles.statusTitle}>{t('tracking.assigningDriver')}</Text>
+                  <Text style={styles.statusSubtitle}>{t('tracking.matchingBestVehicle')}</Text>
                 </View>
               </View>
 
@@ -160,11 +183,23 @@ const DriverFoundScreen: React.FC<DriverFoundScreenProps & { navigation?: any }>
 
               {/* Cancel Button */}
               <Pressable
-                style={styles.cancelButton}
-                onPress={() => (onCancel ? onCancel() : navigation?.navigate('CancellationReasonScreen'))}
+                style={[styles.cancelButton, isCancelling && { opacity: 0.7 }]}
+                onPress={() => {
+                  if (isCancelling) return;
+                  if (onCancel) onCancel();
+                  else requestCancellation();
+                }}
                 accessibilityRole="button"
+                disabled={isCancelling}
               >
-                <Text style={styles.cancelButtonText}>Cancel Request</Text>
+                {isCancelling ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                    <ActivityIndicator size="small" color={colors.onSurface} style={{ marginRight: spacing.sm }} />
+                    <Text style={styles.cancelButtonText}>{t('tracking.cancelling')}</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.cancelButtonText}>{t('tracking.cancelRequest')}</Text>
+                )}
               </Pressable>
             </View>
           </View>

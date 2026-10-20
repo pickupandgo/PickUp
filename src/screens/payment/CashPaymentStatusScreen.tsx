@@ -13,6 +13,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
 
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface CashPaymentStatusScreenProps {
   readonly amount?: string;
@@ -20,31 +21,32 @@ export interface CashPaymentStatusScreenProps {
   readonly onBack?: () => void;
 }
 
-const CASH_PAYMENT_METHODS = [
-  { 
-    id: 'cod', 
-    label: 'Cash on Delivery', 
-    subtitle: 'Pay with cash when package arrives', 
-    icon: 'payments' as const 
-  },
-  { 
-    id: 'cap', 
-    label: 'Cash at Pickup', 
-    subtitle: 'Pay at the store counter', 
-    icon: 'storefront' as const 
-  },
-];
-
 const CashPaymentStatusScreen: React.FC<CashPaymentStatusScreenProps & { navigation?: any }> = ({
   amount = '340',
   onContinue,
   onBack,
   navigation,
 }) => {
+  const { t } = useI18n();
   const { draft, trip, ride } = useBooking();
   const currentFare = trip?.fare || ride?.fare || draft.fareEstimate?.fare;
   const actualAmount = currentFare ? currentFare.toString() : '--';
   
+  const cashPaymentMethods = [
+    { 
+      id: 'cod', 
+      label: t('payment.cashOnDelivery'), 
+      subtitle: t('payment.payWithCashWhenArrives'), 
+      icon: 'payments' as const 
+    },
+    { 
+      id: 'cap', 
+      label: t('payment.cashAtPickup'), 
+      subtitle: t('payment.payAtStoreCounter'), 
+      icon: 'storefront' as const 
+    },
+  ];
+
   const [selectedMethod, setSelectedMethod] = useState<string>('cod');
 
   return (
@@ -57,14 +59,14 @@ const CashPaymentStatusScreen: React.FC<CashPaymentStatusScreenProps & { navigat
         >
           <Feather name="arrow-left" size={24} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.headerTitle}>Payment</Text>
+        <Text style={styles.headerTitle}>{t('payment.payment')}</Text>
         <View style={styles.iconButton} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Summary Card */}
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Total Amount</Text>
+          <Text style={styles.summaryLabel}>{t('payment.totalAmount')}</Text>
           <View style={styles.amountContainer}>
             <Text style={styles.currencySymbol}>₹</Text>
             <Text style={styles.amountValue}>{actualAmount}</Text>
@@ -72,10 +74,10 @@ const CashPaymentStatusScreen: React.FC<CashPaymentStatusScreenProps & { navigat
         </View>
 
         {/* Payment Methods List */}
-        <Text style={styles.sectionTitle}>Select Payment Method</Text>
+        <Text style={styles.sectionTitle}>{t('payment.selectPayment')}</Text>
         
         <View style={styles.optionsList}>
-          {CASH_PAYMENT_METHODS.map((method) => {
+          {cashPaymentMethods.map((method) => {
             const isSelected = selectedMethod === method.id;
 
             return (
@@ -126,7 +128,7 @@ const CashPaymentStatusScreen: React.FC<CashPaymentStatusScreenProps & { navigat
       {/* Fixed Bottom Action */}
       <View style={styles.bottomActions}>
         <Button
-          label="CONFIRM PAYMENT METHOD"
+          label={t('payment.confirmMethod')}
           onPress={() => {
             onContinue?.(selectedMethod);
             navigation?.navigate('PaymentSuccessfulScreen');

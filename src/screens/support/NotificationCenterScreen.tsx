@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useI18n } from '../../i18n';
 
 export interface NotificationItem {
   id: string;
@@ -31,78 +32,84 @@ export interface NotificationCenterScreenProps {
   readonly notifications?: NotificationItem[];
 }
 
-const DEFAULT_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: '1',
-    title: 'Driver arriving soon',
-    timeText: '2m ago',
-    description: 'Your driver, Michael, is 2 minutes away in a Black Sedan (XYZ-123).',
-    icon: 'directions-car',
-    isUnread: true,
-    type: 'trip',
-    destination: 'CustomerLiveTrackingScreen',
-  },
-  {
-    id: '2',
-    title: 'Payment successful',
-    timeText: '15m ago',
-    description: 'Receipt for your trip to Downtown Core has been emailed.',
-    icon: 'credit-card',
-    isUnread: true,
-    type: 'payment',
-    destination: 'DigitalReceiptScreen',
-  },
-  {
-    id: '3',
-    title: 'Trip completed',
-    timeText: '3h ago',
-    description: 'How was your ride? Rate your trip to help us improve.',
-    icon: 'check-circle',
-    isUnread: false,
-    type: 'trip',
-    destination: 'TripCompletedSummaryScreen',
-  },
-  {
-    id: '4',
-    title: 'New device login',
-    timeText: 'Yesterday',
-    description: 'A new sign-in was detected on iOS Device. If this was you, no action is needed.',
-    icon: 'manage-accounts',
-    isUnread: false,
-    type: 'account',
-    destination: 'CustomerSettingsScreen',
-  },
-  {
-    id: '5',
-    title: 'Booking cancelled',
-    timeText: 'Oct 24',
-    description: 'Your advance booking for Oct 25 has been cancelled at your request.',
-    icon: 'cancel',
-    isUnread: false,
-    type: 'trip',
-    destination: 'TripCancelledStatusScreen',
-  },
+const FILTER_TABS: Array<{ id: 'all' | 'trips' | 'account'; labelKey: string }> = [
+  { id: 'all', labelKey: 'common.all' },
+  { id: 'trips', labelKey: 'nav.trips' },
+  { id: 'account', labelKey: 'settings.account' },
 ];
-
-const FILTER_TABS = ['All', 'Trips', 'Account'];
 
 const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navigation?: any }> = ({
   onBack,
   onHelp,
   onNotificationPress,
   onDeleteNotification,
-  notifications = DEFAULT_NOTIFICATIONS,
+  notifications,
   navigation,
 }) => {
-  const [activeTab, setActiveTab] = useState('All');
+  const { t } = useI18n();
+  const [activeTab, setActiveTab] = useState<'all' | 'trips' | 'account'>('all');
 
-  const newNotifications = notifications.filter(n => n.isUnread);
-  const earlierNotifications = notifications.filter(n => !n.isUnread);
+  const defaultNotifications: NotificationItem[] = [
+    {
+      id: '1',
+      title: t('notifications.driverArriving'),
+      timeText: '2m ago',
+      description: 'Your driver, Michael, is 2 minutes away in a Black Sedan (XYZ-123).',
+      icon: 'directions-car',
+      isUnread: true,
+      type: 'trip',
+      destination: 'CustomerLiveTrackingScreen',
+    },
+    {
+      id: '2',
+      title: t('payment.successful'),
+      timeText: '15m ago',
+      description: 'Receipt for your trip to Downtown Core has been emailed.',
+      icon: 'credit-card',
+      isUnread: true,
+      type: 'payment',
+      destination: 'DigitalReceiptScreen',
+    },
+    {
+      id: '3',
+      title: t('trip.completed'),
+      timeText: '3h ago',
+      description: 'How was your ride? Rate your trip to help us improve.',
+      icon: 'check-circle',
+      isUnread: false,
+      type: 'trip',
+      destination: 'TripCompletedSummaryScreen',
+    },
+    {
+      id: '4',
+      title: t('notifications.newDeviceLogin'),
+      timeText: 'Yesterday',
+      description: 'A new sign-in was detected on iOS Device. If this was you, no action is needed.',
+      icon: 'manage-accounts',
+      isUnread: false,
+      type: 'account',
+      destination: 'CustomerSettingsScreen',
+    },
+    {
+      id: '5',
+      title: t('cancellation.successTitle'),
+      timeText: 'Oct 24',
+      description: 'Your advance booking for Oct 25 has been cancelled at your request.',
+      icon: 'cancel',
+      isUnread: false,
+      type: 'trip',
+      destination: 'TripCancelledStatusScreen',
+    },
+  ];
+
+  const currentNotifications = notifications ?? defaultNotifications;
+  const newNotifications = currentNotifications.filter(n => n.isUnread);
+  const earlierNotifications = currentNotifications.filter(n => !n.isUnread);
 
   const filterItems = (items: NotificationItem[]) => {
-    if (activeTab === 'All') return items;
-    if (activeTab === 'Trips') return items.filter(i => i.type === 'trip');
-    if (activeTab === 'Account') return items.filter(i => i.type === 'account' || i.type === 'payment');
+    if (activeTab === 'all') return items;
+    if (activeTab === 'trips') return items.filter(i => i.type === 'trip');
+    if (activeTab === 'account') return items.filter(i => i.type === 'account' || i.type === 'payment');
     return items;
   };
 
@@ -150,7 +157,7 @@ const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navig
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Pick Up</Text>
+        <Text style={styles.headerTitle}>{t('home.appName')}</Text>
         <Pressable
           onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
           style={styles.iconButton}
@@ -160,7 +167,7 @@ const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navig
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Text style={styles.pageTitle}>Notifications</Text>
+        <Text style={styles.pageTitle}>{t('notifications.title')}</Text>
 
         {/* Tabs */}
         <ScrollView 
@@ -171,12 +178,12 @@ const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navig
         >
           {FILTER_TABS.map(tab => (
             <Pressable
-              key={tab}
-              style={[styles.tabButton, activeTab === tab ? styles.tabButtonActive : styles.tabButtonInactive]}
-              onPress={() => setActiveTab(tab)}
+              key={tab.id}
+              style={[styles.tabButton, activeTab === tab.id ? styles.tabButtonActive : styles.tabButtonInactive]}
+              onPress={() => setActiveTab(tab.id)}
             >
-              <Text style={[styles.tabText, activeTab === tab ? styles.tabTextActive : styles.tabTextInactive]}>
-                {tab}
+              <Text style={[styles.tabText, activeTab === tab.id ? styles.tabTextActive : styles.tabTextInactive]}>
+                {t(tab.labelKey)}
               </Text>
             </Pressable>
           ))}
@@ -185,7 +192,7 @@ const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navig
         {/* Notification Lists */}
         {displayNew.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeader}>NEW</Text>
+            <Text style={styles.sectionHeader}>{t('notifications.new')}</Text>
             <View style={styles.list}>
               {displayNew.map(renderNotification)}
             </View>
@@ -194,10 +201,17 @@ const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navig
 
         {displayEarlier.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeader}>EARLIER</Text>
+            <Text style={styles.sectionHeader}>{t('notifications.earlier')}</Text>
             <View style={styles.list}>
               {displayEarlier.map(renderNotification)}
             </View>
+          </View>
+        )}
+
+        {displayNew.length === 0 && displayEarlier.length === 0 && (
+          <View style={styles.emptyContainer}>
+            <MaterialIcons name="notifications-none" size={48} color={colors.onSurfaceVariant} />
+            <Text style={styles.emptyText}>{t('notifications.noNotifications')}</Text>
           </View>
         )}
       </ScrollView>
@@ -354,6 +368,17 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceVariant,
     fontFamily: typography.bodyMd.fontFamily,
     lineHeight: 20,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xxl,
+    gap: spacing.sm,
+  },
+  emptyText: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.onSurfaceVariant,
+    fontFamily: typography.bodyMd.fontFamily,
   },
 });
 

@@ -13,6 +13,7 @@ import { colors, spacing, borderRadius, typography } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { useI18n } from '../../i18n';
 
 export interface CallDriverScreenProps {
   readonly driverName?: string;
@@ -30,6 +31,7 @@ const CallDriverScreen: React.FC<CallDriverScreenProps & { navigation?: any }> =
   onBack,
   navigation,
 }) => {
+  const { t } = useI18n();
   const ripple1 = useRef(new Animated.Value(0)).current;
   const ripple2 = useRef(new Animated.Value(0)).current;
   const [isMuted, setIsMuted] = useState(false);
@@ -63,17 +65,19 @@ const CallDriverScreen: React.FC<CallDriverScreenProps & { navigation?: any }> =
         <Pressable
           style={styles.iconButton}
           onPress={() => (onBack ? onBack() : navigation?.goBack())}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.goBack')}
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Pick Up</Text>
+        <Text style={styles.headerTitle}>{t('home.appName')}</Text>
         <View style={styles.iconButton} />
       </View>
 
       <View style={styles.mainContent}>
         {/* Top Context */}
         <View style={styles.topContext}>
-          <Text style={styles.callingText}>Calling...</Text>
+          <Text style={styles.callingText}>{t('call.calling')}</Text>
           <Text style={styles.driverName}>{driverName}</Text>
           
           <View style={styles.avatarContainer}>
@@ -134,7 +138,7 @@ const CallDriverScreen: React.FC<CallDriverScreenProps & { navigation?: any }> =
               <MaterialIcons name="local-shipping" size={20} color={colors.onSurfaceVariant} />
             </View>
             <View style={styles.contextTextContainer}>
-              <Text style={styles.contextLabel}>VEHICLE</Text>
+              <Text style={styles.contextLabel}>{t('booking.vehicleCaps')}</Text>
               <Text style={styles.contextValue}>{vehicleInfo}</Text>
             </View>
           </View>
@@ -144,7 +148,7 @@ const CallDriverScreen: React.FC<CallDriverScreenProps & { navigation?: any }> =
               <MaterialIcons name="location-on" size={20} color={colors.onSurfaceVariant} />
             </View>
             <View style={styles.contextTextContainer}>
-              <Text style={styles.contextLabel}>PICKUP LOCATION</Text>
+              <Text style={styles.contextLabel}>{t('booking.pickupLocationCaps')}</Text>
               <Text style={styles.contextValue}>{pickupLocation}</Text>
             </View>
           </View>
@@ -156,7 +160,7 @@ const CallDriverScreen: React.FC<CallDriverScreenProps & { navigation?: any }> =
           <View style={styles.privacyNote}>
             <MaterialIcons name="security" size={20} color={colors.primary} style={styles.privacyIcon} />
             <Text style={styles.privacyText}>
-              Your personal number is hidden. This call is routed through Pick Up for your privacy and security.
+              {t('call.privacyNote')}
             </Text>
           </View>
 
@@ -167,42 +171,44 @@ const CallDriverScreen: React.FC<CallDriverScreenProps & { navigation?: any }> =
                 style={styles.callControlBtn}
                 onPress={() => setIsMuted((prev) => !prev)}
                 accessibilityRole="switch"
-                accessibilityLabel="Mute"
+                accessibilityLabel={t('call.mute')}
                 accessibilityState={{ checked: isMuted }}
               >
                 <View style={styles.callControlIconBox}>
                   <Feather name="mic-off" size={24} color={colors.onSurfaceVariant} />
                 </View>
-                <Text style={styles.callControlLabel}>Mute</Text>
+                <Text style={styles.callControlLabel}>{t('call.mute')}</Text>
               </Pressable>
               
               <View style={styles.callControlBtn}>
                 <View style={styles.callControlIconBox}>
                   <Feather name="grid" size={24} color={colors.onSurfaceVariant} />
                 </View>
-                <Text style={styles.callControlLabel}>Keypad</Text>
+                <Text style={styles.callControlLabel}>{t('call.keypad')}</Text>
               </View>
               
               <Pressable
                 style={styles.callControlBtn}
                 onPress={() => setIsSpeakerOn((prev) => !prev)}
                 accessibilityRole="switch"
-                accessibilityLabel="Speaker"
+                accessibilityLabel={t('call.speaker')}
                 accessibilityState={{ checked: isSpeakerOn }}
               >
                 <View style={styles.callControlIconBox}>
                   <Feather name="volume-2" size={24} color={colors.onSurfaceVariant} />
                 </View>
-                <Text style={styles.callControlLabel}>Speaker</Text>
+                <Text style={styles.callControlLabel}>{t('call.speaker')}</Text>
               </Pressable>
             </View>
 
             <Pressable
               style={styles.endCallBtn}
               onPress={() => (onEndCall ? onEndCall() : navigation?.goBack())}
+              accessibilityRole="button"
+              accessibilityLabel={t('call.endCall')}
             >
               <MaterialIcons name="call-end" size={24} color={colors.onErrorContainer} />
-              <Text style={styles.endCallText}>End Call</Text>
+              <Text style={styles.endCallText}>{t('call.endCall')}</Text>
             </Pressable>
           </View>
         </View>

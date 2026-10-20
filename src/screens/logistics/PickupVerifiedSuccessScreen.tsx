@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { mockActiveTrip } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 
 export interface PickupVerifiedSuccessScreenProps {
   readonly onContinue?: () => void;
@@ -20,6 +21,7 @@ const PickupVerifiedSuccessScreen: React.FC<PickupVerifiedSuccessScreenProps & {
   onContinue,
   navigation,
 }) => {
+  const { t } = useI18n();
   // Success celebration is a moment, not a stop. `replace` (not `navigate`)
   // takes this screen off the stack so the customer can't back-swipe into it
   // once live tracking has begun.
@@ -93,9 +95,9 @@ const PickupVerifiedSuccessScreen: React.FC<PickupVerifiedSuccessScreenProps & {
           <View style={styles.iconContainer}>
             <Feather name="check-circle" size={48} color={colors.primary} />
           </View>
-          <Text style={styles.title}>Pickup verified</Text>
+          <Text style={styles.title}>{t('logistics.pickupVerified')}</Text>
           <Text style={styles.subtitle}>
-            The trip has started. Live tracking is now active.
+            {t('logistics.tripStartedTrackingActive')}
           </Text>
         </Animated.View>
 
@@ -113,7 +115,7 @@ const PickupVerifiedSuccessScreen: React.FC<PickupVerifiedSuccessScreenProps & {
               style={styles.avatarImage}
             />
             <View style={styles.infoTextContainer}>
-              <Text style={styles.label}>DRIVER</Text>
+              <Text style={styles.label}>{t('tracking.driverCaps')}</Text>
               <Text style={styles.valueText}>{mockActiveTrip.driverName}</Text>
             </View>
           </View>
@@ -126,7 +128,7 @@ const PickupVerifiedSuccessScreen: React.FC<PickupVerifiedSuccessScreenProps & {
               <Feather name="truck" size={24} color={colors.onSurfaceVariant} />
             </View>
             <View style={styles.infoTextContainer}>
-              <Text style={styles.label}>VEHICLE</Text>
+              <Text style={styles.label}>{t('booking.vehicleCaps')}</Text>
               <Text style={styles.dataText}>
                 {mockActiveTrip.vehicleType} <Text style={{ color: colors.outlineVariant }}>•</Text> {mockActiveTrip.vehicleNumber}
               </Text>
@@ -141,7 +143,7 @@ const PickupVerifiedSuccessScreen: React.FC<PickupVerifiedSuccessScreenProps & {
               <Feather name="map-pin" size={24} color={colors.onSurfaceVariant} />
             </View>
             <View style={styles.infoTextContainer}>
-              <Text style={styles.label}>PICKUP</Text>
+              <Text style={styles.label}>{t('booking.pickupCaps')}</Text>
               <Text style={styles.valueText}>{mockActiveTrip.stops[0]?.address}</Text>
             </View>
           </View>
@@ -164,7 +166,7 @@ const PickupVerifiedSuccessScreen: React.FC<PickupVerifiedSuccessScreenProps & {
           }}
           accessibilityRole="button"
         >
-          <Text style={styles.continueButtonText}>TRACK TRIP</Text>
+          <Text style={styles.continueButtonText}>{t('logistics.trackTrip')}</Text>
         </Pressable>
       </Animated.View>
     </SafeAreaView>

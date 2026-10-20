@@ -14,6 +14,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
 
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface DigitalReceiptScreenProps {
   readonly tripId?: string;
@@ -47,6 +48,7 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
   onBack,
   navigation,
 }) => {
+  const { t } = useI18n();
   const { ride, trip, draft } = useBooking();
   const currentFare = trip?.fare || ride?.fare || draft.fareEstimate?.fare;
   
@@ -66,7 +68,7 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Precision Mobility</Text>
+        <Text style={styles.headerTitle}>{t('common.appName')}</Text>
         <Pressable
           style={styles.iconButton}
           onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
@@ -81,27 +83,25 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
           <View style={styles.successIconBox}>
             <MaterialIcons name="check-circle" size={32} color={colors.onSecondaryContainer} />
           </View>
-          <Text style={styles.statusTitle}>Payment Successful</Text>
-          <Text style={styles.statusSubtitle}>Trip Receipt</Text>
+          <Text style={styles.statusTitle}>{t('payment.successful')}</Text>
+          <Text style={styles.statusSubtitle}>{t('payment.tripReceipt')}</Text>
         </View>
 
         {/* Receipt Card */}
         <View style={styles.receiptCard}>
-          {/* Decorative receipt edges could be SVGs, but we'll stick to RN borders/shadows */}
-          
           {/* Trip Details */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>TRIP DETAILS</Text>
+            <Text style={styles.sectionTitle}>{t('payment.tripDetails')}</Text>
             <View style={styles.row}>
-              <Text style={styles.detailLabel}>Trip ID</Text>
+              <Text style={styles.detailLabel}>{t('trip.tripId')}</Text>
               <Text style={styles.monoValue}>{actualTripId}</Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.detailLabel}>Date & Time</Text>
+              <Text style={styles.detailLabel}>{t('payment.dateTime')}</Text>
               <Text style={styles.detailValue}>{date}</Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.detailLabel}>Vehicle</Text>
+              <Text style={styles.detailLabel}>{t('trip.vehicle')}</Text>
               <Text style={styles.detailValue}>{vehicle}</Text>
             </View>
           </View>
@@ -110,7 +110,7 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
 
           {/* Route Summary */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>ROUTE SUMMARY</Text>
+            <Text style={styles.sectionTitle}>{t('trip.routeSummary')}</Text>
             
             <View style={styles.routeContainer}>
               <View style={styles.timelineLine} />
@@ -121,7 +121,7 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
                   <View style={styles.pickupDotInner} />
                 </View>
                 <View style={styles.routeTextContainer}>
-                  <Text style={styles.routeLabel}>Pickup</Text>
+                  <Text style={styles.routeLabel}>{t('home.pickup')}</Text>
                   <Text style={styles.routeValue}>Sardarpura Warehouse</Text>
                 </View>
               </View>
@@ -130,7 +130,7 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
               <View style={styles.routeItem}>
                 <View style={styles.dropIntermediateDot} />
                 <View style={styles.routeTextContainer}>
-                  <Text style={styles.routeLabel}>Drop 1</Text>
+                  <Text style={styles.routeLabel}>{t('booking.dropN', { n: 1 })}</Text>
                   <Text style={styles.routeValue}>Ratanada Hub</Text>
                 </View>
               </View>
@@ -139,7 +139,7 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
               <View style={styles.routeItem}>
                 <View style={styles.dropIntermediateDot} />
                 <View style={styles.routeTextContainer}>
-                  <Text style={styles.routeLabel}>Drop 2</Text>
+                  <Text style={styles.routeLabel}>{t('booking.dropN', { n: 2 })}</Text>
                   <Text style={styles.routeValue}>Pal Road Business Center</Text>
                 </View>
               </View>
@@ -148,7 +148,7 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
               <View style={styles.routeItem}>
                 <View style={styles.dropFinalDot} />
                 <View style={styles.routeTextContainer}>
-                  <Text style={styles.routeLabel}>Drop 3</Text>
+                  <Text style={styles.routeLabel}>{t('booking.dropN', { n: 3 })}</Text>
                   <Text style={styles.routeValue}>Basni Phase II</Text>
                 </View>
               </View>
@@ -159,17 +159,17 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
 
           {/* Fare Summary */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>FARE SUMMARY</Text>
+            <Text style={styles.sectionTitle}>{t('payment.fareSummary')}</Text>
             <View style={styles.row}>
-              <Text style={styles.detailLabel}>Base Fare</Text>
+              <Text style={styles.detailLabel}>{t('booking.baseFare')}</Text>
               <Text style={styles.monoValue}>{actualBase}</Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.detailLabel}>Taxes & Fees</Text>
+              <Text style={styles.detailLabel}>{t('payment.taxesAndFees')}</Text>
               <Text style={styles.monoValue}>{actualTaxes}</Text>
             </View>
             <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Total Amount</Text>
+              <Text style={styles.totalLabel}>{t('payment.totalAmount')}</Text>
               <Text style={styles.totalValue}>{actualTotal}</Text>
             </View>
           </View>
@@ -178,13 +178,13 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
 
           {/* Payment Details */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>PAYMENT DETAILS</Text>
+            <Text style={styles.sectionTitle}>{t('payment.paymentDetails')}</Text>
             <View style={styles.paymentMethodCard}>
               <View style={styles.paymentMethodLeft}>
                 <MaterialIcons name="account-balance" size={24} color={colors.onSurfaceVariant} />
                 <View style={styles.paymentMethodTexts}>
                   <Text style={styles.paymentMethodName}>{paymentMethod}</Text>
-                  <Text style={styles.paymentMethodStatus}>Status: {paymentStatus}</Text>
+                  <Text style={styles.paymentMethodStatus}>{t('payment.status', { status: paymentStatus })}</Text>
                 </View>
               </View>
               <Feather name="check" size={20} color={colors.secondary} />
@@ -196,7 +196,7 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
         {/* Actions */}
         <View style={styles.actionsContainer}>
           <Button
-            label="SHARE RECEIPT"
+            label={t('payment.shareReceipt')}
             onPress={() =>
               onShareReceipt
                 ? onShareReceipt()
@@ -208,7 +208,7 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
             icon={<Feather name="share" size={20} color={colors.onPrimary} />}
           />
           <Button
-            label="BACK TO HOME"
+            label={t('payment.backToHome')}
             onPress={() => {
               if (onHome) {
                 onHome();

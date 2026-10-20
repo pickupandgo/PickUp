@@ -8,6 +8,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
 import { colors, spacing, borderRadius, typography } from '../../theme';
+import { useI18n } from '../../i18n';
 
 export interface ChangeProfilePhotoScreenProps {
   readonly onClose?: () => void;
@@ -17,6 +18,8 @@ const ChangeProfilePhotoScreen: React.FC<ChangeProfilePhotoScreenProps & { navig
   onClose,
   navigation,
 }) => {
+  const { t } = useI18n();
+
   return (
     <View style={styles.container}>
       {/* Scrim Overlay */}
@@ -24,7 +27,7 @@ const ChangeProfilePhotoScreen: React.FC<ChangeProfilePhotoScreenProps & { navig
         style={styles.scrim}
         onPress={() => navigation?.goBack()}
         accessibilityRole="button"
-        accessibilityLabel="Close"
+        accessibilityLabel={t('common.close')}
       />
 
       {/* Bottom Sheet */}
@@ -36,8 +39,8 @@ const ChangeProfilePhotoScreen: React.FC<ChangeProfilePhotoScreenProps & { navig
 
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Change Profile Photo</Text>
-          <Text style={styles.subtitle}>Choose how you'd like to update your photo.</Text>
+          <Text style={styles.title}>{t('profile.changePhoto')}</Text>
+          <Text style={styles.subtitle}>{t('profile.changePhotoSubtitle')}</Text>
         </View>
 
         {/* Action List */}
@@ -47,10 +50,10 @@ const ChangeProfilePhotoScreen: React.FC<ChangeProfilePhotoScreenProps & { navig
             style={styles.actionRow}
             onPress={() => navigation?.goBack()}
             accessibilityRole="button"
-            accessibilityLabel="Take Photo"
+            accessibilityLabel={t('profile.takePhoto')}
           >
             <Feather name="camera" size={22} color={colors.onSurfaceVariant} />
-            <Text style={styles.actionText}>Take Photo</Text>
+            <Text style={styles.actionText}>{t('profile.takePhoto')}</Text>
           </Pressable>
 
           <View style={styles.divider} />
@@ -60,10 +63,10 @@ const ChangeProfilePhotoScreen: React.FC<ChangeProfilePhotoScreenProps & { navig
             style={styles.actionRow}
             onPress={() => navigation?.goBack()}
             accessibilityRole="button"
-            accessibilityLabel="Choose from Gallery"
+            accessibilityLabel={t('profile.chooseFromGallery')}
           >
             <Feather name="image" size={22} color={colors.onSurfaceVariant} />
-            <Text style={styles.actionText}>Choose from Gallery</Text>
+            <Text style={styles.actionText}>{t('profile.chooseFromGallery')}</Text>
           </Pressable>
 
           <View style={styles.divider} />
@@ -73,10 +76,10 @@ const ChangeProfilePhotoScreen: React.FC<ChangeProfilePhotoScreenProps & { navig
             style={styles.actionRow}
             onPress={() => navigation?.goBack()}
             accessibilityRole="button"
-            accessibilityLabel="Remove Photo"
+            accessibilityLabel={t('profile.removePhoto')}
           >
             <Feather name="trash-2" size={22} color={colors.error} />
-            <Text style={styles.actionTextDanger}>Remove Photo</Text>
+            <Text style={styles.actionTextDanger}>{t('profile.removePhoto')}</Text>
           </Pressable>
         </View>
 
@@ -86,9 +89,9 @@ const ChangeProfilePhotoScreen: React.FC<ChangeProfilePhotoScreenProps & { navig
             style={styles.cancelButton}
             onPress={() => navigation?.goBack()}
             accessibilityRole="button"
-            accessibilityLabel="Cancel"
+            accessibilityLabel={t('common.cancel')}
           >
-            <Text style={styles.cancelText}>Cancel</Text>
+            <Text style={styles.cancelText}>{t('common.cancel')}</Text>
           </Pressable>
         </SafeAreaView>
       </View>

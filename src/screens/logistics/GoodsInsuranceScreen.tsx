@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { useI18n } from '../../i18n';
 
 export interface GoodsInsuranceScreenProps {
   readonly onBack?: () => void;
@@ -23,6 +24,7 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
   onHelp,
   navigation,
 }) => {
+  const { t } = useI18n();
   const [declaredValue, setDeclaredValue] = useState('50,000');
   const [isInsured, setIsInsured] = useState(false);
 
@@ -34,16 +36,16 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
           style={styles.iconButton}
           onPress={() => (onBack ? onBack() : navigation?.goBack())}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t('common.goBack')}
         >
           <Feather name="arrow-left" size={22} color={colors.onSurfaceVariant} />
         </Pressable>
-        <Text style={styles.headerTitle}>Goods Insurance</Text>
+        <Text style={styles.headerTitle}>{t('logistics.goodsInsurance')}</Text>
         <Pressable
           style={styles.iconButton}
           onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
           accessibilityRole="button"
-          accessibilityLabel="Help"
+          accessibilityLabel={t('common.help')}
         >
           <Feather name="help-circle" size={22} color={colors.onSurfaceVariant} />
         </Pressable>
@@ -58,18 +60,18 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
       >
         {/* Header Section */}
         <View style={styles.titleSection}>
-          <Text style={styles.pageTitle}>Protect Your Delivery</Text>
-          <Text style={styles.pageSubtitle}>Optional protection for eligible goods during transit.</Text>
+          <Text style={styles.pageTitle}>{t('logistics.protectYourDelivery')}</Text>
+          <Text style={styles.pageSubtitle}>{t('logistics.optionalProtection')}</Text>
         </View>
 
         {/* Value Declaration */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Feather name="package" size={20} color={colors.primary} />
-            <Text style={styles.cardTitle}>Declared Value</Text>
+            <Text style={styles.cardTitle}>{t('logistics.declaredValue')}</Text>
           </View>
           <Text style={styles.cardDesc}>
-            Enter the estimated value of the items you are shipping to get an insurance quote.
+            {t('logistics.enterEstimatedValue')}
           </Text>
           <View style={styles.valueInputWrapper}>
             <Text style={styles.currencyPrefix}>₹</Text>
@@ -80,7 +82,7 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
               keyboardType="numeric"
               value={declaredValue}
               onChangeText={setDeclaredValue}
-              accessibilityLabel="Declared value"
+              accessibilityLabel={t('logistics.declaredValue')}
             />
           </View>
         </View>
@@ -91,7 +93,7 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
           onPress={() => setIsInsured(!isInsured)}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: isInsured }}
-          accessibilityLabel="Select Goods Insurance"
+          accessibilityLabel={t('logistics.goodsInsurance')}
         >
           <View style={styles.insuranceHeader}>
             <View style={styles.insuranceHeaderLeft}>
@@ -99,8 +101,8 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
                 <Feather name="shield" size={20} color={colors.onSecondaryContainer} />
               </View>
               <View style={styles.insuranceTitleCol}>
-                <Text style={styles.insuranceTitle}>Goods Insurance</Text>
-                <Text style={styles.insurancePremium}>Est. Premium: ₹ 250</Text>
+                <Text style={styles.insuranceTitle}>{t('logistics.goodsInsurance')}</Text>
+                <Text style={styles.insurancePremium}>{t('logistics.estPremiumAmount', { amount: 250 })}</Text>
               </View>
             </View>
             <View style={[styles.checkbox, isInsured && styles.checkboxChecked]}>
@@ -109,19 +111,19 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
           </View>
 
           <View style={styles.coverageBox}>
-            <Text style={styles.coverageLabel}>COVERAGE SUMMARY</Text>
+            <Text style={styles.coverageLabel}>{t('logistics.coverageSummary')}</Text>
             <View style={styles.bulletList}>
               <View style={styles.bulletItem}>
                 <View style={styles.bulletDot} />
-                <Text style={styles.bulletText}>Protection against loss or severe damage</Text>
+                <Text style={styles.bulletText}>{t('logistics.protectionDamage')}</Text>
               </View>
               <View style={styles.bulletItem}>
                 <View style={styles.bulletDot} />
-                <Text style={styles.bulletText}>Coverage up to declared value</Text>
+                <Text style={styles.bulletText}>{t('logistics.coverageUpToValue')}</Text>
               </View>
               <View style={styles.bulletItem}>
                 <View style={styles.bulletDot} />
-                <Text style={styles.bulletText}>Subject to standard terms and conditions</Text>
+                <Text style={styles.bulletText}>{t('logistics.termsApply')}</Text>
               </View>
             </View>
           </View>
@@ -137,9 +139,9 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
             navigation?.navigate('FareEstimateScreen');
           }}
           accessibilityRole="button"
-          accessibilityLabel="Continue"
+          accessibilityLabel={t('common.continue')}
         >
-          <Text style={styles.continueText}>CONTINUE</Text>
+          <Text style={styles.continueText}>{t('common.continueCaps')}</Text>
         </Pressable>
       </View>
     </SafeAreaView>

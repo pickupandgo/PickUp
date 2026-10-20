@@ -11,8 +11,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
 import { colors, spacing, borderRadius, typography } from '../../theme';
-import { mockUser } from '../../data/mockData';
 import Button from '../../components/atoms/Button';
+import { useSession } from '../../state/SessionContext';
+import { getAuth } from '@react-native-firebase/auth';
+import { getActivePhoneNumber, normalizePhoneNumber } from '../../auth/authService';
+import { isValidEmailFormat } from './CreateProfileScreen';
+import { useI18n } from '../../i18n';
 
 export interface EditProfileScreenProps {
   readonly onBack?: () => void;
@@ -24,12 +28,79 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
   onSave,
   navigation,
 }) => {
-  // `mockUser` fields are readonly literals, so annotate as string —
-  // otherwise the state narrows to the literal and the setter rejects edits.
-  const [fullName, setFullName] = useState<string>(mockUser.fullName);
-  const [email, setEmail] = useState<string>(mockUser.email);
-  const [age, setAge] = useState<string>(String(mockUser.age));
-  const [address, setAddress] = useState<string>(mockUser.address);
+  const { userProfile, markProfileDone } = useSession();
+  const { t } = useI18n();
+  const currentUser = getAuth().currentUser;
+
+  const verifiedPhone =
+    normalizePhoneNumber(userProfile?.phone) ||
+    normalizePhoneNumber(currentUser?.phoneNumber) ||
+    normalizePhoneNumber(getActivePhoneNumber());
+
+  const [fullName, setFullName] = useState<string>(
+    userProfile?.fullName || currentUser?.displayName || '',
+  );
+  const [email, setEmail] = useState<string>(
+    userProfile?.email || currentUser?.email || '',
+  );
+  const [age, setAge] = useState<string>(
+    userProfile?.age ? String(userProfile.age) : '',
+  );
+  const [address, setAddress] = useState<string>(
+    userProfile?.address || '',
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
+    setError(null);
+    const trimmedName = fullName.trim();
+    if (!trimmedName) {
+      setError(t('profile.fullNameRequired'));
+      return;
+    }
+
+    // Email is strictly MANDATORY
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError(t('profile.emailRequired'));
+      return;
+    }
+    if (!isValidEmailFormat(trimmedEmail)) {
+      setError(t('auth.invalidEmail'));
+      return;
+    }
+
+    const trimmedAge = age.trim();
+    if (trimmedAge) {
+      const numAge = parseInt(trimmedAge, 10);
+      if (isNaN(numAge) || numAge < 1 || numAge > 120) {
+        setError(t('profile.invalidAge'));
+        return;
+      }
+    }
+
+    setIsSaving(true);
+    try {
+      if (markProfileDone) {
+        await markProfileDone({
+          fullName: trimmedName,
+          email: trimmedEmail,
+          age: trimmedAge || undefined,
+          address: address.trim() || undefined,
+          phone: verifiedPhone || undefined,
+          photoUri: userProfile?.photoUri,
+        });
+      }
+      onSave?.();
+      navigation?.goBack();
+    } catch (err: any) {
+      const msg = err?.userMessage || err?.message || t('profile.saveFailed');
+      setError(msg);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -39,11 +110,11 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
           style={styles.backButton}
           onPress={() => navigation?.goBack()}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t('common.goBack')}
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </Pressable>
-        <Text style={styles.appBarTitle}>Edit Profile</Text>
+        <Text style={styles.appBarTitle}>{t('profile.editProfile')}</Text>
         <View style={styles.backButton} />
       </View>
 
@@ -69,22 +140,33 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
           <Pressable
             onPress={() => navigation?.navigate('ChangeProfilePhotoScreen')}
           >
-            <Text style={styles.changePhotoText}>Change Profile Photo</Text>
+            <Text style={styles.changePhotoText}>{t('profile.changePhoto')}</Text>
           </Pressable>
         </View>
+
+        {/* Error Banner */}
+        {error ? (
+          <View style={styles.errorBanner}>
+            <Feather name="alert-triangle" size={18} color={colors.error} />
+            <Text style={styles.errorBannerText}>{error}</Text>
+          </View>
+        ) : null}
 
         {/* Form Fields */}
         <View style={styles.formContainer}>
           {/* Full Name */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Full Name</Text>
+            <Text style={styles.fieldLabel}>{t('profile.fullName')}</Text>
             <View style={styles.inputWrapper}>
               <TextInput
                 style={styles.input}
-                placeholder="Enter your full name"
+                placeholder={t('auth.enterFullName')}
                 placeholderTextColor={colors.onSurfaceVariant}
                 value={fullName}
-                onChangeText={setFullName}
+                onChangeText={(text) => {
+                  setFullName(text);
+                  if (error) setError(null);
+                }}
               />
             </View>
           </View>
@@ -92,28 +174,31 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
           {/* Mobile Number (Verified, Read-only) */}
           <View style={styles.fieldGroup}>
             <View style={styles.labelRow}>
-              <Text style={styles.fieldLabel}>Mobile Number</Text>
+              <Text style={styles.fieldLabel}>{t('auth.mobileNumber')}</Text>
               <View style={styles.verifiedBadge}>
                 <Feather name="check-circle" size={14} color="#2D7A4D" />
-                <Text style={styles.verifiedText}>Verified</Text>
+                <Text style={styles.verifiedText}>{t('common.verified')}</Text>
               </View>
             </View>
             <View style={styles.readOnlyField}>
-              <Text style={styles.readOnlyText}>{mockUser.phone}</Text>
+              <Text style={styles.readOnlyText}>{verifiedPhone || t('profile.noVerifiedNumber')}</Text>
               <Feather name="lock" size={18} color={colors.onSurfaceVariant} />
             </View>
           </View>
 
           {/* Email Address */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Email Address</Text>
+            <Text style={styles.fieldLabel}>{t('profile.emailAddress')}</Text>
             <View style={styles.inputWrapper}>
               <TextInput
                 style={styles.input}
-                placeholder="Enter your email"
+                placeholder={t('auth.enterEmail')}
                 placeholderTextColor={colors.onSurfaceVariant}
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(text) => {
+                  setEmail(text);
+                  if (error) setError(null);
+                }}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
@@ -122,22 +207,26 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
 
           {/* Age */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Age</Text>
+            <Text style={styles.fieldLabel}>{t('profile.age')}</Text>
             <View style={[styles.inputWrapper, { width: '50%' }]}>
               <TextInput
                 style={styles.input}
-                placeholder="Age"
+                placeholder={t('profile.age')}
                 placeholderTextColor={colors.onSurfaceVariant}
                 value={age}
-                onChangeText={setAge}
+                onChangeText={(text) => {
+                  setAge(text.replace(/[^0-9]/g, ''));
+                  if (error) setError(null);
+                }}
                 keyboardType="numeric"
+                maxLength={3}
               />
             </View>
           </View>
 
           {/* Address */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Address</Text>
+            <Text style={styles.fieldLabel}>{t('profile.address')}</Text>
             <View style={styles.addressWrapper}>
               <Feather
                 name="map-pin"
@@ -147,10 +236,13 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
               />
               <TextInput
                 style={styles.addressInput}
-                placeholder="Enter your address"
+                placeholder={t('profile.enterAddress')}
                 placeholderTextColor={colors.onSurfaceVariant}
                 value={address}
-                onChangeText={setAddress}
+                onChangeText={(text) => {
+                  setAddress(text);
+                  if (error) setError(null);
+                }}
                 multiline
                 numberOfLines={3}
                 textAlignVertical="top"
@@ -163,10 +255,11 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
       {/* Bottom CTA */}
       <View style={styles.footer}>
         <Button
-          label="SAVE CHANGES"
-          onPress={() => navigation?.goBack()}
+          label={isSaving ? t('profile.saving') : t('common.saveChanges')}
+          onPress={handleSave}
           variant="primary"
           fullWidth
+          disabled={isSaving}
         />
       </View>
     </SafeAreaView>
@@ -333,6 +426,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.marginMobile,
     paddingVertical: spacing.md,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: '#FDE8E8',
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.error,
+    fontWeight: '500',
   },
 });
 

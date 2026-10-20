@@ -14,11 +14,80 @@
       },
       "oauth_client": [
         {
+          "client_id": "702412484863-i7sbn2cftce7s0q2h26m971jgchtdqiq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.multipleride.customer",
+            "certificate_hash": "349d615d26cd50ccd76a8ee6d207d8c44c088518"
+          }
+        },
+        {
+          "client_id": "702412484863-k986cgieevgrvg6j1h5imus75ctli6ud.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.multipleride.customer",
+            "certificate_hash": "286e7e474d736f2dedb3bd5770517b809defa2ae"
+          }
+        },
+        {
+          "client_id": "702412484863-kh9ubg4qje4q373ehfh3q63m8u0llar1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.multipleride.customer",
+            "certificate_hash": "010925685f68940db8bbc98d8e966ab4516c34df"
+          }
+        },
+        {
           "client_id": "702412484863-ukmaaf19avaqgukqjv8blu5qpe7te3ah.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.multipleride.customer",
             "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "702412484863-l9l6scc4qprnv8vok5ptjoomcknvhom7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB0_4I9pEhjIcTcrCCVnFLP9cfRe5djtAs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "702412484863-l9l6scc4qprnv8vok5ptjoomcknvhom7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:702412484863:android:021295acd543e8cdc01cca",
+        "android_client_info": {
+          "package_name": "com.multipleride.driver"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "702412484863-231slh99k2daf4kv8tifgohkdp8c771l.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.multipleride.driver",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "702412484863-p0qnggu3blbmsiiku6elhv62f5boaqtp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.multipleride.driver",
+            "certificate_hash": "286e7e474d736f2dedb3bd5770517b809defa2ae"
           }
         },
         {

@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
 import { useRoute } from '../../hooks/useRoute';
 
@@ -23,6 +24,7 @@ const BookingConfirmedScreen: React.FC<BookingConfirmedScreenProps & { navigatio
   navigation,
 }) => {
   const { draft, primaryDrop } = useBooking();
+  const { t } = useI18n();
   const roadRoute = useRoute(draft.pickup, primaryDrop);
 
   const markers = useMemo<readonly MapMarker[]>(() => {
@@ -104,10 +106,10 @@ const BookingConfirmedScreen: React.FC<BookingConfirmedScreenProps & { navigatio
               <Feather name="check-circle" size={32} color={colors.onSecondaryContainer} />
             </View>
             
-            <Text style={styles.title}>Booking Confirmed</Text>
+            <Text style={styles.title}>{t('booking.bookingConfirmed')}</Text>
             
             <Text style={styles.subtitle}>
-              We are processing your request. Please stay on this screen.
+              {t('booking.processingRequestWait')}
             </Text>
 
             <View style={styles.progressBarContainer}>
@@ -127,7 +129,7 @@ const BookingConfirmedScreen: React.FC<BookingConfirmedScreenProps & { navigatio
               onPress={() => (onCancel ? onCancel() : navigation?.navigate('CancellationReasonScreen'))}
               accessibilityRole="button"
             >
-              <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+              <Text style={styles.cancelButtonText}>{t('tracking.cancelBooking')}</Text>
             </Pressable>
           </View>
         </SafeAreaView>

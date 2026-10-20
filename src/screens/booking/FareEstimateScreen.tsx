@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { strings } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 import { useBooking } from '../../state/BookingContext';
 import { getFareEstimate } from '../../api/engine';
 import { toApiError } from '../../api/http';
@@ -36,6 +37,7 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
   navigation,
 }) => {
   const { draft, primaryDrop, setFareEstimate } = useBooking();
+  const { t } = useI18n();
   const estimate = draft.fareEstimate;
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>();
@@ -68,14 +70,14 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
 
   const breakdownItems: readonly BreakdownItem[] = estimate
     ? [
-        { label: 'Base Fare', amount: `₹ ${estimate.breakdown.base}` },
+        { label: t('booking.baseFare'), amount: `₹ ${estimate.breakdown.base}` },
         {
-          label: 'Distance',
+          label: t('booking.distance'),
           sublabel: `${estimate.distanceKm} km at ₹${estimate.perKmCharge}/km`,
           amount: `₹ ${estimate.breakdown.distance}`,
         },
         {
-          label: 'Weight Surcharge',
+          label: t('booking.weightSurcharge'),
           sublabel: `${weightKg} kg · ${estimate.weightMultiplier}× multiplier`,
           amount: `₹ ${estimate.breakdown.weightSurcharge}`,
           icon: 'package',
@@ -90,18 +92,18 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
           style={styles.backButton}
           onPress={() => (onBack ? onBack() : navigation?.goBack())}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t('common.goBack')}
         >
           <Feather name="arrow-left" size={22} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Pick Up</Text>
+        <Text style={styles.headerTitle}>{t('home.appName')}</Text>
         <Pressable
           style={styles.helpButton}
           onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
           accessibilityRole="button"
-          accessibilityLabel="Help"
+          accessibilityLabel={t('common.help')}
         >
-          <Text style={styles.helpText}>Help</Text>
+          <Text style={styles.helpText}>{t('common.help')}</Text>
         </Pressable>
       </View>
 
@@ -113,13 +115,13 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
       >
         {/* Title */}
         <View style={styles.titleSection}>
-          <Text style={styles.pageTitle}>{strings.booking.fareEstimate}</Text>
-          <Text style={styles.pageSubtitle}>Review the estimated cost for your delivery.</Text>
+          <Text style={styles.pageTitle}>{t('booking.fareEstimate')}</Text>
+          <Text style={styles.pageSubtitle}>{t('booking.reviewEstimatedCost')}</Text>
         </View>
 
         {/* Total Card */}
         <View style={styles.totalCard}>
-          <Text style={styles.totalLabel}>ESTIMATED TOTAL</Text>
+          <Text style={styles.totalLabel}>{t('booking.estimatedTotal')}</Text>
           {isLoading ? (
             <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.sm }} />
           ) : (
@@ -134,7 +136,7 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
           )}
           {estimate && (
             <Text style={styles.totalMeta}>
-              {estimate.distanceKm} km · about {estimate.durationMin} min
+              {t('common.km', { count: estimate.distanceKm })} · ~{t('common.mins', { count: estimate.durationMin })}
             </Text>
           )}
         </View>
@@ -148,7 +150,7 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
 
         {/* Breakdown Card */}
         <View style={styles.breakdownCard}>
-          <Text style={styles.breakdownTitle}>Breakdown</Text>
+          <Text style={styles.breakdownTitle}>{t('booking.breakdown')}</Text>
           {breakdownItems.map((item, index) => (
             <View
               key={item.label}
@@ -188,7 +190,7 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
         <View style={styles.disclaimerRow}>
           <Feather name="info" size={16} color={colors.outline} />
           <Text style={styles.disclaimerText}>
-            Final fare may vary based on actual distance, waiting time, and unforeseen route changes during transit.
+            {t('booking.fareDisclaimer')}
           </Text>
         </View>
       </ScrollView>
@@ -202,9 +204,9 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
             navigation?.navigate('ReviewBookingScreen');
           }}
           accessibilityRole="button"
-          accessibilityLabel="Continue"
+          accessibilityLabel={t('common.continue')}
         >
-          <Text style={styles.continueText}>CONTINUE</Text>
+          <Text style={styles.continueText}>{t('common.continue').toUpperCase()}</Text>
           <Feather name="arrow-right" size={18} color={colors.onPrimary} />
         </Pressable>
       </View>

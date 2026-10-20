@@ -14,6 +14,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { useI18n } from '../../i18n';
 
 export interface ReceiverDetailsScreenProps {
   readonly dropNumber?: number;
@@ -29,6 +30,7 @@ const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?
   onContinue,
   navigation,
 }) => {
+  const { t } = useI18n();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [instructions, setInstructions] = useState('');
@@ -49,10 +51,11 @@ const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?
           style={styles.iconButton}
           onPress={() => (onBack ? onBack() : navigation?.goBack())}
           accessibilityRole="button"
+          accessibilityLabel={t('common.goBack')}
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Delivery</Text>
+        <Text style={styles.headerTitle}>{t('logistics.delivery')}</Text>
         <View style={styles.iconButton} />
       </View>
 
@@ -68,56 +71,59 @@ const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?
               <MaterialIcons name="location-on" size={20} color={colors.onSecondaryContainer} />
             </View>
             <View style={styles.destinationTextContainer}>
-              <Text style={styles.dropLabel}>DROP {dropNumber}</Text>
+              <Text style={styles.dropLabel}>{t('logistics.dropNumber', { number: dropNumber })}</Text>
               <Text style={styles.dropAddress}>{dropAddress}</Text>
             </View>
           </View>
 
           {/* Form Section */}
           <View style={styles.formSection}>
-            <Text style={styles.formTitle}>Who is receiving the goods?</Text>
+            <Text style={styles.formTitle}>{t('logistics.whoIsReceiving')}</Text>
 
             {/* Input 1 (Name) */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>RECEIVER NAME</Text>
+              <Text style={styles.inputLabel}>{t('logistics.receiverNameCaps')}</Text>
               <TextInput
                 style={styles.textInput}
-                placeholder="Enter name"
+                placeholder={t('logistics.enterName')}
                 placeholderTextColor={colors.outlineVariant}
                 value={name}
                 onChangeText={setName}
+                accessibilityLabel={t('logistics.receiverNameCaps')}
               />
             </View>
 
             {/* Input 2 (Contact) */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
+              <Text style={styles.inputLabel}>{t('auth.mobileNumber')}</Text>
               <View style={styles.phoneInputContainer}>
                 <Text style={styles.phonePrefix}>+91</Text>
                 <TextInput
                   style={styles.phoneInput}
-                  placeholder="Enter 10-digit number"
+                  placeholder={t('auth.enterMobileNumber')}
                   placeholderTextColor={colors.outlineVariant}
                   keyboardType="phone-pad"
                   maxLength={10}
                   value={phone}
                   onChangeText={setPhone}
+                  accessibilityLabel={t('auth.mobileNumber')}
                 />
               </View>
             </View>
 
             {/* Input 3 (Instructions) */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>DELIVERY INSTRUCTIONS (OPTIONAL)</Text>
+              <Text style={styles.inputLabel}>{t('logistics.deliveryInstructionsOptional')}</Text>
               <TextInput
                 style={[styles.textInput, styles.textArea]}
-                placeholder="e.g. Near the blue gate, 2nd floor..."
+                placeholder={t('logistics.deliveryInstructionsPlaceholder')}
                 placeholderTextColor={colors.outlineVariant}
                 multiline
                 numberOfLines={3}
                 value={instructions}
                 onChangeText={setInstructions}
                 textAlignVertical="top"
+                accessibilityLabel={t('logistics.deliveryInstructionsOptional')}
               />
             </View>
           </View>
@@ -126,7 +132,7 @@ const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?
 
         <View style={styles.footer}>
           <Button
-            label="CONTINUE"
+            label={t('common.continueCaps')}
             onPress={() => {
               handleContinue();
               navigation?.navigate('FareEstimateScreen');

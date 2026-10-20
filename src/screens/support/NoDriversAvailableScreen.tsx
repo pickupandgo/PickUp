@@ -11,6 +11,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import Button from '../../components/atoms/Button';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface NoDriversAvailableScreenProps {
   readonly onRetry?: () => void;
@@ -24,6 +25,7 @@ const NoDriversAvailableScreen: React.FC<NoDriversAvailableScreenProps & { navig
   onMenu,
   navigation,
 }) => {
+  const { t } = useI18n();
   const { clearActiveRide } = useBooking();
   return (
     <View style={styles.container}>
@@ -41,7 +43,7 @@ const NoDriversAvailableScreen: React.FC<NoDriversAvailableScreenProps & { navig
             >
               <Feather name="menu" size={24} color={colors.primary} />
             </Pressable>
-            <Text style={styles.headerTitle}>Pick Up</Text>
+            <Text style={styles.headerTitle}>{t('home.appName')}</Text>
           </View>
           <View style={styles.profileIconBox}>
             <Feather name="user" size={16} color={colors.onSurfaceVariant} />
@@ -57,14 +59,14 @@ const NoDriversAvailableScreen: React.FC<NoDriversAvailableScreenProps & { navig
               <Feather name="search" size={40} color={colors.outline} />
             </View>
             
-            <Text style={styles.title}>No drivers available at the moment</Text>
+            <Text style={styles.title}>{t('errors.noDriversAvailable')}</Text>
             <Text style={styles.subtitle}>
-              High demand in your area. Please try again or wait a few minutes.
+              {t('errors.highDemandArea')}
             </Text>
 
             <View style={styles.actionsContainer}>
               <Button
-                label="Retry Search"
+                label={t('errors.retrySearch')}
                 onPress={() => {
                   if (onRetry) {
                     onRetry();
@@ -81,7 +83,7 @@ const NoDriversAvailableScreen: React.FC<NoDriversAvailableScreenProps & { navig
                 fullWidth
               />
               <Button
-                label="Return to Home"
+                label={t('errors.returnToHome')}
                 onPress={() => {
                   if (onReturnHome) {
                     onReturnHome();

@@ -12,10 +12,12 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import BottomNavBar from '../../components/BottomNavBar';
 import { navigateToTab } from '../../navigation/tabRoutes';
+import { useI18n } from '../../i18n';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 const MapLoadingScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
+  const { t } = useI18n();
   const pulseOpacity = useRef(new Animated.Value(0.4)).current;
   const progressValue = useRef(new Animated.Value(0)).current;
 
@@ -71,7 +73,7 @@ const MapLoadingScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
             <View style={styles.profileIconBox}>
               <Feather name="user" size={16} color={colors.onSurfaceVariant} />
             </View>
-            <Text style={styles.headerTitle}>Pick Up</Text>
+            <Text style={styles.headerTitle}>{t('home.appName')}</Text>
           </View>
           <View style={styles.iconButton}>
             <Feather name="bell" size={20} color={colors.onSurfaceVariant} />
@@ -97,7 +99,7 @@ const MapLoadingScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
               <Feather name="map-pin" size={32} color={colors.primary} />
             </Animated.View>
             
-            <Text style={styles.loadingText}>Loading territory map...</Text>
+            <Text style={styles.loadingText}>{t('tracking.loadingTerritoryMap')}</Text>
             
             <View style={styles.progressTrack}>
               <Animated.View 

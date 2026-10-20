@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { mockActiveTrip } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 
 export interface ShareTrackingSheetScreenProps {
   readonly onBack?: () => void;
@@ -25,6 +26,7 @@ const ShareTrackingSheetScreen: React.FC<ShareTrackingSheetScreenProps & { navig
   onShare,
   navigation,
 }) => {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(false);
 
@@ -60,7 +62,7 @@ const ShareTrackingSheetScreen: React.FC<ShareTrackingSheetScreenProps & { navig
           >
             <Feather name="arrow-left" size={24} color={colors.primary} />
           </Pressable>
-          <Text style={styles.headerTitle}>Current Trip</Text>
+          <Text style={styles.headerTitle}>{t('tracking.currentTrip')}</Text>
           <View style={{ width: 40 }} />
         </View>
       </SafeAreaView>
@@ -78,7 +80,7 @@ const ShareTrackingSheetScreen: React.FC<ShareTrackingSheetScreenProps & { navig
 
           {/* Sheet Header */}
           <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Share Tracking</Text>
+            <Text style={styles.sheetTitle}>{t('share.shareTracking')}</Text>
             <Pressable
               style={styles.closeButton}
               onPress={() => (onClose ? onClose() : navigation?.goBack())}
@@ -94,8 +96,8 @@ const ShareTrackingSheetScreen: React.FC<ShareTrackingSheetScreenProps & { navig
                 <Feather name="truck" size={20} color={colors.onPrimaryContainer} />
               </View>
               <View>
-                <Text style={styles.statusLabel}>TRIP STATUS</Text>
-                <Text style={styles.statusText}>En route to Drop 1 of 3</Text>
+                <Text style={styles.statusLabel}>{t('share.tripStatusCaps')}</Text>
+                <Text style={styles.statusText}>{t('chat.enRouteDrop', { dropNumber: 1, total: 3 })}</Text>
               </View>
             </View>
 
@@ -114,11 +116,11 @@ const ShareTrackingSheetScreen: React.FC<ShareTrackingSheetScreenProps & { navig
                 {/* Text Data */}
                 <View style={styles.logisticsTextColumn}>
                   <View style={styles.logisticsItem}>
-                    <Text style={styles.logisticsLabel}>Pickup</Text>
+                    <Text style={styles.logisticsLabel}>{t('booking.pickup')}</Text>
                     <Text style={styles.logisticsAddress}>{mockActiveTrip.stops[0]?.address}</Text>
                   </View>
                   <View style={styles.logisticsItem}>
-                    <Text style={styles.logisticsLabel}>Next Drop</Text>
+                    <Text style={styles.logisticsLabel}>{t('logistics.nextDrop')}</Text>
                     <Text style={styles.logisticsAddress}>{mockActiveTrip.stops[1]?.address}</Text>
                   </View>
                 </View>
@@ -129,7 +131,7 @@ const ShareTrackingSheetScreen: React.FC<ShareTrackingSheetScreenProps & { navig
 
             {/* Tracking Link Section */}
             <View style={styles.trackingSection}>
-              <Text style={styles.trackingSectionLabel}>TRACKING LINK</Text>
+              <Text style={styles.trackingSectionLabel}>{t('share.trackingLinkCaps')}</Text>
               <View style={styles.linkRow}>
                 <Text style={styles.linkText} numberOfLines={1}>
                   pickup.com/track/TRP4910
@@ -142,14 +144,14 @@ const ShareTrackingSheetScreen: React.FC<ShareTrackingSheetScreenProps & { navig
               <View style={styles.infoRow}>
                 <Feather name="info" size={16} color={colors.onSurfaceVariant} style={{ marginTop: 2 }} />
                 <Text style={styles.infoText}>
-                  Recipients can view the live driver location and ETA without an account.
+                  {t('share.recipientsCanView')}
                 </Text>
               </View>
 
               {copied && (
                 <View style={styles.statusMessage}>
                   <Feather name="check-circle" size={16} color={colors.primary} />
-                  <Text style={styles.statusMessageText}>Link Copied!</Text>
+                  <Text style={styles.statusMessageText}>{t('share.linkCopied')}</Text>
                 </View>
               )}
             </View>
@@ -165,12 +167,12 @@ const ShareTrackingSheetScreen: React.FC<ShareTrackingSheetScreenProps & { navig
               {sharing ? (
                 <>
                   <Feather name="loader" size={20} color={colors.onPrimaryContainer} />
-                  <Text style={styles.shareButtonText}>PREPARING...</Text>
+                  <Text style={styles.shareButtonText}>{t('loading.processingRequest').toUpperCase()}</Text>
                 </>
               ) : (
                 <>
                   <Feather name="share" size={20} color={colors.onPrimaryContainer} />
-                  <Text style={styles.shareButtonText}>SHARE TRACKING</Text>
+                  <Text style={styles.shareButtonText}>{t('share.shareTracking').toUpperCase()}</Text>
                 </>
               )}
             </Pressable>

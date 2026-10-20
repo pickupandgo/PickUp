@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography } from '../../theme';
-import { strings, mockPaymentMethods, PaymentMethod } from '../../data/mockData';
+import { mockPaymentMethods, PaymentMethod } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 import TopAppBar from '../../components/organisms/TopAppBar';
 import Card from '../../components/molecules/Card';
 import Divider from '../../components/atoms/Divider';
@@ -18,14 +19,27 @@ const PaymentSelectionScreen: React.FC<PaymentSelectionScreenProps & { navigatio
   onSelect,
   navigation,
 }) => {
+  const { t } = useI18n();
   const [selectedId, setSelectedId] = useState<string>(
     mockPaymentMethods.find((m) => m.isDefault)?.id ?? ''
   );
 
+  const getMethodLabel = (method: PaymentMethod) => {
+    if (method.type === 'upi') return t('payment.googlePay');
+    if (method.type === 'card') return t('payment.creditCard');
+    if (method.type === 'cash') return t('payment.cash');
+    return method.label;
+  };
+
+  const getMethodDetail = (method: PaymentMethod) => {
+    if (method.type === 'cash') return t('payment.payOnDelivery');
+    return method.detail;
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <TopAppBar
-        title={strings.payment.selectPayment}
+        title={t('payment.selectPayment')}
         leadingIcon={<Text style={styles.backIcon}>←</Text>}
         onLeadingPress={() => (onBack ? onBack() : navigation?.goBack())}
       />
@@ -36,50 +50,54 @@ const PaymentSelectionScreen: React.FC<PaymentSelectionScreenProps & { navigatio
         showsVerticalScrollIndicator={false}
       >
         <Card variant="outlined" padding="none">
-          {mockPaymentMethods.map((method, index) => (
-            <React.Fragment key={method.id}>
-              {index > 0 && <Divider />}
-              <Pressable
-                style={[
-                  styles.paymentRow,
-                  selectedId === method.id && styles.paymentRowSelected,
-                ]}
-                onPress={() => {
-                  setSelectedId(method.id);
-                  onSelect?.(method.id);
-                }}
-                accessibilityRole="radio"
-                accessibilityLabel={method.label}
-                accessibilityState={{ selected: selectedId === method.id }}
-              >
-                <View style={styles.paymentIcon}>
-                  <Text style={styles.paymentIconText}>
-                    {method.type === 'upi' ? '🏦' : method.type === 'card' ? '💳' : '💵'}
-                  </Text>
-                </View>
-                <View style={styles.paymentInfo}>
-                  <Text style={styles.paymentLabel}>{method.label}</Text>
-                  <Text style={styles.paymentDetail}>{method.detail}</Text>
-                </View>
-                <View
+          {mockPaymentMethods.map((method, index) => {
+            const label = getMethodLabel(method);
+            const detail = getMethodDetail(method);
+            return (
+              <React.Fragment key={method.id}>
+                {index > 0 && <Divider />}
+                <Pressable
                   style={[
-                    styles.radio,
-                    selectedId === method.id && styles.radioSelected,
+                    styles.paymentRow,
+                    selectedId === method.id && styles.paymentRowSelected,
                   ]}
+                  onPress={() => {
+                    setSelectedId(method.id);
+                    onSelect?.(method.id);
+                  }}
+                  accessibilityRole="radio"
+                  accessibilityLabel={label}
+                  accessibilityState={{ selected: selectedId === method.id }}
                 >
-                  {selectedId === method.id && (
-                    <View style={styles.radioInner} />
-                  )}
-                </View>
-              </Pressable>
-            </React.Fragment>
-          ))}
+                  <View style={styles.paymentIcon}>
+                    <Text style={styles.paymentIconText}>
+                      {method.type === 'upi' ? '🏦' : method.type === 'card' ? '💳' : '💵'}
+                    </Text>
+                  </View>
+                  <View style={styles.paymentInfo}>
+                    <Text style={styles.paymentLabel}>{label}</Text>
+                    <Text style={styles.paymentDetail}>{detail}</Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.radio,
+                      selectedId === method.id && styles.radioSelected,
+                    ]}
+                  >
+                    {selectedId === method.id && (
+                      <View style={styles.radioInner} />
+                    )}
+                  </View>
+                </Pressable>
+              </React.Fragment>
+            );
+          })}
         </Card>
       </ScrollView>
 
       <View style={styles.footer}>
         <Button
-          label="Continue"
+          label={t('common.continue')}
           onPress={() => navigation?.navigate('PaymentMethodScreen')}
           variant="primary"
           size="lg"

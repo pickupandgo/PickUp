@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import Button from '../../components/atoms/Button';
+import { useI18n } from '../../i18n';
 
 export interface CancellationReasonScreenProps {
   readonly onSubmit?: (reasonId: string, otherReasonText?: string) => void;
@@ -18,13 +19,13 @@ export interface CancellationReasonScreenProps {
   readonly onHelp?: () => void;
 }
 
-const CANCELLATION_REASONS = [
-  { id: 'driver_requested', label: 'Driver requested cancellation' },
-  { id: 'driver_not_moving', label: 'Driver is not moving' },
-  { id: 'long_wait', label: 'Longer wait time than expected' },
-  { id: 'changed_mind', label: 'Changed my mind' },
-  { id: 'wrong_location', label: 'Incorrect pickup location' },
-  { id: 'other', label: 'Other' },
+const CANCELLATION_REASON_KEYS = [
+  { id: 'driver_requested', key: 'cancellation.driverRequested' },
+  { id: 'driver_not_moving', key: 'cancellation.driverNotMoving' },
+  { id: 'long_wait', key: 'cancellation.longWait' },
+  { id: 'changed_mind', key: 'cancellation.changedMind' },
+  { id: 'wrong_location', key: 'cancellation.wrongLocation' },
+  { id: 'other', key: 'cancellation.other' },
 ];
 
 const CancellationReasonScreen: React.FC<CancellationReasonScreenProps & { navigation?: any }> = ({
@@ -33,6 +34,7 @@ const CancellationReasonScreen: React.FC<CancellationReasonScreenProps & { navig
   onHelp,
   navigation,
 }) => {
+  const { t } = useI18n();
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
   const [otherText, setOtherText] = useState('');
 
@@ -49,13 +51,17 @@ const CancellationReasonScreen: React.FC<CancellationReasonScreenProps & { navig
         <Pressable
           style={styles.iconButton}
           onPress={() => (onBack ? onBack() : navigation?.goBack())}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.goBack')}
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle} numberOfLines={1}>Reason for Cancellation</Text>
+        <Text style={styles.headerTitle} numberOfLines={1}>{t('cancellation.reasonTitle')}</Text>
         <Pressable
           style={styles.iconButton}
           onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.help')}
         >
           <Feather name="help-circle" size={24} color={colors.primary} />
         </Pressable>
@@ -64,15 +70,15 @@ const CancellationReasonScreen: React.FC<CancellationReasonScreenProps & { navig
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.introSection}>
           <Text style={styles.introText}>
-            Please let us know why you're cancelling to help us improve.
+            {t('cancellation.reasonSubtitle')}
           </Text>
         </View>
 
         {/* Cancellation Options */}
         <View style={styles.optionsCard}>
-          {CANCELLATION_REASONS.map((reason, index) => {
+          {CANCELLATION_REASON_KEYS.map((reason, index) => {
             const isSelected = selectedReason === reason.id;
-            const isLast = index === CANCELLATION_REASONS.length - 1;
+            const isLast = index === CANCELLATION_REASON_KEYS.length - 1;
 
             return (
               <Pressable
@@ -87,7 +93,7 @@ const CancellationReasonScreen: React.FC<CancellationReasonScreenProps & { navig
                   styles.optionLabel,
                   isSelected && styles.optionLabelSelected
                 ]}>
-                  {reason.label}
+                  {t(reason.key)}
                 </Text>
                 <View style={[
                   styles.radioOuter,
@@ -105,13 +111,14 @@ const CancellationReasonScreen: React.FC<CancellationReasonScreenProps & { navig
           <View style={styles.otherInputContainer}>
             <TextInput
               style={styles.textInput}
-              placeholder="Please specify..."
+              placeholder={t('cancellation.specifyPlaceholder')}
               placeholderTextColor={colors.onSurfaceVariant}
               value={otherText}
               onChangeText={setOtherText}
               multiline
               numberOfLines={4}
               textAlignVertical="top"
+              accessibilityLabel={t('cancellation.specifyPlaceholder')}
             />
           </View>
         )}
@@ -120,7 +127,7 @@ const CancellationReasonScreen: React.FC<CancellationReasonScreenProps & { navig
       {/* Bottom Action */}
       <View style={styles.bottomActions}>
         <Button
-          label="SUBMIT"
+          label={t('common.submitCaps')}
           onPress={() => {
             handleSubmit();
             navigation?.navigate('CancellationChargeConfirmationScreen');

@@ -10,6 +10,7 @@ import { CommonActions } from '@react-navigation/native';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
+import { useI18n } from '../../i18n';
 
 export interface AssignmentFailedScreenProps {
   readonly onClose?: () => void;
@@ -23,6 +24,7 @@ const AssignmentFailedScreen: React.FC<AssignmentFailedScreenProps & { navigatio
   onCancel,
   navigation,
 }) => {
+  const { t } = useI18n();
   const { clearActiveRide } = useBooking();
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -47,9 +49,9 @@ const AssignmentFailedScreen: React.FC<AssignmentFailedScreenProps & { navigatio
         </View>
 
         {/* Text Content */}
-        <Text style={styles.title}>Assignment Failed</Text>
+        <Text style={styles.title}>{t('errors.assignmentFailed')}</Text>
         <Text style={styles.subtitle}>
-          Something went wrong while connecting with the driver. Your booking has not been charged.
+          {t('errors.assignmentFailedSubtitle')}
         </Text>
       </View>
 
@@ -71,7 +73,7 @@ const AssignmentFailedScreen: React.FC<AssignmentFailedScreenProps & { navigatio
           }}
           accessibilityRole="button"
         >
-          <Text style={styles.primaryButtonText}>Retry Booking</Text>
+          <Text style={styles.primaryButtonText}>{t('errors.retryBooking')}</Text>
         </Pressable>
         <Pressable
           style={styles.secondaryButton}
@@ -90,7 +92,7 @@ const AssignmentFailedScreen: React.FC<AssignmentFailedScreenProps & { navigatio
           }}
           accessibilityRole="button"
         >
-          <Text style={styles.secondaryButtonText}>Cancel</Text>
+          <Text style={styles.secondaryButtonText}>{t('common.cancel')}</Text>
         </Pressable>
       </View>
     </SafeAreaView>
