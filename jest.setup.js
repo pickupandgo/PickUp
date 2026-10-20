@@ -201,3 +201,16 @@ jest.mock('@react-native-firebase/auth', () => {
     onAuthStateChanged: jest.fn(() => jest.fn()),
   };
 });
+
+// Mock react-native-razorpay: native Checkout is not available in tests.
+jest.mock(
+  'react-native-razorpay',
+  () => ({
+    __esModule: true,
+    default: {
+      open: jest.fn(),
+      onExternalWalletSelection: jest.fn(),
+    },
+  }),
+  { virtual: true },
+);

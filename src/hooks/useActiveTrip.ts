@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { AppState } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { TripController } from '../services/trip/TripController';
 import type { ActiveTrip } from '../types/trip';
 
@@ -29,4 +31,30 @@ export function useActiveTrip(tripId?: string) {
   }, [tripId]);
 
   return activeTrip;
+}
+
+/**
+ * The trip a pickup or drop screen acts on, re-read from the engine whenever the screen is shown
+ * and whenever the app comes back to the foreground (e.g. after a lost connection), so a screen
+ * never acts on stale state. Null until the engine's answer for this trip id is in.
+ */
+export function useLiveTrip(tripId: string): ActiveTrip | null {
+  const trip = useActiveTrip(tripId);
+
+  useFocusEffect(
+    useCallback(() => {
+      TripController.getInstance().loadTrip(tripId);
+    }, [tripId]),
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        TripController.getInstance().loadTrip(tripId);
+      }
+    });
+    return () => subscription.remove();
+  }, [tripId]);
+
+  return trip && trip.id === tripId ? trip : null;
 }

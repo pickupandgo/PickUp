@@ -7,13 +7,11 @@ import { TripOfferSheet } from '../../components/organisms/TripOfferSheet';
 import { StatusPill } from '../../components/atoms/StatusPill';
 import { DriverMap, MapOverlay, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
+import { rejectRideRequest } from '../../services/engine/dispatch';
+import { TripController } from '../../services/trip/TripController';
+import { describeTripError } from '../../services/trip/tripErrors';
 import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
-import {
-  acceptRideRequest,
-  rejectRideRequest,
-  getTripIdForRide,
-} from '../../services/engine/dispatch';
 
 export interface NewTripOfferScreenProps {
   readonly navigation: HomeScreenProps<'TripOffer'>['navigation'];
@@ -60,24 +58,23 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
     setSubmitting(true);
     setOfferState('accepted');
     try {
-      await acceptRideRequest(offer.id, driverId);
-      const tripId = await getTripIdForRide(offer.id).catch(() => null);
-      navigation.navigate('ActiveTrip', { tripId: tripId ?? offer.id });
+      const trip = await TripController.getInstance().acceptOffer(offer.id);
+      navigation.navigate('ActiveTrip', { tripId: trip.id });
     } catch (e) {
       setSubmitting(false);
       setOfferState('pending');
       Alert.alert(
         t('trip.requestUnavailable'),
-        t('trip.requestUnavailableMsg'),
+        describeTripError(e, t),
         [{ text: t('common.ok'), onPress: () => navigation.goBack() }],
       );
     }
-  }, [submitting, offer.id, driverId, navigation, t]);
+  }, [submitting, offer.id, navigation, t]);
 
   const handleDecline = useCallback(() => {
-    rejectRideRequest(offer.id, driverId).catch(() => {});
+    rejectRideRequest(offer.id).catch(() => {});
     navigation.goBack();
-  }, [offer.id, driverId, navigation]);
+  }, [offer.id, navigation]);
 
   const handleExpired = useCallback(() => {
     setOfferState('expired');

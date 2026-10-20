@@ -49,6 +49,9 @@ export type { DropInfoCardProps } from './DropInfoCard';
 export { ErrorState } from './ErrorState';
 export type { ErrorStateProps, ErrorVariant } from './ErrorState';
 
+export { InlineErrorBanner } from './InlineErrorBanner';
+export type { InlineErrorBannerProps } from './InlineErrorBanner';
+
 export { EmptyState } from './EmptyState';
 export type { EmptyStateProps, EmptyVariant } from './EmptyState';
 

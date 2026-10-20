@@ -1,13 +1,26 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { rechargePresets, mockPaymentMethod } from '../../data/mockData';
+import {
+  colors,
+  typography,
+  spacing,
+  borderRadius,
+  shadows,
+} from '../../theme';
+import { rechargePresets, walletLabels } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { AmountChip } from '../../components/atoms/AmountChip';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
-import { useI18n } from '../../i18n';
+import { WalletService } from '../../services/wallet/WalletService';
+import { newIdempotencyKey } from '../../services/payments/idempotency';
+import { formatRupees, rupeesToPaise } from '../../services/payments/money';
+import {
+  describePaymentsError,
+  PaymentsApiError,
+} from '../../services/payments/paymentsErrors';
 import type { WalletScreenProps } from '../../types/navigation';
 
 export interface RechargeScreenProps {
@@ -15,16 +28,35 @@ export interface RechargeScreenProps {
   readonly testID?: string;
 }
 
+/** Shown when this build has no payments backend configured. */
+const notConfiguredMessage = __DEV__
+  ? 'Recharge is off in this build. Set PAYMENTS_API_BASE_URL in .env and rebuild the app.'
+  : describePaymentsError(
+      new PaymentsApiError('NOT_CONFIGURED', 'Not configured', 0),
+    );
+
 export const RechargeScreen: React.FC<RechargeScreenProps> = ({
   navigation,
   testID,
 }) => {
-  const { t } = useI18n();
   const [selectedAmount, setSelectedAmount] = useState<number>(0);
   const [customAmount, setCustomAmount] = useState('');
+  // Blocks a double tap from starting two payments; reset whenever this screen is shown again.
+  const submitting = useRef(false);
 
-  const activeAmount = customAmount ? parseInt(customAmount, 10) || 0 : selectedAmount;
-  const isValid = activeAmount >= 100;
+  useFocusEffect(
+    useCallback(() => {
+      submitting.current = false;
+    }, []),
+  );
+
+  const paymentsEnabled = WalletService.getMode() === 'backend';
+  const activeAmount = customAmount
+    ? Number.parseInt(customAmount, 10) || 0
+    : selectedAmount;
+  // Whole rupees only. Minimum and maximum amounts are enforced by the server, which replies
+  // with the allowed range if the amount is outside it.
+  const isValid = paymentsEnabled && activeAmount >= 1;
 
   const handlePresetSelect = useCallback((amount: number) => {
     setSelectedAmount(amount);
@@ -32,30 +64,44 @@ export const RechargeScreen: React.FC<RechargeScreenProps> = ({
   }, []);
 
   const handleCustomChange = useCallback((text: string) => {
-    setCustomAmount(text.replace(/\D/g, ''));
+    setCustomAmount(text.replace(/\D/g, '').replace(/^0+/, ''));
     setSelectedAmount(0);
   }, []);
 
   const handleContinue = useCallback(() => {
-    if (!isValid) return;
-    navigation.navigate('RechargeProcessing', {
-      amount: activeAmount,
-      paymentMethodId: mockPaymentMethod.id,
+    if (!isValid || submitting.current) {
+      return;
+    }
+    submitting.current = true;
+    navigation.push('RechargeProcessing', {
+      amountPaise: rupeesToPaise(activeAmount),
+      // A new attempt gets a new key; retries inside the attempt reuse it.
+      idempotencyKey: newIdempotencyKey(),
     });
   }, [navigation, isValid, activeAmount]);
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title={t('wallet.rechargeTitle')}
+        title={walletLabels.rechargeTitle}
         onBackPress={() => navigation.goBack()}
         showBackButton
       />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {!paymentsEnabled ? (
+          <View style={styles.noticeCard} accessibilityRole="alert">
+            <Icon name="info" size={20} color={colors.onSurfaceVariant} />
+            <Text style={styles.noticeText}>{notConfiguredMessage}</Text>
+          </View>
+        ) : null}
+
         {/* Amount presets */}
-        <Text style={styles.label}>{t('wallet.enterAmount')}</Text>
+        <Text style={styles.label}>{walletLabels.enterAmountLabel}</Text>
         <View style={styles.presetsRow}>
-          {rechargePresets.map((amount) => (
+          {rechargePresets.map(amount => (
             <AmountChip
               key={amount}
               amount={amount}
@@ -71,29 +117,25 @@ export const RechargeScreen: React.FC<RechargeScreenProps> = ({
           <Text style={styles.currencyPrefix}>₹</Text>
           <TextInput
             style={styles.customInput}
-            placeholder={t('wallet.enterCustomAmount')}
+            placeholder="Enter custom amount"
             placeholderTextColor={colors.outline}
             value={customAmount}
             onChangeText={handleCustomChange}
             keyboardType="number-pad"
             maxLength={6}
+            accessibilityLabel="Recharge amount in rupees"
           />
         </View>
 
-        {activeAmount > 0 && !isValid ? (
-          <Text style={styles.minAmountHint}>{t('wallet.minRechargeHint')}</Text>
-        ) : null}
-
-        {/* Payment method */}
-        <View style={styles.paymentCard}>
-          <Text style={styles.paymentLabel}>{t('wallet.defaultPayment')}</Text>
-          <View style={styles.paymentRow}>
-            <Icon name="account_balance" style={styles.paymentIcon} />
-            <View style={styles.paymentInfo}>
-              <Text style={styles.paymentName}>{mockPaymentMethod.label}</Text>
-              <Text style={styles.paymentDigits}>•••• {mockPaymentMethod.lastFourDigits}</Text>
-            </View>
-            <Text style={styles.paymentDefault}>{t('common.default')}</Text>
+        {/* Payment provider */}
+        <View style={styles.secureCard}>
+          <Icon name="verified_user" size={24} color={colors.primary} />
+          <View style={styles.secureInfo}>
+            <Text style={styles.secureTitle}>Secure payment by Razorpay</Text>
+            <Text style={styles.secureText}>
+              You pay on Razorpay's secure checkout. PickUp never sees your card
+              details or UPI PIN.
+            </Text>
           </View>
         </View>
 
@@ -101,15 +143,17 @@ export const RechargeScreen: React.FC<RechargeScreenProps> = ({
         {isValid ? (
           <View style={styles.summaryCard}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>{t('wallet.rechargeAmount')}</Text>
-              <Text style={styles.summaryValue}>₹{activeAmount.toLocaleString()}</Text>
+              <Text style={styles.summaryLabel}>Recharge Amount</Text>
+              <Text style={styles.summaryValue}>
+                {formatRupees(activeAmount)}
+              </Text>
             </View>
           </View>
         ) : null}
       </ScrollView>
 
       <PrimaryButton
-        label={t('common.continue')}
+        label={walletLabels.continueLabel}
         onPress={handleContinue}
         disabled={!isValid}
         style={styles.continueButton}
@@ -127,6 +171,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.containerPadding,
     paddingBottom: spacing.lg,
     gap: spacing.containerPadding,
+  },
+  noticeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    padding: spacing.gutter,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surfaceContainerHigh,
+  },
+  noticeText: {
+    ...typography.bodyMd,
+    flex: 1,
+    color: colors.onSurfaceVariant,
   },
   label: {
     ...typography.headlineSm,
@@ -158,48 +215,27 @@ const styles = StyleSheet.create({
     color: colors.onSurface,
     paddingVertical: spacing.containerPadding,
   },
-  minAmountHint: {
-    ...typography.labelSm,
-    color: colors.error,
-  },
-  paymentCard: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: borderRadius.md,
-    padding: spacing.containerPadding,
-    gap: spacing.gutter,
-    ...shadows.sm,
-  },
-  paymentLabel: {
-    ...typography.labelSm,
-    color: colors.onSurfaceVariant,
-    fontWeight: '600',
-  },
-  paymentRow: {
+  secureCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.gutter,
+    backgroundColor: colors.surfaceContainerLowest,
+    borderRadius: borderRadius.md,
+    padding: spacing.containerPadding,
+    ...shadows.sm,
   },
-  paymentIcon: {
-    fontSize: 24,
-    color: colors.primary,
-  },
-  paymentInfo: {
+  secureInfo: {
     flex: 1,
     gap: 2,
   },
-  paymentName: {
+  secureTitle: {
     ...typography.bodyMd,
-    fontWeight: '500',
+    fontWeight: '600',
     color: colors.onSurface,
   },
-  paymentDigits: {
+  secureText: {
     ...typography.labelSm,
     color: colors.onSurfaceVariant,
-  },
-  paymentDefault: {
-    ...typography.labelSm,
-    color: colors.primary,
-    fontWeight: '600',
   },
   summaryCard: {
     backgroundColor: colors.surfaceContainerLowest,

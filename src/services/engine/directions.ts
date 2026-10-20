@@ -3,27 +3,32 @@ import { ApiError } from './http';
 import type { GeoPoint } from './types';
 
 /**
- * Google Directions — road-following polyline for two points.
+ * Google Routes API — road-following polyline for two points.
  *
  * The engine only stores haversine distance, so without this every route drawn
  * on the map was a straight line through parks, buildings and railway tracks.
  *
- * Requires "Directions API" enabled on the same Cloud project the other Maps
- * calls use. The key ships in the app bundle: restrict it in Cloud Console.
+ * Uses Routes API (v2), which replaced the legacy Directions API. The key ships
+ * in the app bundle: restrict it in Cloud Console.
  */
 
-const DIRECTIONS_HOST = 'https://maps.googleapis.com/maps/api/directions/json';
+const ROUTES_HOST = 'https://routes.googleapis.com/directions/v2:computeRoutes';
 
-interface DirectionsResponse {
-  readonly status: string;
-  readonly error_message?: string;
+interface RoutesResponse {
   readonly routes?: ReadonlyArray<{
-    readonly overview_polyline?: { readonly points?: string };
+    readonly distanceMeters?: number;
+    readonly duration?: string;
+    readonly polyline?: { readonly encodedPolyline?: string };
     readonly legs?: ReadonlyArray<{
-      readonly distance?: { readonly value?: number };
-      readonly duration?: { readonly value?: number };
+      readonly distanceMeters?: number;
+      readonly duration?: string;
     }>;
   }>;
+  readonly error?: {
+    readonly code?: number;
+    readonly message?: string;
+    readonly status?: string;
+  };
 }
 
 export interface RouteResult {
@@ -72,6 +77,15 @@ const decodePolyline = (encoded: string): GeoPoint[] => {
 };
 
 /**
+ * Parses ISO 8601 duration string to seconds (e.g. "123s" → 123, "2m30s" → 150).
+ */
+const parseDuration = (duration: string | undefined): number => {
+  if (!duration) return 0;
+  const match = duration.match(/^(\d+)s$/);
+  return match ? parseInt(match[1], 10) : 0;
+};
+
+/**
  * Fetches a driving route between two points and returns the decoded polyline.
  * Any waypoints go through the same route as ordered intermediate stops.
  */
@@ -84,52 +98,82 @@ export const getRoute = async (
     throw new ApiError('config', 'Google Maps API key is not set.');
   }
 
-  const params = new URLSearchParams({
-    origin: `${origin.latitude},${origin.longitude}`,
-    destination: `${destination.latitude},${destination.longitude}`,
-    mode: 'driving',
-    key: env.googleMapsApiKey as string,
-  });
+  const body: Record<string, unknown> = {
+    origin: {
+      location: {
+        latLng: {
+          latitude: origin.latitude,
+          longitude: origin.longitude,
+        },
+      },
+    },
+    destination: {
+      location: {
+        latLng: {
+          latitude: destination.latitude,
+          longitude: destination.longitude,
+        },
+      },
+    },
+    travelMode: 'DRIVE',
+    polylineEncoding: 'ENCODED_POLYLINE',
+  };
 
   if (options.waypoints?.length) {
-    params.set(
-      'waypoints',
-      options.waypoints.map((p) => `${p.latitude},${p.longitude}`).join('|')
-    );
+    body.intermediates = options.waypoints.map((p) => ({
+      location: {
+        latLng: {
+          latitude: p.latitude,
+          longitude: p.longitude,
+        },
+      },
+    }));
   }
 
   let response: Response;
   try {
-    response = await fetch(`${DIRECTIONS_HOST}?${params.toString()}`, { signal: options.signal });
+    response = await fetch(ROUTES_HOST, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': env.googleMapsApiKey as string,
+        'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.distanceMeters,routes.legs.duration',
+      },
+      body: JSON.stringify(body),
+      signal: options.signal,
+    });
   } catch {
     throw new ApiError('network', 'Could not reach the directions service');
   }
 
-  if (!response.ok) {
-    throw new ApiError('http', `Directions failed with ${response.status}`, response.status);
+  const raw = await response.text();
+  let data: RoutesResponse;
+  try {
+    data = raw.length ? JSON.parse(raw) : {};
+  } catch {
+    throw new ApiError('parse', 'Malformed response from directions service');
   }
 
-  const data = (await response.json()) as DirectionsResponse;
-
-  if (data.status !== 'OK') {
-    const message = data.error_message ?? data.status;
-    if (data.status === 'REQUEST_DENIED') {
+  if (!response.ok || data.error) {
+    const message = data.error?.message ?? `HTTP ${response.status}`;
+    const status = data.error?.status ?? '';
+    if (status === 'PERMISSION_DENIED' || status === 'UNAUTHENTICATED') {
       throw new ApiError(
         'config',
-        `Directions denied: ${message} — enable "Directions API" on the project.`
+        `Routes API denied: ${message} — check API key and enabled APIs.`
       );
     }
-    throw new ApiError('http', `Directions failed: ${message}`);
+    throw new ApiError('http', `Routes API failed: ${message}`, response.status);
   }
 
   const route = data.routes?.[0];
-  const encoded = route?.overview_polyline?.points;
-  if (!encoded) throw new ApiError('parse', 'No polyline in directions response');
+  const encoded = route?.polyline?.encodedPolyline;
+  if (!encoded) throw new ApiError('parse', 'No polyline in routes response');
 
-  // Sum the legs. For A→B there is one leg; with waypoints there are more.
+  // Sum the legs. For A→B there is one leg; with intermediates there are more.
   const legs = route?.legs ?? [];
-  const distanceMeters = legs.reduce((sum, leg) => sum + (leg.distance?.value ?? 0), 0);
-  const durationSeconds = legs.reduce((sum, leg) => sum + (leg.duration?.value ?? 0), 0);
+  const distanceMeters = legs.reduce((sum, leg) => sum + (leg.distanceMeters ?? 0), 0);
+  const durationSeconds = legs.reduce((sum, leg) => sum + parseDuration(leg.duration), 0);
 
   return {
     polyline: decodePolyline(encoded),

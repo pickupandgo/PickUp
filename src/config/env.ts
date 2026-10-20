@@ -24,6 +24,23 @@ const EXTERNAL_WS_ENDPOINT: string | undefined = readOptional(Config.WS_ENDPOINT
 const GOOGLE_MAPS_API_KEY: string | undefined = readOptional(Config.GOOGLE_MAPS_API_KEY);
 
 /**
+ * Payments + driver wallet backend. Release builds only accept https. Plain http is allowed
+ * in development builds so a backend on the developer's laptop can be used for testing.
+ * Anything else is rejected (undefined), so a bad value can never send tokens in clear text.
+ */
+const parsePaymentsBaseUrl = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const url = value.replace(/\/+$/, '');
+  const isHttps = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(url);
+  const isDevHttp = __DEV__ && /^http:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(url);
+  return isHttps || isDevHttp ? url : undefined;
+};
+
+const PAYMENTS_API_BASE_URL = parsePaymentsBaseUrl(readOptional(Config.PAYMENTS_API_BASE_URL));
+
+/**
  * When true, domain services use mock adapters instead of
  * making real API calls. This is the default when no production
  * backend endpoint has been configured.
@@ -40,6 +57,8 @@ export interface AppEnvironment {
   /** Default request timeout in milliseconds. */
   readonly REQUEST_TIMEOUT_MS: number;
   readonly googleMapsApiKey?: string;
+  /** Payments + wallet backend base URL. Undefined when not configured (or not allowed). */
+  readonly PAYMENTS_API_BASE_URL: string | undefined;
 }
 
 export const env: AppEnvironment = {
@@ -49,6 +68,7 @@ export const env: AppEnvironment = {
   IS_MOCK_MODE,
   REQUEST_TIMEOUT_MS: 15000,
   googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+  PAYMENTS_API_BASE_URL,
 };
 
 export const hasGeocodingConfig = () => !!env.googleMapsApiKey;

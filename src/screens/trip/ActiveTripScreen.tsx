@@ -9,6 +9,9 @@ import { useActiveTrip } from '../../hooks/useActiveTrip';
 import { useArrivalDetection } from '../../hooks/useArrivalDetection';
 import { useTripRoute } from '../../hooks/useTripRoute';
 import { useI18n } from '../../i18n';
+import { CollectPaymentBanner } from '../../components/molecules/CollectPaymentBanner';
+import { useCollectableTrips } from '../../hooks/useCollectableTrips';
+import type { DriverTripDto } from '../../services/payments/collectionsDto';
 import type { TripStop } from '../../types/trip';
 import type { HomeScreenProps } from '../../types/navigation';
 
@@ -84,6 +87,14 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
     if (trip) navigation.navigate('ActiveTripChat', { tripId: trip.id });
   }, [navigation, trip]);
 
+  const collectable = useCollectableTrips();
+
+  const handleCollect = useCallback(
+    (backendTrip: DriverTripDto) =>
+      navigation.navigate('CollectPayment', { tripId: backendTrip.tripId }),
+    [navigation],
+  );
+
   if (!trip) {
     return (
       <View style={styles.loading}>
@@ -135,6 +146,9 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
       {/* Bottom info panel */}
       <SafeAreaView edges={['bottom']} style={styles.bottomPanel}>
         <View style={styles.panelInner}>
+          {/* Payment to collect now (pay at pickup / delivery), from the payments backend */}
+          <CollectPaymentBanner trips={collectable} onPress={handleCollect} />
+
           {/* ETA + status */}
           <View style={styles.etaRow}>
             <View style={styles.flexShrink}>
