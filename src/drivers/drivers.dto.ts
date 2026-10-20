@@ -1,0 +1,25 @@
+import { IsOptional, IsString, MaxLength } from 'class-validator';
+
+/** The signed-in driver's account profile. */
+export class DriverAccountResponse {
+  driverId!: string;
+  userId!: string;
+  /** The verified phone (E.164) the account was registered with. */
+  phone!: string;
+  /** PENDING, UNDER_REVIEW, APPROVED, REJECTED, SUSPENDED. */
+  approvalStatus!: string;
+  legalName!: string | null;
+  walletBalancePaise!: number;
+  createdAt!: string;
+}
+
+export class RegisterDriverRequest {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+}

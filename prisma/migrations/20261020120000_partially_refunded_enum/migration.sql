@@ -1,0 +1,12 @@
+-- Payment flow Phase 6, part 1: the enum value refunds need
+-- (docs/PAYMENT_FLOW_FINAL_REVIEW.md, migration plan C.5).
+--
+--   booking_payment_status PARTIALLY_REFUNDED: some, but not all, of the money collected for a
+--   booking has been refunded (REFUND_PENDING -> REFUNDED or PARTIALLY_REFUNDED).
+--
+-- This migration only adds the value. PostgreSQL cannot use a value added by
+-- ALTER TYPE ... ADD VALUE inside the transaction that added it, and the next migration
+-- (20261020120100) uses it in its rules. No row uses it, and no row changes.
+--
+-- Rollback: down.sql in this folder (manual; Prisma ignores it).
+ALTER TYPE "booking_payment_status" ADD VALUE IF NOT EXISTS 'PARTIALLY_REFUNDED';

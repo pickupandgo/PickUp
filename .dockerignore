@@ -1,0 +1,17 @@
+# Keep the build context small and free of secrets.
+.git
+.gitignore
+node_modules
+dist
+coverage
+src/generated
+test
+docs
+docker
+docker-compose.yml
+*.log
+*.tsbuildinfo
+.env
+.env.*
+.vscode
+.idea
