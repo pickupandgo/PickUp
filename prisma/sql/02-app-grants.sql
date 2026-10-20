@@ -31,11 +31,11 @@ GRANT UPDATE (payment_id, outcome, attempts, processed_at, processing_error) ON 
 -- Customers: read-only for the API. Self-registration goes through register_customer(), a
 -- SECURITY DEFINER function that can only create CUSTOMER accounts and never re-links a phone.
 GRANT SELECT ON customers TO mr_app;
-GRANT EXECUTE ON FUNCTION register_customer(TEXT, TEXT, TEXT) TO mr_app;
+GRANT EXECUTE ON FUNCTION register_customer(TEXT, TEXT, TEXT, TEXT, TEXT) TO mr_app;
 
 -- Drivers: self-registration goes through register_driver(), a SECURITY DEFINER function
--- that creates a DRIVER user with PENDING approval status and wallet.
-GRANT EXECUTE ON FUNCTION register_driver(TEXT, TEXT, TEXT, TEXT) TO mr_app;
+-- that creates a DRIVER user with PENDING approval status, vehicle details, licence details and wallet.
+GRANT EXECUTE ON FUNCTION register_driver(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) TO mr_app;
 
 -- Bookings: registered by the trip engine through the API. Fare, payment method, fee rule and
 -- customer are immutable (no column grant, and a trigger as a second line of defence).
