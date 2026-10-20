@@ -160,7 +160,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
   // driver doesn't blow through the Directions quota.
   const preTransit =
     status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED' || status === 'PICKUP_VERIFIED';
-  const routeDestination = preTransit ? current?.pickup : current?.drop;
+  const routeDestination = preTransit ? current?.pickup : (current?.drop ?? undefined);
   const roadRoute = useRoute(driverPoint ?? current?.pickup, routeDestination);
 
   // Short status labels driven off the engine's own trip status. No mocks.

@@ -5,6 +5,7 @@ import type {
   GeoPoint,
   NearbyDriver,
   Ride,
+  RideOtps,
   Trip,
 } from './types';
 
@@ -85,6 +86,15 @@ export const getRide = async (rideId: string, signal?: AbortSignal): Promise<Rid
     { signal }
   );
   return res.ride;
+};
+
+export const getRideOtps = async (rideId: string, signal?: AbortSignal): Promise<RideOtps> => {
+  const res = await request<Envelope & RideOtps>(
+    `/rides/${encodeURIComponent(rideId)}/otps`,
+    { signal }
+  );
+  const { success, ...otps } = res;
+  return otps;
 };
 
 export const cancelRide = async (rideId: string, signal?: AbortSignal): Promise<Ride> => {
