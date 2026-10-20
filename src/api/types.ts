@@ -304,3 +304,35 @@ export interface CustomerAccount {
   readonly status: string;
   readonly createdAt: string;
 }
+
+export interface RazorpayCheckoutParams {
+  readonly keyId: string;
+  readonly orderId: string;
+  readonly amountPaise: number;
+  readonly currency: 'INR';
+}
+
+export interface BookingPayment {
+  readonly paymentId: string;
+  readonly bookingId: string;
+  readonly status: 'PENDING' | 'PAID' | 'FAILED' | 'REFUND_PENDING' | 'REFUNDED';
+  readonly amountPaise: number;
+  readonly currency: 'INR';
+  readonly checkout: RazorpayCheckoutParams | null;
+  readonly providerPaymentId: string | null;
+  readonly paymentMethod: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface BookingPaymentState {
+  readonly booking: CustomerBooking;
+  readonly payment: BookingPayment | null;
+}
+
+export interface VerifyBookingPaymentResult {
+  readonly booking: CustomerBooking;
+  readonly payment: BookingPayment;
+  readonly providerStatus: string;
+}
+

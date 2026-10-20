@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,12 +6,15 @@ import {
   Pressable,
   Animated,
   Easing,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
 import { useI18n } from '../../i18n';
+import { hasPaymentsConfig } from '../../config/env';
+import { getBookingPayment } from '../../api/payments';
 
 export interface PaymentPendingScreenProps {
   readonly amount?: string;
@@ -27,8 +30,39 @@ const PaymentPendingScreen: React.FC<PaymentPendingScreenProps & { navigation?: 
   navigation,
 }) => {
   const { t } = useI18n();
-  const { draft } = useBooking();
+  const { draft, trip } = useBooking();
   const amount = draft.fareEstimate ? `₹ ${draft.fareEstimate.fare.toFixed(2)}` : '--';
+  const [checking, setChecking] = useState(false);
+
+  const handleCheckStatus = async () => {
+    if (onCheckStatus) {
+      onCheckStatus();
+      return;
+    }
+    const targetBookingId = trip?.paymentBookingId ?? trip?.bookingId ?? trip?.id;
+    if (targetBookingId && hasPaymentsConfig()) {
+      try {
+        setChecking(true);
+        const booking = await getBookingPayment(targetBookingId);
+        if (
+          booking.paymentStatus === 'PAID' ||
+          booking.paymentGate?.paymentState === 'PAYMENT_CONFIRMED'
+        ) {
+          navigation?.navigate('PaymentSuccessfulScreen');
+          return;
+        }
+        if (booking.paymentGate?.paymentState === 'PAYMENT_FAILED') {
+          navigation?.navigate('PaymentFailedScreen');
+          return;
+        }
+      } catch (e) {
+        console.warn('Failed to verify backend payment status:', e);
+      } finally {
+        setChecking(false);
+      }
+    }
+    navigation?.navigate('PaymentSuccessfulScreen');
+  };
 
   const pulse = useRef(new Animated.Value(0)).current;
 
@@ -124,12 +158,17 @@ const PaymentPendingScreen: React.FC<PaymentPendingScreenProps & { navigation?: 
           <View style={styles.actionContainer}>
             <Pressable
               style={styles.checkButton}
-              onPress={() =>
-                onCheckStatus ? onCheckStatus() : navigation?.navigate('PaymentSuccessfulScreen')
-              }
+              onPress={handleCheckStatus}
+              disabled={checking}
             >
-              <Feather name="refresh-cw" size={20} color={colors.onPrimary} />
-              <Text style={styles.checkButtonText}>{t('payment.checkStatus')}</Text>
+              {checking ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Feather name="refresh-cw" size={20} color={colors.onPrimary} />
+              )}
+              <Text style={styles.checkButtonText}>
+                {checking ? t('loading.verifying') : t('payment.checkStatus')}
+              </Text>
             </Pressable>
             
             <Pressable

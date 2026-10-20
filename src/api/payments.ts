@@ -168,8 +168,68 @@ export const getBookingPayment = async (
 ): Promise<CustomerBooking> =>
   paymentsRequest<CustomerBooking>(`/v1/bookings/${encodeURIComponent(bookingId)}`, { signal });
 
+/**
+ * Starts an online payment for a booking through Razorpay Checkout.
+ * Calls backend POST /v1/bookings/:bookingId/payment with Idempotency-Key.
+ */
+export const startBookingPayment = async (
+  bookingId: string,
+  idempotencyKey?: string,
+  signal?: AbortSignal
+): Promise<import('./types').BookingPayment> =>
+  paymentsRequest<import('./types').BookingPayment>(
+    `/v1/bookings/${encodeURIComponent(bookingId)}/payment`,
+    {
+      method: 'POST',
+      idempotencyKey: idempotencyKey ?? `pay_${bookingId}_${Date.now()}`,
+      signal,
+    }
+  );
+
+/**
+ * Gets the current payment state for a booking.
+ * Calls backend GET /v1/bookings/:bookingId/payment
+ */
+export const getBookingPaymentState = async (
+  bookingId: string,
+  signal?: AbortSignal
+): Promise<import('./types').BookingPaymentState> =>
+  paymentsRequest<import('./types').BookingPaymentState>(
+    `/v1/bookings/${encodeURIComponent(bookingId)}/payment`,
+    { signal }
+  );
+
+/**
+ * Submits the Razorpay Checkout success parameters to the backend for signature verification.
+ * Calls backend POST /v1/bookings/:bookingId/payment/verify
+ */
+export const verifyBookingPayment = async (
+  bookingId: string,
+  params: {
+    readonly razorpayOrderId: string;
+    readonly razorpayPaymentId: string;
+    readonly razorpaySignature: string;
+  },
+  signal?: AbortSignal
+): Promise<import('./types').VerifyBookingPaymentResult> =>
+  paymentsRequest<import('./types').VerifyBookingPaymentResult>(
+    `/v1/bookings/${encodeURIComponent(bookingId)}/payment/verify`,
+    {
+      method: 'POST',
+      body: params,
+      signal,
+    }
+  );
+
 /** True when the quote can still be booked (not expired, not already used). */
 export const isQuoteBookable = (quote: FareQuote): boolean =>
   !quote.redeemed && Date.parse(quote.expiresAt) > Date.now();
 
 export type { PaymentMethod };
+export type {
+  BookingPayment,
+  BookingPaymentState,
+  RazorpayCheckoutParams,
+  VerifyBookingPaymentResult,
+} from './types';
+
