@@ -9,6 +9,7 @@ import { MultiStopTimeline } from '../../components/organisms/MultiStopTimeline'
 import { DriverMap, MapOverlay, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
 import { useActiveTrip } from '../../hooks/useActiveTrip';
+import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
 
 export interface ArrivedAtPickupScreenProps {
@@ -22,6 +23,7 @@ export const ArrivedAtPickupScreen: React.FC<ArrivedAtPickupScreenProps> = ({
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   const { currentLocation } = useDriverLocation();
   const { tripId, stopId } = route.params;
   const trip = useActiveTrip() || mockActiveTrip;
@@ -69,12 +71,12 @@ export const ArrivedAtPickupScreen: React.FC<ArrivedAtPickupScreenProps> = ({
       <View style={styles.bottomPanel}>
         <View style={styles.arrivedBadgeContainer}>
           <View style={styles.arrivedBadge}>
-            <Text style={styles.arrivedBadgeText}>ARRIVED AT PICKUP</Text>
+            <Text style={styles.arrivedBadgeText}>{t('trip.arrivedAtPickup')}</Text>
           </View>
         </View>
 
         <View style={styles.instructionRow}>
-          <Text style={styles.instructionText}>Sender loading goods...</Text>
+          <Text style={styles.instructionText}>{t('trip.senderLoadingGoods')}</Text>
         </View>
 
         <View style={styles.divider} />
@@ -84,7 +86,7 @@ export const ArrivedAtPickupScreen: React.FC<ArrivedAtPickupScreenProps> = ({
         </View>
 
         <PrimaryButton
-          label="ENTER SENDER OTP"
+          label={t('trip.enterSenderOtp')}
           onPress={handleVerifyPickup}
         />
       </View>

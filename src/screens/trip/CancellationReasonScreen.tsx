@@ -2,9 +2,10 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, FlatList, Pressable, TextInput, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { cancellationReasons, cancellationLabels } from '../../data/mockData';
+import { cancellationReasons } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
+import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
 
 /**
@@ -22,9 +23,18 @@ export const CancellationReasonScreen: React.FC<CancellationReasonScreenProps> =
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   const { tripId } = route.params;
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
   const [otherDetails, setOtherDetails] = useState('');
+
+  const reasonLabelMap: Record<string, string> = {
+    breakdown: t('cancellation.reasonBreakdown'),
+    customer_unavailable: t('cancellation.reasonCustomerUnavailable'),
+    wrong_address: t('cancellation.reasonWrongAddress'),
+    safety_concern: t('cancellation.reasonSafetyConcern'),
+    other: t('cancellation.reasonOther'),
+  };
 
   const handleConfirm = useCallback(() => {
     if (!selectedReason) return;
@@ -36,6 +46,7 @@ export const CancellationReasonScreen: React.FC<CancellationReasonScreenProps> =
 
   const renderItem = ({ item }: { item: { readonly id: string; readonly label: string } }) => {
     const isSelected = item.id === selectedReason;
+    const label = reasonLabelMap[item.id] || item.label;
     return (
       <Pressable
         style={[styles.reasonRow, isSelected && styles.reasonRowSelected]}
@@ -47,7 +58,7 @@ export const CancellationReasonScreen: React.FC<CancellationReasonScreenProps> =
           {isSelected ? <View style={styles.radioInner} /> : null}
         </View>
         <Text style={[styles.reasonText, isSelected && styles.reasonTextSelected]}>
-          {item.label}
+          {label}
         </Text>
       </Pressable>
     );
@@ -56,12 +67,12 @@ export const CancellationReasonScreen: React.FC<CancellationReasonScreenProps> =
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title={cancellationLabels.title}
+        title={t('cancellation.title')}
         onBackPress={() => navigation.goBack()}
         showBackButton
       />
       <View style={styles.container}>
-        <Text style={styles.subtitle}>{cancellationLabels.subtitle}</Text>
+        <Text style={styles.subtitle}>{t('cancellation.subtitle')}</Text>
 
         <FlatList
           data={cancellationReasons as unknown as { readonly id: string; readonly label: string }[]}
@@ -74,7 +85,7 @@ export const CancellationReasonScreen: React.FC<CancellationReasonScreenProps> =
         {selectedReason === 'other' ? (
           <TextInput
             style={styles.otherInput}
-            placeholder="Please describe the reason..."
+            placeholder={t('cancellation.placeholder')}
             placeholderTextColor={colors.outline}
             value={otherDetails}
             onChangeText={setOtherDetails}
@@ -84,7 +95,7 @@ export const CancellationReasonScreen: React.FC<CancellationReasonScreenProps> =
         ) : null}
 
         <PrimaryButton
-          label={cancellationLabels.confirmLabel}
+          label={t('cancellation.confirm')}
           onPress={handleConfirm}
           disabled={!selectedReason}
           style={styles.confirmButton}

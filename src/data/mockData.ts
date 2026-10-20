@@ -20,7 +20,7 @@ import type { WalletBalance, Transaction, PaymentMethodInfo, EarningsSummary } f
 // ───  ───
 
 export const authData = {
-  appName: 'Pick Up',
+  appName: 'MultipleRide',
   loginTitle: 'Driver Login',
   loginSubtitle: 'Enter your mobile number to securely access your logistics dashboard.',
   countryCode: '+91',
@@ -37,24 +37,36 @@ export const languages = [
 
 // ───  ───
 
+export const vehicleImages: Record<string, any> = {
+  two_wheeler: require('../../assets/vehicles/bike.png'),
+  bike: require('../../assets/vehicles/bike.png'),
+  three_wheeler: require('../../assets/vehicles/three_wheeler.png'),
+  '3-wheeler': require('../../assets/vehicles/three_wheeler.png'),
+  mini_truck: require('../../assets/vehicles/mini_truck.png'),
+  'mini-truck': require('../../assets/vehicles/mini_truck.png'),
+  pickup: require('../../assets/vehicles/pickup.png'),
+  jcb: require('../../assets/vehicles/jcb.png'),
+  crane: require('../../assets/vehicles/crane.png'),
+};
+
 export const vehicleCategories = [
-  { id: 'two_wheeler', name: 'Bike / 2-Wheeler', iconName: 'directions_bike', description: 'Bike / Scooter' },
-  { id: 'three_wheeler', name: '3-Wheeler / E-Loader', iconName: 'local_shipping', description: 'Auto / Tempo' },
-  { id: 'mini_truck', name: 'Mini Truck / Tata Ace', iconName: 'rv_hookup', description: 'Tata Ace / Similar' },
-  { id: 'pickup', name: 'Pickup / Bolero', iconName: 'directions_car', description: 'Pickup / Bolero' },
-  { id: 'jcb', name: 'JCB', iconName: 'precision_manufacturing', description: 'JCB' },
-  { id: 'crane', name: 'Crane', iconName: 'construction', description: 'Crane' },
+  { id: 'two_wheeler', name: 'Bike / 2-Wheeler', iconName: 'directions_bike', description: 'Bike / Scooter', image: require('../../assets/vehicles/bike.png') },
+  { id: 'three_wheeler', name: '3-Wheeler / E-Loader', iconName: 'local_shipping', description: 'Auto / Tempo', image: require('../../assets/vehicles/three_wheeler.png') },
+  { id: 'mini_truck', name: 'Mini Truck / Tata Ace', iconName: 'rv_hookup', description: 'Tata Ace / Similar', image: require('../../assets/vehicles/mini_truck.png') },
+  { id: 'pickup', name: 'Pickup / Bolero', iconName: 'directions_car', description: 'Pickup / Bolero', image: require('../../assets/vehicles/pickup.png') },
+  { id: 'jcb', name: 'JCB', iconName: 'precision_manufacturing', description: 'JCB', image: require('../../assets/vehicles/jcb.png') },
+  { id: 'crane', name: 'Crane', iconName: 'construction', description: 'Crane', image: require('../../assets/vehicles/crane.png') },
 ] as const;
 
 // ───  ───
 
 export const mockDriverProfile: DriverProfile = {
-  id: 'DRV-001',
-  name: 'Rajesh Kumar',
-  phone: '+91 98765 43210',
+  id: '',
+  name: 'Driver',
+  phone: '',
   avatarUrl: undefined,
-  location: 'Mumbai, Maharashtra',
-  profileCompletionPercent: 85,
+  location: '',
+  profileCompletionPercent: 0,
   status: 'offline',
   language: 'English',
 };
@@ -93,7 +105,7 @@ export const homeData = {
 
 export const goLiveSheet = {
   title: 'Go Live',
-  description: "To receive nearby trip requests and support live trip operations, Pick Up needs your location while you're working.",
+  description: "To receive nearby trip requests and support live trip operations, MultipleRide needs your location while you're working.",
   continueLabel: 'CONTINUE',
   cancelLabel: 'CANCEL',
 } as const;
@@ -622,7 +634,7 @@ export const errorStateLabels = {
   enableGpsLabel: 'ENABLE GPS',
 
   locationPermissionTitle: 'Location Access Required',
-  locationPermissionSubtitle: 'Pick Up needs access to your location to show nearby trip requests and support navigation.',
+  locationPermissionSubtitle: 'MultipleRide needs access to your location to show nearby trip requests and support navigation.',
   grantPermissionLabel: 'GRANT PERMISSION',
   openSettingsLabel: 'OPEN SETTINGS',
 

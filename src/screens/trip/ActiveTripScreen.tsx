@@ -8,6 +8,7 @@ import { useDriverLocation } from '../../location';
 import { useActiveTrip } from '../../hooks/useActiveTrip';
 import { useArrivalDetection } from '../../hooks/useArrivalDetection';
 import { useTripRoute } from '../../hooks/useTripRoute';
+import { useI18n } from '../../i18n';
 import type { TripStop } from '../../types/trip';
 import type { HomeScreenProps } from '../../types/navigation';
 
@@ -17,22 +18,22 @@ export interface ActiveTripScreenProps {
   readonly testID?: string;
 }
 
-/** Human label for a stop, e.g. "Pickup", "Drop 1". */
-function stopLabel(stops: readonly TripStop[], index: number): string {
-  const stop = stops[index];
-  if (stop.type === 'pickup') return 'Pickup';
-  const dropNumber = stops.slice(0, index + 1).filter((s) => s.type !== 'pickup').length;
-  return `Drop ${dropNumber}`;
-}
-
 export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   navigation,
   route: navRoute,
   testID,
 }) => {
+  const { t } = useI18n();
   const { currentLocation } = useDriverLocation();
   const trip = useActiveTrip(navRoute.params?.tripId);
   const { route: routingData } = useTripRoute();
+
+  const getStopLabel = useCallback((stops: readonly TripStop[], index: number): string => {
+    const stop = stops[index];
+    if (stop.type === 'pickup') return t('trip.pickup');
+    const dropNumber = stops.slice(0, index + 1).filter((s) => s.type !== 'pickup').length;
+    return t('trip.drop', { number: dropNumber });
+  }, [t]);
 
   useArrivalDetection((event) => {
     if (trip && event.tripId === trip.id) {
@@ -86,7 +87,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   if (!trip) {
     return (
       <View style={styles.loading}>
-        <Text style={styles.loadingText}>Loading Trip...</Text>
+        <Text style={styles.loadingText}>{t('trip.loadingTrip')}</Text>
       </View>
     );
   }
@@ -97,8 +98,8 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   const currentDropNumber = isPickup
     ? 0
     : trip.stops.slice(0, currentIndex + 1).filter((s) => s.type !== 'pickup').length;
-  const statusCaps = isPickup ? 'PICKUP' : `DROP ${currentDropNumber} OF ${totalDrops}`;
-  const arrivingLabel = isPickup ? 'Pickup' : `Drop ${currentDropNumber}`;
+  const statusCaps = isPickup ? t('trip.pickup') : t('trip.dropOf', { current: currentDropNumber, total: totalDrops });
+  const arrivingLabel = isPickup ? t('trip.pickup') : t('trip.drop', { number: currentDropNumber });
 
   return (
     <View style={styles.flex1} testID={testID}>
@@ -138,14 +139,14 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
           <View style={styles.etaRow}>
             <View style={styles.flexShrink}>
               <Text style={styles.etaText}>
-                {displayDistance != null ? `${displayDistance} km` : ''}
-                {displayEta != null ? <Text style={styles.etaSub}>{`  · ${displayEta} min`}</Text> : null}
+                {displayDistance != null ? t('common.km', { count: displayDistance }) : ''}
+                {displayEta != null ? <Text style={styles.etaSub}>{`  · ${t('common.mins', { count: displayEta })}`}</Text> : null}
               </Text>
-              <Text style={styles.arrivingText}>Arriving at {arrivingLabel}</Text>
+              <Text style={styles.arrivingText}>{t('trip.arrivingAt', { label: arrivingLabel })}</Text>
             </View>
             <View style={styles.onTimeBadge}>
               <Icon name="speed" size={16} color={colors.onSecondaryContainer} />
-              <Text style={styles.onTimeText}>On Time</Text>
+              <Text style={styles.onTimeText}>{t('trip.onTime')}</Text>
             </View>
           </View>
 
@@ -155,7 +156,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
               const isCompleted = stop.status === 'completed';
               const isCurrent = index === currentIndex;
               const isLast = index === trip.stops.length - 1;
-              const label = stopLabel(trip.stops, index);
+              const label = getStopLabel(trip.stops, index);
               return (
                 <View key={stop.id} style={styles.tlRow}>
                   <View style={styles.tlIconCol}>
@@ -175,7 +176,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
                   <View style={[styles.tlTextCol, isCompleted && styles.tlCompleted]}>
                     {isCurrent ? (
                       <>
-                        <Text style={styles.tlCurrentTitle}>{label} (Current)</Text>
+                        <Text style={styles.tlCurrentTitle}>{label} ({t('trip.current')})</Text>
                         {!!stop.address && (
                           <Text style={styles.tlCurrentAddress} numberOfLines={1}>
                             {stop.address}
@@ -195,7 +196,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
           <View style={styles.actions}>
             <Pressable style={styles.navBtn} onPress={handleNavigate} accessibilityRole="button">
               <Icon name="navigation" size={18} color={colors.onPrimary} />
-              <Text style={styles.navBtnText}>NAVIGATE</Text>
+              <Text style={styles.navBtnText}>{t('trip.navigate')}</Text>
             </Pressable>
             <Pressable
               style={styles.detailsBtn}
@@ -203,7 +204,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
               accessibilityRole="button"
             >
               <Icon name="list_alt" size={18} color={colors.primary} />
-              <Text style={styles.detailsBtnText}>TRIP DETAILS</Text>
+              <Text style={styles.detailsBtnText}>{t('trip.tripDetails')}</Text>
             </Pressable>
           </View>
         </View>

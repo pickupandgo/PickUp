@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import Icon from '../atoms/Icon';
 import type { ViewStyle } from 'react-native';
 import { colors, typography, spacing } from '../../theme';
+import { useI18n } from '../../i18n';
 
 export type EmptyVariant =
   | 'trips'
@@ -21,44 +22,6 @@ export interface EmptyStateProps {
   readonly testID?: string;
 }
 
-const variantDefaults: Record<EmptyVariant, { icon: string; title: string; subtitle: string }> = {
-  trips: {
-    icon: 'local_shipping',
-    title: 'No Trips Yet',
-    subtitle: 'Your trip history will appear here once you complete your first delivery.',
-  },
-  transactions: {
-    icon: 'receipt_long',
-    title: 'No Transactions',
-    subtitle: 'Your wallet transactions will appear here.',
-  },
-  earnings: {
-    icon: 'payments',
-    title: 'No Earnings Yet',
-    subtitle: 'Complete trips to start earning. Your earnings breakdown will appear here.',
-  },
-  notifications: {
-    icon: 'notifications_none',
-    title: 'No Notifications',
-    subtitle: 'You\'re all caught up! New notifications will appear here.',
-  },
-  chat: {
-    icon: 'chat_bubble_outline',
-    title: 'No Messages',
-    subtitle: 'Start a conversation with the customer or support.',
-  },
-  documents: {
-    icon: 'folder_open',
-    title: 'No Documents',
-    subtitle: 'Upload your required documents to get started.',
-  },
-  generic: {
-    icon: 'inbox',
-    title: 'Nothing Here',
-    subtitle: 'There\'s nothing to show right now.',
-  },
-};
-
 export const EmptyState: React.FC<EmptyStateProps> = ({
   variant,
   title,
@@ -66,7 +29,29 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   style,
   testID,
 }) => {
-  const defaults = variantDefaults[variant];
+  const { t } = useI18n();
+
+  const getDefaults = (v: EmptyVariant): { icon: string; title: string; subtitle: string } => {
+    switch (v) {
+      case 'trips':
+        return { icon: 'local_shipping', title: t('empty.noTrips'), subtitle: t('empty.noTripsSub') };
+      case 'transactions':
+        return { icon: 'receipt_long', title: t('empty.noTxns'), subtitle: t('empty.noTxnsSub') };
+      case 'earnings':
+        return { icon: 'payments', title: t('empty.noEarnings'), subtitle: t('empty.noEarningsSub') };
+      case 'notifications':
+        return { icon: 'notifications_none', title: t('empty.noNotifs'), subtitle: t('empty.noNotifsSub') };
+      case 'chat':
+        return { icon: 'chat_bubble_outline', title: t('empty.noMessages'), subtitle: t('empty.noMessagesSub') };
+      case 'documents':
+        return { icon: 'folder_open', title: t('empty.noDocs'), subtitle: t('empty.noDocsSub') };
+      case 'generic':
+      default:
+        return { icon: 'inbox', title: t('empty.generic'), subtitle: t('empty.genericSub') };
+    }
+  };
+
+  const defaults = getDefaults(variant);
 
   return (
     <View style={[styles.container, style]} testID={testID}>

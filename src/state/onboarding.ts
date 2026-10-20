@@ -1,35 +1,43 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getAuth } from '@react-native-firebase/auth';
 
 /**
  * Persisted "driver finished onboarding" flag.
  *
- * Firebase keeps the auth session across restarts, but `getProfile()` reports a
- * 0% completion, so the app used to re-run Language/Vehicle selection every
- * launch. We persist a flag once onboarding completes and read it on startup so
- * a logged-in, onboarded driver lands straight on Home. Cleared on logout.
+ * Scoped by UID to ensure each authenticated driver account preserves
+ * their own onboarding state without cross-account contamination on the same device.
  */
 
-const KEY = 'driver.onboardingComplete';
+const KEY_PREFIX = 'driver.onboardingComplete';
 
-export const markOnboardingComplete = async (): Promise<void> => {
+const getScopedKey = (uid?: string | null): string => {
+  const resolvedUid = uid || getAuth().currentUser?.uid;
+  return resolvedUid ? `${KEY_PREFIX}.${resolvedUid}` : KEY_PREFIX;
+};
+
+export const markOnboardingComplete = async (uid?: string | null): Promise<void> => {
   try {
-    await AsyncStorage.setItem(KEY, 'true');
+    const key = getScopedKey(uid);
+    await AsyncStorage.setItem(key, 'true');
   } catch {
     // Non-fatal: worst case the driver re-onboards next launch.
   }
 };
 
-export const clearOnboardingComplete = async (): Promise<void> => {
+export const clearOnboardingComplete = async (uid?: string | null): Promise<void> => {
   try {
-    await AsyncStorage.removeItem(KEY);
+    const key = getScopedKey(uid);
+    await AsyncStorage.removeItem(key);
   } catch {
     // Ignore.
   }
 };
 
-export const isOnboardingComplete = async (): Promise<boolean> => {
+export const isOnboardingComplete = async (uid?: string | null): Promise<boolean> => {
   try {
-    return (await AsyncStorage.getItem(KEY)) === 'true';
+    const key = getScopedKey(uid);
+    const value = await AsyncStorage.getItem(key);
+    return value === 'true';
   } catch {
     return false;
   }

@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing } from '../../theme';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { SecondaryButton } from '../../components/atoms/SecondaryButton';
+import { useI18n } from '../../i18n';
 import type { AccountScreenProps } from '../../types/navigation';
 
 export interface SubscriptionResultScreenProps {
@@ -18,6 +19,7 @@ export const SubscriptionResultScreen: React.FC<SubscriptionResultScreenProps> =
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   const { success } = route.params;
 
   const handleDone = useCallback(() => {
@@ -38,23 +40,23 @@ export const SubscriptionResultScreen: React.FC<SubscriptionResultScreenProps> =
         </View>
 
         <Text style={styles.title}>
-          {success ? 'Subscription Activated!' : 'Subscription Failed'}
+          {success ? t('subscription.activatedTitle') : t('subscription.failedTitle')}
         </Text>
 
         <Text style={styles.subtitle}>
           {success
-            ? 'Your Driver Pro Plan is now active. Start accepting trips!'
-            : 'Unable to process subscription. Please try again.'}
+            ? t('subscription.activatedSubtitle')
+            : t('subscription.failedSubtitle')}
         </Text>
       </View>
 
       <View style={styles.actions}>
         {success ? (
-          <PrimaryButton label="START DRIVING" onPress={handleDone} />
+          <PrimaryButton label={t('subscription.startDriving')} onPress={handleDone} />
         ) : (
           <>
-            <PrimaryButton label="RETRY" onPress={handleRetry} />
-            <SecondaryButton label="BACK TO PROFILE" onPress={handleDone} />
+            <PrimaryButton label={t('common.retry')} onPress={handleRetry} />
+            <SecondaryButton label={t('subscription.backToProfile')} onPress={handleDone} />
           </>
         )}
       </View>

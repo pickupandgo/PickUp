@@ -3,9 +3,9 @@ import { View, Text, StyleSheet } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing } from '../../theme';
-import { walletLabels } from '../../data/mockData';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { SecondaryButton } from '../../components/atoms/SecondaryButton';
+import { useI18n } from '../../i18n';
 import type { WalletScreenProps } from '../../types/navigation';
 
 export interface RechargeResultScreenProps {
@@ -19,6 +19,7 @@ export const RechargeResultScreen: React.FC<RechargeResultScreenProps> = ({
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   const { success, amount } = route.params;
 
   const handleDone = useCallback(() => {
@@ -39,27 +40,27 @@ export const RechargeResultScreen: React.FC<RechargeResultScreenProps> = ({
         </View>
 
         <Text style={styles.title}>
-          {success ? walletLabels.successTitle : walletLabels.failureTitle}
+          {success ? t('wallet.successTitle') : t('wallet.failureTitle')}
         </Text>
 
         {success && amount != null ? (
           <Text style={styles.amount}>₹{amount.toLocaleString()}</Text>
         ) : (
-          <Text style={styles.subtitle}>{walletLabels.failureSubtitle}</Text>
+          <Text style={styles.subtitle}>{t('wallet.failureSubtitle')}</Text>
         )}
 
         {success ? (
-          <Text style={styles.successHint}>Amount has been added to your wallet.</Text>
+          <Text style={styles.successHint}>{t('wallet.successHint')}</Text>
         ) : null}
       </View>
 
       <View style={styles.actions}>
         {success ? (
-          <PrimaryButton label="DONE" onPress={handleDone} />
+          <PrimaryButton label={t('common.done')} onPress={handleDone} />
         ) : (
           <>
-            <PrimaryButton label="RETRY" onPress={handleRetry} />
-            <SecondaryButton label="BACK TO WALLET" onPress={handleDone} />
+            <PrimaryButton label={t('common.retry')} onPress={handleRetry} />
+            <SecondaryButton label={t('wallet.backToWallet')} onPress={handleDone} />
           </>
         )}
       </View>

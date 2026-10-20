@@ -79,7 +79,7 @@ export const DriverWalletScreen: React.FC<DriverWalletScreenProps> = ({ navigati
         <Pressable style={styles.headerBtn} onPress={handleMenu}>
           <Icon name="menu" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>PICK UP</Text>
+        <Text style={styles.headerTitle}>{t('home.appName')}</Text>
         <Pressable style={styles.headerBtn} onPress={handleNotifications}>
           <Icon name="notifications" size={24} color={colors.onSurfaceVariant} />
         </Pressable>

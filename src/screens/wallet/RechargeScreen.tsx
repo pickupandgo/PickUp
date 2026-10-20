@@ -3,10 +3,11 @@ import { View, Text, StyleSheet, ScrollView, TextInput } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { rechargePresets, mockPaymentMethod, walletLabels } from '../../data/mockData';
+import { rechargePresets, mockPaymentMethod } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { AmountChip } from '../../components/atoms/AmountChip';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
+import { useI18n } from '../../i18n';
 import type { WalletScreenProps } from '../../types/navigation';
 
 export interface RechargeScreenProps {
@@ -18,6 +19,7 @@ export const RechargeScreen: React.FC<RechargeScreenProps> = ({
   navigation,
   testID,
 }) => {
+  const { t } = useI18n();
   const [selectedAmount, setSelectedAmount] = useState<number>(0);
   const [customAmount, setCustomAmount] = useState('');
 
@@ -45,13 +47,13 @@ export const RechargeScreen: React.FC<RechargeScreenProps> = ({
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title={walletLabels.rechargeTitle}
+        title={t('wallet.rechargeTitle')}
         onBackPress={() => navigation.goBack()}
         showBackButton
       />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Amount presets */}
-        <Text style={styles.label}>{walletLabels.enterAmountLabel}</Text>
+        <Text style={styles.label}>{t('wallet.enterAmount')}</Text>
         <View style={styles.presetsRow}>
           {rechargePresets.map((amount) => (
             <AmountChip
@@ -69,7 +71,7 @@ export const RechargeScreen: React.FC<RechargeScreenProps> = ({
           <Text style={styles.currencyPrefix}>₹</Text>
           <TextInput
             style={styles.customInput}
-            placeholder="Enter custom amount"
+            placeholder={t('wallet.enterCustomAmount')}
             placeholderTextColor={colors.outline}
             value={customAmount}
             onChangeText={handleCustomChange}
@@ -79,19 +81,19 @@ export const RechargeScreen: React.FC<RechargeScreenProps> = ({
         </View>
 
         {activeAmount > 0 && !isValid ? (
-          <Text style={styles.minAmountHint}>Minimum recharge amount is ₹100</Text>
+          <Text style={styles.minAmountHint}>{t('wallet.minRechargeHint')}</Text>
         ) : null}
 
         {/* Payment method */}
         <View style={styles.paymentCard}>
-          <Text style={styles.paymentLabel}>{walletLabels.defaultPaymentLabel}</Text>
+          <Text style={styles.paymentLabel}>{t('wallet.defaultPayment')}</Text>
           <View style={styles.paymentRow}>
             <Icon name="account_balance" style={styles.paymentIcon} />
             <View style={styles.paymentInfo}>
               <Text style={styles.paymentName}>{mockPaymentMethod.label}</Text>
               <Text style={styles.paymentDigits}>•••• {mockPaymentMethod.lastFourDigits}</Text>
             </View>
-            <Text style={styles.paymentDefault}>Default</Text>
+            <Text style={styles.paymentDefault}>{t('common.default')}</Text>
           </View>
         </View>
 
@@ -99,7 +101,7 @@ export const RechargeScreen: React.FC<RechargeScreenProps> = ({
         {isValid ? (
           <View style={styles.summaryCard}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Recharge Amount</Text>
+              <Text style={styles.summaryLabel}>{t('wallet.rechargeAmount')}</Text>
               <Text style={styles.summaryValue}>₹{activeAmount.toLocaleString()}</Text>
             </View>
           </View>
@@ -107,7 +109,7 @@ export const RechargeScreen: React.FC<RechargeScreenProps> = ({
       </ScrollView>
 
       <PrimaryButton
-        label={walletLabels.continueLabel}
+        label={t('common.continue')}
         onPress={handleContinue}
         disabled={!isValid}
         style={styles.continueButton}

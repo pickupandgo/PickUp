@@ -3,8 +3,8 @@ import { View, Text, StyleSheet } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing } from '../../theme';
-import { cancellationLabels } from '../../data/mockData';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
+import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
 
 /**
@@ -22,6 +22,7 @@ export const CancellationResultScreen: React.FC<CancellationResultScreenProps> =
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   const { success } = route.params;
 
   const handleDone = useCallback(() => {
@@ -37,15 +38,15 @@ export const CancellationResultScreen: React.FC<CancellationResultScreenProps> =
           </Text>
         </View>
         <Text style={styles.title}>
-          {success ? cancellationLabels.successTitle : cancellationLabels.failureTitle}
+          {success ? t('cancellation.successTitle') : t('cancellation.failureTitle')}
         </Text>
         <Text style={styles.subtitle}>
-          {success ? cancellationLabels.successSubtitle : cancellationLabels.failureSubtitle}
+          {success ? t('cancellation.successSubtitle') : t('cancellation.failureSubtitle')}
         </Text>
       </View>
 
       <PrimaryButton
-        label="BACK TO HOME"
+        label={t('common.backToHome')}
         onPress={handleDone}
         style={styles.doneButton}
       />

@@ -4,6 +4,7 @@ import { colors, typography, spacing, borderRadius, shadows } from '../../theme'
 import { PrimaryButton } from '../atoms/PrimaryButton';
 import { SecondaryButton } from '../atoms/SecondaryButton';
 import Icon from '../atoms/Icon';
+import { useI18n } from '../../i18n';
 import type { TripOffer } from '../../types/trip';
 
 export interface TripOfferSheetProps {
@@ -22,13 +23,15 @@ export const TripOfferSheet: React.FC<TripOfferSheetProps> = ({
   style,
   testID,
 }) => {
+  const { t } = useI18n();
+
   return (
     <View style={[styles.container, style]} testID={testID} accessibilityRole="none">
       <View style={styles.dragHandle} />
 
       {/* Earnings Card */}
       <View style={styles.earningsCard}>
-        <Text style={styles.earningLabel}>EST. EARNING</Text>
+        <Text style={styles.earningLabel}>{t('home.estEarning')}</Text>
         <Text style={styles.earning}>
           {offer.currency}{offer.estimatedEarning.toLocaleString('en-IN')}
         </Text>
@@ -45,7 +48,7 @@ export const TripOfferSheet: React.FC<TripOfferSheetProps> = ({
           </View>
           <View style={styles.locationContent}>
             <Text style={styles.locationLabel}>
-              PICKUP • {offer.pickupStop.etaMinutes || 0} MINS AWAY
+              {t('trip.pickup')} • {t('common.minsAway', { count: offer.pickupStop.etaMinutes || 0 })}
             </Text>
             <Text style={styles.addressText} numberOfLines={2}>
               {offer.pickupStop.address}
@@ -62,7 +65,7 @@ export const TripOfferSheet: React.FC<TripOfferSheetProps> = ({
           </View>
           <View style={styles.locationContentRow}>
             <View style={styles.locationContent}>
-              <Text style={styles.locationLabel}>DROP-OFF</Text>
+              <Text style={styles.locationLabel}>{t('trip.dropoff')}</Text>
               <Text style={styles.addressText} numberOfLines={2}>
                 {offer.dropStops[0]?.address}
               </Text>
@@ -70,7 +73,7 @@ export const TripOfferSheet: React.FC<TripOfferSheetProps> = ({
             {offer.dropStops.length > 1 && (
               <View style={styles.dropsBadge}>
                 <Text style={styles.dropsBadgeText}>
-                  1st of {offer.dropStops.length} drops
+                  {t('trip.firstOfDrops', { count: offer.dropStops.length })}
                 </Text>
               </View>
             )}
@@ -83,14 +86,14 @@ export const TripOfferSheet: React.FC<TripOfferSheetProps> = ({
         <View style={styles.detailCard}>
           <Icon name="route" style={styles.detailIcon} />
           <View>
-            <Text style={styles.detailLabel}>TOTAL DISTANCE</Text>
-            <Text style={styles.detailValue}>{offer.totalDistanceKm} km</Text>
+            <Text style={styles.detailLabel}>{t('trip.totalDistance')}</Text>
+            <Text style={styles.detailValue}>{t('common.km', { count: offer.totalDistanceKm })}</Text>
           </View>
         </View>
         <View style={styles.detailCard}>
           <Icon name="inventory_2" style={styles.detailIcon} />
           <View>
-            <Text style={styles.detailLabel}>LOAD TYPE</Text>
+            <Text style={styles.detailLabel}>{t('trip.loadType')}</Text>
             <Text style={styles.detailValue}>
               {offer.loadType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
             </Text>
@@ -100,8 +103,8 @@ export const TripOfferSheet: React.FC<TripOfferSheetProps> = ({
 
       {/* Actions */}
       <View style={styles.actions}>
-        <SecondaryButton label="DECLINE" onPress={onDecline} style={styles.declineButton} />
-        <PrimaryButton label="ACCEPT" onPress={onAccept} style={styles.acceptButton} />
+        <SecondaryButton label={t('trip.decline')} onPress={onDecline} style={styles.declineButton} />
+        <PrimaryButton label={t('trip.accept')} onPress={onAccept} style={styles.acceptButton} />
       </View>
     </View>
   );

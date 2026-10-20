@@ -25,7 +25,7 @@ export const RootNavigator: React.FC = () => {
           // Prefer the persisted onboarding flag so a logged-in, onboarded
           // driver lands on Home across restarts. Fall back to the profile's
           // completion percent (and persist it if complete).
-          let complete = await isOnboardingComplete();
+          let complete = await isOnboardingComplete(user.uid);
           if (!complete) {
             try {
               const profile = await authService.getProfile();
@@ -34,15 +34,14 @@ export const RootNavigator: React.FC = () => {
               complete = false;
             }
             if (complete) {
-              await markOnboardingComplete();
+              await markOnboardingComplete(user.uid);
             }
           }
           setOnboardingComplete(complete);
         } else {
-          // Signed out: clear the flag so a future login re-runs onboarding.
+          // Signed out: reset navigation state without wiping saved onboarding progress
           setIsAuthenticated(false);
           setOnboardingComplete(false);
-          await clearOnboardingComplete();
         }
 
         if (initializing) {

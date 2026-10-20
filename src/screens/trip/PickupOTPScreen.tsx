@@ -8,6 +8,7 @@ import { AppHeader } from '../../components/molecules/AppHeader';
 import { OTPInput } from '../../components/atoms/OTPInput';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { TripController } from '../../services/trip/TripController';
+import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
 
 /** Engine ride OTP length. */
@@ -28,6 +29,7 @@ export const PickupOTPScreen: React.FC<PickupOTPScreenProps> = ({
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   const { tripId, stopId } = route.params;
   const [otp, setOtp] = useState('');
   const [hasError, setHasError] = useState(false);
@@ -64,7 +66,7 @@ export const PickupOTPScreen: React.FC<PickupOTPScreenProps> = ({
           <View style={styles.successIcon}>
             <Icon name="check_circle" style={styles.successIconText} />
           </View>
-          <Text style={styles.feedbackTitle}>{otpVerificationLabels.successTitle}</Text>
+          <Text style={styles.feedbackTitle}>{t('otpVerification.success')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -73,7 +75,7 @@ export const PickupOTPScreen: React.FC<PickupOTPScreenProps> = ({
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title={otpVerificationLabels.pickupOtpTitle}
+        title={t('otpVerification.pickupTitle')}
         onBackPress={() => navigation.goBack()}
         showBackButton
       />
@@ -82,8 +84,8 @@ export const PickupOTPScreen: React.FC<PickupOTPScreenProps> = ({
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <View style={styles.content}>
-          <Text style={styles.title}>{otpVerificationLabels.pickupOtpTitle}</Text>
-          <Text style={styles.subtitle}>{otpVerificationLabels.pickupOtpSubtitle}</Text>
+          <Text style={styles.title}>{t('otpVerification.pickupTitle')}</Text>
+          <Text style={styles.subtitle}>{t('otpVerification.pickupSubtitle')}</Text>
 
           <OTPInput
             length={OTP_LENGTH}
@@ -95,12 +97,12 @@ export const PickupOTPScreen: React.FC<PickupOTPScreenProps> = ({
           />
 
           {hasError ? (
-            <Text style={styles.errorText}>{otpVerificationLabels.errorSubtitle}</Text>
+            <Text style={styles.errorText}>{t('otpVerification.incorrect')}</Text>
           ) : null}
         </View>
 
         <PrimaryButton
-          label={otpVerificationLabels.verifyLabel}
+          label={t('otpVerification.verify')}
           onPress={handleVerify}
           disabled={otp.length < OTP_LENGTH}
           loading={isLoading}

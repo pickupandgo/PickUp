@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius } from '../../theme';
-import { languages } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import Icon from '../../components/atoms/Icon';
@@ -18,22 +17,35 @@ export const LanguageSelectionScreen: React.FC<LanguageSelectionScreenProps> = (
   navigation,
   testID,
 }) => {
-  const { t, setLocale } = useI18n();
-  const [selectedLanguage, setSelectedLanguage] = useState('en');
+  const { locale, setLocale } = useI18n();
+  const [selectedLanguage, setSelectedLanguage] = useState<Locale>(locale);
+
+  useEffect(() => {
+    setSelectedLanguage(locale);
+  }, [locale]);
+
+  const isHindi = selectedLanguage === 'hi';
+
+  const screenTitle = isHindi ? 'भाषा' : 'Language';
+  const screenSubtitle = isHindi
+    ? 'Multiple Ride Partner ऐप के लिए अपनी पसंदीदा भाषा चुनें।'
+    : 'Select your preferred language for the Multiple Ride Partner app.';
+  const confirmButtonLabel = isHindi ? 'पुष्टि करें' : 'Confirm';
+
+  const languageOptions = [
+    { id: 'en' as const, label: 'English', initial: 'E' },
+    { id: 'hi' as const, label: isHindi ? 'हिन्दी' : 'Hindi', initial: isHindi ? 'ह' : 'H' },
+  ];
 
   const handleContinue = () => {
-    if (selectedLanguage === 'en' || selectedLanguage === 'hi') {
-      setLocale(selectedLanguage as Locale);
-    }
+    setLocale(selectedLanguage);
     navigation.navigate('VehicleSelection', { language: selectedLanguage });
   };
-
-
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title="Language"
+        title={screenTitle}
         onBackPress={() => navigation.goBack()}
         showBackButton={false}
         trailingIconName="help_outline"
@@ -41,9 +53,9 @@ export const LanguageSelectionScreen: React.FC<LanguageSelectionScreenProps> = (
         showDivider
       />
       <View style={styles.container}>
-        <Text style={styles.subtitle}>{t('language.subtitle')}</Text>
+        <Text style={styles.subtitle}>{screenSubtitle}</Text>
         <FlatList
-          data={languages as unknown as { readonly id: string; readonly label: string; readonly initial: string; readonly selected: boolean }[]}
+          data={languageOptions}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
             const isSelected = item.id === selectedLanguage;
@@ -73,7 +85,7 @@ export const LanguageSelectionScreen: React.FC<LanguageSelectionScreenProps> = (
           ItemSeparatorComponent={() => <View style={{ height: spacing.gutter }} />}
         />
         <PrimaryButton
-          label={t('language.confirm')}
+          label={confirmButtonLabel}
           onPress={handleContinue}
           style={styles.continueButton}
         />

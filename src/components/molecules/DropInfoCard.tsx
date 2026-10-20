@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { PrimaryButton } from '../atoms/PrimaryButton';
+import { useI18n } from '../../i18n';
 
 export interface DropInfoCardProps {
   readonly address: string;
@@ -21,10 +22,13 @@ export const DropInfoCard: React.FC<DropInfoCardProps> = ({
   distanceKm,
   status,
   onNavigatePress,
-  navigateLabel = 'NAVIGATE',
+  navigateLabel,
   style,
   testID,
 }) => {
+  const { t } = useI18n();
+  const resolvedNavigate = navigateLabel ?? t('trip.navigate');
+
   return (
     <View style={[styles.container, style]} testID={testID} accessibilityRole="none">
       <View style={styles.header}>
@@ -37,26 +41,26 @@ export const DropInfoCard: React.FC<DropInfoCardProps> = ({
         <View style={styles.metrics}>
           {etaMinutes !== undefined ? (
             <View style={styles.metric}>
-              <Text style={styles.metricLabel}>ETA</Text>
-              <Text style={styles.metricValue}>{etaMinutes} min</Text>
+              <Text style={styles.metricLabel}>{t('trip.eta')}</Text>
+              <Text style={styles.metricValue}>{t('common.min', { count: etaMinutes })}</Text>
             </View>
           ) : null}
           {distanceKm !== undefined ? (
             <View style={styles.metric}>
-              <Text style={styles.metricLabel}>DISTANCE</Text>
-              <Text style={styles.metricValue}>{distanceKm} km</Text>
+              <Text style={styles.metricLabel}>{t('trip.distance')}</Text>
+              <Text style={styles.metricValue}>{t('common.km', { count: distanceKm })}</Text>
             </View>
           ) : null}
           {status ? (
             <View style={styles.metric}>
-              <Text style={styles.metricLabel}>STATUS</Text>
+              <Text style={styles.metricLabel}>{t('trip.statusLabel')}</Text>
               <Text style={styles.metricValue}>{status}</Text>
             </View>
           ) : null}
         </View>
       ) : null}
       {onNavigatePress ? (
-        <PrimaryButton label={navigateLabel} onPress={onNavigatePress} />
+        <PrimaryButton label={resolvedNavigate} onPress={onNavigatePress} />
       ) : null}
     </View>
   );

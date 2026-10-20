@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { colors, typography, spacing } from '../../theme';
 import Icon from '../atoms/Icon';
+import { useI18n } from '../../i18n';
 import type { TripStop } from '../../types/trip';
 
 export interface MultiStopTimelineProps {
@@ -17,6 +18,8 @@ export const MultiStopTimeline: React.FC<MultiStopTimelineProps> = ({
   style,
   testID,
 }) => {
+  const { t } = useI18n();
+
   return (
     <View style={[styles.container, style]} testID={testID} accessibilityRole="list">
       {stops.map((stop, index) => {
@@ -27,8 +30,8 @@ export const MultiStopTimeline: React.FC<MultiStopTimelineProps> = ({
 
         // Custom label mappings
         let displayLabel = stop.label;
-        if (stop.type === 'pickup') displayLabel = 'Pickup';
-        else if (stop.type === 'drop') displayLabel = `Drop ${index}`; // Since index 0 is pickup, Drop 1 is index 1
+        if (stop.type === 'pickup') displayLabel = t('trip.pickup');
+        else if (stop.type === 'drop') displayLabel = t('trip.drop', { number: index });
 
         return (
           <View key={stop.id} style={styles.row}>
@@ -58,7 +61,7 @@ export const MultiStopTimeline: React.FC<MultiStopTimelineProps> = ({
             <View style={[styles.contentColumn, !isLast && { paddingBottom: spacing.lg }]}>
               {isCurrent ? (
                 <>
-                  <Text style={styles.currentLabel}>CURRENT STOP</Text>
+                  <Text style={styles.currentLabel}>{t('trip.currentStop')}</Text>
                   <Text style={styles.currentTitle}>{displayLabel}</Text>
                   <Text style={styles.currentAddress} numberOfLines={1}>{stop.address}</Text>
                 </>

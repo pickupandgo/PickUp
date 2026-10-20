@@ -1,5 +1,5 @@
 /**
- * Pick Up Driver — Design Tokens
+ * MultipleRide Driver — Design Tokens
  *
  * Extracted from the Stitch HTML Tailwind config.
  * All color, typography, spacing, and radius tokens for the app.

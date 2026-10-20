@@ -6,6 +6,7 @@ import { colors, typography, spacing } from '../../theme';
 import { mockNotifications } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { NotificationCard } from '../../components/molecules/NotificationCard';
+import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
 
 export interface NotificationCenterScreenProps {
@@ -17,28 +18,55 @@ export const NotificationCenterScreen: React.FC<NotificationCenterScreenProps> =
   navigation,
   testID,
 }) => {
-  const renderItem = ({ item }: { item: typeof mockNotifications[number] }) => (
-    <NotificationCard
-      title={item.title}
-      description={item.description}
-      timestamp={item.timestamp}
-      iconName={item.iconName}
-      isRead={item.isRead}
-    />
-  );
+  const { t } = useI18n();
+
+  const getLocalizedNotification = (item: typeof mockNotifications[number]) => {
+    if (item.id === 'notif-1') {
+      return {
+        title: t('notification.newTripTitle'),
+        description: t('notification.newTripDesc'),
+        timestamp: t('notification.twoMinAgo'),
+      };
+    }
+    if (item.id === 'notif-2') {
+      return {
+        title: t('notification.walletRechargedTitle'),
+        description: t('notification.walletRechargedDesc'),
+        timestamp: t('notification.oneHourAgo'),
+      };
+    }
+    return {
+      title: item.title,
+      description: item.description,
+      timestamp: item.timestamp,
+    };
+  };
+
+  const renderItem = ({ item }: { item: typeof mockNotifications[number] }) => {
+    const localized = getLocalizedNotification(item);
+    return (
+      <NotificationCard
+        title={localized.title}
+        description={localized.description}
+        timestamp={localized.timestamp}
+        iconName={item.iconName}
+        isRead={item.isRead}
+      />
+    );
+  };
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Icon name="notifications_none" style={styles.emptyIcon} />
-      <Text style={styles.emptyTitle}>No Notifications</Text>
-      <Text style={styles.emptyText}>You're all caught up!</Text>
+      <Text style={styles.emptyTitle}>{t('notification.noNotifications')}</Text>
+      <Text style={styles.emptyText}>{t('notification.allCaughtUp')}</Text>
     </View>
   );
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title="Notifications"
+        title={t('notification.title')}
         onBackPress={() => navigation.goBack()}
         showBackButton
       />

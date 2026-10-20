@@ -1,18 +1,28 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, Platform,  KeyboardAvoidingView, FlatList } from 'react-native';
-import Icon from '../../components/atoms/Icon';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  TextInput,
+  Platform,
+  KeyboardAvoidingView,
+  FlatList,
+  ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius } from '../../theme';
-import { mockChatMessages, chatLabels } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { ChatBubble } from '../../components/molecules/ChatBubble';
 import { ChatImageBubble } from '../../components/molecules/ChatImageBubble';
+import { useI18n } from '../../i18n';
+import { useChat } from '../../hooks/useChat';
 import type { ChatMessage } from '../../types/chat';
 import type { HomeScreenProps } from '../../types/navigation';
 
 /**
  * ActiveTripChatScreen
- * In-trip chat with dispatcher / support.
+ * In-trip real-time chat between Driver and Customer / Dispatch.
  */
 export interface ActiveTripChatScreenProps {
   readonly navigation: HomeScreenProps<'ActiveTripChat'>['navigation'];
@@ -25,28 +35,22 @@ export const ActiveTripChatScreen: React.FC<ActiveTripChatScreenProps> = ({
   route,
   testID,
 }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([...mockChatMessages]);
+  const { t } = useI18n();
+  const tripId = route.params?.tripId || 'active-trip';
+  const { messages, isLoading, error, sendMessage, retryMessage, markAsRead } = useChat(tripId);
   const [inputText, setInputText] = useState('');
   const flatListRef = useRef<FlatList>(null);
 
-  const handleSend = useCallback(() => {
-    if (!inputText.trim()) return;
-    const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      sender: 'driver',
-      text: inputText.trim(),
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: 'sending',
-    };
-    setMessages((prev) => [...prev, newMsg]);
+  useEffect(() => {
+    markAsRead();
+  }, [markAsRead, messages.length]);
+
+  const handleSend = useCallback(async () => {
+    const trimmed = inputText.trim();
+    if (!trimmed) return;
     setInputText('');
-    // Mock: update to 'sent' after delay
-    setTimeout(() => {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === newMsg.id ? { ...m, status: 'sent' as const } : m)),
-      );
-    }, 800);
-  }, [inputText]);
+    await sendMessage(trimmed);
+  }, [inputText, sendMessage]);
 
   const mapImageStatus = (status: ChatMessage['status']): 'uploading' | 'sent' | 'failed' => {
     if (status === 'sending') return 'uploading';
@@ -55,52 +59,82 @@ export const ActiveTripChatScreen: React.FC<ActiveTripChatScreenProps> = ({
   };
 
   const renderMessage = ({ item }: { item: ChatMessage }) => {
-    if (item.imageUrl) {
-      return (
-        <ChatImageBubble
-          imageUrl={item.imageUrl}
-          timestamp={item.timestamp}
-          isDriver={item.sender === 'driver'}
-          status={mapImageStatus(item.status)}
-        />
-      );
-    }
-    return (
+    const isDriver = item.sender === 'driver';
+    const isError = item.status === 'error';
+
+    const bubbleStatus: 'sending' | 'sent' | 'delivered' | 'read' | 'failed' =
+      item.status === 'error' ? 'failed' : item.status;
+
+    const content = item.imageUrl ? (
+      <ChatImageBubble
+        imageUrl={item.imageUrl}
+        timestamp={item.timestamp}
+        isDriver={isDriver}
+        status={mapImageStatus(item.status)}
+      />
+    ) : (
       <ChatBubble
         text={item.text ?? ''}
         timestamp={item.timestamp}
-        sender={item.sender === 'driver' ? 'driver' : 'other'}
-        status={item.status === 'error' ? 'failed' : item.status}
+        sender={isDriver ? 'driver' : 'other'}
+        status={bubbleStatus}
       />
     );
+
+    if (isError && isDriver) {
+      return (
+        <Pressable
+          onPress={() => retryMessage(item)}
+          accessibilityRole="button"
+          accessibilityLabel={t('chat.tapToRetry')}
+        >
+          {content}
+          <Text style={styles.retryHint}>{t('chat.tapToRetry')}</Text>
+        </Pressable>
+      );
+    }
+
+    return content;
   };
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title={chatLabels.title}
+        title={t('chat.title')}
         onBackPress={() => navigation.goBack()}
         showBackButton
       />
+
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={90}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
-          renderItem={renderMessage}
-          contentContainerStyle={styles.messageList}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-        />
+        {isLoading && messages.length === 0 ? (
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : messages.length === 0 ? (
+          <View style={styles.centered}>
+            <Text style={styles.emptyTitle}>{t('chat.emptyState')}</Text>
+            <Text style={styles.emptySub}>{t('chat.emptyStateSub')}</Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            renderItem={renderMessage}
+            contentContainerStyle={styles.messageList}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          />
+        )}
 
         {/* Input bar */}
         <View style={styles.inputBar}>
           <TextInput
             style={styles.textInput}
-            placeholder={chatLabels.inputPlaceholder}
+            placeholder={t('chat.placeholder')}
             placeholderTextColor={colors.outline}
             value={inputText}
             onChangeText={setInputText}
@@ -112,7 +146,7 @@ export const ActiveTripChatScreen: React.FC<ActiveTripChatScreenProps> = ({
             onPress={handleSend}
             disabled={!inputText.trim()}
             accessibilityRole="button"
-            accessibilityLabel={chatLabels.sendLabel}
+            accessibilityLabel={t('chat.send')}
           >
             <Text style={[styles.sendIcon, !inputText.trim() && styles.sendIconDisabled]}>
               send
@@ -131,6 +165,30 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+  },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.containerPadding,
+  },
+  emptyTitle: {
+    ...typography.headlineSm,
+    color: colors.onSurface,
+    marginBottom: spacing.xs,
+  },
+  emptySub: {
+    ...typography.bodyMd,
+    color: colors.onSurfaceVariant,
+    textAlign: 'center',
+  },
+  retryHint: {
+    ...typography.labelSm,
+    color: colors.error,
+    textAlign: 'right',
+    paddingRight: spacing.containerPadding,
+    marginTop: -spacing.unit,
+    marginBottom: spacing.xs,
   },
   messageList: {
     paddingHorizontal: spacing.containerPadding,

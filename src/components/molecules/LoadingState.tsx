@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import type { ViewStyle } from 'react-native';
 import { colors, typography, spacing } from '../../theme';
+import { useI18n } from '../../i18n';
 
 export type LoadingVariant =
   | 'searching_trips'
@@ -20,37 +21,6 @@ export interface LoadingStateProps {
   readonly testID?: string;
 }
 
-const variantDefaults: Record<LoadingVariant, { title: string; subtitle: string }> = {
-  searching_trips: {
-    title: 'Finding Your Next Trip',
-    subtitle: 'Stay in high-demand areas for faster matches.',
-  },
-  cancellation: {
-    title: 'Processing Cancellation...',
-    subtitle: 'Please wait while we process your request.',
-  },
-  recharge: {
-    title: 'Processing Recharge...',
-    subtitle: 'Please wait while we process your payment.',
-  },
-  subscription: {
-    title: 'Processing Subscription...',
-    subtitle: 'Please wait while we activate your plan.',
-  },
-  uploading: {
-    title: 'Uploading...',
-    subtitle: 'Please wait while your file is being uploaded.',
-  },
-  verifying: {
-    title: 'Verifying...',
-    subtitle: 'Please wait while we verify your information.',
-  },
-  generic: {
-    title: 'Loading...',
-    subtitle: 'Please wait.',
-  },
-};
-
 export const LoadingState: React.FC<LoadingStateProps> = ({
   variant,
   title,
@@ -58,7 +28,29 @@ export const LoadingState: React.FC<LoadingStateProps> = ({
   style,
   testID,
 }) => {
-  const defaults = variantDefaults[variant];
+  const { t } = useI18n();
+
+  const getDefaults = (v: LoadingVariant): { title: string; subtitle: string } => {
+    switch (v) {
+      case 'searching_trips':
+        return { title: t('loading.findingTrip'), subtitle: t('loading.findingTripSub') };
+      case 'cancellation':
+        return { title: t('loading.cancellation'), subtitle: t('loading.cancellationSub') };
+      case 'recharge':
+        return { title: t('loading.recharge'), subtitle: t('loading.rechargeSub') };
+      case 'subscription':
+        return { title: t('loading.subscription'), subtitle: t('loading.subscriptionSub') };
+      case 'uploading':
+        return { title: t('loading.uploading'), subtitle: t('loading.uploadingSub') };
+      case 'verifying':
+        return { title: t('loading.verifying'), subtitle: t('loading.verifyingSub') };
+      case 'generic':
+      default:
+        return { title: t('loading.generic'), subtitle: t('loading.genericSub') };
+    }
+  };
+
+  const defaults = getDefaults(variant);
 
   return (
     <View style={[styles.container, style]} testID={testID}>

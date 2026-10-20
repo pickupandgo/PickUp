@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing } from '../../theme';
+import { useI18n } from '../../i18n';
 import type { AccountScreenProps } from '../../types/navigation';
 
 export interface SubscriptionProcessingScreenProps {
@@ -13,6 +14,8 @@ export const SubscriptionProcessingScreen: React.FC<SubscriptionProcessingScreen
   navigation,
   testID,
 }) => {
+  const { t } = useI18n();
+
   useEffect(() => {
     // Mock processing — replaced with payment gateway
     const timer = setTimeout(() => {
@@ -26,8 +29,8 @@ export const SubscriptionProcessingScreen: React.FC<SubscriptionProcessingScreen
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <View style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.title}>Processing Subscription...</Text>
-        <Text style={styles.subtitle}>Please wait while we activate your plan.</Text>
+        <Text style={styles.title}>{t('subscription.processingTitle')}</Text>
+        <Text style={styles.subtitle}>{t('subscription.processingSubtitle')}</Text>
       </View>
     </SafeAreaView>
   );

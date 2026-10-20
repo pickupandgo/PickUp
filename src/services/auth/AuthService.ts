@@ -274,12 +274,14 @@ export class FirebaseAuthService implements IAuthService {
   async completeOnboarding(vehicleId: string, language: string): Promise<{ driver: DriverProfile }> {
     await delay(500);
     const currentUser = getAuth().currentUser;
+    const phone = currentUser?.phoneNumber || this.activePhone || '';
+    const name = currentUser?.displayName || (phone ? `Driver (${phone})` : 'Driver');
     return {
       driver: {
-        id: currentUser?.uid || 'DRV-001',
-        name: 'Rajesh Kumar',
-        phone: currentUser?.phoneNumber || '+91 9876543210',
-        location: 'Mumbai, Maharashtra',
+        id: currentUser?.uid || '',
+        name,
+        phone,
+        location: '',
         profileCompletionPercent: 100,
         status: 'offline',
         language,
@@ -290,11 +292,13 @@ export class FirebaseAuthService implements IAuthService {
   async getProfile(): Promise<DriverProfile> {
     await delay(500);
     const currentUser = getAuth().currentUser;
+    const phone = currentUser?.phoneNumber || this.activePhone || '';
+    const name = currentUser?.displayName || (phone ? `Driver (${phone})` : 'Driver');
     return {
-      id: currentUser?.uid || 'DRV-001',
-      name: 'Rajesh Kumar',
-      phone: currentUser?.phoneNumber || '+91 9876543210',
-      location: 'Mumbai, Maharashtra',
+      id: currentUser?.uid || '',
+      name,
+      phone,
+      location: '',
       profileCompletionPercent: 0,
       status: 'offline',
       language: 'en',

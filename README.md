@@ -1,6 +1,6 @@
-# PickUp Driver
+# MultipleRide Driver
 
-The **driver-side** mobile app for the PickUp ride‑hailing & delivery platform, built with [React Native](https://reactnative.dev). Drivers use it to go online, receive and accept trip offers, navigate to pickups and drops, verify pickups/drops with OTP, capture delivery proof, chat with customers, and track their earnings and wallet.
+The **driver-side** mobile app for the MultipleRide ride‑hailing & delivery platform, built with [React Native](https://reactnative.dev). Drivers use it to go online, receive and accept trip offers, navigate to pickups and drops, verify pickups/drops with OTP, capture delivery proof, chat with customers, and track their earnings and wallet.
 
 > The app runs in **mock mode** out of the box — no backend required. Point it at a real Core Engine by setting `API_BASE_URL` in `.env`.
 
@@ -150,4 +150,4 @@ When `API_BASE_URL` is empty, the app runs fully against mock adapters and seed 
 
 ## License
 
-Private — © PickUp. All rights reserved.
+Private — © MultipleRide. All rights reserved.

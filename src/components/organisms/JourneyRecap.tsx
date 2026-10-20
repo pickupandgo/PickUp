@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius } from '../../theme';
+import { useI18n } from '../../i18n';
 import type { TripStop } from '../../types/trip';
 
 export interface JourneyRecapProps {
@@ -13,30 +14,40 @@ export interface JourneyRecapProps {
 
 export const JourneyRecap: React.FC<JourneyRecapProps> = ({
   stops,
-  title = 'Journey Recap',
+  title,
   style,
   testID,
 }) => {
+  const { t } = useI18n();
+  const displayTitle = title ?? t('trip.journeyRecap');
+
   return (
     <View style={[styles.container, style]} testID={testID} accessibilityRole="none">
-      <Text style={styles.title}>{title}</Text>
+      <Text style={styles.title}>{displayTitle}</Text>
       <View style={styles.timeline}>
-        {stops.map((stop, index) => (
-          <View key={stop.id} style={styles.stopRow}>
-            <View style={styles.timelineColumn}>
-              <View style={styles.completedDot}>
-                <Icon name="check" style={styles.checkIcon} />
+        {stops.map((stop, index) => {
+          const displayLabel = stop.type === 'pickup'
+            ? t('trip.pickup')
+            : stop.type === 'drop'
+              ? t('trip.drop', { number: index })
+              : stop.label;
+          return (
+            <View key={stop.id} style={styles.stopRow}>
+              <View style={styles.timelineColumn}>
+                <View style={styles.completedDot}>
+                  <Icon name="check" style={styles.checkIcon} />
+                </View>
+                {index < stops.length - 1 ? (
+                  <View style={styles.line} />
+                ) : null}
               </View>
-              {index < stops.length - 1 ? (
-                <View style={styles.line} />
-              ) : null}
+              <View style={styles.stopContent}>
+                <Text style={styles.stopLabel}>{displayLabel}</Text>
+                <Text style={styles.stopAddress} numberOfLines={1}>{stop.address}</Text>
+              </View>
             </View>
-            <View style={styles.stopContent}>
-              <Text style={styles.stopLabel}>{stop.label}</Text>
-              <Text style={styles.stopAddress} numberOfLines={1}>{stop.address}</Text>
-            </View>
-          </View>
-        ))}
+          );
+        })}
       </View>
     </View>
   );

@@ -81,7 +81,7 @@ export function useDriverLocation() {
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
           {
             title: 'Location Permission',
-            message: 'PickUp Driver needs access to your location to track trips, navigate to pickups, and run geofences.',
+            message: 'MultipleRide Driver needs access to your location to track trips, navigate to pickups, and run geofences.',
             buttonNeutral: 'Ask Me Later',
             buttonNegative: 'Cancel',
             buttonPositive: 'OK',
@@ -95,7 +95,7 @@ export function useDriverLocation() {
             PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
             {
               title: 'Background Location Permission',
-              message: 'PickUp Driver needs background location access to track trips when the app is in the background.',
+              message: 'MultipleRide Driver needs background location access to track trips when the app is in the background.',
               buttonNeutral: 'Ask Me Later',
               buttonNegative: 'Cancel',
               buttonPositive: 'OK',

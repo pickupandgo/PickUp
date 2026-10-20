@@ -4,6 +4,7 @@ import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { PrimaryButton } from '../atoms/PrimaryButton';
 import { SecondaryButton } from '../atoms/SecondaryButton';
+import { useI18n } from '../../i18n';
 
 export interface GoLiveSheetProps {
   readonly onContinue: () => void;
@@ -18,18 +19,20 @@ export const GoLiveSheet: React.FC<GoLiveSheetProps> = ({
   style,
   testID,
 }) => {
+  const { t } = useI18n();
+
   return (
     <View style={[styles.container, style]} testID={testID} accessibilityRole="none">
       <View style={styles.iconContainer}>
         <Icon name="place" style={styles.icon} />
       </View>
-      <Text style={styles.title}>Go Live</Text>
+      <Text style={styles.title}>{t('home.goLive')}</Text>
       <Text style={styles.description}>
-        To receive nearby trip requests and support live trip operations, Pick Up needs your location while you're working.
+        {t('home.goLiveDesc')}
       </Text>
       <View style={styles.actions}>
-        <PrimaryButton label="CONTINUE" onPress={onContinue} style={styles.continueButton} />
-        <SecondaryButton label="CANCEL" onPress={onCancel} style={styles.cancelButton} />
+        <PrimaryButton label={t('common.continue')} onPress={onContinue} style={styles.continueButton} />
+        <SecondaryButton label={t('common.cancel')} onPress={onCancel} style={styles.cancelButton} />
       </View>
     </View>
   );

@@ -84,7 +84,7 @@ object LocationConfig {
     const val FOREGROUND_NOTIFICATION_ID: Int = 9001
 
     /** Foreground service notification title. */
-    const val NOTIFICATION_TITLE: String = "Pick Up Driver"
+    const val NOTIFICATION_TITLE: String = "MultipleRide Driver"
 
     /** Foreground service notification text. */
     const val NOTIFICATION_TEXT: String = "Tracking your location for active trip"

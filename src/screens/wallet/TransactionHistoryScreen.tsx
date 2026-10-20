@@ -3,10 +3,11 @@ import { View, Text, StyleSheet,  FlatList } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing } from '../../theme';
-import { mockTransactions, walletLabels } from '../../data/mockData';
+import { mockTransactions } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { TransactionRow } from '../../components/molecules/TransactionRow';
 import { TabChip } from '../../components/atoms/TabChip';
+import { useI18n } from '../../i18n';
 import type { Transaction } from '../../types/wallet';
 import type { WalletScreenProps } from '../../types/navigation';
 
@@ -21,6 +22,7 @@ export const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> =
   navigation,
   testID,
 }) => {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
 
   const filteredTransactions = mockTransactions.filter((txn) => {
@@ -42,30 +44,30 @@ export const TransactionHistoryScreen: React.FC<TransactionHistoryScreenProps> =
   const renderEmpty = useCallback(() => (
     <View style={styles.emptyContainer}>
       <Icon name="receipt_long" style={styles.emptyIcon} />
-      <Text style={styles.emptyTitle}>No Transactions</Text>
+      <Text style={styles.emptyTitle}>{t('wallet.noTransactions')}</Text>
       <Text style={styles.emptySubtitle}>
         {activeTab === 'credit'
-          ? 'No credits found for the selected period.'
+          ? t('wallet.noCredits')
           : activeTab === 'debit'
-          ? 'No debits found for the selected period.'
-          : 'Your transaction history will appear here.'}
+          ? t('wallet.noDebits')
+          : t('wallet.emptySubtitle')}
       </Text>
     </View>
-  ), [activeTab]);
+  ), [activeTab, t]);
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title={walletLabels.transactionHistoryTitle}
+        title={t('wallet.transactionHistory')}
         onBackPress={() => navigation.goBack()}
         showBackButton
       />
 
       {/* Filter tabs */}
       <View style={styles.tabRow}>
-        <TabChip label="All" selected={activeTab === 'all'} onPress={() => setActiveTab('all')} />
-        <TabChip label="Credits" selected={activeTab === 'credit'} onPress={() => setActiveTab('credit')} />
-        <TabChip label="Debits" selected={activeTab === 'debit'} onPress={() => setActiveTab('debit')} />
+        <TabChip label={t('wallet.all')} selected={activeTab === 'all'} onPress={() => setActiveTab('all')} />
+        <TabChip label={t('wallet.credits')} selected={activeTab === 'credit'} onPress={() => setActiveTab('credit')} />
+        <TabChip label={t('wallet.debits')} selected={activeTab === 'debit'} onPress={() => setActiveTab('debit')} />
       </View>
 
       <FlatList

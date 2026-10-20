@@ -4,6 +4,7 @@ import { colors, typography, spacing, borderRadius } from '../../theme';
 import AuthInput from '../atoms/AuthInput';
 import { PrimaryButton } from '../atoms/PrimaryButton';
 import Icon from '../atoms/Icon';
+import { useI18n } from '../../i18n';
 
 interface DriverSignupFormProps {
   onSwitchToLogin: () => void;
@@ -16,6 +17,7 @@ export const DriverSignupForm: React.FC<DriverSignupFormProps> = ({
   onSubmit,
   isLoading,
 }) => {
+  const { t } = useI18n();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -27,16 +29,16 @@ export const DriverSignupForm: React.FC<DriverSignupFormProps> = ({
       
       {/* Personal Details */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Personal Details</Text>
+        <Text style={styles.sectionTitle}>{t('auth.personalDetails')}</Text>
         <AuthInput
-          label="Full Name"
+          label={t('auth.fullName')}
           placeholder="Jane Doe"
           value={name}
           onChangeText={setName}
           autoCapitalize="words"
         />
         <AuthInput
-          label="Email Address"
+          label={t('auth.emailAddress')}
           placeholder="jane@example.com"
           value={email}
           onChangeText={setEmail}
@@ -44,8 +46,8 @@ export const DriverSignupForm: React.FC<DriverSignupFormProps> = ({
           autoCapitalize="none"
         />
         <AuthInput
-          label="Phone Number"
-          placeholder="Enter 10-digit number"
+          label={t('auth.phoneNumber')}
+          placeholder={t('auth.enterMobileNumber')}
           value={phone}
           onChangeText={setPhone}
           keyboardType="phone-pad"
@@ -57,15 +59,15 @@ export const DriverSignupForm: React.FC<DriverSignupFormProps> = ({
 
       {/* Vehicle Info */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Vehicle Info</Text>
+        <Text style={styles.sectionTitle}>{t('auth.vehicleInfo')}</Text>
         <AuthInput
-          label="Make & Model"
+          label={t('auth.makeModel')}
           placeholder="e.g. Ford Transit"
           value={vehicleMake}
           onChangeText={setVehicleMake}
         />
         <AuthInput
-          label="License Plate"
+          label={t('auth.licensePlate')}
           placeholder="ABC 1234"
           value={licensePlate}
           onChangeText={setLicensePlate}
@@ -77,22 +79,22 @@ export const DriverSignupForm: React.FC<DriverSignupFormProps> = ({
 
       {/* Documents */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Documents</Text>
+        <Text style={styles.sectionTitle}>{t('auth.documents')}</Text>
         <Text style={styles.sectionSubtitle}>
-          Upload your Driver's License and Proof of Insurance.
+          {t('auth.uploadDocumentsHint')}
         </Text>
         
         <TouchableOpacity style={styles.dropzone}>
           <Icon name="upload-file" size={28} color={colors.onSurfaceVariant} style={styles.uploadIcon} />
           <Text style={styles.dropzoneTitle}>
-            <Text style={{fontWeight: 'bold', color: colors.onSurface}}>Click to upload</Text> or drag and drop
+            <Text style={{fontWeight: 'bold', color: colors.onSurface}}>{t('auth.clickToUpload')}</Text>{t('auth.orDragDrop')}
           </Text>
-          <Text style={styles.dropzoneSubtitle}>PDF, JPG, or PNG (max. 10MB)</Text>
+          <Text style={styles.dropzoneSubtitle}>{t('auth.fileFormatHint')}</Text>
         </TouchableOpacity>
       </View>
 
       <PrimaryButton
-        label="Apply to Drive ➔"
+        label={t('auth.applyToDrive')}
         onPress={() => onSubmit({ name, email, phone, vehicleMake, licensePlate })}
         disabled={isLoading || !name || !email || !phone}
         loading={isLoading}
@@ -100,14 +102,14 @@ export const DriverSignupForm: React.FC<DriverSignupFormProps> = ({
       />
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Already have an account? </Text>
+        <Text style={styles.footerText}>{t('auth.alreadyHaveAccount')}</Text>
         <TouchableOpacity onPress={onSwitchToLogin}>
-          <Text style={styles.footerLink}>Log In</Text>
+          <Text style={styles.footerLink}>{t('common.login')}</Text>
         </TouchableOpacity>
       </View>
       
       <TouchableOpacity style={styles.forgotBtn}>
-        <Text style={styles.forgotText}>Forgot Password?</Text>
+        <Text style={styles.forgotText}>{t('auth.forgotPassword')}</Text>
       </TouchableOpacity>
     </View>
   );

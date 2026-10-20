@@ -1,13 +1,15 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, Image } from 'react-native';
 import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { StatusBadge, type BadgeVariant } from '../atoms/StatusBadge';
+import { vehicleImages } from '../../data/mockData';
 
 export interface VehicleCardProps {
   readonly name: string;
   readonly registration: string;
-  readonly iconName: string;
+  readonly iconName?: string;
+  readonly image?: any;
   readonly status?: BadgeVariant;
   readonly statusLabel?: string;
   readonly style?: ViewStyle;
@@ -18,15 +20,22 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   name,
   registration,
   iconName,
+  image,
   status,
   statusLabel,
   style,
   testID,
 }) => {
+  const resolvedImage = image || (iconName ? undefined : vehicleImages.mini_truck);
+
   return (
     <View style={[styles.container, style]} testID={testID} accessibilityRole="none">
       <View style={styles.iconContainer}>
-        <Icon name={iconName} />
+        {resolvedImage ? (
+          <Image source={resolvedImage} style={styles.vehicleThumb} resizeMode="contain" />
+        ) : (
+          <Icon name={iconName || 'local_shipping'} style={styles.icon} />
+        )}
       </View>
       <View style={styles.content}>
         <Text style={styles.name}>{name}</Text>
@@ -50,12 +59,18 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   iconContainer: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
     borderRadius: borderRadius.md,
     backgroundColor: colors.surfaceContainerLow,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+    padding: 3,
+  },
+  vehicleThumb: {
+    width: 42,
+    height: 42,
   },
   icon: {
     fontSize: 24,

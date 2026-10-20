@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { accountRestrictedData, subscriptionLabels } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { SecondaryButton } from '../../components/atoms/SecondaryButton';
@@ -18,7 +18,7 @@ export const AccountRestrictedScreen: React.FC<AccountRestrictedScreenProps> = (
   navigation,
   testID,
 }) => {
-  const data = accountRestrictedData;
+  const { t } = useI18n();
 
   const handleContactSupport = useCallback(() => {
     // Mock: opens support chat/email in production
@@ -28,10 +28,15 @@ export const AccountRestrictedScreen: React.FC<AccountRestrictedScreenProps> = (
     // Mock: opens guidelines in production
   }, []);
 
+  const restrictedActions = [
+    t('accountRestricted.actionNoTrips'),
+    t('accountRestricted.actionNoPayouts'),
+  ];
+
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title={data.title}
+        title={t('accountRestricted.title')}
         onBackPress={() => navigation.goBack()}
         showBackButton
       />
@@ -40,23 +45,23 @@ export const AccountRestrictedScreen: React.FC<AccountRestrictedScreenProps> = (
         {/* Restricted hero */}
         <View style={styles.heroCard}>
           <Icon name="gpp_bad" style={styles.heroIcon} />
-          <Text style={styles.heroTitle}>{data.title}</Text>
-          <Text style={styles.heroSubtitle}>{data.subtitle}</Text>
+          <Text style={styles.heroTitle}>{t('accountRestricted.title')}</Text>
+          <Text style={styles.heroSubtitle}>{t('accountRestricted.subtitle')}</Text>
         </View>
 
         {/* Review details */}
         <View style={styles.detailCard}>
-          <Text style={styles.detailTitle}>{data.reviewDetailsTitle}</Text>
+          <Text style={styles.detailTitle}>{t('accountRestricted.reviewDetails')}</Text>
 
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>{data.reasonLabel}</Text>
-            <Text style={styles.detailValue}>{data.reasonText}</Text>
+            <Text style={styles.detailLabel}>{t('accountRestricted.reason')}</Text>
+            <Text style={styles.detailValue}>{t('accountRestricted.reasonText')}</Text>
           </View>
 
           <View style={styles.divider} />
 
-          <Text style={styles.restrictedLabel}>{data.restrictedActionsLabel}</Text>
-          {data.restrictedActions.map((action, idx) => (
+          <Text style={styles.restrictedLabel}>{t('accountRestricted.restrictedActions')}</Text>
+          {restrictedActions.map((action, idx) => (
             <View key={idx} style={styles.restrictedRow}>
               <Icon name="block" style={styles.restrictedIcon} />
               <Text style={styles.restrictedText}>{action}</Text>
@@ -66,19 +71,19 @@ export const AccountRestrictedScreen: React.FC<AccountRestrictedScreenProps> = (
           <View style={styles.divider} />
 
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>{data.statusLabel}</Text>
-            <Text style={styles.statusValue}>{data.statusText}</Text>
+            <Text style={styles.detailLabel}>{t('accountRestricted.status')}</Text>
+            <Text style={styles.statusValue}>{t('accountRestricted.statusText')}</Text>
           </View>
         </View>
       </ScrollView>
 
       <View style={styles.actions}>
         <PrimaryButton
-          label={subscriptionLabels.contactSupportLabel}
+          label={t('accountRestricted.contactSupport')}
           onPress={handleContactSupport}
         />
         <SecondaryButton
-          label={subscriptionLabels.reviewGuidelinesLabel}
+          label={t('accountRestricted.reviewGuidelines')}
           onPress={handleReviewGuidelines}
         />
       </View>

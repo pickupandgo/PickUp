@@ -5,6 +5,7 @@ import type { ViewStyle } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { PrimaryButton } from '../atoms/PrimaryButton';
 import { SecondaryButton } from '../atoms/SecondaryButton';
+import { useI18n } from '../../i18n';
 
 export type ErrorVariant =
   | 'network'
@@ -32,69 +33,6 @@ export interface ErrorStateProps {
   readonly testID?: string;
 }
 
-const variantDefaults: Record<ErrorVariant, { icon: string; title: string; subtitle: string }> = {
-  network: {
-    icon: 'wifi_off',
-    title: 'No Internet Connection',
-    subtitle: 'Please check your network connection and try again.',
-  },
-  location_permission: {
-    icon: 'location_off',
-    title: 'Location Permission Required',
-    subtitle: 'Pick Up needs your location to find nearby trips and provide navigation.',
-  },
-  gps_unavailable: {
-    icon: 'gps_off',
-    title: 'GPS Unavailable',
-    subtitle: 'Unable to determine your location. Please ensure GPS is enabled.',
-  },
-  trip_expired: {
-    icon: 'timer_off',
-    title: 'Trip Offer Expired',
-    subtitle: 'This trip offer is no longer available. New offers will appear shortly.',
-  },
-  otp_error: {
-    icon: 'sms_failed',
-    title: 'Verification Failed',
-    subtitle: 'The OTP entered is incorrect or has expired. Please try again.',
-  },
-  cancellation_failed: {
-    icon: 'cancel',
-    title: 'Cancellation Failed',
-    subtitle: 'Unable to cancel the trip. Please contact support if the issue persists.',
-  },
-  recharge_failed: {
-    icon: 'credit_card_off',
-    title: 'Recharge Failed',
-    subtitle: 'Unable to process your payment. Please try a different method.',
-  },
-  subscription_failed: {
-    icon: 'card_membership',
-    title: 'Subscription Failed',
-    subtitle: 'Unable to activate your subscription. Please try again.',
-  },
-  kyc_rejected: {
-    icon: 'gpp_bad',
-    title: 'Document Rejected',
-    subtitle: 'One or more documents were rejected. Please resubmit with clear images.',
-  },
-  account_restricted: {
-    icon: 'block',
-    title: 'Account Restricted',
-    subtitle: 'Your account is under review. Contact support for assistance.',
-  },
-  chat_failed: {
-    icon: 'chat_error',
-    title: 'Message Not Sent',
-    subtitle: 'Unable to send your message. Please check your connection.',
-  },
-  generic: {
-    icon: 'error_outline',
-    title: 'Something Went Wrong',
-    subtitle: 'An unexpected error occurred. Please try again.',
-  },
-};
-
 export const ErrorState: React.FC<ErrorStateProps> = ({
   variant,
   title,
@@ -106,7 +44,39 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
   style,
   testID,
 }) => {
-  const defaults = variantDefaults[variant];
+  const { t } = useI18n();
+
+  const getDefaults = (v: ErrorVariant): { icon: string; title: string; subtitle: string } => {
+    switch (v) {
+      case 'network':
+        return { icon: 'wifi_off', title: t('error.noInternet'), subtitle: t('error.noInternetSub') };
+      case 'location_permission':
+        return { icon: 'location_off', title: t('error.locationRequired'), subtitle: t('error.locationRequiredSub') };
+      case 'gps_unavailable':
+        return { icon: 'gps_off', title: t('error.gpsUnavailable'), subtitle: t('error.gpsUnavailableSub') };
+      case 'trip_expired':
+        return { icon: 'timer_off', title: t('error.tripExpired'), subtitle: t('error.tripExpiredSub') };
+      case 'otp_error':
+        return { icon: 'sms_failed', title: t('error.verificationFailed'), subtitle: t('error.verificationFailedSub') };
+      case 'cancellation_failed':
+        return { icon: 'cancel', title: t('error.cancellationFailed'), subtitle: t('error.cancellationFailedSub') };
+      case 'recharge_failed':
+        return { icon: 'credit_card_off', title: t('error.rechargeFailed'), subtitle: t('error.rechargeFailedSub') };
+      case 'subscription_failed':
+        return { icon: 'card_membership', title: t('error.subscriptionFailed'), subtitle: t('error.subscriptionFailedSub') };
+      case 'kyc_rejected':
+        return { icon: 'gpp_bad', title: t('error.kycRejected'), subtitle: t('error.kycRejectedSub') };
+      case 'account_restricted':
+        return { icon: 'block', title: t('error.accountRestricted'), subtitle: t('error.accountRestrictedSub') };
+      case 'chat_failed':
+        return { icon: 'chat_error', title: t('error.chatFailed'), subtitle: t('error.chatFailedSub') };
+      case 'generic':
+      default:
+        return { icon: 'error_outline', title: t('error.generic'), subtitle: t('error.genericSub') };
+    }
+  };
+
+  const defaults = getDefaults(variant);
 
   return (
     <View style={[styles.container, style]} testID={testID}>

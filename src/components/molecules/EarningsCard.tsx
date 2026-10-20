@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, ViewStyle, Pressable } from 'react-native';
 import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
+import { useI18n } from '../../i18n';
+
 export interface EarningsCardProps {
   readonly label: string;
   readonly amount: number;
@@ -24,6 +26,8 @@ export const EarningsCard: React.FC<EarningsCardProps> = ({
   style,
   testID,
 }) => {
+  const { t } = useI18n();
+
   return (
     <View style={[styles.container, style]} testID={testID} accessibilityRole="none">
       <View style={styles.header}>
@@ -37,16 +41,16 @@ export const EarningsCard: React.FC<EarningsCardProps> = ({
       </Text>
       <View style={styles.footer}>
         {tripCount !== undefined ? (
-          <Text style={styles.trips}>{tripCount} trips</Text>
+          <Text style={styles.trips}>{t('wallet.tripsCount', { count: tripCount })}</Text>
         ) : <View />}
         {onDetailsPress ? (
           <Pressable
             onPress={onDetailsPress}
             style={styles.pillButton}
             accessibilityRole="button"
-            accessibilityLabel="View details"
+            accessibilityLabel={t('home.details')}
           >
-            <Text style={styles.pillLabel}>DETAILS</Text>
+            <Text style={styles.pillLabel}>{t('home.details')}</Text>
           </Pressable>
         ) : null}
       </View>

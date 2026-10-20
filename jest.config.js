@@ -22,6 +22,7 @@ module.exports = {
       '|@react-native-firebase' +
       '|firebase' +
       '|@firebase' +
+      '|react-native-config' +
     ')/)',
   ],
   moduleNameMapper: {

@@ -8,6 +8,7 @@ import { clearOnboardingComplete } from '../../state/onboarding';
 import { OTPInput } from '../../components/atoms/OTPInput';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { AppHeader } from '../../components/molecules/AppHeader';
+import { useI18n } from '../../i18n';
 import type { AuthScreenProps } from '../../types/navigation';
 
 export interface OTPVerificationScreenProps {
@@ -29,6 +30,7 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
   error = null,
   testID,
 }) => {
+  const { t } = useI18n();
   const { phone, authMode = 'login' } = route.params;
   const isSignUp = authMode === 'signup';
   const { cooldownRemaining, isCoolingDown } = usePhoneCooldown(phone);
@@ -61,12 +63,12 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
       }
     } catch (e: any) {
       setHasError(true);
-      setLocalError(e?.message || 'Invalid OTP. Please try again.');
+      setLocalError(e?.message || t('otp.invalidOtp'));
     } finally {
       isVerifyingRef.current = false;
       setIsVerifying(false);
     }
-  }, [onVerifyOtp, isVerifying, isLoading, isSignUp]);
+  }, [onVerifyOtp, isVerifying, isLoading, isSignUp, t]);
 
   const handleVerify = useCallback(async () => {
     if (otp.length < 6 || isVerifying || isLoading) return;
@@ -89,15 +91,15 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
     try {
       await onResendOtp();
       setOtp('');
-      setSuccessMessage('A new verification code was requested.');
+      setSuccessMessage(t('otp.codeRequested'));
     } catch (e: any) {
       setHasError(true);
-      setLocalError(e?.message || 'Failed to resend OTP. Please try again.');
+      setLocalError(e?.message || t('otp.resendFailed'));
     } finally {
       isResendingRef.current = false;
       setIsResending(false);
     }
-  }, [onResendOtp, cooldownRemaining, isCoolingDown, isResending]);
+  }, [onResendOtp, cooldownRemaining, isCoolingDown, isResending, t]);
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
@@ -113,15 +115,15 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
       >
         <View style={styles.content}>
           <Text style={styles.title}>
-            {isSignUp ? 'Driver Sign Up Verification' : 'Driver Log In Verification'}
+            {isSignUp ? t('otp.signupTitle') : t('otp.loginTitle')}
           </Text>
           <Text style={styles.subtitle}>
             {isSignUp
-              ? `Enter the 6-digit code sent to ${phone} to complete your registration.`
-              : `Enter the 6-digit code sent to ${phone} to access your account.`}
+              ? t('otp.signupSubtitle', { phone })
+              : t('otp.loginSubtitle', { phone })}
           </Text>
           <Pressable onPress={() => navigation.goBack()}>
-            <Text style={styles.changeNumber}>Change Number</Text>
+            <Text style={styles.changeNumber}>{t('otp.changeNumber')}</Text>
           </Pressable>
 
           <OTPInput
@@ -137,32 +139,32 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
           ) : null}
 
           {hasError || error || localError ? (
-            <Text style={styles.errorText}>{localError || error || 'Invalid OTP. Please try again.'}</Text>
+            <Text style={styles.errorText}>{localError || error || t('otp.invalidOtp')}</Text>
           ) : null}
 
           {/* Resend */}
           <View style={styles.resendContainer}>
             {isResending ? (
-              <Text style={styles.resendTimer}>Requesting new code...</Text>
+              <Text style={styles.resendTimer}>{t('otp.requestingNewCode')}</Text>
             ) : cooldownRemaining > 0 ? (
               <Text style={styles.resendTimer}>
-                {authData.resendText} in {cooldownRemaining}s
+                {t('otp.resendIn', { seconds: cooldownRemaining })}
               </Text>
             ) : (
               <Pressable
                 onPress={handleResend}
                 disabled={cooldownRemaining > 0 || isResending}
                 accessibilityRole="button"
-                accessibilityLabel={authData.resendText}
+                accessibilityLabel={t('otp.resendCode')}
               >
-                <Text style={styles.resendLink}>{authData.resendText}</Text>
+                <Text style={styles.resendLink}>{t('otp.resendCode')}</Text>
               </Pressable>
             )}
           </View>
         </View>
 
         <PrimaryButton
-          label="VERIFY"
+          label={t('otp.verify')}
           onPress={handleVerify}
           disabled={otp.length < 6}
           loading={isLoading || isVerifying}

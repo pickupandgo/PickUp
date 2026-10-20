@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, Pressable, ViewStyle } from 'react-native';
 import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
+import { useI18n } from '../../i18n';
+
 export interface WalletCardProps {
   readonly label: string;
   readonly balance: number;
@@ -21,11 +23,17 @@ export const WalletCard: React.FC<WalletCardProps> = ({
   currency,
   minimumBalance,
   onRechargePress,
-  rechargeLabel = 'RECHARGE',
-  minBalancePrefix = 'Min',
+  rechargeLabel,
+  minBalancePrefix,
   style,
   testID,
 }) => {
+  const { t } = useI18n();
+  const resolvedRecharge = rechargeLabel ?? t('home.recharge');
+  const minText = minBalancePrefix !== undefined
+    ? `${minBalancePrefix} ${currency}${minimumBalance.toLocaleString('en-IN')}`
+    : t('home.minWallet', { amount: `${currency}${minimumBalance.toLocaleString('en-IN')}` });
+
   return (
     <View style={[styles.container, style]} testID={testID} accessibilityRole="none">
       <View style={styles.header}>
@@ -39,16 +47,16 @@ export const WalletCard: React.FC<WalletCardProps> = ({
       </Text>
       <View style={styles.footer}>
         <Text style={styles.minBalance}>
-          {minBalancePrefix} {currency}{minimumBalance.toLocaleString('en-IN')}
+          {minText}
         </Text>
         {onRechargePress ? (
           <Pressable
             onPress={onRechargePress}
             style={styles.pillButton}
             accessibilityRole="button"
-            accessibilityLabel={rechargeLabel}
+            accessibilityLabel={resolvedRecharge}
           >
-            <Text style={styles.pillLabel}>{rechargeLabel}</Text>
+            <Text style={styles.pillLabel}>{resolvedRecharge}</Text>
           </Pressable>
         ) : null}
       </View>

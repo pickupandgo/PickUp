@@ -10,6 +10,7 @@ import { DriverMap, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
 import { useActiveTrip } from '../../hooks/useActiveTrip';
 import { useTripRoute } from '../../hooks/useTripRoute';
+import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
 
 export interface MultiStopJourneyScreenProps {
@@ -18,27 +19,26 @@ export interface MultiStopJourneyScreenProps {
   readonly testID?: string;
 }
 
-/** Turn a raw address into a compact label, dropping a leading house/door number. */
-function compactAddress(address?: string): string {
-  if (!address) return 'Destination';
-  const parts = address
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  // Drop a leading pure-number token like "222" so the area name shows first.
-  if (parts.length > 1 && /^\d+$/.test(parts[0])) parts.shift();
-  const label = parts.slice(0, 2).join(', ');
-  return label || address;
-}
-
 export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
   navigation,
   route: navRoute,
   testID,
 }) => {
+  const { t } = useI18n();
   const { currentLocation } = useDriverLocation();
   const trip = useActiveTrip() || mockActiveTrip;
   const { route: routingData } = useTripRoute();
+
+  const compactAddress = useCallback((address?: string): string => {
+    if (!address) return t('trip.destination');
+    const parts = address
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length > 1 && /^\d+$/.test(parts[0])) parts.shift();
+    const label = parts.slice(0, 2).join(', ');
+    return label || address;
+  }, [t]);
 
   const handleNavigateToStop = useCallback(
     (stopId: string) => {
@@ -76,7 +76,7 @@ export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
   const currentStop = trip.stops[currentStopIndex];
   const isPickup = currentStop?.type === 'pickup';
 
-  const topIndicatorLabel = isPickup ? 'PICKUP' : `DROP ${currentDropNumber} OF ${totalDrops}`;
+  const topIndicatorLabel = isPickup ? t('trip.pickup') : t('trip.dropOf', { current: currentDropNumber, total: totalDrops });
   const topIndicatorName = compactAddress(currentStop?.address);
 
   const displayEta = routingData?.eta
@@ -120,18 +120,20 @@ export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
       <SafeAreaView edges={['bottom']} style={styles.bottomPanel}>
         <View style={styles.summaryRow}>
           <Text style={styles.distanceText}>
-            {displayDistance != null ? `${displayDistance} km` : '—'}
+            {displayDistance != null ? t('common.km', { count: displayDistance }) : '—'}
           </Text>
-          <Text style={styles.etaText}> • {displayEta} min</Text>
+          <Text style={styles.etaText}> • {t('common.min', { count: displayEta })}</Text>
         </View>
 
         <View style={styles.arrivingRow}>
           <Text style={styles.arrivingText}>
-            {isPickup ? 'Arriving at Pickup' : `Arriving at Drop ${currentDropNumber}`}
+            {isPickup
+              ? t('trip.arrivingAt', { label: t('trip.pickup') })
+              : t('trip.arrivingAt', { label: t('trip.drop', { number: currentDropNumber }) })}
           </Text>
           <View style={styles.onTimeBadge}>
             <Icon name="schedule" size={14} color={colors.onSecondaryContainer} />
-            <Text style={styles.onTimeText}>On Time</Text>
+            <Text style={styles.onTimeText}>{t('trip.onTime')}</Text>
           </View>
         </View>
 
@@ -142,7 +144,7 @@ export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
         </View>
 
         <PrimaryButton
-          label={isPickup ? 'ARRIVED AT PICKUP' : `CONFIRM DROP ${currentDropNumber}`}
+          label={isPickup ? t('trip.arrivedAtPickup') : t('trip.confirmDrop', { number: currentDropNumber })}
           onPress={() => {
             if (currentStop) handleNavigateToStop(currentStop.id);
           }}

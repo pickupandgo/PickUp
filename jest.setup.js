@@ -159,8 +159,45 @@ jest.mock('react-native-maps', () => {
   return { __esModule: true, default: MockMapView, Marker: mockView, Polyline: mockView, PROVIDER_GOOGLE: 'google' };
 });
 
+// Mock @react-native-async-storage/async-storage
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  setItem: jest.fn().mockResolvedValue(null),
+  getItem: jest.fn().mockResolvedValue(null),
+  removeItem: jest.fn().mockResolvedValue(null),
+  clear: jest.fn().mockResolvedValue(null),
+  getAllKeys: jest.fn().mockResolvedValue([]),
+  multiGet: jest.fn().mockResolvedValue([]),
+  multiSet: jest.fn().mockResolvedValue(null),
+  multiRemove: jest.fn().mockResolvedValue(null),
+}));
+
 // Mock react-native-image-picker
 jest.mock('react-native-image-picker', () => ({
   launchCamera: jest.fn(),
   launchImageLibrary: jest.fn(),
 }));
+
+// Mock react-native-config
+jest.mock('react-native-config', () => ({
+  API_BASE_URL: 'http://localhost:3000',
+  FIREBASE_API_KEY: 'test-key',
+  MAPS_API_KEY: 'test-maps-key',
+}));
+
+// Mock @react-native-firebase/auth
+jest.mock('@react-native-firebase/auth', () => {
+  const mockAuth = () => ({
+    signInWithPhoneNumber: jest.fn(),
+    onAuthStateChanged: jest.fn(),
+    currentUser: null,
+  });
+  mockAuth.getAuth = jest.fn(() => ({
+    currentUser: null,
+  }));
+  return {
+    __esModule: true,
+    default: mockAuth,
+    getAuth: mockAuth.getAuth,
+    onAuthStateChanged: jest.fn(() => jest.fn()),
+  };
+});

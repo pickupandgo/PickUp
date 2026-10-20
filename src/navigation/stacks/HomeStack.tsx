@@ -5,6 +5,7 @@ import type { HomeStackParamList } from '../../types/navigation';
 // Home screens
 import { DriverHomeScreen } from '../../screens/home/DriverHomeScreen';
 import { NotificationCenterScreen } from '../../screens/home/NotificationCenterScreen';
+import { VehicleSelectionScreen } from '../../screens/auth/VehicleSelectionScreen';
 
 // Trip flow screens
 import { NewTripOfferScreen } from '../../screens/trip/NewTripOfferScreen';
@@ -35,6 +36,7 @@ export const HomeStack: React.FC = () => {
       {/* Home */}
       <Stack.Screen name="DriverHome" component={DriverHomeScreen} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} />
+      <Stack.Screen name="VehicleSelection" component={VehicleSelectionScreen} />
 
       {/* Active Trip Flow */}
       <Stack.Screen name="TripOffer" component={NewTripOfferScreen} />

@@ -9,6 +9,7 @@ import {
   Pressable,
   ActivityIndicator,
   ScrollView,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius } from '../../theme';
@@ -18,6 +19,8 @@ import {
   AuthService,
   usePhoneCooldown,
 } from '../../services/auth/AuthService';
+
+import { useI18n } from '../../i18n';
 
 export type AuthMode = 'login' | 'signup';
 
@@ -42,6 +45,7 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
   error = null,
   testID,
 }) => {
+  const { t } = useI18n();
   const [authMode, setAuthMode] = useState<AuthMode>(initialMode);
   const [phone, setPhone] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
@@ -60,7 +64,7 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
   const handleSendPhoneOtp = useCallback(async () => {
     if (isSubmittingRef.current || busy || isCoolingDown || cooldownRemaining > 0) return;
     if (!isValidPhone) {
-      setLocalError('Please enter a valid 10-digit mobile number.');
+      setLocalError(t('auth.invalidPhone'));
       return;
     }
 
@@ -103,7 +107,7 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
       isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
-  }, [busy, isCoolingDown, cooldownRemaining, isValidPhone, cleanPhone, onSendOtp, navigation, authMode]);
+  }, [busy, isCoolingDown, cooldownRemaining, isValidPhone, cleanPhone, onSendOtp, navigation, authMode, t]);
 
   const activeError = localError || error;
 
@@ -112,7 +116,7 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
       {/* Top app bar */}
       <View style={styles.header}>
         <View style={styles.headerSide} />
-        <Text style={styles.headerTitle}>Pick Up Driver</Text>
+        <Text style={styles.headerTitle}>{t('auth.appName')}</Text>
         <View style={styles.headerSide} />
       </View>
 
@@ -134,7 +138,7 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
                 setLocalError(null);
               }}
             >
-              <Text style={[styles.tabText, !isSignUp && styles.activeTabText]}>Log In</Text>
+              <Text style={[styles.tabText, !isSignUp && styles.activeTabText]}>{t('auth.loginTab')}</Text>
             </Pressable>
             <Pressable
               style={[styles.tab, isSignUp && styles.activeTab]}
@@ -143,19 +147,26 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
                 setLocalError(null);
               }}
             >
-              <Text style={[styles.tabText, isSignUp && styles.activeTabText]}>Sign Up</Text>
+              <Text style={[styles.tabText, isSignUp && styles.activeTabText]}>{t('auth.signupTab')}</Text>
             </Pressable>
           </View>
 
           {/* Hero / welcome */}
           <View style={styles.hero}>
+            <Image
+              source={require('../../../assets/logo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+              accessibilityRole="image"
+              accessibilityLabel={t('auth.appName')}
+            />
             <Text style={styles.title}>
-              {isSignUp ? 'Driver Sign Up' : 'Driver Log In'}
+              {isSignUp ? t('auth.signupTitle') : t('auth.loginTitle')}
             </Text>
             <Text style={styles.subtitle}>
               {isSignUp
-                ? 'Enter your mobile number to create your driver account and start accepting trips.'
-                : 'Enter your mobile number to log in to your driver account.'}
+                ? t('auth.signupSubtitle')
+                : t('auth.loginSubtitle')}
             </Text>
           </View>
 
@@ -164,7 +175,7 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
           {/* Phone Number Input Form */}
           <View style={styles.formSection}>
             <View style={styles.field}>
-              <Text style={styles.label}>MOBILE NUMBER</Text>
+              <Text style={styles.label}>{t('auth.mobileNumber')}</Text>
               <View style={styles.phoneInputRow}>
                 <View style={styles.countryCodeBadge}>
                   <Text style={styles.countryCodeText}>+91</Text>
@@ -172,12 +183,12 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
                 <TextInput
                   style={styles.phoneInput}
                   value={phone}
-                  onChangeText={(t) => {
-                    setPhone(t);
+                  onChangeText={(text) => {
+                    setPhone(text);
                     if (localError) setLocalError(null);
                   }}
                   keyboardType="phone-pad"
-                  placeholder="Enter 10-digit number"
+                  placeholder={t('auth.enterMobileNumber')}
                   placeholderTextColor={colors.outlineVariant}
                   maxLength={10}
                   editable={!busy}
@@ -188,7 +199,10 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
             {isValidPhone && cooldownRemaining > 0 ? (
               <View style={styles.cooldownContainer}>
                 <Text style={styles.cooldownText}>
-                  Request a new OTP in {cooldownRemaining} {cooldownRemaining === 1 ? 'second' : 'seconds'}
+                  {t('auth.cooldown', {
+                    seconds: cooldownRemaining,
+                    unit: cooldownRemaining === 1 ? 'second' : 'seconds',
+                  })}
                 </Text>
               </View>
             ) : null}
@@ -203,10 +217,10 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
               {busy ? (
                 <View style={styles.buttonBusy}>
                   <ActivityIndicator size="small" color={colors.onPrimary} />
-                  <Text style={styles.buttonText}>Sending OTP...</Text>
+                  <Text style={styles.buttonText}>{t('auth.sendingOtp')}</Text>
                 </View>
               ) : (
-                <Text style={styles.buttonText}>GET OTP</Text>
+                <Text style={styles.buttonText}>{t('auth.getOtp')}</Text>
               )}
             </Pressable>
           </View>
@@ -214,7 +228,7 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
           {/* Quick toggle link */}
           <View style={styles.toggleRow}>
             <Text style={styles.togglePrompt}>
-              {isSignUp ? 'Already have an account? ' : 'New Driver? '}
+              {isSignUp ? t('auth.alreadyHaveAccount') : t('auth.newDriver')}
               <Text
                 style={styles.toggleLink}
                 onPress={() => {
@@ -222,13 +236,13 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
                   setLocalError(null);
                 }}
               >
-                {isSignUp ? 'Log In' : 'Sign Up'}
+                {isSignUp ? t('auth.loginTab') : t('auth.signupTab')}
               </Text>
             </Text>
           </View>
 
           <Text style={styles.terms}>
-            By continuing, you agree to Pick Up's <Text style={styles.termsLink}>Terms of Service</Text>.
+            {t('auth.termsPrefix')}<Text style={styles.termsLink}>{t('auth.termsOfService')}</Text>{t('auth.termsSuffix')}
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -302,6 +316,12 @@ const styles = StyleSheet.create({
   hero: {
     marginBottom: spacing.lg,
     marginTop: spacing.xs,
+  },
+  logo: {
+    width: 64,
+    height: 64,
+    borderRadius: 14,
+    marginBottom: spacing.md,
   },
   title: {
     ...typography.headlineMd,

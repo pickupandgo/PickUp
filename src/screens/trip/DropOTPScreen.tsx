@@ -8,6 +8,7 @@ import { AppHeader } from '../../components/molecules/AppHeader';
 import { OTPInput } from '../../components/atoms/OTPInput';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { TripController } from '../../services/trip/TripController';
+import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
 import { Alert } from 'react-native';
 
@@ -29,6 +30,7 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   const { tripId, stopId } = route.params;
   const [otp, setOtp] = useState('');
   const [hasError, setHasError] = useState(false);
@@ -46,7 +48,7 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
       }, 1200);
     } catch (e: any) {
       const errorStr = String(e.message || e);
-      Alert.alert('Debug Error', errorStr);
+      Alert.alert(t('otpVerification.failed'), errorStr);
       console.warn('[DropOTPScreen] Verification failed:', errorStr);
       const errorMessage = errorStr.toLowerCase();
       if (errorMessage.includes('already verified')) {
@@ -60,7 +62,7 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [navigation, tripId, stopId, otp]);
+  }, [navigation, tripId, stopId, otp, t]);
 
   const handleComplete = useCallback(async (value: string) => {
     setOtp(value);
@@ -73,7 +75,7 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
           <View style={styles.successIcon}>
             <Icon name="check_circle" style={styles.successIconText} />
           </View>
-          <Text style={styles.feedbackTitle}>{otpVerificationLabels.successTitle}</Text>
+          <Text style={styles.feedbackTitle}>{t('otpVerification.success')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -82,7 +84,7 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title={otpVerificationLabels.dropOtpTitle}
+        title={t('otpVerification.dropTitle')}
         onBackPress={() => navigation.goBack()}
         showBackButton
       />
@@ -91,8 +93,8 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <View style={styles.content}>
-          <Text style={styles.title}>{otpVerificationLabels.dropOtpTitle}</Text>
-          <Text style={styles.subtitle}>{otpVerificationLabels.dropOtpSubtitle}</Text>
+          <Text style={styles.title}>{t('otpVerification.dropTitle')}</Text>
+          <Text style={styles.subtitle}>{t('otpVerification.dropSubtitle')}</Text>
 
           <OTPInput
             length={OTP_LENGTH}
@@ -104,12 +106,12 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
           />
 
           {hasError ? (
-            <Text style={styles.errorText}>{otpVerificationLabels.errorSubtitle}</Text>
+            <Text style={styles.errorText}>{t('otpVerification.incorrect')}</Text>
           ) : null}
         </View>
 
         <PrimaryButton
-          label={otpVerificationLabels.verifyLabel}
+          label={t('otpVerification.verify')}
           onPress={handleVerify}
           disabled={otp.length < OTP_LENGTH}
           loading={isLoading}

@@ -7,6 +7,7 @@ import { TripOfferSheet } from '../../components/organisms/TripOfferSheet';
 import { StatusPill } from '../../components/atoms/StatusPill';
 import { DriverMap, MapOverlay, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
+import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
 import {
   acceptRideRequest,
@@ -25,6 +26,7 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   const { offer, driverId } = route.params;
   const { currentLocation } = useDriverLocation();
   const [offerState, setOfferState] = useState<'pending' | 'accepted' | 'expired'>('pending');
@@ -65,12 +67,12 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
       setSubmitting(false);
       setOfferState('pending');
       Alert.alert(
-        'Request unavailable',
-        'This trip was cancelled or taken by someone else.',
-        [{ text: 'OK', onPress: () => navigation.goBack() }],
+        t('trip.requestUnavailable'),
+        t('trip.requestUnavailableMsg'),
+        [{ text: t('common.ok'), onPress: () => navigation.goBack() }],
       );
     }
-  }, [submitting, offer.id, driverId, navigation]);
+  }, [submitting, offer.id, driverId, navigation, t]);
 
   const handleDecline = useCallback(() => {
     rejectRideRequest(offer.id, driverId).catch(() => {});
@@ -92,8 +94,8 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
       {/* Scrollable Content */}
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <SafeAreaView edges={['top']} style={styles.header}>
-          <Text style={styles.headerTitle}>TRIP OFFER</Text>
-          <Text style={styles.headerId}>ID: {offer.id.slice(0, 8).toUpperCase()}</Text>
+          <Text style={styles.headerTitle}>{t('trip.offer')}</Text>
+          <Text style={styles.headerId}>{t('trip.idLabel')}: {offer.id.slice(0, 8).toUpperCase()}</Text>
         </SafeAreaView>
 
         {/* Embedded Map Card */}
@@ -109,13 +111,13 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
           {(offerState === 'pending' || offerState === 'expired') && (
             <MapOverlay position="top" style={styles.topPillsContainer}>
               <StatusPill
-                label="NEW REQUEST"
+                label={t('trip.newRequest')}
                 variant="default"
                 iconName="circle"
                 style={styles.newRequestPill}
               />
               {offerState === 'expired' && (
-                <StatusPill label="EXPIRED" variant="danger_outline" iconName="timer" />
+                <StatusPill label={t('common.expired')} variant="danger_outline" iconName="timer" />
               )}
             </MapOverlay>
           )}
@@ -123,7 +125,7 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
           {/* Metrics Overlay (Inside Map at Bottom) */}
           <MapOverlay position="bottom" style={styles.metricsOverlay}>
             <View style={styles.metricsCard}>
-              <Text style={styles.metricValue}>{offer.totalDistanceKm} km</Text>
+              <Text style={styles.metricValue}>{t('common.km', { count: offer.totalDistanceKm })}</Text>
             </View>
           </MapOverlay>
         </View>
@@ -137,7 +139,7 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
               <View style={styles.timelineLine} />
             </View>
             <View style={styles.stopContent}>
-              <Text style={styles.stopLabel}>PICKUP</Text>
+              <Text style={styles.stopLabel}>{t('trip.pickup')}</Text>
               <Text style={styles.stopAddress} numberOfLines={1}>
                 {pickupAddress}
               </Text>
@@ -150,7 +152,7 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
               <Icon name="flag" style={styles.dropoffIcon} />
             </View>
             <View style={styles.stopContent}>
-              <Text style={styles.stopLabel}>DROPOFF</Text>
+              <Text style={styles.stopLabel}>{t('trip.dropoff')}</Text>
               <Text style={styles.stopAddress} numberOfLines={1}>
                 {dropAddress}
               </Text>
@@ -161,7 +163,7 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
         {/* Guaranteed Earnings Card */}
         <View style={styles.guaranteedCard}>
           <View>
-            <Text style={styles.guaranteedLabel}>ESTIMATED EARNINGS</Text>
+            <Text style={styles.guaranteedLabel}>{t('trip.estimatedEarnings')}</Text>
             <Text style={styles.guaranteedValue}>
               {offer.currency}
               {offer.estimatedEarning.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -190,8 +192,8 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
             <View style={styles.confirmationIconContainer}>
               <Icon name="check" style={styles.confirmationIcon} />
             </View>
-            <Text style={styles.confirmationTitle}>Trip Accepted!</Text>
-            <Text style={styles.confirmationSubtitle}>Redirecting to Navigation...</Text>
+            <Text style={styles.confirmationTitle}>{t('trip.acceptedTitle')}</Text>
+            <Text style={styles.confirmationSubtitle}>{t('trip.acceptedSubtitle')}</Text>
           </View>
         </SafeAreaView>
       )}

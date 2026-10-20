@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, ViewStyle } from 'react-native';
 import Icon from '../atoms/Icon';
 import { colors, typography, spacing } from '../../theme';
 import { NotificationDot } from '../atoms/NotificationDot';
+import { useI18n } from '../../i18n';
 
 export interface AppHeaderProps {
   readonly title: string;
@@ -27,6 +28,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   style,
   testID,
 }) => {
+  const { t } = useI18n();
+
   return (
     <View style={[styles.container, showDivider && styles.containerDivider, style]} testID={testID} accessibilityRole="header">
       <View style={styles.leadingContainer}>
@@ -35,7 +38,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             onPress={onBackPress}
             style={styles.iconButton}
             accessibilityRole="button"
-            accessibilityLabel="Go back"
+            accessibilityLabel={t('common.back')}
           >
             <Icon name="arrow_back" style={styles.icon} />
           </Pressable>

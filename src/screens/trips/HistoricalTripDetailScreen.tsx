@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { mockHistoricalTrip, earningsLabels } from '../../data/mockData';
+import { mockHistoricalTrip } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { TripStopRow } from '../../components/molecules/TripStopRow';
 import { StatusBadge } from '../../components/atoms/StatusBadge';
@@ -32,6 +33,7 @@ export const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProp
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   // Mock: use static data — in production, fetched by tripId
   const trip = mockHistoricalTrip;
   const earnings = trip.earnings;
@@ -39,7 +41,7 @@ export const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProp
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title={`Trip #${route.params.tripId}`}
+        title={`${t('trip.idLabel')}: #${route.params.tripId}`}
         onBackPress={() => navigation.goBack()}
         showBackButton
       />
@@ -51,12 +53,12 @@ export const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProp
             <View style={styles.headerLeft}>
               <Icon name="local_shipping" style={styles.headerIcon} />
               <View>
-                <Text style={styles.tripId}>Trip #{trip.id}</Text>
+                <Text style={styles.tripId}>{t('trip.idLabel')}: #{trip.id}</Text>
                 <Text style={styles.tripDate}>{trip.date} • {trip.time}</Text>
               </View>
             </View>
             <StatusBadge
-              label={trip.status === 'completed' ? 'Completed' : trip.status}
+              label={trip.status === 'completed' ? t('common.completed') : trip.status === 'cancelled' ? t('common.cancelled') : trip.status}
               variant={mapTripStatus(trip.status)}
             />
           </View>
@@ -65,13 +67,13 @@ export const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProp
         {/* Quick metrics */}
         <View style={styles.metricsRow}>
           <MetricCard
-            label="Stops"
+            label={t('trip.stops')}
             value={`${trip.stops.length}`}
             iconName="pin_drop"
             style={styles.metricCard}
           />
           <MetricCard
-            label="Earned"
+            label={t('trip.earned')}
             value={`${earnings.currency}${earnings.netEarning}`}
             iconName="payments"
             style={styles.metricCard}
@@ -80,7 +82,7 @@ export const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProp
 
         {/* Route */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionLabel}>{earningsLabels.routeLabel}</Text>
+          <Text style={styles.sectionLabel}>{t('earnings.route')}</Text>
           {trip.stops.map((stop) => (
             <TripStopRow
               key={stop.id}
@@ -94,48 +96,48 @@ export const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProp
 
         {/* Load details */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionLabel}>{earningsLabels.loadDetailsLabel}</Text>
+          <Text style={styles.sectionLabel}>{t('earnings.loadDetails')}</Text>
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>{earningsLabels.goodsTypeLabel}</Text>
+            <Text style={styles.detailLabel}>{t('earnings.goodsType')}</Text>
             <Text style={styles.detailValue}>{trip.goodsType}</Text>
           </View>
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>{earningsLabels.totalWeightLabel}</Text>
+            <Text style={styles.detailLabel}>{t('earnings.totalWeight')}</Text>
             <Text style={styles.detailValue}>{trip.totalWeight}</Text>
           </View>
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>{earningsLabels.vehicleLabel}</Text>
+            <Text style={styles.detailLabel}>{t('earnings.vehicle')}</Text>
             <Text style={styles.detailValue}>{trip.vehicleType} ({trip.vehicleRegistration})</Text>
           </View>
         </View>
 
         {/* Financials */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionLabel}>{earningsLabels.financialsLabel}</Text>
+          <Text style={styles.sectionLabel}>{t('earnings.financials')}</Text>
           <View style={styles.finRow}>
-            <Text style={styles.finLabel}>{earningsLabels.grossEarningsLabel}</Text>
+            <Text style={styles.finLabel}>{t('earnings.gross')}</Text>
             <Text style={styles.finValue}>{earnings.currency}{earnings.grossEarning}</Text>
           </View>
           <View style={styles.finRow}>
             <Text style={styles.finLabelDeduct}>
-              {earningsLabels.platformCommissionLabel} ({earnings.platformCommissionPercent}%)
+              {t('earnings.platformCommission')} ({earnings.platformCommissionPercent}%)
             </Text>
             <Text style={styles.finValueDeduct}>-{earnings.currency}{earnings.platformCommission}</Text>
           </View>
           <View style={styles.finRow}>
-            <Text style={styles.finLabelDeduct}>{earningsLabels.otherDeductionsLabel}</Text>
+            <Text style={styles.finLabelDeduct}>{t('earnings.otherDeductions')}</Text>
             <Text style={styles.finValueDeduct}>-{earnings.currency}{earnings.otherDeductions}</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.finRow}>
-            <Text style={styles.finLabelNet}>{earningsLabels.netEarningsLabel}</Text>
+            <Text style={styles.finLabelNet}>{t('earnings.netEarning')}</Text>
             <Text style={styles.finValueNet}>{earnings.currency}{earnings.netEarning}</Text>
           </View>
 
           {earnings.paidToWallet ? (
             <View style={styles.paidBadge}>
               <Icon name="check_circle" style={styles.paidIcon} />
-              <Text style={styles.paidText}>{earningsLabels.paidToWalletLabel}</Text>
+              <Text style={styles.paidText}>{t('earnings.paidToWallet')}</Text>
             </View>
           ) : null}
         </View>

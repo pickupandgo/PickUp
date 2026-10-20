@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, ViewStyle } from 'react-native';
 import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { StatusBadge, type BadgeVariant } from '../atoms/StatusBadge';
+import { useI18n } from '../../i18n';
 
 export interface DocumentCardProps {
   readonly label: string;
@@ -25,6 +26,8 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
   style,
   testID,
 }) => {
+  const { t } = useI18n();
+
   return (
     <View style={[styles.container, style]} testID={testID} accessibilityRole="none">
       <View style={styles.header}>
@@ -38,7 +41,7 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
       </View>
       {rejectionReason ? (
         <View style={styles.rejectionContainer}>
-          <Text style={styles.rejectionLabel}>Reason for rejection</Text>
+          <Text style={styles.rejectionLabel}>{t('kyc.rejectionReason')}</Text>
           <Text style={styles.rejectionText}>{rejectionReason}</Text>
         </View>
       ) : null}

@@ -8,6 +8,7 @@ import { JourneyRecap } from '../../components/organisms/JourneyRecap';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { SecondaryButton } from '../../components/atoms/SecondaryButton';
 import { TripController } from '../../services/trip/TripController';
+import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
 
 /**
@@ -25,6 +26,7 @@ export const TripCompletedScreen: React.FC<TripCompletedScreenProps> = ({
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   const trip = TripController.getInstance().getTrip() ?? mockActiveTrip;
 
   const handleBackToHome = useCallback(() => {
@@ -45,30 +47,30 @@ export const TripCompletedScreen: React.FC<TripCompletedScreenProps> = ({
           <View style={styles.checkIcon}>
             <Icon name="verified" style={styles.checkIconText} />
           </View>
-          <Text style={styles.title}>{tripCompletedLabels.title}</Text>
+          <Text style={styles.title}>{t('trip.completedTitle')}</Text>
         </View>
 
         {/* Stats row */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{trip.currency}{trip.estimatedEarning}</Text>
-            <Text style={styles.statLabel}>{tripCompletedLabels.earningsLabel}</Text>
+            <Text style={styles.statLabel}>{t('trip.earnings')}</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{trip.totalDistanceKm} km</Text>
-            <Text style={styles.statLabel}>{tripCompletedLabels.distanceLabel}</Text>
+            <Text style={styles.statValue}>{t('common.km', { count: trip.totalDistanceKm })}</Text>
+            <Text style={styles.statLabel}>{t('trip.distance')}</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{trip.stops.length}</Text>
-            <Text style={styles.statLabel}>{tripCompletedLabels.stopsLabel}</Text>
+            <Text style={styles.statLabel}>{t('trip.stops')}</Text>
           </View>
         </View>
 
         {/* Journey Recap */}
         <View style={styles.recapSection}>
-          <Text style={styles.recapTitle}>{tripCompletedLabels.journeyRecapTitle}</Text>
+          <Text style={styles.recapTitle}>{t('trip.journeyRecap')}</Text>
           <JourneyRecap
             stops={trip.stops}
           />
@@ -78,11 +80,11 @@ export const TripCompletedScreen: React.FC<TripCompletedScreenProps> = ({
       {/* Bottom actions */}
       <View style={styles.actions}>
         <PrimaryButton
-          label={tripCompletedLabels.backToHomeLabel}
+          label={t('trip.backToHome')}
           onPress={handleBackToHome}
         />
         <SecondaryButton
-          label={tripCompletedLabels.viewEarningsLabel}
+          label={t('trip.viewEarnings')}
           onPress={handleViewEarnings}
         />
       </View>

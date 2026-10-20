@@ -8,6 +8,7 @@ import { AppHeader } from '../../components/molecules/AppHeader';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { SecondaryButton } from '../../components/atoms/SecondaryButton';
 import { TripController } from '../../services/trip/TripController';
+import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
 
 /**
@@ -25,6 +26,7 @@ export const DeliveryProofPreviewScreen: React.FC<DeliveryProofPreviewScreenProp
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   const { tripId, stopId, photoUri } = route.params;
   const [isUploading, setIsUploading] = useState(false);
   const [uploaded, setUploaded] = useState(false);
@@ -64,8 +66,8 @@ export const DeliveryProofPreviewScreen: React.FC<DeliveryProofPreviewScreenProp
           <View style={styles.successIcon}>
             <Icon name="cloud_done" style={styles.successIconText} />
           </View>
-          <Text style={styles.feedbackTitle}>{deliveryProofLabels.uploadSuccessTitle}</Text>
-          <Text style={styles.feedbackSubtitle}>{deliveryProofLabels.uploadSuccessSubtitle}</Text>
+          <Text style={styles.feedbackTitle}>{t('deliveryProof.uploadSuccessTitle')}</Text>
+          <Text style={styles.feedbackSubtitle}>{t('deliveryProof.uploadSuccessSubtitle')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -74,7 +76,7 @@ export const DeliveryProofPreviewScreen: React.FC<DeliveryProofPreviewScreenProp
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title={deliveryProofLabels.cameraTitle}
+        title={t('deliveryProof.title')}
         onBackPress={() => navigation.goBack()}
         showBackButton
       />
@@ -84,7 +86,7 @@ export const DeliveryProofPreviewScreen: React.FC<DeliveryProofPreviewScreenProp
           {photoUri && photoUri.startsWith('mock://') ? (
             <View style={styles.previewPlaceholder}>
               <Icon name="image" style={styles.previewIcon} />
-              <Text style={styles.previewText}>Photo Preview</Text>
+              <Text style={styles.previewText}>{t('deliveryProof.preview')}</Text>
             </View>
           ) : (
             <Image source={{ uri: photoUri }} style={styles.previewImage} resizeMode="cover" />
@@ -94,12 +96,12 @@ export const DeliveryProofPreviewScreen: React.FC<DeliveryProofPreviewScreenProp
         {/* Actions */}
         <View style={styles.actions}>
           <PrimaryButton
-            label={deliveryProofLabels.confirmLabel}
+            label={t('deliveryProof.confirm')}
             onPress={handleConfirm}
             loading={isUploading}
           />
           <SecondaryButton
-            label={deliveryProofLabels.retakeLabel}
+            label={t('deliveryProof.retake')}
             onPress={handleRetake}
           />
         </View>

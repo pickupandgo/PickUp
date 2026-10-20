@@ -3,6 +3,7 @@ import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { colors, typography, spacing } from '../../theme';
 import AuthInput from '../atoms/AuthInput';
 import { PrimaryButton } from '../atoms/PrimaryButton';
+import { useI18n } from '../../i18n';
 
 interface DriverLoginFormProps {
   onSubmit: (data: any) => void;
@@ -13,12 +14,13 @@ export const DriverLoginForm: React.FC<DriverLoginFormProps> = ({
   onSubmit,
   isLoading,
 }) => {
+  const { t } = useI18n();
   const [driverIdOrPhone, setDriverIdOrPhone] = useState('');
   const [password, setPassword] = useState('');
 
   const isLikelyPhone = driverIdOrPhone.length > 0 && /^\+?[\d\s\-\(\)]+$/.test(driverIdOrPhone);
   const showPassword = !isLikelyPhone;
-  const submitLabel = isLikelyPhone ? "Get OTP ➔" : "Login ➔";
+  const submitLabel = isLikelyPhone ? `${t('auth.getOtp')} ➔` : `${t('common.login')} ➔`;
   const canSubmit = isLikelyPhone 
     ? driverIdOrPhone.replace(/\D/g, '').length >= 10 
     : driverIdOrPhone.length > 0 && password.length > 0;
@@ -26,8 +28,8 @@ export const DriverLoginForm: React.FC<DriverLoginFormProps> = ({
   return (
     <View style={styles.container}>
       <AuthInput
-        label="Driver ID or Phone Number"
-        placeholder={isLikelyPhone ? "Enter 10-digit number" : "Enter ID or Phone"}
+        label={t('auth.driverIdOrPhone')}
+        placeholder={isLikelyPhone ? t('auth.enterMobileNumber') : t('auth.enterIdOrPhone')}
         value={driverIdOrPhone}
         onChangeText={setDriverIdOrPhone}
         autoCapitalize="none"
@@ -38,8 +40,8 @@ export const DriverLoginForm: React.FC<DriverLoginFormProps> = ({
 
       {showPassword && (
         <AuthInput
-          label="Password"
-          placeholder="Enter Password"
+          label={t('auth.password')}
+          placeholder={t('auth.enterPassword')}
           value={password}
           onChangeText={setPassword}
           isPassword
@@ -49,7 +51,7 @@ export const DriverLoginForm: React.FC<DriverLoginFormProps> = ({
 
       {showPassword && (
         <TouchableOpacity style={styles.forgotBtn}>
-          <Text style={styles.forgotText}>Forgot Password?</Text>
+          <Text style={styles.forgotText}>{t('auth.forgotPassword')}</Text>
         </TouchableOpacity>
       )}
 

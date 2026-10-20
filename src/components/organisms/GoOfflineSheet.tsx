@@ -4,6 +4,7 @@ import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { PrimaryButton } from '../atoms/PrimaryButton';
 import { SecondaryButton } from '../atoms/SecondaryButton';
+import { useI18n } from '../../i18n';
 
 export interface GoOfflineSheetProps {
   readonly onGoOffline: () => void;
@@ -18,16 +19,18 @@ export const GoOfflineSheet: React.FC<GoOfflineSheetProps> = ({
   style,
   testID,
 }) => {
+  const { t } = useI18n();
+
   return (
     <View style={[styles.container, style]} testID={testID} accessibilityRole="none">
       <View style={styles.iconContainer}>
         <Icon name="power_settings_new" style={styles.icon} />
       </View>
-      <Text style={styles.title}>Go offline?</Text>
-      <Text style={styles.description}>You will stop receiving new trip requests.</Text>
+      <Text style={styles.title}>{t('home.goOfflineTitle')}</Text>
+      <Text style={styles.description}>{t('home.goOfflineDesc')}</Text>
       <View style={styles.actions}>
-        <PrimaryButton label="GO OFFLINE" onPress={onGoOffline} style={styles.goOfflineButton} />
-        <SecondaryButton label="STAY LIVE" onPress={onStayLive} style={styles.stayLiveButton} />
+        <PrimaryButton label={t('home.goOfflineBtn')} onPress={onGoOffline} style={styles.goOfflineButton} />
+        <SecondaryButton label={t('home.stayLive')} onPress={onStayLive} style={styles.stayLiveButton} />
       </View>
     </View>
   );

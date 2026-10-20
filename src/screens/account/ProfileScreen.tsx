@@ -1,11 +1,14 @@
-﻿import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { launchImageLibrary } from 'react-native-image-picker';
+import { getAuth } from '@react-native-firebase/auth';
 import Icon from '../../components/atoms/Icon';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import type { AccountScreenProps } from '../../types/navigation';
+import type { DriverProfile } from '../../types/user';
+import { AuthService } from '../../services/auth/AuthService';
 import { useAuth } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n';
 
@@ -27,8 +30,8 @@ interface DocItem {
 }
 
 const DOCUMENTS: readonly DocItem[] = [
-  { key: 'aadhaar', labelKey: 'doc.aadhaar', icon: 'badge', status: 'verified', route: 'KYCDocuments' },
-  { key: 'dl', labelKey: 'doc.dl', icon: 'contact_mail', status: 'verified', route: 'KYCDocuments' },
+  { key: 'aadhaar', labelKey: 'doc.aadhaar', icon: 'badge', status: 'pending', route: 'KYCDocuments' },
+  { key: 'dl', labelKey: 'doc.dl', icon: 'contact_mail', status: 'pending', route: 'KYCDocuments' },
   { key: 'rc', labelKey: 'doc.rc', icon: 'directions_car', status: 'pending', route: 'VehicleDocuments' },
 ];
 
@@ -36,19 +39,28 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
   const { driver, logout } = useAuth();
   const { t, locale } = useI18n();
   const [avatarUri, setAvatarUri] = useState<string | undefined>(undefined);
+  const [profile, setProfile] = useState<DriverProfile | null>(null);
 
-  const name = driver?.name ?? 'Raj Kumar';
-  const location = driver?.location ?? 'Jodhpur, RJ';
-  const completion = driver?.profileCompletionPercent ?? 85;
+  const currentUser = getAuth().currentUser;
+  const avatarStorageKey = currentUser?.uid ? `${AVATAR_KEY}.${currentUser.uid}` : AVATAR_KEY;
+
+  useEffect(() => {
+    AuthService.getInstance().getProfile().then(setProfile).catch(() => {});
+  }, []);
+
+  const activeDriver = profile || driver;
+  const name = activeDriver?.name || (activeDriver?.phone ? `Driver (${activeDriver.phone})` : 'Driver');
+  const location = activeDriver?.location || '';
+  const completion = activeDriver?.profileCompletionPercent ?? 0;
 
   // Restore a previously chosen avatar so it survives app restarts.
   useEffect(() => {
-    AsyncStorage.getItem(AVATAR_KEY)
+    AsyncStorage.getItem(avatarStorageKey)
       .then((uri) => {
         if (uri) setAvatarUri(uri);
       })
       .catch(() => {});
-  }, []);
+  }, [avatarStorageKey]);
 
   const handlePickAvatar = useCallback(async () => {
     try {
@@ -57,12 +69,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
       const uri = result.assets?.[0]?.uri;
       if (uri) {
         setAvatarUri(uri);
-        AsyncStorage.setItem(AVATAR_KEY, uri).catch(() => {});
+        AsyncStorage.setItem(avatarStorageKey, uri).catch(() => {});
       }
     } catch {
       Alert.alert('Could not open gallery', 'Please try again.');
     }
-  }, []);
+  }, [avatarStorageKey]);
 
   const handleManage = useCallback(() => navigation.navigate('Subscription'), [navigation]);
   const handleLanguage = useCallback(() => navigation.navigate('LanguageSelection'), [navigation]);
@@ -89,7 +101,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
         <Pressable style={styles.headerBtn} onPress={handleSettings}>
           <Icon name="menu" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>PICK UP</Text>
+        <Text style={styles.headerTitle}>{t('home.appName')}</Text>
         <Pressable style={styles.headerBtn} onPress={handleNotifications}>
           <Icon name="notifications" size={24} color={colors.primary} />
         </Pressable>
@@ -103,7 +115,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
               <Image source={{ uri: resolvedAvatar }} style={styles.avatarImg} />
             ) : (
               <View style={styles.avatarPlaceholder}>
-                <Icon name="person" size={44} color={colors.onSurfaceVariant} />
+                <Image source={require('../../../assets/logo.png')} style={styles.avatarImg} resizeMode="contain" />
               </View>
             )}
             <View style={styles.avatarEditBadge}>
@@ -111,10 +123,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
             </View>
           </Pressable>
           <Text style={styles.name}>{name}</Text>
-          <View style={styles.locationRow}>
-            <Icon name="location_on" size={16} color={colors.onSurfaceVariant} />
-            <Text style={styles.locationText}>{location}</Text>
-          </View>
+          {location ? (
+            <View style={styles.locationRow}>
+              <Icon name="location_on" size={16} color={colors.onSurfaceVariant} />
+              <Text style={styles.locationText}>{location}</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Profile completion */}

@@ -1,11 +1,11 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { View, Text, SectionList, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius } from '../../theme';
-import { mockSettingsSections } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { SettingsRow } from '../../components/molecules/SettingsRow';
 import { useAuth } from '../../hooks/useAuth';
+import { useI18n } from '../../i18n';
 import type { SettingsItem, SettingsSection } from '../../types/user';
 import type { AccountScreenProps, AccountStackParamList } from '../../types/navigation';
 
@@ -19,9 +19,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   testID,
 }) => {
   const { logout } = useAuth();
+  const { t, locale } = useI18n();
   
   const noParamRoutes = new Set<string>([
-    'Profile', 'KYCDocuments', 'VehicleDocuments', 'VehicleStatus',
+    'Profile', 'KYCDocuments', 'VehicleDocuments', 'VehicleStatus', 'VehicleSelection',
     'Settings', 'Subscription', 'SubscriptionProcessing', 'LanguageSelection', 'AccountRestricted',
   ]);
 
@@ -31,19 +32,47 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       return;
     }
     if (item.route && noParamRoutes.has(item.route)) {
-      navigation.navigate(item.route as 'Profile');
+      navigation.navigate(item.route as any);
     }
   }, [navigation, logout]);
 
-  const sections = mockSettingsSections.map((section) => ({
-    title: section.title,
-    data: [...section.items],
-  }));
+  const sections: { title: string; data: SettingsItem[] }[] = useMemo(() => [
+    {
+      title: t('settings.personal'),
+      data: [
+        { id: 's1', label: t('settings.profile'), iconName: 'person', hasChevron: true, route: 'Profile' },
+        { id: 's2', label: t('settings.language'), value: locale === 'hi' ? 'हिन्दी' : 'English', iconName: 'language', hasChevron: true, route: 'LanguageSelection' },
+      ],
+    },
+    {
+      title: t('settings.vehicleService'),
+      data: [
+        { id: 's3', label: t('settings.vehicleDetails'), iconName: 'local_shipping', hasChevron: true, route: 'VehicleDocuments' },
+        { id: 's3b', label: t('vehicle.changeVehicle'), iconName: 'tune', hasChevron: true, route: 'VehicleSelection' },
+        { id: 's4', label: t('settings.kycDocuments'), iconName: 'description', hasChevron: true, route: 'KYCDocuments' },
+      ],
+    },
+    {
+      title: t('settings.preferences'),
+      data: [
+        { id: 's5', label: t('settings.notifications'), iconName: 'notifications', hasChevron: true },
+        { id: 's6', label: t('settings.privacy'), iconName: 'lock', hasChevron: true },
+      ],
+    },
+    {
+      title: t('settings.account'),
+      data: [
+        { id: 's7', label: t('settings.subscription'), iconName: 'card_membership', hasChevron: true, route: 'Subscription' },
+        { id: 's8', label: t('settings.helpSupport'), iconName: 'help', hasChevron: true },
+        { id: 's9', label: t('settings.logout'), iconName: 'logout', hasChevron: false },
+      ],
+    },
+  ], [t, locale]);
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title="Settings"
+        title={t('settings.title')}
         onBackPress={() => navigation.goBack()}
         showBackButton
       />

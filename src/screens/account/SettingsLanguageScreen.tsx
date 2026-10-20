@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '../../components/atoms/Icon';
@@ -14,12 +14,24 @@ export interface SettingsLanguageScreenProps {
 }
 
 export const SettingsLanguageScreen: React.FC<SettingsLanguageScreenProps> = ({ navigation, testID }) => {
-  const { t, locale, setLocale } = useI18n();
+  const { locale, setLocale } = useI18n();
   const [selected, setSelected] = useState<Locale>(locale);
 
+  useEffect(() => {
+    setSelected(locale);
+  }, [locale]);
+
+  const isHindi = selected === 'hi';
+
+  const screenTitle = isHindi ? 'भाषा' : 'Language';
+  const screenSubtitle = isHindi
+    ? 'Multiple Ride Partner ऐप के लिए अपनी पसंदीदा भाषा चुनें।'
+    : 'Select your preferred language for the Multiple Ride Partner app.';
+  const confirmButtonLabel = isHindi ? 'पुष्टि करें' : 'Confirm';
+
   const options: { id: Locale; label: string; initial: string }[] = [
-    { id: 'en', label: t('language.english'), initial: 'E' },
-    { id: 'hi', label: t('language.hindi'), initial: 'H' },
+    { id: 'en', label: 'English', initial: 'E' },
+    { id: 'hi', label: isHindi ? 'हिन्दी' : 'Hindi', initial: isHindi ? 'ह' : 'H' },
   ];
 
   const handleConfirm = useCallback(() => {
@@ -30,13 +42,13 @@ export const SettingsLanguageScreen: React.FC<SettingsLanguageScreenProps> = ({ 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title={t('language.title')}
+        title={screenTitle}
         onBackPress={() => navigation.goBack()}
         showBackButton
         showDivider
       />
       <View style={styles.container}>
-        <Text style={styles.subtitle}>{t('language.subtitle')}</Text>
+        <Text style={styles.subtitle}>{screenSubtitle}</Text>
 
         <View style={styles.list}>
           {options.map((item) => {
@@ -67,7 +79,7 @@ export const SettingsLanguageScreen: React.FC<SettingsLanguageScreenProps> = ({ 
         </View>
 
         <View style={styles.footer}>
-          <PrimaryButton label={t('language.confirm')} onPress={handleConfirm} />
+          <PrimaryButton label={confirmButtonLabel} onPress={handleConfirm} />
         </View>
       </View>
     </SafeAreaView>

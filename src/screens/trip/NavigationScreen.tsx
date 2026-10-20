@@ -16,6 +16,7 @@ import { DriverMap, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
 import { useActiveTrip } from '../../hooks/useActiveTrip';
 import { useTripRoute } from '../../hooks/useTripRoute';
+import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
 
 export interface NavigationScreenProps {
@@ -29,6 +30,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
   route: navRoute,
   testID,
 }) => {
+  const { t } = useI18n();
   const {
     currentLocation,
     permissionState,
@@ -81,7 +83,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
     ? (routingData.totalDistanceMeters / 1000).toFixed(1)
     : currentStop?.distanceKm ?? trip?.totalDistanceKm;
 
-  const destinationName = currentStop?.label || currentStop?.address?.split(',')[0] || 'Destination';
+  const destinationName = currentStop?.label || currentStop?.address?.split(',')[0] || t('trip.destination');
 
   // ── Derived UI states ──────────────────────────────────────────────
   const showPermissionModal = !granted;
@@ -110,11 +112,11 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
   }, [navigation, trip]);
 
   const handleCall = useCallback(() => {
-    Alert.alert('Contact customer', 'Reach the customer through in-app chat.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Open Chat', onPress: handleChat },
+    Alert.alert(t('trip.contactCustomer'), t('trip.reachCustomerChat'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('trip.openChat'), onPress: handleChat },
     ]);
-  }, [handleChat]);
+  }, [handleChat, t]);
 
   const handleMarkArrived = useCallback(() => {
     if (!trip || !currentStop) return;
@@ -144,7 +146,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
     return (
       <View style={styles.loading}>
         <ActivityIndicator color={colors.primary} />
-        <Text style={styles.loadingText}>Loading navigation...</Text>
+        <Text style={styles.loadingText}>{t('trip.loadingNav')}</Text>
       </View>
     );
   }
@@ -168,7 +170,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
           <Icon name="arrow_back" size={22} color={colors.primary} />
         </Pressable>
         <Text style={styles.topTitle}>
-          {isPickup ? 'NAVIGATING TO PICKUP' : 'NAVIGATING TO DROP'}
+          {isPickup ? t('trip.navigatingToPickup') : t('trip.navigatingToDrop')}
         </Text>
         <View style={styles.topBtn} />
       </SafeAreaView>
@@ -178,7 +180,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
         <SafeAreaView edges={['top']} style={styles.gpsToastWrap} pointerEvents="none">
           <View style={styles.gpsToast}>
             <Icon name="warning" size={18} color={colors.error} />
-            <Text style={styles.gpsToastText}>GPS Signal Lost. Searching for location...</Text>
+            <Text style={styles.gpsToastText}>{t('trip.gpsLost')}</Text>
           </View>
         </SafeAreaView>
       )}
@@ -188,7 +190,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
         <View style={styles.reconnectWrap} pointerEvents="none">
           <View style={styles.reconnectPill}>
             <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={styles.reconnectText}>Restoring connection...</Text>
+            <Text style={styles.reconnectText}>{t('trip.restoringConn')}</Text>
           </View>
         </View>
       )}
@@ -205,27 +207,27 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
               <View style={styles.metaRow}>
                 <Icon name="route" size={16} color={colors.onSurfaceVariant} />
                 <Text style={styles.metaText}>
-                  {displayDistance != null ? `${displayDistance} km` : '—'}
+                  {displayDistance != null ? t('common.km', { count: displayDistance }) : '—'}
                 </Text>
                 <View style={styles.metaDot} />
-                <Text style={styles.metaMins}>{displayEta != null ? `${displayEta} mins` : '—'}</Text>
+                <Text style={styles.metaMins}>{displayEta != null ? t('common.mins', { count: displayEta }) : '—'}</Text>
               </View>
             </View>
             <View style={styles.secondaryActions}>
-              <Pressable style={styles.circleAction} onPress={handleCall} accessibilityLabel="Call">
+              <Pressable style={styles.circleAction} onPress={handleCall} accessibilityLabel={t('common.call')}>
                 <Icon name="call" size={20} color={colors.primary} />
               </Pressable>
-              <Pressable style={styles.circleAction} onPress={handleChat} accessibilityLabel="Chat">
+              <Pressable style={styles.circleAction} onPress={handleChat} accessibilityLabel={t('common.chat')}>
                 <Icon name="chat" size={20} color={colors.primary} />
               </Pressable>
             </View>
           </View>
           <Pressable style={styles.mapsBtn} onPress={openExternalMaps} accessibilityRole="button">
             <Icon name="navigation" size={18} color={colors.primary} />
-            <Text style={styles.mapsBtnText}>OPEN IN GOOGLE MAPS</Text>
+            <Text style={styles.mapsBtnText}>{t('common.openInGoogleMaps')}</Text>
           </Pressable>
           <Pressable style={styles.primaryBtn} onPress={handleMarkArrived} accessibilityRole="button">
-            <Text style={styles.primaryBtnText}>MARK ARRIVED</Text>
+            <Text style={styles.primaryBtnText}>{t('common.markArrived')}</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -237,12 +239,12 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
             <View style={styles.modalIcon}>
               <Icon name="location_on" size={26} color={colors.primary} />
             </View>
-            <Text style={styles.modalTitle}>Enable Location Services</Text>
+            <Text style={styles.modalTitle}>{t('trip.enableLocationTitle')}</Text>
             <Text style={styles.modalBody}>
-              To navigate to the pickup location, we need access to your device GPS.
+              {t('trip.enableLocationBody')}
             </Text>
             <Pressable style={styles.modalBtn} onPress={handleGrantPermission} accessibilityRole="button">
-              <Text style={styles.modalBtnText}>GRANT PERMISSION</Text>
+              <Text style={styles.modalBtnText}>{t('common.grantPermission')}</Text>
             </Pressable>
           </View>
         </View>
@@ -254,9 +256,9 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
           <View style={styles.networkIcon}>
             <Icon name="wifi_off" size={40} color={colors.outlineVariant} />
           </View>
-          <Text style={styles.networkTitle}>Connection Lost</Text>
+          <Text style={styles.networkTitle}>{t('common.connectionLost')}</Text>
           <Pressable style={styles.retryBtn} onPress={handleRetryNetwork} accessibilityRole="button">
-            <Text style={styles.retryText}>RETRY</Text>
+            <Text style={styles.retryText}>{t('common.retry')}</Text>
           </Pressable>
         </View>
       )}

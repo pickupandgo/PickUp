@@ -1,8 +1,8 @@
 import React, { useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { launchCamera } from 'react-native-image-picker';
-import { deliveryProofLabels } from '../../data/mockData';
 import { CameraOverlay } from '../../components/organisms/CameraOverlay';
+import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
 
 /**
@@ -22,6 +22,7 @@ export const DeliveryProofCameraScreen: React.FC<DeliveryProofCameraScreenProps>
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   const { tripId, stopId } = route.params;
 
   const handleCapture = useCallback(async () => {
@@ -56,8 +57,9 @@ export const DeliveryProofCameraScreen: React.FC<DeliveryProofCameraScreenProps>
   return (
     <View style={styles.container} testID={testID}>
       <CameraOverlay
-        title={deliveryProofLabels.cameraTitle}
-        instructions={deliveryProofLabels.cameraInstructions}
+        title={t('deliveryProof.title')}
+        instructions={t('deliveryProof.instructions')}
+        captureLabel={t('deliveryProof.capture')}
         onCapture={handleCapture}
       />
     </View>

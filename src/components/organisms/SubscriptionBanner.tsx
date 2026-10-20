@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, ViewStyle } from 'react-native';
 import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { StatusBadge, type BadgeVariant } from '../atoms/StatusBadge';
+import { useI18n } from '../../i18n';
 
 export interface SubscriptionBannerProps {
   readonly planName: string;
@@ -21,10 +22,13 @@ export const SubscriptionBanner: React.FC<SubscriptionBannerProps> = ({
   statusLabel,
   validUntil,
   onManagePress,
-  manageLabel = 'MANAGE',
+  manageLabel,
   style,
   testID,
 }) => {
+  const { t } = useI18n();
+  const resolvedManageLabel = manageLabel ?? t('profile.manage');
+
   return (
     <View style={[styles.container, style]} testID={testID} accessibilityRole="none">
       <View style={styles.header}>
@@ -33,7 +37,7 @@ export const SubscriptionBanner: React.FC<SubscriptionBannerProps> = ({
         </View>
         <View style={styles.content}>
           <Text style={styles.planName}>{planName}</Text>
-          <Text style={styles.validity}>Valid until {validUntil}</Text>
+          <Text style={styles.validity}>{t('subscription.validUntilDate', { date: validUntil })}</Text>
         </View>
         <StatusBadge label={statusLabel} variant={status} />
       </View>
@@ -41,9 +45,9 @@ export const SubscriptionBanner: React.FC<SubscriptionBannerProps> = ({
         <Pressable
           onPress={onManagePress}
           accessibilityRole="button"
-          accessibilityLabel={manageLabel}
+          accessibilityLabel={resolvedManageLabel}
         >
-          <Text style={styles.manageLabel}>{manageLabel}</Text>
+          <Text style={styles.manageLabel}>{resolvedManageLabel}</Text>
         </Pressable>
       ) : null}
     </View>

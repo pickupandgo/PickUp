@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing } from '../../theme';
-import { walletLabels } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 import type { WalletScreenProps } from '../../types/navigation';
 
 export interface RechargeProcessingScreenProps {
@@ -16,6 +16,7 @@ export const RechargeProcessingScreen: React.FC<RechargeProcessingScreenProps> =
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   const { amount } = route.params;
 
   useEffect(() => {
@@ -36,8 +37,8 @@ export const RechargeProcessingScreen: React.FC<RechargeProcessingScreenProps> =
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <View style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.title}>{walletLabels.processingTitle}</Text>
-        <Text style={styles.subtitle}>{walletLabels.processingSubtitle}</Text>
+        <Text style={styles.title}>{t('wallet.processingTitle')}</Text>
+        <Text style={styles.subtitle}>{t('wallet.processingSubtitle')}</Text>
         <Text style={styles.amount}>₹{amount.toLocaleString()}</Text>
       </View>
     </SafeAreaView>

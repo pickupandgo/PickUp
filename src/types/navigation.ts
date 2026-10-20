@@ -21,6 +21,7 @@ export type AuthStackParamList = {
 export type HomeStackParamList = {
   DriverHome: undefined;
   NotificationCenter: undefined;
+  VehicleSelection?: { readonly language?: string };
   ActiveTrip: { readonly tripId: string };
   Navigation: { readonly tripId: string };
   MultiStopJourney: { readonly tripId: string };
@@ -68,6 +69,7 @@ export type AccountStackParamList = {
   KYCDocuments: undefined;
   VehicleDocuments: undefined;
   VehicleStatus: undefined;
+  VehicleSelection?: { readonly language?: string };
   Settings: undefined;
   Subscription: undefined;
   SubscriptionProcessing: undefined;

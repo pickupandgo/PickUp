@@ -12,6 +12,7 @@ import { SubscriptionProcessingScreen } from '../../screens/account/Subscription
 import { SubscriptionResultScreen } from '../../screens/account/SubscriptionResultScreen';
 import { SettingsLanguageScreen } from '../../screens/account/SettingsLanguageScreen';
 import { AccountRestrictedScreen } from '../../screens/account/AccountRestrictedScreen';
+import { VehicleSelectionScreen } from '../../screens/auth/VehicleSelectionScreen';
 
 const Stack = createNativeStackNavigator<AccountStackParamList>();
 
@@ -27,6 +28,7 @@ export const AccountStack: React.FC = () => {
       <Stack.Screen name="KYCDocuments" component={KYCDocumentsScreen} />
       <Stack.Screen name="VehicleDocuments" component={VehicleDocumentsScreen} />
       <Stack.Screen name="VehicleStatus" component={VehicleStatusScreen} />
+      <Stack.Screen name="VehicleSelection" component={VehicleSelectionScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="Subscription" component={SubscriptionScreen} />
       <Stack.Screen

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Animated, Easing, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Animated, Easing, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { EarningsCard } from '../../components/molecules/EarningsCard';
@@ -7,7 +7,8 @@ import { WalletCard } from '../../components/molecules/WalletCard';
 import Icon from '../../components/atoms/Icon';
 import { GoLiveSheet } from '../../components/organisms/GoLiveSheet';
 import { GoOfflineSheet } from '../../components/organisms/GoOfflineSheet';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, CommonActions } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDriverLocation, LocationService } from '../../location';
 import type { HomeScreenProps } from '../../types/navigation';
 import type { ActiveTrip, TripStop } from '../../types/trip';
@@ -16,6 +17,8 @@ import { useWallet } from '../../hooks/useWallet';
 import { useEarnings } from '../../hooks/useEarnings';
 import { useActiveTrip } from '../../hooks/useActiveTrip';
 import { useI18n } from '../../i18n';
+import { vehicleImages } from '../../data/mockData';
+import { getSelectedVehicleId, getVehicleDetails, type VehicleDetails } from '../../state/vehicle';
 
 export type DriverMode = 'offline' | 'searching' | 'active_trip';
 
@@ -145,11 +148,11 @@ const ActiveTripHero: React.FC<{ trip: ActiveTrip; onOpen: () => void }> = ({ tr
             <Text style={styles.heroBadgeText}>{t('home.activeTrip')}</Text>
           </View>
           <Text style={styles.heroTitle} numberOfLines={1}>
-            {currentStop?.label ?? 'Current Stop'}
+            {currentStop?.label ?? t('home.currentStop')}
           </Text>
           <Text style={styles.heroSubtitle}>
-            {distanceKm != null ? `${distanceKm} km` : ''}
-            {etaMinutes != null ? `${distanceKm != null ? ' · ' : ''}${etaMinutes} min away` : ''}
+            {distanceKm != null ? t('common.km', { count: distanceKm }) : ''}
+            {etaMinutes != null ? `${distanceKm != null ? ' · ' : ''}${t('common.minAway', { count: etaMinutes })}` : ''}
           </Text>
         </View>
         <View style={styles.earningBox}>
@@ -167,10 +170,10 @@ const ActiveTripHero: React.FC<{ trip: ActiveTrip; onOpen: () => void }> = ({ tr
           const isPickup = stop.type === 'pickup';
           if (!isPickup) dropCounter += 1;
           const subLabel = isPickup
-            ? 'Pickup'
+            ? t('trip.pickup')
             : stop.status === 'current'
-              ? `Drop ${dropCounter} of ${totalDrops}`
-              : `Drop ${dropCounter}`;
+              ? t('trip.dropOf', { current: dropCounter, total: totalDrops })
+              : t('trip.drop', { number: dropCounter });
           return (
             <TimelineRow
               key={stop.id}
@@ -243,6 +246,45 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
     [fadeAnim, startTracking, stopTracking, requestPermission],
   );
 
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [vehicleDetails, setVehicleDetails] = useState<VehicleDetails>(() => getVehicleDetails(null, t));
+
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      AsyncStorage.getItem('driver.avatarUri')
+        .then((uri) => {
+          if (isMounted && uri) setAvatarUri(uri);
+        })
+        .catch(() => {});
+
+      getSelectedVehicleId()
+        .then((id) => {
+          if (isMounted) {
+            setVehicleDetails(getVehicleDetails(id, t));
+          }
+        })
+        .catch(() => {});
+
+      return () => {
+        isMounted = false;
+      };
+    }, [t]),
+  );
+
+  const handleVehiclePress = useCallback(() => {
+    navigation.navigate('VehicleSelection' as any);
+  }, [navigation]);
+
+  const handleProfile = useCallback(() => {
+    const parent = navigation.getParent();
+    if (parent) {
+      parent.navigate('AccountTab', { screen: 'Profile' });
+    } else {
+      navigation.dispatch(CommonActions.navigate('AccountTab', { screen: 'Profile' }));
+    }
+  }, [navigation]);
+
   const handleNotifications = useCallback(() => {
     navigation.navigate('NotificationCenter');
   }, [navigation]);
@@ -291,12 +333,22 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
     <SafeAreaView style={styles.safeArea} testID={testID}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
+        <Pressable
+          onPress={handleProfile}
+          style={({ pressed }) => [styles.headerLeft, pressed && styles.headerLeftPressed]}
+          accessibilityRole="button"
+          accessibilityLabel={t('profile.title')}
+          testID="header-profile-button"
+        >
           <View style={styles.headerAvatar}>
-            <Icon name="person" size={22} color={colors.onSurfaceVariant} />
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={styles.headerAvatarImage} />
+            ) : (
+              <Image source={require('../../../assets/logo.png')} style={styles.headerAvatarImage} resizeMode="contain" />
+            )}
           </View>
           <Text style={styles.headerTitle}>{t('home.driverHub')}</Text>
-        </View>
+        </Pressable>
         <View style={styles.headerRight}>
           <Pressable
             onPress={canToggle ? () => handleToggleLive(!isLive) : undefined}
@@ -309,7 +361,7 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
           >
             {mode === 'offline' ? (
               <View style={styles.pillInnerOffline}>
-                <Text style={styles.pillTextOffline}>OFFLINE</Text>
+                <Text style={styles.pillTextOffline}>{t('home.offline')}</Text>
                 <View style={styles.dotStatic} />
               </View>
             ) : mode === 'active_trip' ? (
@@ -361,19 +413,29 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
           )}
 
           {/* Vehicle */}
-          <View style={styles.vehicleCard}>
+          <Pressable
+            style={({ pressed }) => [styles.vehicleCard, pressed && styles.vehicleCardPressed]}
+            onPress={handleVehiclePress}
+            accessibilityRole="button"
+            accessibilityLabel={`${t('home.currentVehicle')}: ${vehicleDetails.displayName}`}
+          >
             <View style={styles.vehicleIconContainer}>
-              <Icon name="local_shipping" size={20} color={colors.onSurfaceVariant} />
+              <Image
+                source={vehicleDetails.image}
+                style={styles.vehicleThumb}
+                resizeMode="contain"
+                fadeDuration={0}
+              />
             </View>
             <View style={styles.vehicleDetails}>
               <Text style={styles.vehicleLabel}>{t('home.currentVehicle')}</Text>
-              <Text style={styles.vehicleName}>Tata Ace | RJ 19 XX 1234</Text>
+              <Text style={styles.vehicleName}>{vehicleDetails.displayName} | {vehicleDetails.registration}</Text>
             </View>
             <View style={styles.approvedPill}>
               <Icon name="check_circle" size={12} color={colors.primary} />
               <Text style={styles.approvedText}>{t('home.approved')}</Text>
             </View>
-          </View>
+          </Pressable>
 
           {/* Earnings + Wallet */}
           <View style={styles.dashboardRow}>
@@ -451,6 +513,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+  },
+  headerLeftPressed: {
+    opacity: 0.65,
   },
   headerRight: {
     flexDirection: 'row',
@@ -466,6 +533,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.outlineVariant,
+    overflow: 'hidden',
+  },
+  headerAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   headerTitle: {
     ...typography.headlineSm,
@@ -811,13 +883,23 @@ const styles = StyleSheet.create({
     borderColor: colors.outlineVariant,
     ...shadows.sm,
   },
+  vehicleCardPressed: {
+    opacity: 0.85,
+  },
   vehicleIconContainer: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
     borderRadius: borderRadius.lg,
-    backgroundColor: colors.surfaceContainer,
+    backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+    padding: 2,
+  },
+  vehicleThumb: {
+    width: 42,
+    height: 42,
   },
   vehicleDetails: {
     flex: 1,

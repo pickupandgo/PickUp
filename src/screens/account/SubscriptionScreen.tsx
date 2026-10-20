@@ -3,12 +3,13 @@ import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { mockSubscription, subscriptionLabels } from '../../data/mockData';
+import { mockSubscription } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { SubscriptionBanner } from '../../components/organisms/SubscriptionBanner';
 import { BenefitCard } from '../../components/molecules/BenefitCard';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { SecondaryButton } from '../../components/atoms/SecondaryButton';
+import { useI18n } from '../../i18n';
 import type { AccountScreenProps } from '../../types/navigation';
 
 export interface SubscriptionScreenProps {
@@ -20,6 +21,7 @@ export const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({
   navigation,
   testID,
 }) => {
+  const { t } = useI18n();
   const subscription = mockSubscription;
   const isActive = subscription.status === 'active';
   const isExpired = subscription.status === 'expired' || subscription.status === 'inactive';
@@ -28,10 +30,17 @@ export const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({
     navigation.navigate('SubscriptionProcessing');
   }, [navigation]);
 
+  const getBenefit = (b: { id: string; title: string; description: string; iconName: string }) => {
+    if (b.id === 'b1') return { title: t('subscription.tripRequests'), description: t('subscription.tripRequestsDesc') };
+    if (b.id === 'b2') return { title: t('subscription.premiumRouting'), description: t('subscription.premiumRoutingDesc') };
+    if (b.id === 'b3') return { title: t('subscription.instantTransfer'), description: t('subscription.instantTransferDesc') };
+    return { title: b.title, description: b.description };
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title={subscriptionLabels.subscriptionTitle}
+        title={t('subscription.title')}
         onBackPress={() => navigation.goBack()}
         showBackButton
       />
@@ -41,7 +50,7 @@ export const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({
         <SubscriptionBanner
           planName={subscription.planName}
           status={isActive ? 'active' : 'expired'}
-          statusLabel={isActive ? subscriptionLabels.activeLabel : subscriptionLabels.expiredLabel}
+          statusLabel={isActive ? t('subscription.active') : t('subscription.expired')}
           validUntil={subscription.validUntil}
         />
 
@@ -49,50 +58,53 @@ export const SubscriptionScreen: React.FC<SubscriptionScreenProps> = ({
         {isExpired ? (
           <View style={styles.warningCard}>
             <Icon name="block" style={styles.warningIcon} />
-            <Text style={styles.warningTitle}>{subscriptionLabels.requiredTitle}</Text>
-            <Text style={styles.warningSubtitle}>{subscriptionLabels.requiredSubtitle}</Text>
+            <Text style={styles.warningTitle}>{t('subscription.requiredTitle')}</Text>
+            <Text style={styles.warningSubtitle}>{t('subscription.requiredSubtitle')}</Text>
           </View>
         ) : null}
 
         {/* Plan details */}
         <View style={styles.planCard}>
-          <Text style={styles.planLabel}>PLAN DETAILS</Text>
+          <Text style={styles.planLabel}>{t('subscription.planDetails')}</Text>
           <View style={styles.planRow}>
-            <Text style={styles.planKey}>Amount</Text>
+            <Text style={styles.planKey}>{t('subscription.amount')}</Text>
             <Text style={styles.planValue}>{subscription.currency}{subscription.amount}/{subscription.billingCycle}</Text>
           </View>
           <View style={styles.planRow}>
-            <Text style={styles.planKey}>Valid From</Text>
+            <Text style={styles.planKey}>{t('subscription.validFrom')}</Text>
             <Text style={styles.planValue}>{subscription.validFrom}</Text>
           </View>
           <View style={styles.planRow}>
-            <Text style={styles.planKey}>Valid Until</Text>
+            <Text style={styles.planKey}>{t('subscription.validUntil')}</Text>
             <Text style={styles.planValue}>{subscription.validUntil}</Text>
           </View>
           <View style={styles.planRow}>
-            <Text style={styles.planKey}>Auto Renew</Text>
-            <Text style={styles.planValue}>{subscription.autoRenew ? 'Yes' : 'No'}</Text>
+            <Text style={styles.planKey}>{t('subscription.autoRenew')}</Text>
+            <Text style={styles.planValue}>{subscription.autoRenew ? t('common.yes') : t('common.no')}</Text>
           </View>
         </View>
 
         {/* Benefits */}
-        <Text style={styles.sectionTitle}>Benefits</Text>
-        {subscription.benefits.map((benefit) => (
-          <BenefitCard
-            key={benefit.id}
-            title={benefit.title}
-            description={benefit.description}
-            iconName={benefit.iconName}
-          />
-        ))}
+        <Text style={styles.sectionTitle}>{t('subscription.benefits')}</Text>
+        {subscription.benefits.map((benefit) => {
+          const localized = getBenefit(benefit);
+          return (
+            <BenefitCard
+              key={benefit.id}
+              title={localized.title}
+              description={localized.description}
+              iconName={benefit.iconName}
+            />
+          );
+        })}
       </ScrollView>
 
       {/* Bottom action */}
       <View style={styles.actions}>
         {isExpired ? (
-          <PrimaryButton label={subscriptionLabels.subscribeNowLabel} onPress={handleSubscribe} />
+          <PrimaryButton label={t('subscription.subscribeNow')} onPress={handleSubscribe} />
         ) : (
-          <SecondaryButton label="MANAGE SUBSCRIPTION" onPress={() => {}} />
+          <SecondaryButton label={t('subscription.manage')} onPress={() => {}} />
         )}
       </View>
     </SafeAreaView>

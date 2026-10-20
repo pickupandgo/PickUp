@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing } from '../../theme';
-import { cancellationLabels } from '../../data/mockData';
+import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
 
 /**
@@ -20,6 +20,7 @@ export const CancellationProcessingScreen: React.FC<CancellationProcessingScreen
   route,
   testID,
 }) => {
+  const { t } = useI18n();
   const { tripId, reason } = route.params;
 
   useEffect(() => {
@@ -39,8 +40,8 @@ export const CancellationProcessingScreen: React.FC<CancellationProcessingScreen
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <View style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.title}>{cancellationLabels.processingTitle}</Text>
-        <Text style={styles.subtitle}>{cancellationLabels.processingSubtitle}</Text>
+        <Text style={styles.title}>{t('cancellation.processingTitle')}</Text>
+        <Text style={styles.subtitle}>{t('cancellation.processingSubtitle')}</Text>
       </View>
     </SafeAreaView>
   );
