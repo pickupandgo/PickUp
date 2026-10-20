@@ -16,6 +16,16 @@ interface RegistrationRow {
   readonly driverId: string | null;
 }
 
+export interface DriverRegistrationParams {
+  readonly legalName?: string | null;
+  readonly phoneOverride?: string | null;
+  readonly email?: string | null;
+  readonly vehicleType?: string | null;
+  readonly vehicleMakeModel?: string | null;
+  readonly vehicleRegistrationNumber?: string | null;
+  readonly drivingLicenseNumber?: string | null;
+}
+
 export interface DriverRegistrationResult {
   readonly account: DriverAccountResponse;
   readonly created: boolean;
@@ -32,10 +42,15 @@ export class DriversService {
 
   async register(
     identity: SignedInIdentity,
-    legalName?: string | null,
+    paramsOrLegalName?: DriverRegistrationParams | string | null,
     phoneOverride?: string | null,
   ): Promise<DriverRegistrationResult> {
-    const rawPhone = identity.phoneNumber ?? phoneOverride ?? null;
+    const params: DriverRegistrationParams =
+      typeof paramsOrLegalName === 'object' && paramsOrLegalName !== null
+        ? paramsOrLegalName
+        : { legalName: paramsOrLegalName, phoneOverride };
+
+    const rawPhone = identity.phoneNumber ?? params.phoneOverride ?? null;
     const phone = rawPhone ? rawPhone.trim() : null;
 
     if (phone === null || !E164_PHONE.test(phone)) {
@@ -46,13 +61,34 @@ export class DriversService {
       );
     }
 
-    const trimmedLegalName = legalName ? legalName.trim().slice(0, 120) : null;
+    const trimmedLegalName = params.legalName ? params.legalName.trim().slice(0, 120) : null;
+    const trimmedEmail = params.email ? params.email.trim().slice(0, 255) : null;
+    const trimmedVehicleType = params.vehicleType ? params.vehicleType.trim().slice(0, 30) : null;
+    const trimmedVehicleMakeModel = params.vehicleMakeModel
+      ? params.vehicleMakeModel.trim().slice(0, 100)
+      : null;
+    const trimmedVehicleRegistration = params.vehicleRegistrationNumber
+      ? params.vehicleRegistrationNumber.trim().toUpperCase().slice(0, 30)
+      : null;
+    const trimmedLicenseNumber = params.drivingLicenseNumber
+      ? params.drivingLicenseNumber.trim().toUpperCase().slice(0, 50)
+      : null;
 
     const [row] = await this.prisma.$queryRaw<RegistrationRow[]>`
       SELECT outcome,
              registered_user_id AS "userId",
              registered_driver_id AS "driverId"
-        FROM register_driver(${identity.provider}, ${identity.subject}, ${phone}, ${trimmedLegalName})`;
+        FROM register_driver(
+          ${identity.provider},
+          ${identity.subject},
+          ${phone},
+          ${trimmedLegalName},
+          ${trimmedEmail},
+          ${trimmedVehicleType},
+          ${trimmedVehicleMakeModel},
+          ${trimmedVehicleRegistration},
+          ${trimmedLicenseNumber}
+        )`;
 
     switch (row?.outcome) {
       case 'CREATED':
@@ -107,6 +143,11 @@ export class DriversService {
       phone: driver.user.phone,
       approvalStatus: driver.approvalStatus,
       legalName: driver.legalName,
+      email: driver.email,
+      vehicleType: driver.vehicleType,
+      vehicleMakeModel: driver.vehicleMakeModel,
+      vehicleRegistrationNumber: driver.vehicleRegistrationNumber,
+      drivingLicenseNumber: driver.drivingLicenseNumber,
       walletBalancePaise: Number(driver.wallet?.balancePaise ?? 0n),
       createdAt: driver.createdAt.toISOString(),
     };

@@ -313,9 +313,14 @@ model Driver {
   approvedByUserId String?              @map("approved_by_user_id") @db.Uuid
   /// Name on the driver's approved KYC documents. Set by ops tooling (never by the API role) and
   /// compared with the account holder name the bank reports during bank-account validation.
-  legalName        String?              @map("legal_name") @db.VarChar(120)
-  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  legalName                 String?              @map("legal_name") @db.VarChar(120)
+  email                     String?              @map("email") @db.VarChar(255)
+  vehicleType               String?              @map("vehicle_type") @db.VarChar(30)
+  vehicleMakeModel          String?              @map("vehicle_make_model") @db.VarChar(100)
+  vehicleRegistrationNumber String?              @map("vehicle_registration_number") @db.VarChar(30)
+  drivingLicenseNumber      String?              @map("driving_license_number") @db.VarChar(50)
+  createdAt                 DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user         User                       @relation("DriverUser", fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   approvedBy   User?                      @relation("DriverApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
@@ -327,6 +332,7 @@ model Driver {
   bankChanges  BankAccountChangeRequest[]
   payouts      DriverPayout[]
 
+  @@index([vehicleRegistrationNumber], map: "idx_drivers_vehicle_registration")
   @@map("drivers")
 }
 

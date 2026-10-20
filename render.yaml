@@ -5,7 +5,7 @@ services:
     plan: starter
     region: singapore
     branch: integration/backend-raj-merge
-    buildCommand: npm ci --include=dev && npm run build
+    buildCommand: npm ci --include=dev && npx prisma migrate deploy && npm run build
     startCommand: npm run start
     healthCheckPath: /health/live
     autoDeploy: false

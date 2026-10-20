@@ -25,7 +25,15 @@ export class DriversController {
     @Body() body: RegisterDriverRequest,
     @Res({ passthrough: true }) response: Response,
   ): Promise<DriverAccountResponse> {
-    const { account, created } = await this.drivers.register(identity, body?.name, body?.phone);
+    const { account, created } = await this.drivers.register(identity, {
+      legalName: body?.name,
+      phoneOverride: body?.phone,
+      email: body?.email,
+      vehicleType: body?.vehicleType,
+      vehicleMakeModel: body?.vehicleMakeModel,
+      vehicleRegistrationNumber: body?.vehicleRegistrationNumber,
+      drivingLicenseNumber: body?.drivingLicenseNumber,
+    });
     response.status(created ? HttpStatus.CREATED : HttpStatus.OK);
     return account;
   }
