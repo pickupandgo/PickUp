@@ -2,6 +2,7 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../types/navigation';
 import { UnifiedAuthScreen } from '../../screens/auth/UnifiedAuthScreen';
+import { DriverRegistrationScreen } from '../../screens/auth/DriverRegistrationScreen';
 import { OTPVerificationScreen } from '../../screens/auth/OTPVerificationScreen';
 import { VehicleSelectionScreen } from '../../screens/auth/VehicleSelectionScreen';
 import { LanguageSelectionScreen } from '../../screens/auth/LanguageSelectionScreen';
@@ -35,6 +36,11 @@ export const AuthStack: React.FC<AuthStackProps> = ({ onAuthComplete, initialRou
             isLoading={isLoading}
             error={error}
           />
+        )}
+      </Stack.Screen>
+      <Stack.Screen name="DriverRegistration">
+        {({ navigation }) => (
+          <DriverRegistrationScreen navigation={navigation} />
         )}
       </Stack.Screen>
       <Stack.Screen name="OTPVerification">

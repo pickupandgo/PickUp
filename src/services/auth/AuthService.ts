@@ -20,6 +20,7 @@ export interface IAuthService {
   verifyOtp(phone: string, otp: string): Promise<{ token: string; isNewUser: boolean }>;
   loginWithEmail(email: string, password: string): Promise<{ token: string; isNewUser: boolean }>;
   signUpWithEmail(email: string, password: string): Promise<{ token: string; isNewUser: boolean }>;
+  registerDriver(data: { name: string; phone: string; email?: string; vehicleMake?: string; licensePlate?: string }): Promise<any>;
   completeOnboarding(vehicleId: string, language: string): Promise<{ driver: DriverProfile }>;
   getProfile(): Promise<DriverProfile>;
   logout(): Promise<void>;
@@ -289,17 +290,75 @@ export class FirebaseAuthService implements IAuthService {
     };
   }
 
+  async registerDriver(data: {
+    name: string;
+    phone: string;
+    email?: string;
+    vehicleMake?: string;
+    licensePlate?: string;
+  }): Promise<any> {
+    const formattedPhone = formatToE164(data.phone);
+    console.log(`[AUTH] Registering driver with backend for phone: ${maskPhoneNumber(formattedPhone)}`);
+
+    try {
+      const currentUser = getAuth().currentUser;
+      if (currentUser) {
+        const token = await currentUser.getIdToken();
+        if (token) {
+          ApiClient.getInstance().setToken(token);
+        }
+      }
+
+      const response = await ApiClient.getInstance().post<any>('/v1/drivers/me', {
+        name: data.name,
+        phone: formattedPhone,
+      });
+      console.log('[AUTH] Backend driver registration response received:', response);
+      return response;
+    } catch (error: any) {
+      console.warn('[AUTH] Backend driver registration response:', error?.message);
+      if (
+        error?.message?.includes('CONFIG_ERROR') ||
+        error?.message?.includes('API_BASE_URL') ||
+        error?.message?.includes('Network') ||
+        error?.message?.includes('Could not reach')
+      ) {
+        console.warn('[AUTH] Continuing gracefully in offline/mock mode');
+        return { success: true, offline: true };
+      }
+      throw error;
+    }
+  }
+
   async getProfile(): Promise<DriverProfile> {
     await delay(500);
     const currentUser = getAuth().currentUser;
     const phone = currentUser?.phoneNumber || this.activePhone || '';
-    const name = currentUser?.displayName || (phone ? `Driver (${phone})` : 'Driver');
+    let name = currentUser?.displayName || (phone ? `Driver (${phone})` : 'Driver');
+    let profileCompletionPercent = 0;
+
+    try {
+      if (currentUser) {
+        const token = await currentUser.getIdToken();
+        if (token) {
+          ApiClient.getInstance().setToken(token);
+          const backendProfile = await ApiClient.getInstance().get<any>('/v1/drivers/me');
+          if (backendProfile) {
+            name = backendProfile.legalName || name;
+            profileCompletionPercent = backendProfile.approvalStatus === 'APPROVED' ? 100 : 50;
+          }
+        }
+      }
+    } catch (e: any) {
+      console.log('[AUTH] Backend driver profile fetch bypassed:', e?.message);
+    }
+
     return {
       id: currentUser?.uid || '',
       name,
       phone,
       location: '',
-      profileCompletionPercent: 0,
+      profileCompletionPercent,
       status: 'offline',
       language: 'en',
     };

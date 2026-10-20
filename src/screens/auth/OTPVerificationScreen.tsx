@@ -60,6 +60,21 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
       const success = await onVerifyOtp(value);
       if (!success) {
         setHasError(true);
+      } else {
+        if (isSignUp && route.params?.driverData) {
+          try {
+            await AuthService.getInstance().registerDriver({
+              phone,
+              name: route.params.driverData.name || '',
+              email: route.params.driverData.email,
+              vehicleMake: route.params.driverData.vehicleMake,
+              licensePlate: route.params.driverData.licensePlate,
+            });
+          } catch (regErr: any) {
+            console.warn('[AUTH] Driver registration backend call:', regErr?.message);
+          }
+        }
+        navigation.navigate('LanguageSelection');
       }
     } catch (e: any) {
       setHasError(true);
@@ -68,7 +83,7 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
       isVerifyingRef.current = false;
       setIsVerifying(false);
     }
-  }, [onVerifyOtp, isVerifying, isLoading, isSignUp, t]);
+  }, [onVerifyOtp, isVerifying, isLoading, isSignUp, route.params, phone, navigation, t]);
 
   const handleVerify = useCallback(async () => {
     if (otp.length < 6 || isVerifying || isLoading) return;

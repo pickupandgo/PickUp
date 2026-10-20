@@ -143,8 +143,7 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
             <Pressable
               style={[styles.tab, isSignUp && styles.activeTab]}
               onPress={() => {
-                setAuthMode('signup');
-                setLocalError(null);
+                navigation?.navigate('DriverRegistration');
               }}
             >
               <Text style={[styles.tabText, isSignUp && styles.activeTabText]}>{t('auth.signupTab')}</Text>
@@ -232,8 +231,12 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
               <Text
                 style={styles.toggleLink}
                 onPress={() => {
-                  setAuthMode(isSignUp ? 'login' : 'signup');
-                  setLocalError(null);
+                  if (isSignUp) {
+                    setAuthMode('login');
+                    setLocalError(null);
+                  } else {
+                    navigation?.navigate('DriverRegistration');
+                  }
                 }}
               >
                 {isSignUp ? t('auth.loginTab') : t('auth.signupTab')}

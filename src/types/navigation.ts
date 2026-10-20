@@ -11,7 +11,18 @@ import type { TripOffer } from './trip';
 
 export type AuthStackParamList = {
   UnifiedAuth: undefined;
-  OTPVerification: { readonly phone: string; readonly intendedRole?: 'driver'; readonly authMode?: 'signup' | 'login' };
+  DriverRegistration: undefined;
+  OTPVerification: {
+    readonly phone: string;
+    readonly intendedRole?: 'driver';
+    readonly authMode?: 'signup' | 'login';
+    readonly driverData?: {
+      readonly name?: string;
+      readonly email?: string;
+      readonly vehicleMake?: string;
+      readonly licensePlate?: string;
+    };
+  };
   VehicleSelection: { readonly language: string };
   LanguageSelection: undefined;
 };
