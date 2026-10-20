@@ -19,6 +19,7 @@ export const getFareEstimate = async (
   pickup: GeoPoint,
   drop: GeoPoint,
   weightKg: number,
+  vehicleType?: string,
   signal?: AbortSignal
 ): Promise<FareEstimate> => {
   const res = await request<Envelope & FareEstimate>('/fare/estimate', {
@@ -28,6 +29,7 @@ export const getFareEstimate = async (
       dropLat: drop.latitude,
       dropLng: drop.longitude,
       weight: weightKg,
+      vehicleType,
     },
     signal,
   });

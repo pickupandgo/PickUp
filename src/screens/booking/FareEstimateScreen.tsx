@@ -45,6 +45,7 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
   const pickup = draft.pickup;
   /** The engine defaults to 10kg when weight is omitted; mirror that here. */
   const weightKg = draft.weightKg ?? 10;
+  const vehicleType = draft.vehicleType;
 
   const loadEstimate = useCallback(async () => {
     if (!pickup || !primaryDrop) {
@@ -54,19 +55,19 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
     setIsLoading(true);
     setError(undefined);
     try {
-      setFareEstimate(await getFareEstimate(pickup, primaryDrop, weightKg));
+      setFareEstimate(await getFareEstimate(pickup, primaryDrop, weightKg, vehicleType));
     } catch (caught) {
       setError(toApiError(caught).userMessage);
     } finally {
       setIsLoading(false);
     }
-  }, [pickup, primaryDrop, weightKg, setFareEstimate]);
+  }, [pickup, primaryDrop, weightKg, vehicleType, setFareEstimate]);
 
-  // Quote on entry, and re-quote whenever route or weight invalidated it.
+  // Quote on entry, and re-quote whenever route, vehicle, or weight invalidated it.
   useEffect(() => {
     if (!estimate) void loadEstimate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [estimate, pickup?.latitude, primaryDrop?.latitude, weightKg]);
+  }, [estimate, pickup?.latitude, primaryDrop?.latitude, weightKg, vehicleType]);
 
   const breakdownItems: readonly BreakdownItem[] = estimate
     ? [
