@@ -5,8 +5,6 @@ import {
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { FinancialContext } from '../audit/financial-context';
 import { Clock } from '../common/clock';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import type { PayoutBatch } from '../generated/prisma/client';
@@ -90,18 +88,8 @@ export class PayoutSchedulerService implements OnApplicationBootstrap, OnModuleD
     };
   }
 
-  /**
-   * One scheduler pass. Public for tests and ops tooling. Returns this cycle's batch, if any.
-   * Recorded in the financial event log as this job, or as the admin who ran it by hand.
-   */
+  /** One scheduler pass. Public for tests and ops tooling. Returns this cycle's batch, if any. */
   async tick(): Promise<PayoutBatch | null> {
-    return FinancialContext.runIfAbsent(
-      { actorType: 'SYSTEM', origin: 'job PAYOUT_SCHEDULE', requestId: `job:${randomUUID()}` },
-      () => this.runOnce(),
-    );
-  }
-
-  private async runOnce(): Promise<PayoutBatch | null> {
     const { schedule } = this.config.payouts;
     if (!schedule.enabled || this.running) {
       return null;

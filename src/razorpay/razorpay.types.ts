@@ -30,11 +30,6 @@ export interface RazorpayPayment {
   readonly status: string;
   readonly orderId: string | null;
   readonly method: string | null;
-  /**
-   * How much of it Razorpay has refunded (amount_refunded), when the response says so. Read
-   * only by reconciliation (payment flow Phase 7); never used to apply a payment.
-   */
-  readonly amountRefunded?: number | null;
 }
 
 export interface CreateOrderInput {
@@ -111,8 +106,6 @@ export function toRazorpayOrder(raw: z.infer<typeof razorpayOrderSchema>): Razor
 }
 
 export function toRazorpayPayment(raw: z.infer<typeof razorpayPaymentSchema>): RazorpayPayment {
-  // Lenient on purpose: an unexpected amount_refunded never makes a payment unreadable.
-  const refunded: unknown = (raw as Record<string, unknown>).amount_refunded;
   return {
     id: raw.id,
     amount: raw.amount,
@@ -120,9 +113,5 @@ export function toRazorpayPayment(raw: z.infer<typeof razorpayPaymentSchema>): R
     status: raw.status,
     orderId: raw.order_id ?? null,
     method: raw.method ?? null,
-    amountRefunded:
-      typeof refunded === 'number' && Number.isSafeInteger(refunded) && refunded >= 0
-        ? refunded
-        : null,
   };
 }

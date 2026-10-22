@@ -199,7 +199,6 @@ I won't choose these rules. Owner for all: Nikhil Enterprises (business/finance/
 ### D-26 Data retention and deletion
 - **Context:** this covers location history retention (M4 leaves it open), KYC document retention, financial record retention, and account-deletion anonymization rules.
 - **Safe default:** nothing is auto-deleted. Account deletion revokes access and anonymizes profile fields while keeping financial and audit records.
-- **Since payment flow Phase 7:** the financial event log, reconciliation runs and findings are append-only and can't be deleted, even by the table owner. A retention period for them is part of this decision.
 - **Owner:** Legal. **Status:** Open.
 
 ---
@@ -359,7 +358,6 @@ If any of these exist, adding them to `specs/` would settle several decisions ab
 
   In these cases the money may sit in the Razorpay account with no matching credit.
 - **What's needed:** an owner and an ops process. Proposed: review `/v1/admin/reconciliation/webhook-anomalies` daily, and refund or credit by hand (ties to D-22).
-- **Since payment flow Phase 7:** each such payment is also recorded as a reconciliation finding (for example `WEBHOOK_AMOUNT_MISMATCH`, `PROVIDER_PAID_COLLECTION_CLOSED`), kept until an admin resolves it with a note ([section I, Phase 7](#phase-7-audit-trail-reconciliation-and-collection-recovery)). Nothing is credited or refunded on its own; the ops process is still needed.
 - **Owner:** Finance/ops. **Status:** Open, before production.
 
 ---
@@ -447,8 +445,7 @@ Nikhil Enterprises approved the V1 money model. It is implemented as given; noth
 
 #### D-51 Trip engine integration
 - **Needed:** the engine (engine-v2) must call `/v1/internal/*`: register the booking when the customer confirms it, assign, report each status. Who changes the engine, and how the key is shared.
-- **Since payment flow Phase 8 (section I):** implemented in the engine on branch `raj_engine`. It is local and not committed, and it was verified against this backend's build. The key is the engine's `PAYMENT_BACKEND_INTERNAL_API_KEY`, one of `INTERNAL_API_KEYS` here.
-- **Owner:** Tech lead. **Status:** Engine side done. Production use waits for the engine developer's review, the engine's deployment (database, key) and the app changes (Phases 9–10).
+- **Owner:** Tech lead. **Status:** Open, blocks end-to-end use.
 
 #### D-52 Paid bookings that get cancelled
 - **Now:** cancellation is allowed and the booking is listed in `/v1/admin/reconciliation/paid-cancelled-bookings`. Nothing is refunded automatically (D-22), and a cash trip's fee debit stays.
@@ -855,85 +852,3 @@ These are pinned by tests: `refunds.int-spec.ts` ("policy stays open", the parti
 - The apps, engine-v2 and the admin UI.
 - Pricing, tax and TDS.
 - Any refund policy (above).
-
-### Phase 7: audit trail, reconciliation and collection recovery
-
-Raj approved and locked Phase 6 (local commit `6ab9142`, also pushed to `origin/raj_backend`), then asked for Phase 7 only. It adds the financial event log, the audit trail, reconciliation runs with recorded findings, the collection recovery job and their admin endpoints. Two migrations: `20261021120000_financial_events` (the event log and its triggers) and `20261021120100_reconciliation_findings` (runs and findings). Neither changes an existing row. No financial behaviour of Phases 1–6 changes: no amount, money rule, status transition or provider call. No business policy is decided. Upgrade steps: [DATABASE_SETUP.md](./DATABASE_SETUP.md#audit-trail-and-reconciliation-payment-flow-phase-7).
-
-| Requirement | Implementation |
-|---|---|
-| **Financial event log (review C.6).** | `financial_events` gets one row per change of a financial record. AFTER triggers write it on 14 tables: `bookings`, `trips`, `booking_stops`, `payments`, `payment_collections`, `payment_settlements`, `payment_disputes`, `payment_refunds`, `driver_earnings`, `payout_batches`, `driver_payouts`, `payout_items`, `driver_wallet_transactions` and `admin_actions`.<ul><li>A creation carries the new row. An update carries only the changed columns, before and after. A status or payment status change names both.</li><li>Each event names the booking and driver the money belongs to, and the amount, so a booking's or a driver's trail is one index read.</li><li>A change that rolls back leaves no event. An update of `updated_at` alone records nothing.</li></ul> |
-| **Who, in which request, and why.** | Every transaction first sets five transaction-local settings (`app.actor_type`, `app.actor_user_id`, `app.request_id`, `app.origin`, `app.provider_event_id`):<ul><li>an API call: the authenticated admin, driver or customer, the request id (`X-Request-Id`, also in the logs) and the route (`POST /v1/admin/refunds/:refundId/sync`);</li><li>`/v1/internal/*`: `ENGINE`;</li><li>a signed webhook: `PROVIDER`, with the provider's event id;</li><li>a job: `SYSTEM`, with the run id as the request id;</li><li>the ops CLI: `SYSTEM`, `cli <command>`.</li></ul>A change made without them (an operator's SQL, say) is `UNATTRIBUTED`, and every event names the database role. A value that isn't an actor type is never believed. An admin decision keeps its details in `admin_actions`; the event names the decision and links to it. |
-| **Append-only and immutable.** | No UPDATE, DELETE or TRUNCATE, for every role, the table owner included. Only the triggers insert. `record_financial_event()` is SECURITY DEFINER, so the API role writes events with SELECT only and can't forge one; a direct INSERT is refused for every role. The API role can't disable the event triggers. |
-| **Audit endpoints.** | `GET /v1/admin/audit/financial-events`: filter by booking, driver, record, action, actor, request, provider event and time, oldest or newest first, in cursor pages. `GET /v1/admin/audit/admin-actions`. `GET /v1/admin/audit/webhook-events`: what each signed provider event did, without its payload. The booking chain (`GET /v1/admin/bookings/:id`) adds `auditTrail` (up to 500 events, oldest first) and `auditTrailComplete`. Admin only, read-only. |
-| **Reconciliation runs and findings.** | A run executes 23 database checks and up to six read-only provider checks. Every mismatch becomes a finding in `reconciliation_findings`: category, kind, severity (INFO, WARNING, CRITICAL), source (DATABASE, PROVIDER, RECOVERY), the record, the provider id, and both states and amounts.<ul><li>One OPEN finding per condition (its fingerprint). Seeing it again counts a sighting, once per run.</li><li>A complete, unscoped run marks as cleared what its database state checks no longer see. Nothing is deleted.</li><li>Only an active admin resolves a finding, with a note of 10–500 characters, audited as `RECONCILIATION_FINDING_RESOLVED`. A resolution never changes.</li><li>A resolved finding whose condition stays is counted, never reopened. One that cleared and comes back is a new finding.</li></ul> |
-| **What is reconciled.** | Ten categories: `PROVIDER_PAID_INTERNAL_PENDING` (provider paid, internal pending), `INTERNAL_PAID_PROVIDER_NOT_PAID` (internal paid, provider failed, refunded or disputed), `EARNING_SOURCE_MISMATCH`, `SETTLEMENT_MISMATCH`, `PAYOUT_MISMATCH`, `REFUND_MISMATCH`, `WALLET_MISMATCH`, `STALE_PENDING` (stale or pending collections, payments and webhooks), `DUPLICATE_PROVIDER_EVENT` and `PROVIDER_EVENT_ANOMALY`. Every kind is listed in [RAZORPAY_INTEGRATION.md §18](./RAZORPAY_INTEGRATION.md#18-audit-trail-reconciliation-and-collection-recovery-payment-flow-phase-7). |
-| **No silent fixes.** | The database and provider checks only read. A finding names the record and the admin action that settles it (a payment, collection, payout or refund sync; a hold or release; a refund decision). The existing reports and their endpoints are unchanged. |
-| **Collection recovery job.** | Every 5 minutes it re-reads from Razorpay each online collection (QR or link) still PENDING after 5 minutes. It applies what Razorpay reports through the finalizer the webhook, the driver's poll and the admin sync already use (`CollectionsService.recover`).<ul><li>A payment is applied at most once: the finalizer locks the collection, a webhook racing it gets `ALREADY_APPLIED`, and a second run finds nothing pending.</li><li>An unpaid QR that expired is closed, as the webhook would close it.</li><li>Each recovery is a finding: `COLLECTION_RECOVERED` (INFO), or CRITICAL for money on a cancelled booking or a closed drop, which waits for a refund decision. Each change is in the event log under the job's run.</li><li>Pending Checkout payments (top-ups, historical prepaid bookings) are only reported. The admin payment sync applies them.</li></ul> |
-| **Runs: idempotent, one at a time, crash-safe.** | At most one RUNNING run per job (partial unique index), under a lease: 10 minutes for recovery, 30 for reconciliation, renewed while it works. Overlapping timers, several instances and admin requests never run a job twice at once; an admin gets 409 `RECONCILIATION_RUN_IN_PROGRESS`. A run that died keeps its lease until it expires; the next one closes it `ABANDONED` and starts over. A finished run never changes. Runs are bounded: 2,000 rows per database check, 200 records per provider check, 200 collections per recovery run. Three "provider unavailable" answers in a row stop the reads, and the run reports itself incomplete. |
-| **Admin endpoints.** | `GET /v1/admin/reconciliation/summary`, `findings` (filters, cursor pages), `findings/:id`, `POST findings/:id/resolve`, `POST runs` (202, then poll `runs/:id`), `runs`, `runs/:id` and `integrity-checks` (the database checks as they stand, recording nothing). Admin only. Starting a run is audited (`RECONCILIATION_RUN_REQUESTED`). |
-| **Least privilege.** | The API role has SELECT on `financial_events`, and SELECT and INSERT on runs and findings with UPDATE of their lifecycle and sighting columns only. A run's job, trigger, scope, requester and start, and a finding's identity and first sighting, are immutable (triggers, for every role). No DELETE or TRUNCATE. The least-privilege suite writes events and runs both jobs with production grants. |
-| **Non-local databases (N1).** | Still blocked until their preflight has been run and reviewed. Phase 7 is applied to the local dev database only. |
-
-**Production restriction (technical, not policy): unchanged.** Phase 7 does not lift the multi-drop PAY_AT_DELIVERY + QR restriction; the six conditions under Phase 5 still apply. The findings support condition 4 (the daily ops review) but replace none of the live verifications. Live provider refunds stay off until D-72 (`REFUND_PROVIDER=disabled`), and reconciliation never creates a refund.
-
-**Open business decisions: unchanged.** Phase 7 decides none of them. It reports the cases they cover and leaves them to an admin:
-- **Refund policy (L-7 to L-10, L-21):** `PAID_BOOKING_CANCELLED` (INFO); `REFUND_AFTER_PAYOUT` and `REFUND_ON_CASH_EARNING` (WARNING); `RECOVERED_PAID_AFTER_CANCELLATION` and `RECOVERED_PAID_FOR_CLOSED_DROP` (CRITICAL). The recovered money is recorded as the webhook would record it, and waits for a refund decision.
-- **Money that can't be applied (D-43):** for example `PROVIDER_PAID_COLLECTION_CLOSED` and `WEBHOOK_PAYMENT_NOT_PENDING` (CRITICAL). Nothing is credited or refunded.
-- **L-11 / D-70 and N5:** the holds stay as Phase 5 left them.
-
-**Technical defaults introduced in Phase 7.** None is a business decision, and each can change without a migration.
-
-| Default | Where | Decision it waits for |
-|---|---|---|
-| The recovery job applies only PENDING online collections (QR, link). A Checkout payment Razorpay captured while we hold it pending (a top-up, a historical prepaid booking) is reported (`PROVIDER_PAID_PAYMENT_PENDING`, CRITICAL), and an admin applies it with the payment sync | `CollectionRecoveryService` | ops: whether the job also applies captured top-ups |
-| Recovery every 5 minutes for collections pending over 5 minutes; reconciliation every 60 minutes; pending payments and webhooks under 15 minutes old are not reported; provider and webhook checks look back 3 days (`COLLECTION_RECOVERY_*`, `RECONCILIATION_*`) | config | ops |
-| Provider checks on (`RECONCILIATION_PROVIDER_CHECKS=true`): GET requests only, at most 200 records per check and run | config | none |
-| Severity: CRITICAL where money may be wrong or unapplied, WARNING where a state lags or waits for a review, INFO where nothing needs doing by itself | `finding-types.ts`, `reconciliation-checks.service.ts` | ops |
-| `REFUND_ON_PAYABLE_EARNING` and `DISPUTED_EARNING_NOT_HELD` also flag an earning an admin released on purpose. The admin resolves the finding with a note, and it stays resolved while the condition stays | checks | ops |
-| `SETTLEMENT_OVERDUE`: an ONLINE earning still AWAITING_SETTLEMENT after `SETTLEMENT_OVERDUE_DAYS`, checked only while settlement tracking is on | checks | none (D-62 resolved) |
-| Events, runs and findings are kept for ever; there is no retention job, and rows can't be deleted | migrations | D-26 |
-| Both `down.sql` files refuse once an event, a run or a finding is recorded: the audit trail is never dropped | migrations | none |
-
-**Not in Phase 7.**
-- Phase 8 and later: the trip engine, the Driver and Customer Apps, and the admin UI.
-- Alerts outside the logs (paging, email). Ops reads the summary and the open findings.
-- Any business policy (above), and live provider validation (D-46, D-56, D-58, D-72).
-
-### Phase 8: trip engine integration
-
-Raj approved and committed Phase 7 locally (`6371bda`, not pushed), then asked for Phase 8 only: the trip engine (engine-v2) integrated with this backend through the approved internal API. Phases 1–7 are frozen, and **this backend's code is unchanged**: no route, rule, migration or money behaviour. The work is in the engine, on branch `raj_engine` (from `engine-v2` 4555ade), described in its README. It is not committed yet. Status per requirement: [ARCHITECTURE_TRACEABILITY.md §16](./ARCHITECTURE_TRACEABILITY.md#16-implementation-status-payment-flow-phase-8-trip-engine-integration).
-
-| Requirement | Implementation |
-|---|---|
-| **Registration (contract F, "Customer confirms").** | `POST /rides { quoteId, paymentMethod, driverId }` with a verified Firebase token. The engine reads the quote (`GET /v1/internal/fare-quotes/:id`), stores the booking with `externalRef = ENG-<uuid>`, then registers `{ externalRef, customerSubject, quoteId, paymentMethod }`. It never sends an amount, and a client amount is refused. It dispatches only after a 201/200 that matches the quote. A retry (lost answer, timeout, restart) sends the same reference, and the backend answers 200. |
-| **Route.** | The trip runs the quote's drops in the quote's order. Coordinates the app adds must be the quote's. |
-| **Authentication (BK-2).** | Every app route needs a Firebase ID token of the same project, checked like this backend's. A `customerId` / `driverId` in a body or path must be the token's subject. Customers and drivers must exist at this backend: registration and assignment refuse anyone else. |
-| **Persistence and ids (BK-2).** | The engine's own PostgreSQL database (Prisma 7), never this backend's. Bookings, stops, offers, trips and the outbox, with UUID ids. `paymentBookingId` and `paymentTripId` are stored and shown to the apps. |
-| **Outbox (BK-2).** | Durable (same transaction as the state), FIFO per booking, one sender at a time across instances (lease), exponential backoff with jitter, alerts after N attempts and on any unexpected refusal. Repeats are safe because this backend treats them as no-ops. A pending report is never deleted (database guard). |
-| **Backend-first gates.** | `PICKUP_VERIFIED`, `IN_TRANSIT`, stop `DELIVERED` and `COMPLETED` are committed only after this backend's 2xx. `paymentGate` is read fresh before every OTP, and an OTP is checked only when `handoverAllowed`. `COMPLETED` refused with `PAYMENT_REQUIRED` is retried. Any other refusal changes nothing in the engine and is alerted. |
-| **OTPs.** | Never in ride or trip responses. Served to the customer only (`GET /rides/:id/otps`) and withheld until the handover is allowed. The pickup route without an OTP and the unauthenticated OTP check are removed. |
-| **Failed drops and admin decisions.** | `DELIVERY_FAILED` needs a reason. The driver retries with ARRIVED. The engine follows an admin's RETRY / UNDELIVERED, or a cancellation made here, with `POST /trips/:id/refresh`. |
-| **Cancellation.** | A reason is required, and it is idempotent. Pending backend-first commands are superseded, then `/cancel` is reported. No refund behaviour (D-22, D-52 unchanged). |
-| **Verification.** | The engine's unit and integration tests run against an in-process fake of the internal API. The contract E2E (`npm run test:contract` in `raj_engine`) runs the engine build against this backend's build, with a fault-injecting proxy between them, on its own databases. It covers PAY_AT_PICKUP in cash, PAY_AT_PICKUP by QR, PAY_AT_DELIVERY with 3 drops (cash, QR, and an admin UNDELIVERED), outages, lost answers, an engine crash, duplicates and security. It found one mismatch, fixed in the engine's fake: `DRIVER_NOT_APPROVED` is a 422 here. |
-
-**D-51 and BK-2.** The engine work of D-51 and BK-2 is done locally. The engine registers, assigns and reports every status, and the key is configured as `PAYMENT_BACKEND_INTERNAL_API_KEY` there (one of `INTERNAL_API_KEYS` here). Still needed before production use:
-1. Review of branch `raj_engine` by the engine developer, then its commit.
-2. An engine database in each environment (Render's disk is not persistent), migrated with `prisma migrate deploy`.
-3. The internal key shared server to server.
-4. The Driver and Customer app changes (Phases 9–10): the token on every call, the new `POST /rides` body, OTPs from `GET /rides/:id/otps`, and `paymentTripId` for collections.
-
-**Technical defaults introduced in Phase 8.** None is a business decision.
-
-| Default | Where | Decision it waits for |
-|---|---|---|
-| A driver has 15 s to answer an offer (`OFFER_TTL_SECONDS`, the prototype's timeout); the customer offers the ride to a chosen driver, as in the prototype | engine config | D-30 |
-| The engine's own drop limit (5) is gone: drops must be the quote's, and this backend's quote rules bound them | engine | N7 |
-| Outbox: every 1 s, lease 30 s, backoff 1 s up to 5 min, alert after 8 attempts | engine config | ops |
-| Driver presence (online, location) stays in memory; one engine instance until it is shared. Busy drivers come from the database. | engine | none |
-| 4-digit OTPs (the prototype's format), without an attempt limit. Only the assigned driver can try them, and only after the handover is allowed. | engine | product / security |
-
-**Not in Phase 8.**
-- The Driver and Customer Apps (Phases 9–10), and their use of the new engine API.
-- The standalone engine docs (`engine-payment-integration/spec.html`, `architecture.html` and the PDFs) still describe the pre-quote contract. Updating them is Phase 12.
-- Any business policy, live provider validation, and any change to this backend.

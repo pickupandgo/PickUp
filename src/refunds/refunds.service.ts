@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import type { Principal } from '../auth/principal';
-import { adminActionStatement, recordAdminAction } from '../audit/admin-actions';
+import { recordAdminAction } from '../audit/admin-actions';
 import { lockBooking, lockStopsOfBooking, lockTripOfBooking } from '../bookings/booking-locks';
 import { syncBookingMoneyStatus } from '../bookings/booking-payment-state';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
@@ -179,20 +179,18 @@ export class RefundsService {
     if (!this.gateway.enabled) {
       return 'PROVIDER_DISABLED';
     }
-    const claimed = await this.prisma.withFinancialContext(
-      this.prisma.$queryRaw<{ submit_attempts: number }[]>`
-        UPDATE payment_refunds
-        SET submit_attempts = submit_attempts + 1,
-            last_submitted_at = now(),
-            updated_at = now()
-        WHERE id = ${refundId}::uuid
-          AND kind = 'PROVIDER'
-          AND status = 'PENDING'
-          AND provider_refund_id IS NULL
-          AND (last_submitted_at IS NULL
-               OR last_submitted_at < now() - make_interval(secs => ${REFUND_SUBMISSION_LEASE_SECONDS}))
-        RETURNING submit_attempts`,
-    );
+    const claimed = await this.prisma.$queryRaw<{ submit_attempts: number }[]>`
+      UPDATE payment_refunds
+      SET submit_attempts = submit_attempts + 1,
+          last_submitted_at = now(),
+          updated_at = now()
+      WHERE id = ${refundId}::uuid
+        AND kind = 'PROVIDER'
+        AND status = 'PENDING'
+        AND provider_refund_id IS NULL
+        AND (last_submitted_at IS NULL
+             OR last_submitted_at < now() - make_interval(secs => ${REFUND_SUBMISSION_LEASE_SECONDS}))
+      RETURNING submit_attempts`;
     const [claim] = claimed;
     if (!claim) {
       return 'SKIPPED';
@@ -252,14 +250,12 @@ export class RefundsService {
     if (!refund) {
       throw refundNotFound();
     }
-    await this.prisma.withFinancialContext(
-      adminActionStatement(this.prisma, {
-        actorUserId: admin.userId,
-        action: 'REFUND_SYNCED',
-        targetType: 'PAYMENT_REFUND',
-        targetId: refundId,
-      }),
-    );
+    await recordAdminAction(this.prisma, {
+      actorUserId: admin.userId,
+      action: 'REFUND_SYNCED',
+      targetType: 'PAYMENT_REFUND',
+      targetId: refundId,
+    });
     if (refund.kind !== 'PROVIDER' || !refund.providerPaymentId) {
       return { refund: await this.view(refundId), outcome: 'NOT_A_PROVIDER_REFUND' };
     }

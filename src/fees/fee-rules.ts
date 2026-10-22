@@ -1,6 +1,5 @@
 import { HttpStatus } from '@nestjs/common';
 import { recordAdminAction } from '../audit/admin-actions';
-import { financialContextStatement } from '../audit/financial-context';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import { MONEY_ROUNDING_MODE } from '../common/money';
@@ -64,8 +63,6 @@ export async function createFeeRuleRecord(
 
   return prisma.$transaction(
     async (tx) => {
-      // Who is acting, for the financial event log of the audit record (payment flow Phase 7).
-      await financialContextStatement(tx);
       // Serializes rule creation so two concurrent requests cannot both pass the overlap check.
       await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('fee_rules'))`;
 

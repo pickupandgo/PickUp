@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import { recordAdminAction } from '../audit/admin-actions';
-import { FinancialContext, financialContextStatement } from '../audit/financial-context';
 import {
   createPricingVersionRecord,
   DEVELOPMENT_PRICING_CODE_PREFIX,
@@ -67,18 +66,6 @@ export function runProvisionCommand(
   command: ProvisionCommand,
 ): Promise<ProvisionResult>;
 export async function runProvisionCommand(
-  prisma: PrismaClient,
-  provider: string,
-  command: ProvisionCommand,
-): Promise<ProvisionResult> {
-  // What the ops CLI writes is recorded in the financial event log as SYSTEM, origin
-  // "cli <command>", with the CLI's database role (payment flow Phase 7).
-  return FinancialContext.runIfAbsent({ actorType: 'SYSTEM', origin: `cli ${command.kind}` }, () =>
-    dispatchProvisionCommand(prisma, provider, command),
-  );
-}
-
-async function dispatchProvisionCommand(
   prisma: PrismaClient,
   provider: string,
   command: ProvisionCommand,
@@ -181,7 +168,6 @@ async function createAccount(
   const approve = command.kind === 'create-driver' && command.approve;
 
   return prisma.$transaction(async (tx) => {
-    await financialContextStatement(tx);
     if (await tx.user.findUnique({ where: { phone: command.phone }, select: { id: true } })) {
       throw new ProvisionUsageError('A user with this phone number already exists');
     }
@@ -239,7 +225,6 @@ async function setLegalName(
   legalName: string,
 ): Promise<AccountResult> {
   return prisma.$transaction(async (tx) => {
-    await financialContextStatement(tx);
     const user = await tx.user.findUnique({ where: { phone }, include: { driver: true } });
     if (!user?.driver) {
       throw new ProvisionUsageError('No driver exists with this phone number');
@@ -277,7 +262,6 @@ async function linkIdentity(
   command: Extract<ProvisionCommand, { kind: 'link-identity' }>,
 ): Promise<AccountResult> {
   return prisma.$transaction(async (tx) => {
-    await financialContextStatement(tx);
     const user = await tx.user.findUnique({
       where: { phone: command.phone },
       include: { driver: true, customer: true, authIdentities: { select: { id: true } } },
@@ -321,7 +305,6 @@ async function linkIdentity(
 
 async function approveDriver(prisma: PrismaClient, phone: string): Promise<AccountResult> {
   return prisma.$transaction(async (tx) => {
-    await financialContextStatement(tx);
     const user = await tx.user.findUnique({ where: { phone }, include: { driver: true } });
     if (!user?.driver) {
       throw new ProvisionUsageError('No driver exists with this phone number');

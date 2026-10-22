@@ -27,6 +27,7 @@ import {
 import { toInternalBookingResponse } from '../bookings/bookings.mapper';
 import { type BookingWithTrip, BookingsService } from '../bookings/bookings.service';
 import { CollectionsService } from '../collections/collections.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 
@@ -48,6 +49,7 @@ export class InternalBookingsController {
     private readonly bookings: BookingsService,
     private readonly stops: BookingStopsService,
     private readonly collections: CollectionsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -99,7 +101,21 @@ export class InternalBookingsController {
     @Param('bookingId', uuid) bookingId: string,
     @Body() body: AssignDriverRequest,
   ): Promise<InternalBookingResponse> {
-    return this.view(await this.bookings.assignDriver(bookingId, body.driverSubject));
+    const result = await this.bookings.assignDriver(bookingId, body.driverSubject);
+    await this.notifications.sendNotification(
+      result.booking.customerId,
+      'CUSTOMER',
+      'DRIVER_ASSIGNED',
+      {
+        driverName: 'Driver',
+        vehicleType: result.booking.vehicleCategory || 'Vehicle',
+      },
+      {
+        bookingId,
+        tripId: result.trip?.id || '',
+      },
+    );
+    return this.view(result);
   }
 
   /** Cancels the booking and its trip, and closes any open payment QR at Razorpay. */
@@ -111,6 +127,27 @@ export class InternalBookingsController {
   ): Promise<InternalBookingResponse> {
     const result = await this.bookings.cancel(bookingId, body.reason);
     await this.collections.closeOpenCollections(bookingId, 'BOOKING_CANCELLED');
+
+    // Notify customer
+    await this.notifications.sendNotification(
+      result.booking.customerId,
+      'CUSTOMER',
+      'BOOKING_CANCELLED',
+      { reason: body.reason },
+      { bookingId },
+    );
+
+    // If trip had driver assigned, notify driver
+    if (result.trip?.driverId) {
+      await this.notifications.sendNotification(
+        result.trip.driverId,
+        'DRIVER',
+        'BOOKING_CANCELLED',
+        { reason: body.reason },
+        { bookingId, tripId: result.trip.id },
+      );
+    }
+
     return this.view(result);
   }
 
@@ -127,7 +164,35 @@ export class InternalBookingsController {
     @Param('tripId', uuid) tripId: string,
     @Body() body: TripStatusRequest,
   ): Promise<InternalBookingResponse> {
-    return this.view(await this.bookings.updateTripStatus(tripId, body.status));
+    const result = await this.bookings.updateTripStatus(tripId, body.status);
+    if (result.changed) {
+      if (body.status === 'DRIVER_ARRIVED') {
+        await this.notifications.sendNotification(
+          result.booking.customerId,
+          'CUSTOMER',
+          'DRIVER_ARRIVED',
+          {},
+          { bookingId: result.booking.id, tripId },
+        );
+      } else if (body.status === 'PICKUP_VERIFIED' || body.status === 'IN_TRANSIT') {
+        await this.notifications.sendNotification(
+          result.booking.customerId,
+          'CUSTOMER',
+          'TRIP_STARTED',
+          {},
+          { bookingId: result.booking.id, tripId },
+        );
+      } else if (body.status === 'COMPLETED') {
+        await this.notifications.sendNotification(
+          result.booking.customerId,
+          'CUSTOMER',
+          'TRIP_COMPLETED',
+          {},
+          { bookingId: result.booking.id, tripId },
+        );
+      }
+    }
+    return this.view(result);
   }
 
   /**
@@ -171,6 +236,25 @@ export class InternalBookingsController {
         'DROP_DELIVERY_FAILED',
         result.stop.id,
       );
+    }
+    if (result.changed) {
+      if (body.status === 'ARRIVED') {
+        await this.notifications.sendNotification(
+          result.booking.customerId,
+          'CUSTOMER',
+          'ARRIVED_AT_STOP',
+          { stopNumber: sequence },
+          { bookingId: result.booking.id, tripId },
+        );
+      } else if (body.status === 'DELIVERED') {
+        await this.notifications.sendNotification(
+          result.booking.customerId,
+          'CUSTOMER',
+          'STOP_DELIVERED',
+          { stopNumber: sequence },
+          { bookingId: result.booking.id, tripId },
+        );
+      }
     }
     return this.view(result);
   }

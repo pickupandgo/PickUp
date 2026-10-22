@@ -1,14 +1,14 @@
 import { DynamicModule, Module } from '@nestjs/common';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
-import { AuditModule } from './audit/audit.module';
-import { FinancialContextInterceptor } from './audit/financial-context.interceptor';
 import { AuthGuard } from './auth/auth.guard';
 import { AuthModule } from './auth/auth.module';
 import { BookingsModule } from './bookings/bookings.module';
+import { ChatModule } from './chat/chat.module';
 import { CollectionsModule } from './collections/collections.module';
 import { ClockModule } from './common/clock';
 import { CustomersModule } from './customers/customers.module';
+import { DriversModule } from './drivers/drivers.module';
 import { AppThrottlerGuard } from './common/http/app-throttler.guard';
 import { buildLoggerModule } from './common/logging/logger.module';
 import type { AppConfig } from './config/app-config';
@@ -18,6 +18,7 @@ import { EngineModule } from './engine/engine.module';
 import { FareModule } from './fare/fare.module';
 import { FeesModule } from './fees/fees.module';
 import { HealthModule } from './health/health.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PayoutsModule } from './payouts/payouts.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -43,18 +44,20 @@ export class AppModule {
         AuthModule,
         HealthModule,
         CustomersModule,
+        DriversModule,
         FareModule,
         WalletModule,
         FeesModule,
         EarningsModule,
         SettlementsModule,
         BookingsModule,
+        ChatModule,
+        NotificationsModule,
         CollectionsModule,
         PaymentsModule,
         PayoutsModule,
         RefundsModule,
         EngineModule,
-        AuditModule,
         ReconciliationModule,
         // Non-production only: /v1/dev/simulate, mounted when a simulated provider is configured.
         ...(config.simulation.enabled ? [SimulationModule] : []),
@@ -63,8 +66,6 @@ export class AppModule {
         // Order matters: authenticate first, then rate limit per resolved user.
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: APP_GUARD, useClass: AppThrottlerGuard },
-        // Who acts in each request, for the financial event log (payment flow Phase 7).
-        { provide: APP_INTERCEPTOR, useClass: FinancialContextInterceptor },
       ],
     };
   }

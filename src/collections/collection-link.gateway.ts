@@ -28,8 +28,6 @@ export interface CollectionLinkPayment {
   readonly status: string;
   readonly method: string | null;
   readonly orderId: string | null;
-  /** Razorpay's amount_refunded when reported (reconciliation only, payment flow Phase 7). */
-  readonly amountRefunded?: number | null;
 }
 
 export interface CollectionLinkState {

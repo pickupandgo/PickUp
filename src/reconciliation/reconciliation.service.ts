@@ -53,7 +53,7 @@ export class ReconciliationService {
    * Wallets whose cached balance differs from the sum of their POSTED ledger entries, or whose
    * ledger is not a gap-free chain 1..version.
    */
-  async findWalletMismatches(limit = ROW_LIMIT): Promise<WalletMismatch[]> {
+  async findWalletMismatches(): Promise<WalletMismatch[]> {
     const rows = await this.prisma.$queryRaw<
       {
         wallet_id: string;
@@ -82,7 +82,7 @@ export class ReconciliationService {
           OR w.version <> COUNT(t.id)
           OR w.version <> COALESCE(MAX(t.wallet_version), 0)
       ORDER BY w.id
-      LIMIT ${limit}`;
+      LIMIT ${ROW_LIMIT}`;
 
     return rows.map((row) => ({
       walletId: row.wallet_id,
@@ -146,7 +146,7 @@ export class ReconciliationService {
   }
 
   /** PW 9.2: provider payment ids that appear on more than one ledger entry. */
-  async findDuplicateProviderPayments(limit = ROW_LIMIT): Promise<DuplicateProviderPayment[]> {
+  async findDuplicateProviderPayments(): Promise<DuplicateProviderPayment[]> {
     const rows = await this.prisma.$queryRaw<
       { provider: string; provider_payment_id: string; occurrences: bigint }[]
     >`
@@ -156,7 +156,7 @@ export class ReconciliationService {
       GROUP BY provider, provider_payment_id
       HAVING COUNT(*) > 1
       ORDER BY provider_payment_id
-      LIMIT ${limit}`;
+      LIMIT ${ROW_LIMIT}`;
     return rows.map((row) => ({
       provider: row.provider,
       providerPaymentId: row.provider_payment_id,

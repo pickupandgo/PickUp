@@ -149,24 +149,6 @@ export const envSchema = z
     // four, each still admin-initiated with a reason.
     REFUND_ALLOWED_CASES: z.string().default(REFUND_CASES.join(',')),
 
-    // Reconciliation and recovery jobs (payment flow Phase 7). Every mismatch they find is
-    // recorded for an admin; nothing is fixed silently. The one job that writes, the collection
-    // recovery, applies only what Razorpay reports for a still pending online collection, through
-    // the collection finalizer the webhook, the driver's poll and the admin sync already use.
-    // How often stuck online collections are re-read from Razorpay (0 = off; an admin can still
-    // run it).
-    COLLECTION_RECOVERY_INTERVAL_MINUTES: z.coerce.number().int().min(0).max(1440).default(5),
-    // A pending online collection younger than this is left to the webhook and the driver's app.
-    COLLECTION_RECOVERY_MIN_AGE_MINUTES: z.coerce.number().int().min(0).max(1440).default(5),
-    // How often the reconciliation checks run (0 = off; an admin can still run them).
-    RECONCILIATION_INTERVAL_MINUTES: z.coerce.number().int().min(0).max(10080).default(60),
-    // Read Razorpay and RazorpayX (read-only) to compare their state with ours.
-    RECONCILIATION_PROVIDER_CHECKS: booleanString.default(true),
-    // How far back the provider checks look, and a pending payment younger than the minimum age
-    // is left alone (its customer may still be paying).
-    RECONCILIATION_LOOKBACK_DAYS: z.coerce.number().int().min(1).max(31).default(3),
-    RECONCILIATION_MIN_AGE_MINUTES: z.coerce.number().int().min(0).max(1440).default(15),
-
     // How long a fare quote can be booked (seconds). After that the app must ask for a new
     // quote, so a customer always pays a price calculated by the current pricing version.
     FARE_QUOTE_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),

@@ -72,8 +72,6 @@ describe('BookingPaymentService: Checkout only for historical PREPAID_UPI bookin
           status: 'PENDING',
         }),
       },
-      // Phase 7: the insert runs with the financial context set first; the statement is unchanged.
-      withFinancialContext: jest.fn((statement: Promise<unknown>) => statement),
     };
     const orders = { ensureOrder: jest.fn() };
     const confirmation = { confirm: jest.fn() };

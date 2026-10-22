@@ -58,17 +58,15 @@ export class BookingPaymentService {
       payment = live;
     } else {
       try {
-        payment = await this.prisma.withFinancialContext(
-          this.prisma.payment.create({
-            data: {
-              userId: principal.userId,
-              bookingId: booking.id,
-              purpose: PaymentPurpose.BOOKING,
-              amountPaise: booking.finalFareMinor,
-              idempotencyKey,
-            },
-          }),
-        );
+        payment = await this.prisma.payment.create({
+          data: {
+            userId: principal.userId,
+            bookingId: booking.id,
+            purpose: PaymentPurpose.BOOKING,
+            amountPaise: booking.finalFareMinor,
+            idempotencyKey,
+          },
+        });
         created = true;
       } catch (error) {
         if (!isUniqueViolation(error)) {

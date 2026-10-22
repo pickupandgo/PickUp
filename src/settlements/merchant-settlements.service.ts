@@ -1,6 +1,6 @@
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
-import { adminActionStatement } from '../audit/admin-actions';
+import { recordAdminAction } from '../audit/admin-actions';
 import { lockBooking } from '../bookings/booking-locks';
 import { Clock } from '../common/clock';
 import { AppError } from '../common/errors/app-error';
@@ -177,20 +177,18 @@ export class MerchantSettlementsService {
     }
     const days = range.from || range.to ? this.parseRange(range) : this.defaultDays();
     const result = await this.sync({ trigger: 'ADMIN', days });
-    await this.prisma.withFinancialContext(
-      adminActionStatement(this.prisma, {
-        actorUserId,
-        action: 'SETTLEMENT_SYNC_REQUESTED',
-        targetType: 'MERCHANT_SETTLEMENTS',
-        targetId: `${result.days[0] ?? ''}..${result.days.at(-1) ?? ''}`,
-        details: {
-          recorded: result.recorded,
-          alreadyRecorded: result.alreadyRecorded,
-          amountMismatches: result.amountMismatches,
-          earningsPromoted: result.earningsPromoted,
-        },
-      }),
-    );
+    await recordAdminAction(this.prisma, {
+      actorUserId,
+      action: 'SETTLEMENT_SYNC_REQUESTED',
+      targetType: 'MERCHANT_SETTLEMENTS',
+      targetId: `${result.days[0] ?? ''}..${result.days.at(-1) ?? ''}`,
+      details: {
+        recorded: result.recorded,
+        alreadyRecorded: result.alreadyRecorded,
+        amountMismatches: result.amountMismatches,
+        earningsPromoted: result.earningsPromoted,
+      },
+    });
     return result;
   }
 

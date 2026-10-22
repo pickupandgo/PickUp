@@ -1,6 +1,5 @@
 import { HttpStatus } from '@nestjs/common';
 import { recordAdminAction } from '../audit/admin-actions';
-import { financialContextStatement } from '../audit/financial-context';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import type { Prisma, PricingVersion, PrismaClient } from '../generated/prisma/client';
@@ -66,8 +65,6 @@ export async function createPricingVersionRecord(
   try {
     return await prisma.$transaction(
       async (tx) => {
-        // Who is acting, for the financial event log of the audit record (payment flow Phase 7).
-        await financialContextStatement(tx);
         await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('pricing_versions'))`;
         const overlapping = await tx.pricingVersion.findMany({
           where: {

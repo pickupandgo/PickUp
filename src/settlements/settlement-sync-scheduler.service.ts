@@ -5,8 +5,6 @@ import {
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { FinancialContext } from '../audit/financial-context';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import { MerchantSettlementsService } from './merchant-settlements.service';
 
@@ -49,11 +47,7 @@ export class SettlementSyncSchedulerService implements OnApplicationBootstrap, O
     }
     this.running = true;
     try {
-      // Recorded in the financial event log as this job (payment flow Phase 7).
-      await FinancialContext.runIfAbsent(
-        { actorType: 'SYSTEM', origin: 'job SETTLEMENT_SYNC', requestId: `job:${randomUUID()}` },
-        () => this.settlements.sync({ trigger: 'SCHEDULE' }),
-      );
+      await this.settlements.sync({ trigger: 'SCHEDULE' });
     } catch (error) {
       this.logger.error({ err: error }, 'Merchant settlement sync failed; it will be retried');
     } finally {

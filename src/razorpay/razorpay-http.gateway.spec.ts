@@ -149,24 +149,8 @@ describe('RazorpayHttpGateway', () => {
         status: 'captured',
         orderId: order.id,
         method: 'upi',
-        amountRefunded: null,
       },
     ]);
-  });
-
-  it('reads amount_refunded for reconciliation, and ignores a value it cannot use', async () => {
-    fetchMock.mockResolvedValueOnce(
-      json({ ...payment, status: 'refunded', amount_refunded: 50000 }),
-    );
-    await expect(gateway.fetchPayment(payment.id)).resolves.toMatchObject({
-      status: 'refunded',
-      amountRefunded: 50000,
-    });
-    fetchMock.mockResolvedValueOnce(json({ ...payment, amount_refunded: '50000' }));
-    await expect(gateway.fetchPayment(payment.id)).resolves.toMatchObject({
-      status: 'captured',
-      amountRefunded: null,
-    });
   });
 
   it('validates order input against Razorpay limits before sending', async () => {

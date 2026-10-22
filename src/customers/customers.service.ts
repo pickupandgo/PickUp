@@ -4,7 +4,7 @@ import { requireCustomer } from '../auth/require-driver';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
-import type { CustomerAccountResponse } from './customers.dto';
+import type { CustomerAccountResponse, RegisterCustomerRequest } from './customers.dto';
 
 /** E.164, as Firebase puts it in the `phone_number` claim. */
 const E164_PHONE = /^\+[1-9][0-9]{6,14}$/;
@@ -35,7 +35,10 @@ export class CustomersService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async register(identity: SignedInIdentity): Promise<RegistrationResult> {
+  async register(
+    identity: SignedInIdentity,
+    body?: RegisterCustomerRequest,
+  ): Promise<RegistrationResult> {
     const phone = identity.phoneNumber;
     if (phone === null || !E164_PHONE.test(phone)) {
       throw new AppError(
@@ -45,11 +48,14 @@ export class CustomersService {
       );
     }
 
+    const name = body?.name?.trim() || null;
+    const email = body?.email?.trim() || null;
+
     const [row] = await this.prisma.$queryRaw<RegistrationRow[]>`
       SELECT outcome,
              registered_user_id AS "userId",
              registered_customer_id AS "customerId"
-        FROM register_customer(${identity.provider}, ${identity.subject}, ${phone})`;
+        FROM register_customer(${identity.provider}, ${identity.subject}, ${phone}, ${name}, ${email})`;
 
     switch (row?.outcome) {
       case 'CREATED':
@@ -98,6 +104,8 @@ export class CustomersService {
       customerId: customer.id,
       phone: customer.user.phone,
       status: customer.user.status,
+      name: customer.name ?? null,
+      email: customer.email ?? null,
       createdAt: customer.createdAt.toISOString(),
     };
   }

@@ -424,14 +424,6 @@ async function main() {
     COLLECTION_LINK_PROVIDER: 'simulated',
     PAYOUT_PROVIDER: 'simulated',
     REFUND_PROVIDER: 'simulated',
-    // Payment flow Phase 7: the jobs run when the flow starts them (step 24), on rows of any age.
-    // Provider reads are off: the Checkout payment of step 1 is fabricated, so Razorpay could
-    // never confirm it; the database checks and the recovery job use the simulated providers.
-    COLLECTION_RECOVERY_INTERVAL_MINUTES: '0',
-    COLLECTION_RECOVERY_MIN_AGE_MINUTES: '0',
-    RECONCILIATION_INTERVAL_MINUTES: '0',
-    RECONCILIATION_MIN_AGE_MINUTES: '0',
-    RECONCILIATION_PROVIDER_CHECKS: 'false',
     RAZORPAYX_ACCOUNT_NUMBER: '',
     RAZORPAYX_KEY_ID: '',
     RAZORPAYX_KEY_SECRET: '',
@@ -619,12 +611,10 @@ async function main() {
   });
 
   await step(1, 'Payment created (historical prepaid booking): driver assigned, Razorpay order created', async () => {
-    // Phase 11 note: the pay-at-pickup-by-QR online money path that supersedes this one is proven
-    // end to end in steps 13 and 15 (QR collection -> settlement -> payout) on a real booking the
-    // API creates. This step is kept on purpose as the historical PREPAID_UPI path: the API can no
-    // longer create such a booking, so it is inserted as data (the way rows migrated from before
-    // quotes exist) to prove the legacy Checkout -> settlement -> weekly payout still completes end
-    // to end (review I.6). The weekly scheduler it exercises is also covered in payouts.int-spec.
+    // The online money path below (Checkout -> settlement -> payout) runs on a historical
+    // PREPAID_UPI booking, which the API can no longer create. It is inserted as data, the way
+    // such rows exist in a database migrated from before quotes. Phase 11 replaces this flow with
+    // pay at pickup by QR.
     const externalRef = `E2E-LEGACY-${randomUUID()}`;
     bookingId = await insertLegacyPrepaidBooking({
       externalRef,
@@ -2192,188 +2182,6 @@ async function main() {
     check(summary.paidPaise === paidOut, 'driver summary: what was paid out is unchanged (no clawback)');
     report.ids.phase6 = { refundIds, bookingIds };
     return { refunds: rows.rows.length, auditActions: actions, refundReversal: ledger.rows[0] };
-  });
-
-  /** An admin starts a reconciliation job; waits for it on the database (no polling noise). */
-  async function runJob(job, since) {
-    const started = await call('POST', '/v1/admin/reconciliation/runs', {
-      as: admin,
-      body: since ? { job, since } : { job },
-      expect: [202],
-    });
-    check(
-      started.body.job === job && started.body.status === 'RUNNING' && started.body.triggeredBy === 'ADMIN',
-      `${job} run started by the admin (202, RUNNING)`,
-    );
-    for (let attempt = 0; attempt < 240; attempt += 1) {
-      const row = await db.query('SELECT status FROM reconciliation_runs WHERE id = $1', [started.body.id]);
-      if (row.rows[0]?.status !== 'RUNNING') {
-        break;
-      }
-      await sleep(250);
-    }
-    const finished = await call('GET', `/v1/admin/reconciliation/runs/${started.body.id}`, { as: admin, expect: [200] });
-    check(finished.body.status === 'COMPLETED' && finished.body.error === null, `${job} run COMPLETED`);
-    return finished.body;
-  }
-
-  await step(24, 'Phase 7: a QR paid while its webhook was missed is recovered once by the job, every change is in the audit trail, reconciliation records what it finds for an admin', async () => {
-    const since = (await db.query('SELECT clock_timestamp() AS now')).rows[0].now.toISOString();
-    const { booking, bookingId: lostBookingId, tripId: lostTripId } = await bookFromQuote('RECOVERY', 'PAY_AT_PICKUP', [
-      { latitude: 26.2967, longitude: 73.0351 },
-    ]);
-    await tripStatus(lostTripId, 'DRIVER_ARRIVED');
-    const qrBody = { method: 'ONLINE_QR', amountPaise: booking.payablePaise };
-    let shown = await collectAt(lostTripId, qrBody, [201, 429]);
-    if (shown.status === 429) {
-      // The steps above used this driver's collection limit (20 a minute); a refused request
-      // never reached the backend, so waiting for the window and asking again is safe.
-      console.log('    (driver collection rate limit reached by the earlier steps: waiting for the window)');
-      await sleep(61_000);
-      shown = await collectAt(lostTripId, qrBody, [201]);
-    }
-    const collectionId = shown.body.collectionId;
-    // The customer pays; the webhook is lost and the driver's app never refreshes.
-    const paid = await customerPaysQr(collectionId);
-    const pending = await call('GET', `/v1/admin/collections/${collectionId}`, { as: admin, expect: [200] });
-    check(pending.body.status === 'PENDING', 'paid at the provider, still PENDING here');
-
-    const recovery = await runJob('COLLECTION_RECOVERY', since);
-    check(recovery.summary.recovered === 1 && recovery.summary.complete === true, 'the recovery job applied exactly one payment');
-    const recovered = await call('GET', `/v1/admin/collections/${collectionId}`, { as: admin, expect: [200] });
-    check(
-      recovered.body.status === 'COMPLETED' && recovered.body.providerPaymentId === paid.payment.id,
-      'collection COMPLETED with the payment the provider reported',
-    );
-    const lostChain = await call('GET', `/v1/admin/bookings/${lostBookingId}`, { as: admin, expect: [200] });
-    check(lostChain.body.booking.paymentStatus === 'PAID', 'booking PAID');
-
-    // Nothing silent: the recovery is a finding, and the change is in the log as the job.
-    const findings = await call(
-      'GET',
-      `/v1/admin/reconciliation/findings?kind=COLLECTION_RECOVERED&entityId=${collectionId}`,
-      { as: admin, expect: [200] },
-    );
-    const [finding] = findings.body.items;
-    check(
-      findings.body.items.length === 1 && finding.severity === 'INFO' && finding.source === 'RECOVERY' &&
-        finding.category === 'PROVIDER_PAID_INTERNAL_PENDING' && finding.bookingId === lostBookingId,
-      'one COLLECTION_RECOVERED finding (INFO) names the booking',
-    );
-    const trail = await call('GET', `/v1/admin/audit/financial-events?entityId=${collectionId}&order=asc`, {
-      as: admin,
-      expect: [200],
-    });
-    const [created] = trail.body.items;
-    const transitions = trail.body.items.filter((event) => event.action === 'STATUS_CHANGED');
-    check(created?.action === 'CREATED' && created.actorType === 'DRIVER', 'audit: the driver showed the QR');
-    check(
-      transitions.length === 1 && transitions[0].statusFrom === 'PENDING' && transitions[0].statusTo === 'COMPLETED' &&
-        transitions[0].actorType === 'SYSTEM' && transitions[0].requestId === recovery.id &&
-        transitions[0].origin === 'job COLLECTION_RECOVERY',
-      'audit: the recovery job completed it, under its run id',
-    );
-    check(
-      lostChain.body.auditTrailComplete === true && lostChain.body.auditTrail[0].entityType === 'BOOKING' &&
-        lostChain.body.auditTrail[0].actorType === 'ENGINE' &&
-        lostChain.body.auditTrail.some((event) => event.action === 'PAYMENT_STATUS_CHANGED' && event.requestId === recovery.id),
-      "the booking chain carries the booking's trail, from registration by the trip engine to its payment",
-    );
-
-    // The webhook arrives late; a second run finds nothing to do.
-    const late = await deliverQrEvent('qr_code.credited', paid);
-    idempotent('the late qr_code.credited finds the QR already applied by the recovery job', late.outcome === 'ALREADY_APPLIED');
-    const again = await runJob('COLLECTION_RECOVERY', since);
-    const after = await call('GET', `/v1/admin/audit/financial-events?entityId=${collectionId}`, { as: admin, expect: [200] });
-    const sighted = await call('GET', `/v1/admin/reconciliation/findings/${finding.id}`, { as: admin, expect: [200] });
-    idempotent(
-      'a second recovery run changes nothing: no new event, no new sighting',
-      again.summary.recovered === 0 && after.body.items.length === trail.body.items.length && sighted.body.occurrences === 1,
-    );
-    const lateEvent = await call('GET', `/v1/admin/audit/webhook-events?eventId=${late.webhook.eventId}`, {
-      as: admin,
-      expect: [200],
-    });
-    check(
-      lateEvent.body.items.length === 1 && lateEvent.body.items[0].outcome === 'ALREADY_APPLIED' &&
-        !('payload' in lateEvent.body.items[0]),
-      'audit: the late webhook and what it did, without its payload',
-    );
-
-    // A full reconciliation over everything this run did (steps 1 to 24).
-    const reconciliation = await runJob('RECONCILIATION');
-    const checks = reconciliation.summary.checks;
-    check(
-      checks.length > 20 && checks.every((entry) => !String(entry.note ?? '').startsWith('failed')),
-      `every database check ran (${checks.length})`,
-    );
-    check(reconciliation.summary.providerChecks === false && reconciliation.summary.scoped === false, 'a full run, database checks only');
-    const integrity = await db.query(
-      `SELECT kind, count(*)::int AS n FROM reconciliation_findings
-        WHERE last_run_id = $1 AND severity = 'CRITICAL'
-          AND category IN ('WALLET_MISMATCH', 'EARNING_SOURCE_MISMATCH', 'DUPLICATE_PROVIDER_EVENT')
-        GROUP BY 1 ORDER BY 1`,
-      [reconciliation.id],
-    );
-    check(
-      integrity.rows.length === 0,
-      `no critical wallet, earning-source or duplicate-money finding after the whole flow (${JSON.stringify(integrity.rows)})`,
-    );
-    const bySeverity = await db.query(
-      `SELECT severity, count(*)::int AS n FROM reconciliation_findings
-        WHERE last_run_id = $1 GROUP BY 1 ORDER BY 1`,
-      [reconciliation.id],
-    );
-
-    // An admin closes the recovery finding with a note; a resolution never changes.
-    const note = 'Checked against the provider: paid once, applied once by the recovery job';
-    const resolved = await call('POST', `/v1/admin/reconciliation/findings/${finding.id}/resolve`, {
-      as: admin,
-      body: { note },
-      expect: [200],
-    });
-    check(resolved.body.status === 'RESOLVED' && resolved.body.resolutionNote === note, 'finding RESOLVED with the note');
-    const twice = await call('POST', `/v1/admin/reconciliation/findings/${finding.id}/resolve`, {
-      as: admin,
-      body: { note: 'A second resolution attempt' },
-      expect: [409],
-    });
-    idempotent('a resolved finding is never resolved again', twice.body.error.code === 'RECONCILIATION_FINDING_RESOLVED');
-    const decisions = await db.query(
-      `SELECT action, COUNT(*)::int AS n FROM admin_actions
-        WHERE action IN ('RECONCILIATION_RUN_REQUESTED', 'RECONCILIATION_FINDING_RESOLVED')
-        GROUP BY 1 ORDER BY 1`,
-    );
-    const decided = Object.fromEntries(decisions.rows.map((row) => [row.action, row.n]));
-    check(
-      decided.RECONCILIATION_RUN_REQUESTED === 3 && decided.RECONCILIATION_FINDING_RESOLVED === 1,
-      'audit: three runs requested and one finding resolved, each by the admin',
-    );
-
-    // The event log is append-only, for the table owner too.
-    const rewrite = await db
-      .query("UPDATE financial_events SET origin = 'rewritten' WHERE entity_id = $1", [collectionId])
-      .then(() => null, (error) => error.message);
-    check(rewrite !== null && /append-only/.test(rewrite), 'the financial event log refuses to be rewritten');
-    const summary = await call('GET', '/v1/admin/reconciliation/summary', { as: admin, expect: [200] });
-    check(
-      summary.body.latestRuns.COLLECTION_RECOVERY.id === again.id &&
-        summary.body.latestRuns.RECONCILIATION.id === reconciliation.id,
-      'the summary shows the latest run of each job',
-    );
-    report.ids.phase7 = {
-      bookingId: lostBookingId,
-      collectionId,
-      recoveryRunIds: [recovery.id, again.id],
-      reconciliationRunId: reconciliation.id,
-      findingId: finding.id,
-    };
-    return {
-      recovered: recovery.summary.recovered,
-      events: trail.body.items.length,
-      findingsBySeverity: Object.fromEntries(bySeverity.rows.map((row) => [row.severity, row.n])),
-      openFindings: summary.body.openFindings.total,
-    };
   });
 }
 

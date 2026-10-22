@@ -32,12 +32,10 @@ export class PaymentOrderService {
     notes: Readonly<Record<string, string>>,
   ): Promise<Payment> {
     const order = await this.obtainOrder(payment, mayAlreadyExist, notes);
-    const claimed = await this.prisma.withFinancialContext(
-      this.prisma.payment.updateMany({
-        where: { id: payment.id, status: 'PENDING', razorpayOrderId: null },
-        data: { razorpayOrderId: order.id },
-      }),
-    );
+    const claimed = await this.prisma.payment.updateMany({
+      where: { id: payment.id, status: 'PENDING', razorpayOrderId: null },
+      data: { razorpayOrderId: order.id },
+    });
     const current = await this.prisma.payment.findUniqueOrThrow({ where: { id: payment.id } });
     if (claimed.count === 0 && current.razorpayOrderId !== order.id) {
       // A concurrent retry attached its own order first. Ours is never shown to anyone and
@@ -79,12 +77,10 @@ export class PaymentOrderService {
         if (recovered) {
           return this.assertOrderMatches(recovered, payment);
         }
-        await this.prisma.withFinancialContext(
-          this.prisma.payment.updateMany({
-            where: { id: payment.id, status: 'PENDING', razorpayOrderId: null },
-            data: { status: 'FAILED' },
-          }),
-        );
+        await this.prisma.payment.updateMany({
+          where: { id: payment.id, status: 'PENDING', razorpayOrderId: null },
+          data: { status: 'FAILED' },
+        });
         this.logger.error(
           { paymentId: payment.id, status: error.httpStatus, code: error.errorCode },
           'Razorpay rejected order creation',

@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
-import { FinancialContext } from '../audit/financial-context';
 import { CollectionsService } from '../collections/collections.service';
 import { isAnomaly } from '../collections/collection-finalizer.service';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
@@ -162,12 +161,6 @@ export class RazorpayWebhookService {
       request.eventIdHeader && EVENT_ID_PATTERN.test(request.eventIdHeader)
         ? request.eventIdHeader
         : `sha256:${createHash('sha256').update(rawBody).digest('hex')}`;
-    // Signed: every financial change this event causes is the provider's, with its event id.
-    FinancialContext.annotate({
-      actorType: 'PROVIDER',
-      origin: `webhook razorpay ${eventType}`,
-      providerEventId: eventId,
-    });
 
     await this.prisma.$executeRaw`
       INSERT INTO payment_events (event_id, event_type, provider, payload, signature_valid)

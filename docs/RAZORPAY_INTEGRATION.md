@@ -2,7 +2,7 @@
 
 For whoever wires the apps and the trip engine to this backend and runs the Razorpay tests. All amounts are integer paise (₹1 = 100 paise).
 
-Sections 1–8 cover driver wallet top-ups. Sections 9–15 cover the V1 money model: customer booking payments, pickup/delivery collections (cash and QR), driver earnings and weekly payouts. Section 16 runs the whole flow end to end, section 17 covers refunds, and section 18 the audit trail, reconciliation and the recovery of missed QR payments.
+Sections 1–8 cover driver wallet top-ups. Sections 9–15 cover the V1 money model: customer booking payments, pickup/delivery collections (cash and QR), driver earnings and weekly payouts. Section 16 runs the whole flow end to end, and section 17 covers refunds.
 
 ```
 ONLINE  customer → Razorpay → Nikhil Enterprises → driver earning → weekly payout → driver's verified bank
@@ -282,16 +282,6 @@ It is derived on every read and never stored.
 
 `customerSubject` / `driverSubject` are Firebase UIDs of provisioned accounts (`npm run provision -- create-customer|create-driver`).
 
-**The trip engine (payment flow Phase 8).** Branch `raj_engine` implements this contract. Its README has the details; this backend is unchanged.
-- It stores each booking before registering it (`externalRef: ENG-<uuid>`), so a retry is a replay.
-- It reports through a durable outbox, in order per booking, and retries with backoff until it gets an answer. Repeats are no-ops here.
-- It reads `paymentGate` fresh before every OTP and checks the OTP only when `handoverAllowed` is true.
-- It sends `PICKUP_VERIFIED`, `IN_TRANSIT`, stop `DELIVERED` and `COMPLETED` before committing them, and applies nothing that was refused.
-- Its `X-Request-Id`s are `eng-quote-…`, `eng-reg-<rideId>`, `eng-gate-<tripId>`, `eng-otp-<rideId>` and `eng-ob-<outboxId>-<attempt>`.
-- A 401/403 here (the key refused) is retried and logged as `"alert":"PAYMENT_BACKEND_AUTH_FAILED"`.
-
-`npm run test:contract` in `raj_engine` runs the engine build against this backend's build on their own databases.
-
 ## 11. Customer app: paying a historical prepaid booking
 
 New bookings are never paid in the app: they pay at pickup or at delivery (sections 10 and 12). This flow exists only for historical `PREPAID_UPI` bookings (`paymentModel: LEGACY_BOOKING_LEVEL`, registered before quotes), so they can still be paid. For any other booking every route below answers `409 BOOKING_NOT_PAYABLE`, and the webhook and the admin sync never capture or apply a payment for one (the database refuses such a payment row too).
@@ -381,9 +371,7 @@ Every path (webhook, the driver app's polling, `POST /v1/admin/collections/{id}/
 
 **Refunds** (payment flow Phase 6). A `refund.*` event is matched to our refund by its Razorpay id, or by our receipt or `refund_id` note when the submission reply was lost. It must be exactly ours (payment, amount, currency, receipt, notes) and is applied forward only, through the same finalizer as the submission reply and `POST /v1/admin/refunds/{id}/sync`. A repeat is `REFUND_ALREADY_APPLIED`, and an older state after a newer one is `REFUND_STALE_UPDATE`. A different amount or payment is `REFUND_MISMATCH`, never applied. A refund this service never requested (made on the Dashboard) is `REFUND_UNKNOWN`. A refund Razorpay reports for one we refused or cancelled is `REFUND_CONFLICTING_STATE`. All three show in `webhook-anomalies` for review. Section 17 has the details.
 
-**Missed webhooks and reconciliation** (payment flow Phase 7). If a QR's webhook never arrives and the driver's app never polls, the collection recovery job re-reads the QR after 5 minutes and applies it through the same finalizer, once. A signed event processed with a problem, left unprocessed, or delivered again under a new event id is also recorded as a reconciliation finding for an admin. Section 18 has the details.
-
-**Testing without webhooks:** booking payments complete through verify, QR collections through the driver app's polling or the recovery job, settlements through the periodic pull or `POST /v1/admin/settlements/sync`, bank validations through the admin refresh, payouts through admin sync, and refunds through `POST /v1/admin/refunds/{id}/sync`.
+**Testing without webhooks:** booking payments complete through verify, QR collections through the driver app's polling, settlements through the periodic pull or `POST /v1/admin/settlements/sync`, bank validations through the admin refresh, payouts through admin sync, and refunds through `POST /v1/admin/refunds/{id}/sync`.
 
 **Test mode limits** (Razorpay docs and a probe on 6 Oct 2026): QR codes can't be paid in test mode; payment links can. Test payments are not settled (the settlement and recon endpoints answer 200 with empty lists), so in test mode an ONLINE earning stays `AWAITING_SETTLEMENT` unless the simulator is used (section 16). Fund Account Validation is not available in test mode. RazorpayX test payouts stay in `processing` until moved in the RazorpayX dashboard, and test mode sends only some payout events.
 
@@ -399,7 +387,7 @@ Every path (webhook, the driver app's polling, `POST /v1/admin/collections/{id}/
 - [ ] Every driver's KYC legal name recorded (`provision.js set-legal-name`, D-59) before bank accounts are approved.
 - [ ] `PAYOUT_SCHEDULE_ENABLED=true` (Monday 11:00 IST); `PAYOUT_AUTO_EXECUTE` stays false until finance decides otherwise.
 - [ ] `SETTLEMENT_PROVIDER`, `PAYOUT_PROVIDER`, `COLLECTION_LINK_PROVIDER` and `REFUND_PROVIDER` are never `simulated` (the server refuses it in production and with live keys).
-- [ ] **Production restriction, still in force after payment flow Phase 7** (OPEN_DECISIONS section I, Phases 4 to 7):
+- [ ] **Production restriction, still in force after payment flow Phase 6** (OPEN_DECISIONS section I, Phases 4 to 6):
   - All-cash multi-drop PAY_AT_DELIVERY may work through the current backend flow.
   - Single-drop QR works (one collection, paid out once settled).
   - Multi-drop PAY_AT_DELIVERY containing a QR drop stays blocked operationally. Phase 5 makes these earnings payable and settleable in the backend, proven with simulated providers only. The backend doesn't refuse such a QR, so keep these bookings off until every go-live condition in OPEN_DECISIONS section I, Phase 5 is met. In short: live QR Codes, live settlement reconciliation with one real two-QR booking, live RazorpayX payouts with the failure path run once, the ops reviews in place, the production preflight reviewed, and Raj's written approval.
@@ -409,9 +397,6 @@ Every path (webhook, the driver app's polling, `POST /v1/admin/collections/{id}/
 - [ ] **Open, blocks live provider refunds:** Razorpay refunds verified on the live account (D-72; the checklist is in OPEN_DECISIONS section I, Phase 6) and the `refund.*` webhooks on. Only then set `REFUNDS_PROVIDER_VERIFIED=true` with `REFUND_PROVIDER=razorpay`; the server refuses `razorpay` in production or with live keys without it. Until then `REFUND_PROVIDER=disabled`: provider refunds are refused (503 `REFUND_PROVIDER_NOT_CONFIGURED`), cash returns can still be recorded, and any customer refund is done by hand on the Dashboard (it then shows as `REFUND_UNKNOWN` for review).
 - [ ] The refund policy stays open until Raj decides it (L-7 to L-10, L-21). Keep the safe defaults: `REFUND_AUTO_ON_CANCEL=false` (true is refused), `REFUND_PARTIAL_ALLOWED=false`, and `REFUND_ALLOWED_CASES` left at all cases. Every refund is requested by an admin with a reason.
 - [ ] Someone owns `refund-anomalies` daily: stale refunds, refunds after a payout or on a cash earning (nothing is recovered from the driver automatically, L-21), and any total that disagrees. Alerts on `"alert":"REFUND_ANOMALY"`.
-- [ ] The collection recovery and reconciliation jobs run (`COLLECTION_RECOVERY_INTERVAL_MINUTES`, `RECONCILIATION_INTERVAL_MINUTES` not 0; the startup log lists either as an open item when it is off), and `GET /v1/admin/reconciliation/summary` shows recent `COMPLETED` runs.
-- [ ] Someone owns the reconciliation findings daily, CRITICAL first: `GET /v1/admin/reconciliation/findings?status=OPEN&severity=CRITICAL`. Each is resolved with a note saying what was checked or done (section 18). A finding moves no money; the sync, hold, release or refund decision it names does.
-- [ ] The production database's preflight shows no `app.*` actor setting outside the backend (DATABASE_SETUP.md, Phase 7), so unattributed changes stay `UNATTRIBUTED` in the event log.
 
 ### New error codes
 
@@ -434,8 +419,6 @@ Every path (webhook, the driver app's polling, `POST /v1/admin/collections/{id}/
 | `REFUND_NOT_FOUND` | 404 |
 | `REFUND_SOURCE_NOT_REFUNDABLE` (`details.reason`), `REFUND_IN_PROGRESS` (`details.refundId`), `REFUND_CASE_NOT_ALLOWED` (`details.refundCase`), `REFUND_EARNING_IN_PAYOUT`, `REFUND_INVALID_STATE` (`details.status`, `details.reason`) | 409 |
 | `REFUND_SOURCE_INVALID` (`details.reason`), `REFUND_AMOUNT_NOT_ALLOWED` (`details.refundablePaise`, `details.reason`), `REFUND_FEE_TREATMENT_REQUIRED` (`details.reason`) | 422 |
-| `RECONCILIATION_RUN_NOT_FOUND`, `RECONCILIATION_FINDING_NOT_FOUND` | 404 |
-| `RECONCILIATION_RUN_IN_PROGRESS` (`details.runId`), `RECONCILIATION_FINDING_RESOLVED` | 409 |
 
 ## 16. End-to-end run with API calls (`npm run e2e:local`)
 
@@ -475,7 +458,6 @@ The runner creates a separate database (`multipleride_e2e`, dropped and recreate
 | 21. Cash returned | The step 12 cash trip. A cash return with no fee decision and a provider refund of cash are refused. With `CREDITED_TO_WALLET`, the cash return is recorded `COMPLETED` and the platform fee is credited back to the wallet once, as a `REFUND_REVERSAL` entry (replay: same refund, one credit). The cash earning is untouched and reported (`REFUND_ON_CASH_EARNING`), and the booking is `REFUNDED`. |
 | 22. Refund after payout | Drop 1 of the step 17 booking, whose earning was paid out in step 18. Only that drop's money is refunded. The earning stays `PAID` (no clawback), the booking is `PARTIALLY_REFUNDED`, and `refund-anomalies` reports `REFUND_AFTER_PAYOUT` with the payout. The wallet is not touched. |
 | 23. Phase 6 audit | No refund integrity finding. The wallet and this run's refund webhooks are absent from the mismatch, anomaly and unprocessed reports. Three refunds are all `COMPLETED`, and every booking's status is what its money says. `refunded_paise` is exactly the completed refunds. The audit trail has two provider refunds requested and completed and one cash return. There is one `REFUND_REVERSAL` credit, and the driver's paid-out total is unchanged. |
-| 24. Recovery, audit trail, reconciliation | A new PAY_AT_PICKUP booking's QR is paid, but its webhook is lost and the driver's app never refreshes: the collection stays `PENDING`. An admin starts a `COLLECTION_RECOVERY` run (202, polled until `COMPLETED`), which applies exactly one payment: the collection is `COMPLETED` with the provider's payment, and the booking `PAID`. One `COLLECTION_RECOVERED` finding (INFO, source `RECOVERY`) names the booking. The event log shows the driver creating the collection and the job completing it under its run id; the booking chain's `auditTrail` runs from the engine's registration to the payment. The late `qr_code.credited` is `ALREADY_APPLIED`, a second run changes nothing, and `webhook-events` shows the late event without its payload. A full `RECONCILIATION` run: every database check runs, and there is no critical wallet, earning-source or duplicate-money finding after the whole flow. The admin resolves the recovery finding (a second resolution is 409), the admin actions show three runs and one resolution, the event log refuses an UPDATE from the table owner, and the summary shows the latest run of each job. |
 
 Idempotency checks: a used bank change request confirmed again, repeated booking registration, payment start with the same `Idempotency-Key`, duplicate `payment.captured`, settlement re-sync, repeated `COMPLETED`, re-running the weekly schedule, re-executing the batch, duplicate `payout.processed`. Phase 4 adds:
 - pickup cash and drop cash replayed with the same key (one collection, one fee debit)
@@ -498,11 +480,6 @@ Phase 6 adds:
 - a second refund of the same collection while one is in progress
 - a duplicate `refund.processed`, the same state in a new event, and an admin sync after the webhook
 - a cash return replayed with the same key (one fee credit)
-
-Phase 7 adds:
-- a late `qr_code.credited` after the recovery job applied the QR
-- a second recovery run (no new event, no new sighting)
-- a second resolution of the same finding
 
 Each must change nothing.
 
@@ -598,102 +575,3 @@ The startup log lists D-72 until provider refunds are verified, and the open ref
 - Money that reached a QR after it was closed (`PAYMENT_NOT_PENDING` in `webhook-anomalies`) is not recorded as a collection, so there is no source to refund through the API. Refund it on the Dashboard; it then shows as `REFUND_UNKNOWN`.
 - Refunds made on the Dashboard are reported, never recorded.
 - No admin UI and no customer notification.
-
-## 18. Audit trail, reconciliation and collection recovery (payment flow Phase 7)
-
-Admin only, and backend only: the apps don't change. Every change to a financial record is in an append-only event log. A reconciliation job compares our records with each other and with what Razorpay and RazorpayX report, and records every mismatch as a finding for an admin. Nothing is fixed silently, and no business policy is decided (OPEN_DECISIONS section I, Phase 7).
-
-Only one thing writes: the **collection recovery job**. It applies what Razorpay reports for a QR or payment link still PENDING, through the same finalizer as the webhook. Everything else only reads. No refund or payout is created, and no provider call other than a GET is made.
-
-**Financial event log.** Database triggers record each change on 14 tables (bookings, trips, drops, payments, collections, settlements, disputes, refunds, earnings, payout batches, payouts, payout items, wallet entries and admin actions). Each event carries who made it, in which request or run, and the changed columns before and after. The API role can only read it, and nobody can change or delete an event (DATABASE_SETUP.md, Phase 7). The actor comes from the request:
-
-| `actorType` | When | `actorUserId` | `requestId` | `origin` (examples) |
-|---|---|---|---|---|
-| `ADMIN`, `DRIVER`, `CUSTOMER` | an authenticated API call | the user | `X-Request-Id` | `POST /v1/admin/refunds/:refundId/sync`, `POST /v1/trips/:tripId/collections` |
-| `ENGINE` | `/v1/internal/*` | – | `X-Request-Id` | `POST /v1/internal/bookings` |
-| `PROVIDER` | a signed webhook, once its signature is verified; `providerEventId` is Razorpay's event id | – | `X-Request-Id` | `webhook razorpay qr_code.credited`, `webhook razorpayx payout.processed` |
-| `SYSTEM` | a job: the recovery and reconciliation runs (request id = run id), the settlement sync and the payout schedule (`job:<uuid>`) | – | as listed | `job COLLECTION_RECOVERY`, `job SETTLEMENT_SYNC` |
-| `SYSTEM` | the ops CLI | – | – | `cli <command>` |
-| `UNATTRIBUTED` | anything else: an operator's SQL, a fixture (`dbRole` says which database role) | – | – | – |
-
-A booking's trail is also on the booking chain (`GET /v1/admin/bookings/{bookingId}`): `auditTrail`, up to 500 events oldest first, and `auditTrailComplete`.
-
-**The two jobs**
-
-| Job | Schedule | What it does |
-|---|---|---|
-| `COLLECTION_RECOVERY` | every `COLLECTION_RECOVERY_INTERVAL_MINUTES` (5) | Re-reads each `ONLINE_QR` collection still PENDING after `COLLECTION_RECOVERY_MIN_AGE_MINUTES` (5), up to 200 per run, oldest first, from Razorpay (QR code or payment link). It applies what Razorpay reports through `CollectionsService.recover`, the same finalizer as the webhook, the driver's poll and `POST /v1/admin/collections/{id}/sync`. Paid: completed once, and recorded as `COLLECTION_RECOVERED`. Expired or cancelled: closed as FAILED, as the webhook would. Still open: left alone. |
-| `RECONCILIATION` | every `RECONCILIATION_INTERVAL_MINUTES` (60) | Runs the 23 database checks (up to 2,000 rows each), then the read-only provider checks (up to 200 records each), and records what they find. |
-
-Both jobs are leased in `reconciliation_runs`. Only one run per job runs at a time, across instances: a timer tick that finds one running does nothing. A run renews its lease while it works (10 minutes for recovery, 30 for reconciliation). If it dies, the next run closes it `ABANDONED` and starts over, which is safe because every step can be repeated:
-- Recovery goes through the finalizer, so a payment is applied at most once. A webhook racing it gets `ALREADY_APPLIED`, and a second run finds nothing pending.
-- A finding counts one sighting per run, however often a run records it.
-
-After three "provider unavailable" answers in a row, a run stops reading the provider and reports itself incomplete (`complete: false`, the counts in `summary`). The next run retries. Pending Checkout payments (wallet top-ups, historical prepaid bookings) are never applied by a job. They are reported, and `POST /v1/admin/payments/{id}/sync` applies one, capturing it first if it is only authorized.
-
-**Provider checks** (`RECONCILIATION_PROVIDER_CHECKS=true`). These look at records of the last `RECONCILIATION_LOOKBACK_DAYS` (3), or since the run's `since`. Pending payments under `RECONCILIATION_MIN_AGE_MINUTES` (15) old are left alone.
-
-| Check | Reads | Reports |
-|---|---|---|
-| `PROVIDER_PENDING_PAYMENTS` | `GET /v1/orders/{id}/payments` for payments we hold PENDING | `PROVIDER_PAID_PAYMENT_PENDING`, `PROVIDER_AUTHORIZED_PAYMENT_PENDING`, `PROVIDER_ORDER_PAID_TWICE` |
-| `PROVIDER_CLOSED_COLLECTIONS` | the QR or link of collections we closed as FAILED | `PROVIDER_PAID_COLLECTION_CLOSED` |
-| `PROVIDER_PAID_COLLECTIONS` | the QR or link of collections we hold COMPLETED, and the payment's refunds | `PROVIDER_PAYMENT_NOT_CAPTURED`, `PROVIDER_EXTRA_COLLECTION_PAYMENT`, `PROVIDER_REFUND_NOT_RECORDED`, `INTERNAL_REFUND_NOT_AT_PROVIDER` |
-| `PROVIDER_PAID_PAYMENTS` | `GET /v1/payments/{id}` for payments we hold PAID, and their refunds | `PROVIDER_PAYMENT_NOT_CAPTURED`, `PROVIDER_REFUND_NOT_RECORDED`, `INTERNAL_REFUND_NOT_AT_PROVIDER` |
-| `PROVIDER_PAYOUTS` (when payouts are on) | `GET /v1/payouts/{id}`, or by our reference when the id was never recorded | `PAYOUT_AMOUNT_MISMATCH`, `PAYOUT_STATUS_BEHIND`, `PAYOUT_STATUS_CONFLICT` |
-| `PROVIDER_REFUNDS` (when refunds are on) | `GET /v1/refunds/{id}`, or `GET /v1/payments/{id}/refunds` for a reply that was lost | `REFUND_STATUS_BEHIND`, `REFUND_STATUS_CONFLICT`, `REFUND_PROVIDER_MISMATCH` |
-
-A lookup Razorpay refuses is `PROVIDER_LOOKUP_FAILED`. Refunds are compared through the refunds API while provider refunds are on. With them off, a Checkout payment's refunds come from its `amount_refunded` (read for this comparison only, never used to apply a payment), and a QR payment's refunds aren't compared. `*_BEHIND` means the provider moved forward and the sync named in the finding's `detail` records it. `*_CONFLICT` contradicts what we recorded, and needs a human.
-
-**Findings.** Each finding has a `category`, a `kind`, a `severity` and a `source` (`DATABASE`, `PROVIDER` or `RECOVERY`). It names the record (`entityType`, `entityId`, `bookingId`, `driverId`), the provider id (`providerRef`), both states and both amounts, and says in `detail` what to do. Severities: CRITICAL where money may be wrong or not applied, WARNING where a state lags or waits for a review, INFO where nothing needs doing by itself.
-
-| Category | Kinds |
-|---|---|
-| `PROVIDER_PAID_INTERNAL_PENDING` | CRITICAL: `PROVIDER_PAID_PAYMENT_PENDING`, `PROVIDER_PAID_COLLECTION_CLOSED`, `PROVIDER_EXTRA_COLLECTION_PAYMENT`, `RECOVERED_PAID_AFTER_CANCELLATION`, `RECOVERED_PAID_FOR_CLOSED_DROP`, `RECOVERY_<outcome>`, `WEBHOOK_AMOUNT_MISMATCH`, `WEBHOOK_ORDER_MISMATCH`, `WEBHOOK_PAYMENT_NOT_PENDING`, `WEBHOOK_UNKNOWN_ORDER`, `WEBHOOK_MISSING_ORDER_ID`, `WEBHOOK_UNKNOWN_COLLECTION` (money events). WARNING: `PROVIDER_AUTHORIZED_PAYMENT_PENDING`, `WEBHOOK_BOOKING_NOT_PAYABLE`. INFO: `COLLECTION_RECOVERED` |
-| `INTERNAL_PAID_PROVIDER_NOT_PAID` | CRITICAL: `PROVIDER_PAYMENT_NOT_CAPTURED`, `PROVIDER_REFUND_NOT_RECORDED`, `DISPUTED_EARNING_NOT_HELD`, `DISPUTE_LOST`, `WEBHOOK_DISPUTE_RECORDED`, `WEBHOOK_REFUND_UNKNOWN` |
-| `EARNING_SOURCE_MISMATCH` | CRITICAL: `GROSS_NOT_BOOKING_FARE`, `COMPLETED_TRIP_WITHOUT_EARNING`, `CASH_FEE_NOT_COLLECTION_FEE`, `EARNING_NOT_SUM_OF_SOURCES`, `FEE_NOT_SUM_OF_SOURCES`, `CASH_NOT_CASH_SOURCES`, `ONLINE_NOT_ONLINE_SOURCES`, `PAYOUT_AMOUNT_NOT_ONLINE_NET`, `COLLECTION_LINKED_TWICE`, `COLLECTION_FUNDS_SEVERAL_EARNINGS`, `COLLECTION_NOT_IN_EARNING`, `SOURCE_LINK_NOT_COLLECTION`, `SOURCE_NOT_COMPLETED`, `SOURCE_DRIVER_MISMATCH` |
-| `SETTLEMENT_MISMATCH` | CRITICAL: `SETTLEMENT_AMOUNT_NOT_GROSS`, `PAYABLE_BEFORE_SETTLEMENT`, `SETTLEMENT_UNKNOWN_PAYMENT`, `SETTLEMENT_AMOUNT_MISMATCH`. WARNING: `SETTLED_BUT_AWAITING`, `SETTLEMENT_OVERDUE` (only while settlement tracking is on) |
-| `PAYOUT_MISMATCH` | CRITICAL: `PAID_WITHOUT_PAID_ITEM`, `IN_PAYOUT_WITHOUT_ITEM`, `ITEM_PAID_EARNING_NOT_PAID`, `GROSS_NOT_SUM_OF_ITEMS`, `PROCESSED_WITH_UNPAID_ITEMS`, `FAILED_WITH_LIVE_ITEMS`, `ITEM_NOT_EARNING_PAYOUT_AMOUNT`, `EARNING_IN_SEVERAL_LIVE_ITEMS`, `ITEM_DRIVER_NOT_PAYOUT_DRIVER`, `PAYOUT_AMOUNT_MISMATCH`, `PAYOUT_STATUS_CONFLICT`, `PAYOUT_WEBHOOK_MISMATCH`, `PAYOUT_WEBHOOK_CONFLICTING_STATE`, `PAYOUT_WEBHOOK_UNKNOWN_PAYOUT`. WARNING: `PAYOUT_FAILED`, `PAYOUT_REVERSED`, `PROCESSED_WITHOUT_UTR`, `PAYOUT_STATUS_BEHIND`. INFO: `PAYABLE_WITHOUT_BANK_ACCOUNT` |
-| `REFUND_MISMATCH` | CRITICAL: `REFUNDED_TOTAL_MISMATCH`, `REFUNDS_EXCEED_SOURCE`, `BOOKING_REFUND_STATUS_MISMATCH`, `INTERNAL_REFUND_NOT_AT_PROVIDER`, `REFUND_PROVIDER_MISMATCH`, `REFUND_STATUS_CONFLICT`, `WEBHOOK_REFUND_MISMATCH`, `WEBHOOK_REFUND_CONFLICTING_STATE`. WARNING: `REFUND_AFTER_PAYOUT`, `REFUND_ON_CASH_EARNING`, `REFUND_ON_PAYABLE_EARNING`, `REFUND_STATUS_BEHIND`, `WEBHOOK_PAID_AFTER_CANCELLATION`, `WEBHOOK_PAID_FOR_CLOSED_DROP`. INFO: `PAID_BOOKING_CANCELLED` |
-| `WALLET_MISMATCH` | CRITICAL: `WALLET_BALANCE_NOT_LEDGER`, `LEDGER_BALANCE_CHAIN_BROKEN`, `FEE_NOT_LEDGER_AMOUNT`, `LEDGER_FEE_WITHOUT_COLLECTION`, `CASH_FEE_DEBIT_MISMATCH`, `FEE_CREDIT_MISMATCH`, `TOPUP_CREDIT_MISMATCH`, `TOPUP_CREDIT_WITHOUT_PAYMENT` |
-| `STALE_PENDING` | WARNING: `PENDING_PAST_EXPIRY`, `STALE_COLLECTION_UNRECOVERABLE`, `STALE_PAYMENT_WITHOUT_ORDER`, `STUCK_SUBMITTING`, `STUCK_AT_PROVIDER`, `STALE_PENDING_REFUND`, `STALE_PROCESSING_REFUND`, `WEBHOOK_NOT_PROCESSED`, `PAYOUT_WEBHOOK_NOT_PROCESSED`. INFO: `STALE_PENDING_PAYMENT` (usually an abandoned checkout; the provider check tells a paid one apart) |
-| `DUPLICATE_PROVIDER_EVENT` | CRITICAL: `PROVIDER_PAYMENT_ON_TWO_RECORDS`, `BOOKING_PAID_TWICE`, `PROVIDER_EVENT_APPLIED_TWICE`, `DUPLICATE_LEDGER_PROVIDER_PAYMENT`, `PROVIDER_ORDER_PAID_TWICE`, `WEBHOOK_DUPLICATE_ORDER_PAYMENT`, `WEBHOOK_DUPLICATE_BOOKING_PAYMENT`. INFO: `DUPLICATE_WEBHOOK_DELIVERY` (the same event type for the same object under different event ids, each handled idempotently) |
-| `PROVIDER_EVENT_ANOMALY` | WARNING: `PROVIDER_LOOKUP_FAILED`, `RECOVERY_PROVIDER_LOOKUP_FAILED`, and any other `WEBHOOK_<outcome>` or `PAYOUT_WEBHOOK_<outcome>` (an event the backend couldn't use) |
-
-The existing reports keep their codes; only `REVERSED` (`payout-mismatches`) is recorded as `PAYOUT_REVERSED`. `WEBHOOK_<outcome>` and `PAYOUT_WEBHOOK_<outcome>` are the signed events of the look-back window processed with a problem, one finding per event.
-
-How a finding lives:
-- **Recorded:** OPEN at its first sighting, once per condition (`fingerprint`).
-- **Seen again:** each later run adds one to `occurrences`, and moves `lastSeenAt` and `lastRunId`.
-- **Cleared:** a complete run with no `since` sets `clearedAt` on what its database state checks no longer see. The record is kept. Seen again while OPEN, `clearedAt` goes back to null. Findings about past events (webhook problems, duplicate deliveries, settlement data) and provider and recovery findings are never cleared.
-- **Resolved:** only an admin resolves a finding, with a note, once. The resolution is audited and never changes. A resolved finding whose condition is still seen keeps counting sightings and is never reopened. One that was cleared and comes back is a new OPEN finding.
-
-**Admin API**
-
-| Method and path | Body or query | Returns |
-|---|---|---|
-| `GET /v1/admin/reconciliation/summary` | – | OPEN findings by severity and category, the latest run of each job, and the schedule |
-| `GET /v1/admin/reconciliation/findings` | `status`, `category`, `severity`, `source`, `kind`, `bookingId`, `driverId`, `entityId`, `runId`, `cleared`, `limit` (1–200, default 50), `cursor` | `{ items, nextCursor }`, newest first |
-| `GET /v1/admin/reconciliation/findings/{findingId}` | – | finding |
-| `POST /v1/admin/reconciliation/findings/{findingId}/resolve` (30 a minute) | `{ note }`, 10–500 characters: what was checked or done, or the decision reference | `200` finding, audited as `RECONCILIATION_FINDING_RESOLVED`; `409 RECONCILIATION_FINDING_RESOLVED` if it already is |
-| `POST /v1/admin/reconciliation/runs` (5 a minute) | `{ job: "COLLECTION_RECOVERY" \| "RECONCILIATION", since? }` | `202` with the RUNNING run, audited as `RECONCILIATION_RUN_REQUESTED`; poll `GET runs/{runId}`. `409 RECONCILIATION_RUN_IN_PROGRESS` (`details.runId`) while one is running |
-| `GET /v1/admin/reconciliation/runs` | `job`, `status`, `limit` (1–100, default 20), `cursor` | `{ items, nextCursor }`, newest first |
-| `GET /v1/admin/reconciliation/runs/{runId}` | – | run, with `summary`: counts and each check's result (`complete`, `note`) |
-| `GET /v1/admin/reconciliation/integrity-checks` (10 a minute) | – | what the 23 database checks see now (200 rows each); records nothing |
-| `GET /v1/admin/audit/financial-events` | `bookingId`, `driverId`, `entityType`, `entityId`, `action`, `actorType`, `actorUserId`, `requestId`, `providerEventId`, `from`, `to`, `order` (`desc` by default), `limit` (1–200, default 50), `cursor` | `{ items, nextCursor }` |
-| `GET /v1/admin/audit/admin-actions` | `actorUserId`, `action`, `targetType`, `targetId`, `from`, `to`, `limit`, `cursor` | `{ items, nextCursor }`, newest first |
-| `GET /v1/admin/audit/webhook-events` | `source` (`RAZORPAY` by default, or `RAZORPAYX`), `eventType`, `outcome`, `eventId`, `paymentId`, `payoutId`, `problemsOnly`, `from`, `to`, `limit`, `cursor` | each signed event: its outcome, error and attempts, and the provider entity and status it named. Never its payload. |
-
-A run with `since` re-reads (recovery) or compares with the provider only the records created since then; the database checks still cover everything, and it never marks anything cleared. Unknown fields are refused (`400 VALIDATION_FAILED`).
-
-**Configuration**
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `COLLECTION_RECOVERY_INTERVAL_MINUTES` | `5` | 0 turns the timer off; an admin can still start a run. The startup log then lists it as an open item. |
-| `COLLECTION_RECOVERY_MIN_AGE_MINUTES` | `5` | A younger pending collection is left to the webhook and the driver's app |
-| `RECONCILIATION_INTERVAL_MINUTES` | `60` | 0 turns the timer off (listed in the startup log too) |
-| `RECONCILIATION_PROVIDER_CHECKS` | `true` | The read-only provider checks |
-| `RECONCILIATION_LOOKBACK_DAYS` | `3` (1–31) | How far back the provider checks and the webhook checks look |
-| `RECONCILIATION_MIN_AGE_MINUTES` | `15` | Pending payments, unprocessed webhooks and pending refunds younger than this aren't reported |
-
-**Testing.** The integration suite drives every category with the in-memory gateways (`reconciliation.int-spec.ts`, `audit.int-spec.ts`). Step 24 of the end-to-end run (section 16) recovers a QR whose webhook was lost and runs a full reconciliation. The end-to-end run sets `RECONCILIATION_PROVIDER_CHECKS=false`: its historical Checkout payment is made up by the runner, and Razorpay test mode would rightly report it as unknown. None of the provider checks has been run against Razorpay itself, in test or live mode. They use the same GET endpoints as the existing syncs.

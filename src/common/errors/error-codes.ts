@@ -188,14 +188,6 @@ export const ErrorCode = {
   /** Razorpay refused or could not be asked; the refund stays as recorded. 502. */
   REFUND_PROVIDER_ERROR: 'REFUND_PROVIDER_ERROR',
 
-  // Reconciliation and audit (admin only, payment flow Phase 7)
-  RECONCILIATION_RUN_NOT_FOUND: 'RECONCILIATION_RUN_NOT_FOUND',
-  /** A run of this job is already in progress. `details.runId`. 409. */
-  RECONCILIATION_RUN_IN_PROGRESS: 'RECONCILIATION_RUN_IN_PROGRESS',
-  RECONCILIATION_FINDING_NOT_FOUND: 'RECONCILIATION_FINDING_NOT_FOUND',
-  /** The finding was already resolved; a resolution is never changed. 409. */
-  RECONCILIATION_FINDING_RESOLVED: 'RECONCILIATION_FINDING_RESOLVED',
-
   // Platform
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
   INTERNAL_ERROR: 'INTERNAL_ERROR',

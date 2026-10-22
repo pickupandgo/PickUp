@@ -21,12 +21,6 @@ Amounts are always integer paise (₹1 = 100 paise), rounded HALF_UP where a per
 - **Payouts:** every Monday at 11:00 IST the scheduler prepares one batch of settled earnings for drivers with an admin-approved, bank-validated account; an admin executes it; a payout is PAID only when RazorpayX confirms it. TDS fields exist but stay 0 until a CA-approved rule exists.
 - **Bank accounts:** adding or changing one needs a step-up phone OTP re-authentication after the change request (a stolen session can't redirect payouts), then a bank validation and an admin approval.
 - **Refunds (admin only):** an admin requests a Razorpay refund of an online payment or records cash handed back, with a reason, for an amount the server computes. Nothing is refunded, debited or recovered automatically: the refund policy is still open (OPEN_DECISIONS L-7 to L-10, L-21). See [docs/RAZORPAY_INTEGRATION.md §17](docs/RAZORPAY_INTEGRATION.md).
-- **Audit trail and reconciliation (admin only):**
-  - database triggers record every change to a financial record in an append-only event log, with who made it and in which request or job
-  - scheduled runs compare our records with each other and with what Razorpay and RazorpayX report (read-only), and record each mismatch as a finding for an admin, who resolves it with a note
-  - a recovery job applies QR payments whose webhook was missed, through the same finalizer as the webhook, so never twice
-
-  Nothing else is fixed automatically. See [docs/RAZORPAY_INTEGRATION.md §18](docs/RAZORPAY_INTEGRATION.md).
 
 Not in this slice: customer features beyond booking payment, dispatch.
 
@@ -85,5 +79,3 @@ Run the migrate image with the migrator connection string, and the API image wit
 - Rate limits live in memory, so run a single instance until they move to a shared store such as Redis.
 - Money that can't be applied automatically (for example a payment on a QR that was already closed) has no source the refunds API can refund; it is refunded by hand in the Razorpay Dashboard (OPEN_DECISIONS D-22, D-43, section I Phase 6). So is every provider refund while `REFUND_PROVIDER=disabled`.
 - Production-readiness items still open (each keeps a money path off instead of assuming it works; the startup log lists them): RazorpayX activation and capabilities (D-46, D-58, `RAZORPAYX_CAPABILITIES_CONFIRMED`), live settlement reconciliation (D-56, `SETTLEMENT_RECON_VERIFIED`), live Razorpay refunds (D-72, `REFUNDS_PROVIDER_VERIFIED`), TDS (D-57).
-- Reconciliation findings are recorded and logged, not sent anywhere: someone has to read `GET /v1/admin/reconciliation/summary` and the open findings every day. Its provider checks have only been run against in-memory gateways, not against Razorpay itself.
-- The financial event log, reconciliation runs and findings are kept for ever; their retention is part of D-26.

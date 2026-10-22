@@ -29,10 +29,13 @@ GRANT SELECT, INSERT ON payment_events TO mr_app;
 GRANT UPDATE (payment_id, outcome, attempts, processed_at, processing_error) ON payment_events TO mr_app;
 
 -- Customers: read-only for the API. Self-registration goes through register_customer(), a
--- SECURITY DEFINER function that can only create CUSTOMER accounts and never re-links a phone;
--- drivers and admins are still provisioned by ops tooling (mr_migrator).
+-- SECURITY DEFINER function that can only create CUSTOMER accounts and never re-links a phone.
 GRANT SELECT ON customers TO mr_app;
-GRANT EXECUTE ON FUNCTION register_customer(TEXT, TEXT, TEXT) TO mr_app;
+GRANT EXECUTE ON FUNCTION register_customer(TEXT, TEXT, TEXT, TEXT, TEXT) TO mr_app;
+
+-- Drivers: self-registration goes through register_driver(), a SECURITY DEFINER function
+-- that creates a DRIVER user with PENDING approval status, vehicle details, licence details and wallet.
+GRANT EXECUTE ON FUNCTION register_driver(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) TO mr_app;
 
 -- Bookings: registered by the trip engine through the API. Fare, payment method, fee rule and
 -- customer are immutable (no column grant, and a trigger as a second line of defence).
@@ -155,20 +158,3 @@ GRANT UPDATE (status, provider_refund_id, provider_status, provider_reference, f
               submit_attempts, last_submitted_at, completed_at, failed_at, cancelled_at,
               cancelled_by_user_id, cancellation_reason, updated_at)
     ON payment_refunds TO mr_app;
-
--- Financial event log (payment flow Phase 7): read-only for the API. Events are written only by
--- the triggers on the financial tables, through record_financial_event(), a SECURITY DEFINER
--- function; the API role has no INSERT, UPDATE, DELETE or TRUNCATE, and no sequence privilege.
-GRANT SELECT ON financial_events TO mr_app;
-
--- Reconciliation runs and findings (payment flow Phase 7). A run's job, trigger, scope,
--- requester and start are immutable; a finding's identity and first sighting are immutable, and
--- only an admin resolves one (triggers as a second line of defence). Never deleted.
-GRANT SELECT, INSERT ON reconciliation_runs TO mr_app;
-GRANT UPDATE (status, lease_expires_at, finished_at, summary, error, updated_at)
-    ON reconciliation_runs TO mr_app;
-GRANT SELECT, INSERT ON reconciliation_findings TO mr_app;
-GRANT UPDATE (status, detail, internal_state, provider_state, internal_amount_paise,
-              provider_amount_paise, refs, occurrences, last_seen_at, last_run_id, cleared_at,
-              resolved_at, resolved_by_user_id, resolution_note, updated_at)
-    ON reconciliation_findings TO mr_app;

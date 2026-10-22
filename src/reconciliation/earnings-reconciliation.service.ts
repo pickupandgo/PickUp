@@ -40,12 +40,8 @@ interface FindingRow {
 export class EarningsReconciliationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Earnings that disagree with their booking, their trip or their payout items. `limit` (every
-   * report here takes one) is the row cap: 200 for the admin report, a larger snapshot for a
-   * reconciliation run (payment flow Phase 7).
-   */
-  async findEarningMismatches(limit = ROW_LIMIT): Promise<Finding[]> {
+  /** Earnings that disagree with their booking, their trip or their payout items. */
+  async findEarningMismatches(): Promise<Finding[]> {
     const rows = await this.prisma.$queryRaw<FindingRow[]>`
       SELECT * FROM (
         SELECT 'GROSS_NOT_BOOKING_FARE' AS problem, e.booking_id, e.id AS earning_id,
@@ -206,12 +202,12 @@ export class EarningsReconciliationService {
           AND e.payment_id IS NULL
       ) findings
       ORDER BY problem, booking_id
-      LIMIT ${limit}`;
+      LIMIT ${ROW_LIMIT}`;
     return rows.map(toFinding);
   }
 
   /** Payouts whose amount, items or provider state disagree, or that have been stuck too long. */
-  async findPayoutMismatches(limit = ROW_LIMIT): Promise<Finding[]> {
+  async findPayoutMismatches(): Promise<Finding[]> {
     const rows = await this.prisma.$queryRaw<FindingRow[]>`
       SELECT * FROM (
         SELECT 'GROSS_NOT_SUM_OF_ITEMS' AS problem, NULL::uuid AS booking_id,
@@ -264,7 +260,7 @@ export class EarningsReconciliationService {
         GROUP BY i.earning_id HAVING count(*) > 1
       ) findings
       ORDER BY problem, payout_id
-      LIMIT ${limit}`;
+      LIMIT ${ROW_LIMIT}`;
     return rows.map(toFinding);
   }
 
@@ -294,7 +290,7 @@ export class EarningsReconciliationService {
   }
 
   /** Failed payouts: their earnings are ON_HOLD (PAYOUT_FAILED) until an admin releases them. */
-  async findFailedPayouts(limit = ROW_LIMIT): Promise<Finding[]> {
+  async findFailedPayouts(): Promise<Finding[]> {
     const rows = await this.prisma.$queryRaw<FindingRow[]>`
       SELECT 'PAYOUT_FAILED' AS problem, NULL::uuid AS booking_id, NULL::uuid AS earning_id,
              p.id AS payout_id, NULL::uuid AS collection_id, p.amount_paise,
@@ -302,7 +298,7 @@ export class EarningsReconciliationService {
       FROM driver_payouts p
       WHERE p.status = 'FAILED'::payout_status
       ORDER BY p.failed_at DESC
-      LIMIT ${limit}`;
+      LIMIT ${ROW_LIMIT}`;
     return rows.map(toFinding);
   }
 
@@ -312,7 +308,7 @@ export class EarningsReconciliationService {
    * or the prepaid payment, for what is not refunded yet; refunded money is shown, and a source
    * refunded in full drops off the list (payment flow Phase 6).
    */
-  async findPaidCancelledBookings(limit = ROW_LIMIT): Promise<Finding[]> {
+  async findPaidCancelledBookings(): Promise<Finding[]> {
     const rows = await this.prisma.$queryRaw<FindingRow[]>`
       SELECT problem, booking_id, earning_id, payout_id, collection_id, amount_paise, detail
       FROM (
@@ -339,7 +335,7 @@ export class EarningsReconciliationService {
       ) paid
       WHERE paid.amount_paise > 0
       ORDER BY paid.cancelled_at DESC
-      LIMIT ${limit}`;
+      LIMIT ${ROW_LIMIT}`;
     return rows.map(toFinding);
   }
 
@@ -356,7 +352,7 @@ export class EarningsReconciliationService {
    *   BOOKING_REFUND_STATUS_MISMATCH  the booking's payment status is not what its money says
    *   FEE_CREDIT_MISMATCH        a cash fee credit that is not the collection's fee, once
    */
-  async findRefundAnomalies(limit = ROW_LIMIT): Promise<Finding[]> {
+  async findRefundAnomalies(): Promise<Finding[]> {
     const rows = await this.prisma.$queryRaw<FindingRow[]>`
       SELECT * FROM (
         SELECT 'STALE_PENDING_REFUND' AS problem, r.booking_id, NULL::uuid AS earning_id,
@@ -450,12 +446,12 @@ export class EarningsReconciliationService {
         WHERE t.type = 'REFUND_REVERSAL'::wallet_entry_type AND r.id IS NULL
       ) findings
       ORDER BY problem, booking_id
-      LIMIT ${limit}`;
+      LIMIT ${ROW_LIMIT}`;
     return rows.map(toFinding);
   }
 
   /** Cash collections whose fee does not match their CASH_RIDE_FEE ledger entry, and vice versa. */
-  async findCashFeeMismatches(limit = ROW_LIMIT): Promise<Finding[]> {
+  async findCashFeeMismatches(): Promise<Finding[]> {
     const rows = await this.prisma.$queryRaw<FindingRow[]>`
       SELECT * FROM (
         SELECT 'FEE_NOT_LEDGER_AMOUNT' AS problem, c.booking_id, NULL::uuid AS earning_id,
@@ -477,12 +473,12 @@ export class EarningsReconciliationService {
           AND c.id IS NULL
       ) findings
       ORDER BY problem
-      LIMIT ${limit}`;
+      LIMIT ${ROW_LIMIT}`;
     return rows.map(toFinding);
   }
 
   /** QR collections still PENDING well after they expired (missed webhook): sync them. */
-  async findStaleCollections(limit = ROW_LIMIT): Promise<Finding[]> {
+  async findStaleCollections(): Promise<Finding[]> {
     const rows = await this.prisma.$queryRaw<FindingRow[]>`
       SELECT 'PENDING_PAST_EXPIRY' AS problem, c.booking_id, NULL::uuid AS earning_id,
              NULL::uuid AS payout_id, c.id AS collection_id, c.amount_paise,
@@ -491,12 +487,12 @@ export class EarningsReconciliationService {
       WHERE c.status = 'PENDING'
         AND c.expires_at < now() - interval '10 minutes'
       ORDER BY c.expires_at
-      LIMIT ${limit}`;
+      LIMIT ${ROW_LIMIT}`;
     return rows.map(toFinding);
   }
 
   /** Drivers with payable earnings but no verified bank account: they can't be paid out. */
-  async findPayableWithoutBankAccount(limit = ROW_LIMIT): Promise<DriverPayableSummary[]> {
+  async findPayableWithoutBankAccount(): Promise<DriverPayableSummary[]> {
     const rows = await this.prisma.$queryRaw<
       { driver_id: string; payable: bigint; earnings: bigint }[]
     >`
@@ -508,7 +504,7 @@ export class EarningsReconciliationService {
                           AND a.status = 'VERIFIED'::bank_account_status)
       GROUP BY e.driver_id
       ORDER BY payable DESC
-      LIMIT ${limit}`;
+      LIMIT ${ROW_LIMIT}`;
     return rows.map((row) => ({
       driverId: row.driver_id,
       payablePaise: paiseToNumber(BigInt(row.payable)),

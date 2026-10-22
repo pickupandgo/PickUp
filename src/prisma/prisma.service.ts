@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { financialContextStatement } from '../audit/financial-context';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import { Prisma, PrismaClient } from '../generated/prisma/client';
 
@@ -42,9 +41,6 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
    * Runs `work` in a READ COMMITTED transaction with a bounded lock wait.
    * Callers take explicit row locks (SELECT ... FOR UPDATE) for anything financial.
    * Never call external services (Razorpay, push, HTTP) from inside `work`.
-   *
-   * The first statement sets lock_timeout and the financial context (who is acting, for the
-   * financial event log) for this transaction only.
    */
   async runInTransaction<T>(
     work: (tx: Tx) => Promise<T>,
@@ -52,7 +48,7 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
   ): Promise<T> {
     return this.$transaction(
       async (tx) => {
-        await financialContextStatement(tx, { lockTimeout: '5s' });
+        await tx.$executeRaw`SET LOCAL lock_timeout = '5s'`;
         return work(tx);
       },
       {
@@ -61,16 +57,6 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
         timeout: options.timeoutMs ?? 15_000,
       },
     );
-  }
-
-  /**
-   * Runs one statement that writes a financial record outside an interactive transaction, with
-   * the financial context set first in the same (batch) transaction, so its event names who made
-   * it. The statement itself runs exactly as it would on its own (no lock_timeout is added).
-   */
-  async withFinancialContext<T>(statement: Prisma.PrismaPromise<T>): Promise<T> {
-    const [, result] = await this.$transaction([financialContextStatement(this), statement]);
-    return result;
   }
 
   async onModuleDestroy(): Promise<void> {

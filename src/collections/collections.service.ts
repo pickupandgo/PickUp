@@ -235,22 +235,6 @@ export class CollectionsService {
   }
 
   /**
-   * The collection recovery job (payment flow Phase 7): re-reads one still PENDING online
-   * collection from Razorpay and applies what Razorpay reports, through the same finalizer as the
-   * webhook, the driver's poll and the admin sync (so it applies a payment at most once). Returns
-   * null, without calling Razorpay, when the collection is no longer PENDING.
-   */
-  async recover(collectionId: string): Promise<CollectionApplyResult | null> {
-    const collection = await this.prisma.paymentCollection.findUnique({
-      where: { id: collectionId },
-    });
-    if (!collection || collection.method !== 'ONLINE_QR' || collection.status !== 'PENDING') {
-      return null;
-    }
-    return this.refresh(collection, { source: 'RECOVERY_JOB' });
-  }
-
-  /**
    * Webhook path. The signed event only identifies the collection; its state is then read from
    * Razorpay, so a payload shape change can never complete a collection on its own.
    */
@@ -628,10 +612,7 @@ export class CollectionsService {
 
   private async refresh(
     collection: PaymentCollection,
-    context: {
-      source: 'DRIVER_REFRESH' | 'ADMIN_SYNC' | 'WEBHOOK' | 'RECOVERY_JOB';
-      providerEventId?: string;
-    },
+    context: { source: 'DRIVER_REFRESH' | 'ADMIN_SYNC' | 'WEBHOOK'; providerEventId?: string },
   ): Promise<CollectionApplyResult> {
     const product = productOf(collection);
     if (!product || !collection.providerReferenceId) {
