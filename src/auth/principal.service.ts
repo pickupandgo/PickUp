@@ -20,7 +20,7 @@ export class PrincipalService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
-  async resolve(verified: VerifiedIdentity): Promise<Principal> {
+  async findPrincipal(verified: VerifiedIdentity): Promise<Principal | null> {
     const identity = await this.prisma.authIdentity.findUnique({
       where: {
         provider_subject: { provider: this.config.auth.provider, subject: verified.subject },
@@ -39,13 +39,7 @@ export class PrincipalService {
     });
 
     if (!identity) {
-      // The UID is a pseudonymous id, not a credential; ops need it to link or provision accounts.
-      this.logger.log({ subject: verified.subject }, 'Sign-in for an unregistered identity');
-      throw new AppError(
-        ErrorCode.USER_NOT_PROVISIONED,
-        HttpStatus.FORBIDDEN,
-        'This account is not registered with MultipleRide',
-      );
+      return null;
     }
 
     const { user } = identity;
@@ -70,5 +64,19 @@ export class PrincipalService {
         phoneNumber: verified.phoneNumber,
       },
     };
+  }
+
+  async resolve(verified: VerifiedIdentity): Promise<Principal> {
+    const principal = await this.findPrincipal(verified);
+    if (!principal) {
+      // The UID is a pseudonymous id, not a credential; ops need it to link or provision accounts.
+      this.logger.log({ subject: verified.subject }, 'Sign-in for an unregistered identity');
+      throw new AppError(
+        ErrorCode.USER_NOT_PROVISIONED,
+        HttpStatus.FORBIDDEN,
+        'This account is not registered with MultipleRide',
+      );
+    }
+    return principal;
   }
 }

@@ -70,13 +70,19 @@ export class AuthGuard implements CanActivate {
 
     const identity = await this.verifier.verify(token);
     if (policy === 'SIGNED_IN') {
-      // Registration routes: a verified sign-in is enough; no account is resolved or required.
+      // Registration routes require only a verified sign-in; shared routes (e.g. notifications,
+      // chat) also allow any registered principal. Resolve principal if registered, but allow
+      // unregistered identities to proceed for registration.
       request.identity = {
         provider: this.config.auth.provider,
         subject: identity.subject,
         phoneNumber: identity.phoneNumber,
         signInProvider: identity.signInProvider,
       };
+      const principal = await this.principals.findPrincipal(identity);
+      if (principal) {
+        request.principal = principal;
+      }
       return true;
     }
     const principal = await this.principals.resolve(identity);
