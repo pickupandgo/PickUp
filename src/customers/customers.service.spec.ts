@@ -189,4 +189,40 @@ describe('CustomersService', () => {
       expect(account.email).toBe('aarav.patel@example.com');
     });
   });
+
+  describe('checkPhone', () => {
+    it('returns { exists: false } when phone is empty or invalid', async () => {
+      mockPrisma.customer = { findFirst: jest.fn() };
+      expect(await service.checkPhone('')).toEqual({ exists: false });
+      expect(await service.checkPhone(null as any)).toEqual({ exists: false });
+      expect(mockPrisma.customer.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('returns { exists: true } when customer exists', async () => {
+      mockPrisma.customer = {
+        findFirst: jest.fn().mockResolvedValueOnce({ id: 'cust-1' }),
+      };
+
+      const result = await service.checkPhone('9876543210');
+      expect(result).toEqual({ exists: true });
+      expect(mockPrisma.customer.findFirst).toHaveBeenCalledWith({
+        where: {
+          user: {
+            phone: '+9876543210',
+            status: 'ACTIVE',
+          },
+        },
+        select: { id: true },
+      });
+    });
+
+    it('returns { exists: false } when customer does not exist', async () => {
+      mockPrisma.customer = {
+        findFirst: jest.fn().mockResolvedValueOnce(null),
+      };
+
+      const result = await service.checkPhone('+919876543210');
+      expect(result).toEqual({ exists: false });
+    });
+  });
 });

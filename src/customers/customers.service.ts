@@ -91,6 +91,24 @@ export class CustomersService {
     }
   }
 
+  async checkPhone(phone: string): Promise<{ exists: boolean }> {
+    if (!phone || typeof phone !== 'string') {
+      return { exists: false };
+    }
+    const trimmed = phone.trim();
+    const cleanPhone = trimmed.startsWith('+') ? trimmed : `+${trimmed}`;
+    const customer = await this.prisma.customer.findFirst({
+      where: {
+        user: {
+          phone: cleanPhone,
+          status: 'ACTIVE',
+        },
+      },
+      select: { id: true },
+    });
+    return { exists: Boolean(customer) };
+  }
+
   async get(principal: Principal): Promise<CustomerAccountResponse> {
     return this.load(requireCustomer(principal).id);
   }
