@@ -69,7 +69,6 @@ describe('createRide (booking registration)', () => {
     }) as unknown as typeof fetch;
 
     await createRide({
-      driverId: 'driver-9',
       quoteId: 'q-1',
       paymentMethod: 'PAY_AT_PICKUP',
       pickup: { address: 'A' },
@@ -83,7 +82,6 @@ describe('createRide (booking registration)', () => {
     expect(body).toMatchObject({
       quoteId: 'q-1',
       paymentMethod: 'PAY_AT_PICKUP',
-      driverId: 'driver-9',
     });
     // The client is never authoritative for money or identity.
     for (const forbidden of [
@@ -96,6 +94,7 @@ describe('createRide (booking registration)', () => {
       'platformFeePaise',
       'price',
       'customerId',
+      'driverId',
     ]) {
       expect(body).not.toHaveProperty(forbidden);
     }
@@ -110,7 +109,7 @@ describe('createRide (booking registration)', () => {
     }) as unknown as typeof fetch;
 
     await expect(
-      createRide({ driverId: 'd', quoteId: 'q', paymentMethod: 'PAY_AT_DELIVERY' }),
+      createRide({ quoteId: 'q', paymentMethod: 'PAY_AT_DELIVERY' }),
     ).rejects.toBeTruthy();
     // retries: 0 → exactly one attempt.
     expect(calls).toHaveLength(1);

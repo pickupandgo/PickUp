@@ -4,11 +4,6 @@ import { AuthContextType } from './authTypes';
 import {
   sendPhoneOTP,
   verifyOTP,
-  signUpWithEmail,
-  signInWithEmail,
-  sendPasswordReset,
-  signInWithGoogle,
-  signInWithApple,
   signOut,
 } from './authService';
 
@@ -33,11 +28,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         initializing,
         sendPhoneOTP,
         verifyOTP,
-        signUpWithEmail,
-        signInWithEmail,
-        sendPasswordReset,
-        signInWithGoogle,
-        signInWithApple,
         signOut,
       }}
     >

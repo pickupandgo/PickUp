@@ -91,11 +91,10 @@ export interface DropDetailInput {
 
 /**
  * POST /rides. The route, vehicle, weight and fare all come from the quote; the customer is the
- * signed-in user (the token), never a body field. `driverId` names the driver to offer it to
- * (the prototype dispatches to a chosen driver). No amount is ever sent.
+ * signed-in user (the token), never a body field. The engine owns dispatch and chooses the
+ * driver; no amount is ever sent.
  */
 export interface CreateRideInput {
-  readonly driverId: string;
   readonly quoteId: string;
   readonly paymentMethod: PaymentMethod;
   /** Optional address label for the pickup; coordinates come from the quote. */

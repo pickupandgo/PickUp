@@ -10,8 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { mockActiveTrip } from '../../data/mockData';
-import { TripDetailSkeleton, useSkeletonVisibility } from '../../components/skeleton';
+import type { Trip } from '../../api/types';
 
 export interface HistoricalTripDetailScreenProps {
   readonly onBack?: () => void;
@@ -19,25 +18,40 @@ export interface HistoricalTripDetailScreenProps {
   readonly onDownloadInvoice?: () => void;
   readonly onNeedHelp?: () => void;
   readonly onRateTrip?: () => void;
-  readonly isLoading?: boolean;
 }
 
-const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { navigation?: any; route?: any }> = ({
+const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { navigation?: any; route?: { params?: { trip?: Trip } } }> = ({
   onBack,
   onMore,
   onDownloadInvoice,
   onNeedHelp,
   onRateTrip,
-  isLoading = false,
   navigation,
   route,
 }) => {
-  const effectiveLoading = isLoading || route?.params?.isLoading;
-  const showSkeleton = useSkeletonVisibility({
-    isLoading: Boolean(effectiveLoading),
-    hasData: false,
-  });
-  const stops = mockActiveTrip.stops;
+  const trip = route?.params?.trip;
+  if (!trip) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <View style={styles.header}>
+          <Pressable style={styles.iconButton} onPress={() => (onBack ? onBack() : navigation?.goBack())}>
+            <Feather name="arrow-left" size={24} color={colors.primary} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Trip Details</Text>
+          <View style={styles.iconButton} />
+        </View>
+        <View style={styles.emptyState}><Text style={styles.statusTime}>Trip details are unavailable.</Text></View>
+      </SafeAreaView>
+    );
+  }
+  const stops = [
+    { address: trip.pickup.address ?? 'Pickup location', contactName: undefined },
+    ...trip.stops.map((stop) => ({
+      address: stop.location.address ?? 'Delivery location',
+      contactName: stop.receiver?.name,
+    })),
+  ];
+  const fare = trip.fare ?? (trip.payablePaise != null ? trip.payablePaise / 100 : undefined);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -55,23 +69,20 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
         </Pressable>
       </View>
 
-      {showSkeleton ? (
-        <TripDetailSkeleton testID="historical-trip-detail-loading" />
-      ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          {/* Status & Meta */}
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Status & Meta */}
         <View style={styles.statusSection}>
           <View style={styles.statusCard}>
             <Feather name="check-circle" size={24} color={colors.primary} />
             <View>
-              <Text style={styles.statusTitle}>Trip Completed</Text>
+              <Text style={styles.statusTitle}>{trip.status.replace(/_/g, ' ')}</Text>
               <Text style={styles.statusTime}>Oct 24, 2023 • 11:30 AM</Text>
             </View>
           </View>
           
           <View style={styles.metaRow}>
             <Text style={styles.metaLabel}>TRACKING ID</Text>
-            <Text style={styles.metaValue}>#{mockActiveTrip.id}</Text>
+            <Text style={styles.metaValue}>#{trip.id}</Text>
           </View>
         </View>
 
@@ -130,7 +141,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
           
           <View style={styles.paymentRow}>
             <Text style={styles.paymentLabel}>Trip Fare</Text>
-            <Text style={styles.paymentValueMono}>{mockActiveTrip.fare}</Text>
+            <Text style={styles.paymentValueMono}>{fare != null ? `₹${fare}` : 'Not available'}</Text>
           </View>
           <View style={styles.paymentRow}>
             <Text style={styles.paymentLabel}>Taxes & Fees</Text>
@@ -143,7 +154,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
           <View style={styles.paymentMethodRow}>
             <View style={styles.paymentMethodBadge}>
               <Feather name="credit-card" size={14} color={colors.onSurfaceVariant} />
-              <Text style={styles.paymentMethodText}>Paid via UPI</Text>
+              <Text style={styles.paymentMethodText}>{trip.paymentMethod?.replace(/_/g, ' ') ?? 'Payment method unavailable'}</Text>
             </View>
           </View>
         </View>
@@ -155,12 +166,12 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
           <View style={styles.driverRow}>
             <View style={styles.driverAvatar} />
             <View style={styles.driverInfo}>
-              <Text style={styles.driverName}>{mockActiveTrip.driverName}</Text>
+              <Text style={styles.driverName}>Assigned driver</Text>
               <View style={styles.driverMeta}>
-                <Text style={styles.driverVehicle}>{mockActiveTrip.vehicleType}</Text>
+                <Text style={styles.driverVehicle}>Driver reference: {trip.driverId}</Text>
                 <View style={styles.dotSeparator} />
                 <Feather name="star" size={12} color={colors.onSurfaceVariant} />
-                <Text style={styles.driverVehicle}>{mockActiveTrip.driverRating}</Text>
+                <Text style={styles.driverVehicle}>No rating data available</Text>
               </View>
             </View>
             <Pressable
@@ -192,7 +203,6 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
           </Pressable>
         </View>
       </ScrollView>
-      )}
     </SafeAreaView>
   );
 };
@@ -201,6 +211,12 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
   },
   header: {
     flexDirection: 'row',
@@ -519,3 +535,4 @@ const styles = StyleSheet.create({
 });
 
 export default HistoricalTripDetailScreen;
+

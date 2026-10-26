@@ -485,9 +485,6 @@ export const getCurrentPlace = async (signal?: AbortSignal): Promise<ResolvedPla
     throw new ApiError('location_unavailable', 'Unable to determine your current location. Please try again.');
   });
 
-  console.log('[CUSTOMER_LOCATION] success');
-  console.log('[CUSTOMER_LOCATION] latitude:', position.coords.latitude);
-  console.log('[CUSTOMER_LOCATION] longitude:', position.coords.longitude);
 
   if (
     !Number.isFinite(position.coords.latitude) ||

@@ -1,7 +1,6 @@
 import { request } from './http';
 import type {
   CreateRideInput,
-  GeoPoint,
   NearbyDriver,
   Ride,
   RideOtps,
@@ -15,25 +14,6 @@ interface Envelope {
 
 // ─── Drivers ─────────────────────────────────────────────────────────────────
 
-/**
- * Available drivers within `radiusKm`, nearest first.
- *
- * The engine only returns drivers that are marked available AND have pinged
- * within the last 60s, so an empty result usually means no driver app is
- * currently online rather than a client error.
- */
-export const getNearbyDrivers = async (
-  point: GeoPoint,
-  radiusKm = 20,
-  signal?: AbortSignal
-): Promise<readonly NearbyDriver[]> => {
-  const res = await request<Envelope & { drivers: NearbyDriver[] }>('/drivers/nearby', {
-    query: { lat: point.latitude, lng: point.longitude, radius: radiusKm },
-    signal,
-  });
-  return res.drivers ?? [];
-};
-
 export const getDriver = async (driverId: string, signal?: AbortSignal) => {
   const res = await request<Envelope & { driver: NearbyDriver }>(
     `/drivers/${encodeURIComponent(driverId)}`,
@@ -46,8 +26,8 @@ export const getDriver = async (driverId: string, signal?: AbortSignal) => {
 
 /**
  * Confirms a server fare quote into a booking (engine POST /rides). The body carries only the
- * quote id, the payment method and the driver to offer it to: the route, vehicle, weight and
- * fare all come from the quote, and the customer is the signed-in user (the token). Never
+ * quote id and the payment method: the route, vehicle, weight and fare all come from the quote,
+ * the engine dispatches to an eligible driver, and the customer is the signed-in user (the token). Never
  * retried: a retry could create a duplicate ride.
  */
 export const createRide = async (input: CreateRideInput, signal?: AbortSignal): Promise<Ride> => {

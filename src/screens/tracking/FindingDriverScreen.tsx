@@ -17,7 +17,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import MapCanvas, { NEIGHBORHOOD_DELTA } from '../../components/map/MapCanvas';
 import { useBooking } from '../../state/BookingContext';
 import { findDriverAndCreateRide, NoDriversAvailableError } from '../../api/matching';
-import { getRideTrip } from '../../api/engine';
+import { getDriver, getRideTrip } from '../../api/engine';
 import { isQuoteBookable } from '../../api/payments';
 import { toApiError } from '../../api/http';
 import { vehicleLabelFor } from '../../data/mockData';
@@ -71,7 +71,7 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
 
     (async () => {
       try {
-        const { ride, driver } = await findDriverAndCreateRide(
+        const { ride } = await findDriverAndCreateRide(
           {
             quoteId: quote.quoteId,
             paymentMethod,
@@ -104,7 +104,10 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
 
         if (cancelled) return;
         setRide(ride);
-        setAssignedDriver(driver);
+        if (ride.assignedDriverId) {
+          const driver = await getDriver(ride.assignedDriverId, controller.signal);
+          if (!cancelled) setAssignedDriver(driver);
+        }
 
         // The trip is created the moment the driver accepts.
         const trip = await getRideTrip(ride.id, controller.signal);

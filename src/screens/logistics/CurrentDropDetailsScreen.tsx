@@ -177,7 +177,7 @@ const CurrentDropDetailsScreen: React.FC<CurrentDropDetailsScreenProps & { navig
           </Pressable>
           <Pressable
             style={styles.actionPrimary}
-            onPress={() => (onTrackMap ? onTrackMap() : navigation?.navigate('LiveTrackingScreen'))}
+            onPress={() => (onTrackMap ? onTrackMap() : navigation?.navigate('CustomerLiveTrackingScreen'))}
             accessibilityRole="button"
           >
             <Feather name="map" size={20} color={colors.onPrimary} />

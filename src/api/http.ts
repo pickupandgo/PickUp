@@ -108,7 +108,8 @@ export interface RequestOptions {
 }
 
 const buildUrl = (path: string, query?: RequestOptions['query']): string => {
-  const base = `${env.apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+  const engineBase = env.engineApiBaseUrl || env.apiBaseUrl;
+  const base = `${engineBase}${path.startsWith('/') ? path : `/${path}`}`;
   if (!query) return base;
 
   const params = Object.entries(query)

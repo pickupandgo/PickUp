@@ -70,9 +70,23 @@ const resolveRawApiUrl = (): string => {
   return (fallback ?? '').trim();
 };
 
+/** Prefer a dedicated engine URL while keeping the legacy API URL as a compatible fallback. */
+const resolveRawEngineUrl = (): string => {
+  const explicit =
+    Config.EXPO_PUBLIC_ENGINE_API_BASE_URL ??
+    Config.ENGINE_API_BASE_URL ??
+    (typeof process !== 'undefined' && process.env
+      ? (process.env.EXPO_PUBLIC_ENGINE_API_BASE_URL || process.env.ENGINE_API_BASE_URL)
+      : undefined);
+
+  return explicit && explicit.trim() ? explicit.trim() : resolveRawApiUrl();
+};
+
 export const env = {
   /** Trip engine base URL (dispatch, rides, trips, OTP reads). */
-  apiBaseUrl: normalizeBaseUrl(resolveRawApiUrl()),
+  engineApiBaseUrl: parseSecureBaseUrl(resolveRawEngineUrl()),
+  // Legacy consumers use apiBaseUrl. Keep it mapped to the authenticated engine endpoint.
+  apiBaseUrl: parseSecureBaseUrl(resolveRawEngineUrl()),
   /** Payments backend base URL (fare quotes, customer account, booking payment state). */
   paymentsApiBaseUrl: parseSecureBaseUrl(resolveRawPaymentsUrl()),
   googleMapsApiKey:
@@ -85,7 +99,7 @@ export const env = {
 } as const;
 
 /** True when the engine base URL is configured. */
-export const hasApiConfig = (): boolean => env.apiBaseUrl.length > 0;
+export const hasApiConfig = (): boolean => env.engineApiBaseUrl.length > 0;
 /** True when the payments backend base URL is configured (and allowed). */
 export const hasPaymentsConfig = (): boolean => env.paymentsApiBaseUrl.length > 0;
 /** True when geocoding/autocomplete can be used. */
@@ -93,6 +107,7 @@ export const hasGeocodingConfig = (): boolean => env.googleMapsApiKey.length > 0
 
 export const assertApiConfig = (): void => {
   if (!hasApiConfig()) {
-    throw new Error('API_BASE_URL is not set.');
+    throw new Error('ENGINE_API_BASE_URL is not set.');
   }
 };
+

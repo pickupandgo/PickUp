@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,14 @@ import {
   Pressable,
   ScrollView,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import Button from '../../components/atoms/Button';
-import { KeyboardAwareScrollView, type KeyboardAwareScrollViewRef } from '../../components/organisms';
+import { cancelRide, cancelTrip } from '../../api/engine';
+import { toApiError } from '../../api/http';
+import { useBooking } from '../../state/BookingContext';
 
 export interface CancellationReasonScreenProps {
   readonly onSubmit?: (reasonId: string, otherReasonText?: string) => void;
@@ -30,22 +30,38 @@ const CANCELLATION_REASONS = [
   { id: 'other', label: 'Other' },
 ];
 
-const CancellationReasonScreen: React.FC<
-  CancellationReasonScreenProps & { navigation?: any; route?: any }
-> = ({
+const CancellationReasonScreen: React.FC<CancellationReasonScreenProps & { navigation?: any }> = ({
   onSubmit,
   onBack,
   onHelp,
   navigation,
-  route,
 }) => {
-  const scrollRef = useRef<KeyboardAwareScrollViewRef>(null);
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
   const [otherText, setOtherText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string>();
+  const { ride, trip, clearActiveRide } = useBooking();
 
-  const handleSubmit = () => {
-    if (selectedReason) {
+  const handleSubmit = async () => {
+    if (!selectedReason || submitting) return;
+    const selected = CANCELLATION_REASONS.find((reason) => reason.id === selectedReason);
+    const reason = selectedReason === 'other' ? otherText.trim() : selected?.label;
+    if (!reason) return;
+
+    setSubmitting(true);
+    setError(undefined);
+    try {
+      // Before acceptance the engine cancels the ride; after assignment it owns trip cancellation.
+      if (trip) await cancelTrip(trip.id, reason);
+      else if (ride) await cancelRide(ride.id, reason);
+      else throw new Error('There is no active booking to cancel.');
       onSubmit?.(selectedReason, selectedReason === 'other' ? otherText : undefined);
+      clearActiveRide();
+      navigation?.navigate('CancellationResultScreen');
+    } catch (caught) {
+      setError(toApiError(caught).userMessage);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -68,37 +84,13 @@ const CancellationReasonScreen: React.FC<
         </Pressable>
       </View>
 
-      <KeyboardAwareScrollView
-        ref={scrollRef}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        footer={
-          <View style={styles.bottomActions}>
-            <Button
-              label="SUBMIT"
-              onPress={() => {
-                handleSubmit();
-                const reasonText = selectedReason === 'other' ? otherText.trim() : selectedReason;
-                navigation?.navigate('CancellationChargeConfirmationScreen', {
-                  reason: reasonText,
-                  trip: route?.params?.trip,
-                  ride: route?.params?.ride,
-                });
-              }}
-              variant="primary"
-              fullWidth
-              size="lg"
-              disabled={!selectedReason || (selectedReason === 'other' && otherText.trim().length === 0)}
-            />
-          </View>
-        }
-      >
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.introSection}>
           <Text style={styles.introText}>
             Please let us know why you're cancelling to help us improve.
           </Text>
         </View>
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
         {/* Cancellation Options */}
         <View style={styles.optionsCard}>
@@ -144,11 +136,22 @@ const CancellationReasonScreen: React.FC<
               multiline
               numberOfLines={4}
               textAlignVertical="top"
-              onFocus={(e) => scrollRef.current?.scrollIntoView(e?.target ?? e?.nativeEvent?.target)}
             />
           </View>
         )}
-      </KeyboardAwareScrollView>
+      </ScrollView>
+
+      {/* Bottom Action */}
+      <View style={styles.bottomActions}>
+        <Button
+          label="SUBMIT"
+          onPress={() => void handleSubmit()}
+          variant="primary"
+          fullWidth
+          size="lg"
+          disabled={submitting || !selectedReason || (selectedReason === 'other' && otherText.trim().length === 0)}
+        />
+      </View>
     </SafeAreaView>
   );
 };
@@ -196,6 +199,13 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceVariant,
     fontFamily: typography.bodyLg.fontFamily,
     textAlign: 'center',
+  },
+  errorText: {
+    color: colors.error,
+    fontSize: typography.bodyMd.fontSize,
+    fontFamily: typography.bodyMd.fontFamily,
+    textAlign: 'center',
+    marginBottom: spacing.md,
   },
   optionsCard: {
     backgroundColor: colors.surfaceContainerLow,
@@ -264,3 +274,4 @@ const styles = StyleSheet.create({
 });
 
 export default CancellationReasonScreen;
+
