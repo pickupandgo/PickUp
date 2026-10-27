@@ -6,6 +6,7 @@ export interface CameraOverlayProps {
   readonly title: string;
   readonly instructions: string;
   readonly onCapture: () => void;
+  readonly onBack?: () => void;
   readonly captureLabel?: string;
   readonly style?: ViewStyle;
   readonly testID?: string;
@@ -15,6 +16,7 @@ export const CameraOverlay: React.FC<CameraOverlayProps> = ({
   title,
   instructions,
   onCapture,
+  onBack,
   captureLabel = 'CAPTURE',
   style,
   testID,
@@ -23,7 +25,19 @@ export const CameraOverlay: React.FC<CameraOverlayProps> = ({
     <View style={[styles.container, style]} testID={testID} accessibilityRole="none">
       {/* Top bar */}
       <View style={styles.topBar}>
+        {onBack ? (
+          <Pressable
+            onPress={onBack}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Text style={styles.backButtonText}>←</Text>
+          </Pressable>
+        ) : null}
         <Text style={styles.title}>{title}</Text>
+        {onBack ? <View style={styles.backButtonPlaceholder} /> : null}
       </View>
 
       {/* Framing guide */}
@@ -63,6 +77,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.containerPadding,
     paddingVertical: spacing.gutter,
   },
@@ -70,6 +87,24 @@ const styles = StyleSheet.create({
     ...typography.headlineSm,
     color: colors.onPrimary,
     textAlign: 'center',
+    flex: 1,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backButtonText: {
+    color: colors.onPrimary,
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 24,
+  },
+  backButtonPlaceholder: {
+    width: 40,
   },
   framingGuide: {
     flex: 1,

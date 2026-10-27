@@ -56,8 +56,8 @@ export const DeliveryProofPreviewScreen: React.FC<DeliveryProofPreviewScreenProp
   }, [navigation, tripId, stopId, photoUri]);
 
   const handleRetake = useCallback(() => {
-    navigation.goBack();
-  }, [navigation]);
+    navigation.replace('DeliveryProofCamera', { tripId, stopId });
+  }, [navigation, tripId, stopId]);
 
   if (uploaded) {
     return (
