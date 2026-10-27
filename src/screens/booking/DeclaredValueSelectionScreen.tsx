@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,12 +6,15 @@ import {
   Pressable,
   TextInput,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { KeyboardAwareScrollView, type KeyboardAwareScrollViewRef } from '../../components/organisms';
 
 export interface DeclaredValueSelectionScreenProps {
   readonly onBack?: () => void;
@@ -32,6 +35,7 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
   onNext,
   navigation,
 }) => {
+  const scrollRef = useRef<KeyboardAwareScrollViewRef>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [customValue, setCustomValue] = useState('');
 
@@ -59,7 +63,26 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <KeyboardAwareScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        footer={
+          <View style={styles.footer}>
+            <Button
+              label="Next"
+              onPress={() => {
+                handleNext();
+                navigation?.goBack();
+              }}
+              variant="primary"
+              icon={<Feather name="arrow-right" size={20} color={colors.onPrimary} />}
+              disabled={isNextDisabled}
+            />
+          </View>
+        }
+      >
         <View style={styles.textSection}>
           <Text style={styles.title}>Declared Value</Text>
           <Text style={styles.subtitle}>
@@ -107,6 +130,7 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
                 keyboardType="numeric"
                 value={customValue}
                 onChangeText={setCustomValue}
+                onFocus={(e) => scrollRef.current?.scrollIntoView(e?.target ?? e?.nativeEvent?.target)}
               />
             </View>
             <View style={styles.infoRow}>
@@ -115,20 +139,7 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
             </View>
           </View>
         )}
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <Button
-          label="Next"
-          onPress={() => {
-            handleNext();
-            navigation?.goBack();
-          }}
-          variant="primary"
-          icon={<Feather name="arrow-right" size={20} color={colors.onPrimary} />}
-          disabled={isNextDisabled}
-        />
-      </View>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };

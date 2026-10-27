@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,25 +11,119 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
 import { colors, spacing, borderRadius, typography } from '../../theme';
-import { mockUser } from '../../data/mockData';
 import Button from '../../components/atoms/Button';
+import { KeyboardAwareScrollView, useKeyboardAware } from '../../components/organisms';
+import { useSession } from '../../state/SessionContext';
+import { getAuth } from '@react-native-firebase/auth';
+import { getActivePhoneNumber, normalizePhoneNumber } from '../../auth/authService';
 
 export interface EditProfileScreenProps {
   readonly onBack?: () => void;
   readonly onSave?: () => void;
 }
 
+const isValidEmailFormat = (email: string): boolean => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+};
+
 const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }> = ({
   onBack,
   onSave,
   navigation,
 }) => {
-  // `mockUser` fields are readonly literals, so annotate as string —
-  // otherwise the state narrows to the literal and the setter rejects edits.
-  const [fullName, setFullName] = useState<string>(mockUser.fullName);
-  const [email, setEmail] = useState<string>(mockUser.email);
-  const [age, setAge] = useState<string>(String(mockUser.age));
-  const [address, setAddress] = useState<string>(mockUser.address);
+  const keyboardAwareRef = useRef<any>(null);
+  const nameInputRef = useRef<TextInput>(null);
+  const emailInputRef = useRef<TextInput>(null);
+  const ageInputRef = useRef<TextInput>(null);
+  const addressInputRef = useRef<TextInput>(null);
+
+  const scrollToInput = useCallback((target: any) => {
+    keyboardAwareRef.current?.scrollIntoView(target);
+  }, []);
+
+  const { userProfile, markProfileDone } = useSession();
+  const currentUser = getAuth().currentUser;
+
+  const verifiedPhone =
+    normalizePhoneNumber(userProfile?.phone) ||
+    normalizePhoneNumber(currentUser?.phoneNumber) ||
+    normalizePhoneNumber(getActivePhoneNumber());
+
+  const [fullName, setFullName] = useState<string>(
+    userProfile?.fullName || currentUser?.displayName || '',
+  );
+  const [email, setEmail] = useState<string>(
+    userProfile?.email || currentUser?.email || '',
+  );
+  const [age, setAge] = useState<string>(
+    userProfile?.age ? String(userProfile.age) : '',
+  );
+  const [address, setAddress] = useState<string>(
+    userProfile?.address || '',
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Synchronize state when userProfile loads or changes
+  React.useEffect(() => {
+    if (userProfile) {
+      if (userProfile.fullName) setFullName(userProfile.fullName);
+      if (userProfile.email) setEmail(userProfile.email);
+      if (userProfile.age) setAge(String(userProfile.age));
+      if (userProfile.address) setAddress(userProfile.address);
+    }
+  }, [userProfile]);
+
+  const photoUri = userProfile?.photoUri || currentUser?.photoURL;
+
+  const handleSave = async () => {
+    setError(null);
+    const trimmedName = fullName.trim();
+    if (!trimmedName) {
+      setError('Please enter your full name');
+      return;
+    }
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError('Please enter your email address');
+      return;
+    }
+    if (!isValidEmailFormat(trimmedEmail)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
+    const trimmedAge = age.trim();
+    if (trimmedAge) {
+      const numAge = parseInt(trimmedAge, 10);
+      if (isNaN(numAge) || numAge < 1 || numAge > 120) {
+        setError('Please enter a valid age');
+        return;
+      }
+    }
+
+    setIsSaving(true);
+    try {
+      if (markProfileDone) {
+        await markProfileDone({
+          fullName: trimmedName,
+          email: trimmedEmail,
+          age: trimmedAge || undefined,
+          address: address.trim() || undefined,
+          phone: verifiedPhone || undefined,
+          photoUri: userProfile?.photoUri,
+        });
+      }
+      onSave?.();
+      navigation?.goBack();
+    } catch (err: any) {
+      const msg = err?.userMessage || err?.message || 'Failed to save profile. Please try again.';
+      setError(msg);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -37,7 +131,7 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
       <View style={styles.appBar}>
         <Pressable
           style={styles.backButton}
-          onPress={() => navigation?.goBack()}
+          onPress={() => (onBack ? onBack() : navigation?.goBack())}
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
@@ -47,11 +141,23 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
         <View style={styles.backButton} />
       </View>
 
-      <ScrollView
+      <KeyboardAwareScrollView
+        ref={keyboardAwareRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        footer={
+          <View style={styles.footer}>
+            <Button
+              label={isSaving ? 'SAVING...' : 'SAVE CHANGES'}
+              onPress={handleSave}
+              variant="primary"
+              fullWidth
+              disabled={isSaving}
+            />
+          </View>
+        }
       >
         {/* Profile Photo Section */}
         <View style={styles.photoSection}>
@@ -60,7 +166,15 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
             onPress={() => navigation?.navigate('ChangeProfilePhotoScreen')}
           >
             <View style={styles.avatarCircle}>
-              <Feather name="user" size={36} color={colors.onSurfaceVariant} />
+              {photoUri ? (
+                <Image
+                  source={{ uri: photoUri }}
+                  style={styles.avatarCircleImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Feather name="user" size={36} color={colors.onSurfaceVariant} />
+              )}
             </View>
             <View style={styles.cameraOverlay}>
               <Feather name="camera" size={14} color={colors.onPrimary} />
@@ -73,6 +187,14 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
           </Pressable>
         </View>
 
+        {/* Error Banner */}
+        {error ? (
+          <View style={styles.errorBanner}>
+            <Feather name="alert-triangle" size={18} color={colors.error} />
+            <Text style={styles.errorBannerText}>{error}</Text>
+          </View>
+        ) : null}
+
         {/* Form Fields */}
         <View style={styles.formContainer}>
           {/* Full Name */}
@@ -80,11 +202,13 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
             <Text style={styles.fieldLabel}>Full Name</Text>
             <View style={styles.inputWrapper}>
               <TextInput
+                ref={nameInputRef}
                 style={styles.input}
                 placeholder="Enter your full name"
                 placeholderTextColor={colors.onSurfaceVariant}
                 value={fullName}
                 onChangeText={setFullName}
+                onFocus={() => scrollToInput(nameInputRef)}
               />
             </View>
           </View>
@@ -99,7 +223,7 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
               </View>
             </View>
             <View style={styles.readOnlyField}>
-              <Text style={styles.readOnlyText}>{mockUser.phone}</Text>
+              <Text style={styles.readOnlyText}>{verifiedPhone || 'No verified number'}</Text>
               <Feather name="lock" size={18} color={colors.onSurfaceVariant} />
             </View>
           </View>
@@ -109,11 +233,13 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
             <Text style={styles.fieldLabel}>Email Address</Text>
             <View style={styles.inputWrapper}>
               <TextInput
+                ref={emailInputRef}
                 style={styles.input}
                 placeholder="Enter your email"
                 placeholderTextColor={colors.onSurfaceVariant}
                 value={email}
                 onChangeText={setEmail}
+                onFocus={() => scrollToInput(emailInputRef)}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
@@ -125,11 +251,13 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
             <Text style={styles.fieldLabel}>Age</Text>
             <View style={[styles.inputWrapper, { width: '50%' }]}>
               <TextInput
+                ref={ageInputRef}
                 style={styles.input}
                 placeholder="Age"
                 placeholderTextColor={colors.onSurfaceVariant}
                 value={age}
                 onChangeText={setAge}
+                onFocus={() => scrollToInput(ageInputRef)}
                 keyboardType="numeric"
               />
             </View>
@@ -146,11 +274,13 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
                 style={styles.addressIcon}
               />
               <TextInput
+                ref={addressInputRef}
                 style={styles.addressInput}
                 placeholder="Enter your address"
                 placeholderTextColor={colors.onSurfaceVariant}
                 value={address}
                 onChangeText={setAddress}
+                onFocus={() => scrollToInput(addressInputRef)}
                 multiline
                 numberOfLines={3}
                 textAlignVertical="top"
@@ -158,17 +288,7 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
             </View>
           </View>
         </View>
-      </ScrollView>
-
-      {/* Bottom CTA */}
-      <View style={styles.footer}>
-        <Button
-          label="SAVE CHANGES"
-          onPress={() => navigation?.goBack()}
-          variant="primary"
-          fullWidth
-        />
-      </View>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };
@@ -225,6 +345,12 @@ const styles = StyleSheet.create({
     borderColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarCircleImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
   },
   cameraOverlay: {
     position: 'absolute',
@@ -240,29 +366,56 @@ const styles = StyleSheet.create({
     borderColor: colors.surface,
   },
   changePhotoText: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
+    fontSize: typography.bodyMd.fontSize,
     color: colors.primary,
-    fontFamily: typography.headlineSm.fontFamily,
+    fontWeight: '500',
+    fontFamily: typography.bodyMd.fontFamily,
   },
-  formContainer: {
-    gap: spacing.xxl,
-  },
-  fieldGroup: {
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FDE8E8',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.sm,
     gap: spacing.sm,
   },
-  labelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xs,
+  errorBannerText: {
+    color: colors.error,
+    fontSize: typography.labelSm.fontSize,
+    fontFamily: typography.labelSm.fontFamily,
+    flex: 1,
+  },
+  formContainer: {
+    gap: spacing.xl,
+  },
+  fieldGroup: {
+    gap: spacing.xs,
   },
   fieldLabel: {
     fontSize: typography.labelSm.fontSize,
-    fontWeight: typography.labelSm.fontWeight,
-    lineHeight: typography.labelSm.lineHeight,
-    color: colors.onSurfaceVariant,
-    paddingHorizontal: spacing.xs,
+    fontWeight: '500',
+    color: colors.onSurface,
+    fontFamily: typography.labelSm.fontFamily,
+  },
+  inputWrapper: {
+    borderWidth: 1,
+    borderColor: colors.outlineHairline,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    height: spacing.rowHeightStandard,
+    justifyContent: 'center',
+  },
+  input: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.onSurface,
+    fontFamily: typography.bodyMd.fontFamily,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   verifiedBadge: {
     flexDirection: 'row',
@@ -270,69 +423,53 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   verifiedText: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: typography.labelSm.fontSize,
     color: '#2D7A4D',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  inputWrapper: {
-    backgroundColor: colors.surfaceVariant,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  input: {
-    fontSize: typography.bodyLg.fontSize,
-    lineHeight: typography.bodyLg.lineHeight,
-    color: colors.onSurface,
-    fontFamily: typography.bodyLg.fontFamily,
-    padding: 0,
+    fontWeight: '500',
+    fontFamily: typography.labelSm.fontFamily,
   },
   readOnlyField: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    backgroundColor: colors.surfaceContainerLow,
     borderWidth: 1,
-    borderColor: colors.surfaceContainerHigh,
-    opacity: 0.8,
+    borderColor: colors.outlineHairline,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    height: spacing.rowHeightStandard,
   },
   readOnlyText: {
-    fontSize: typography.bodyLg.fontSize,
+    fontSize: typography.bodyMd.fontSize,
     color: colors.onSurfaceVariant,
-    fontFamily: typography.bodyLg.fontFamily,
+    fontFamily: typography.bodyMd.fontFamily,
   },
   addressWrapper: {
-    backgroundColor: colors.surfaceVariant,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.outlineHairline,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    minHeight: 88,
   },
   addressIcon: {
-    marginTop: spacing.xs,
+    marginRight: spacing.sm,
+    marginTop: 2,
   },
   addressInput: {
     flex: 1,
-    fontSize: typography.bodyLg.fontSize,
-    lineHeight: typography.bodyLg.lineHeight,
+    fontSize: typography.bodyMd.fontSize,
     color: colors.onSurface,
-    fontFamily: typography.bodyLg.fontFamily,
     padding: 0,
-    minHeight: 80,
+    fontFamily: typography.bodyMd.fontFamily,
   },
   footer: {
-    borderTopWidth: 1,
-    borderTopColor: colors.surfaceContainerLow,
-    backgroundColor: colors.surface,
     paddingHorizontal: spacing.marginMobile,
     paddingVertical: spacing.md,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.outlineHairline,
   },
 });
 

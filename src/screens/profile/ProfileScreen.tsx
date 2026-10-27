@@ -1,14 +1,18 @@
-import React from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, ScrollView, Pressable, StyleSheet, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { colors, spacing, borderRadius, typography } from '../../theme';
-import { strings, mockUser } from '../../data/mockData';
+import { strings } from '../../data/mockData';
+import { useSession } from '../../state/SessionContext';
+import { getAuth } from '@react-native-firebase/auth';
+import { getActivePhoneNumber, normalizePhoneNumber } from '../../auth/authService';
 import TopAppBar from '../../components/organisms/TopAppBar';
 import Card from '../../components/molecules/Card';
 import ListRow from '../../components/molecules/ListRow';
 import Divider from '../../components/atoms/Divider';
+import { ProfileSkeleton, useSkeletonVisibility } from '../../components/skeleton';
 
 /** Menu rows share one icon treatment so nothing renders in OS emoji colours. */
 const MenuIcon: React.FC<{ readonly name: string }> = ({ name }) => (
@@ -28,9 +32,10 @@ export interface ProfileScreenProps {
   readonly onSettings?: () => void;
   readonly onLogout?: () => void;
   readonly onNotificationPress?: () => void;
+  readonly isLoading?: boolean;
 }
 
-const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any }> = ({
+const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any; route?: any }> = ({
   onBack,
   onEditProfile,
   onSavedAddresses,
@@ -39,15 +44,50 @@ const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any }> = ({
   onSettings,
   onLogout,
   onNotificationPress,
+  isLoading = false,
   navigation,
+  route,
 }) => {
+  const { userProfile, refreshProfile } = useSession();
+  const currentUser = getAuth().currentUser;
+  const effectiveLoading = isLoading || route?.params?.isLoading;
+  const hasData = Boolean(userProfile || currentUser?.displayName || currentUser?.phoneNumber);
+  const showSkeleton = useSkeletonVisibility({
+    isLoading: Boolean(effectiveLoading),
+    hasData,
+  });
+
+  useEffect(() => {
+    refreshProfile?.().catch(() => {});
+  }, [refreshProfile]);
+
+  useEffect(() => {
+    const unsubscribe = navigation?.addListener?.('focus', () => {
+      refreshProfile?.().catch(() => {});
+    });
+    return unsubscribe;
+  }, [navigation, refreshProfile]);
+
+  const photoUri = userProfile?.photoUri || currentUser?.photoURL;
+  const displayName = userProfile?.fullName || currentUser?.displayName || strings.profile.customerFallback || 'Customer';
+  const displayPhone =
+    normalizePhoneNumber(userProfile?.phone) ||
+    normalizePhoneNumber(currentUser?.phoneNumber) ||
+    normalizePhoneNumber(getActivePhoneNumber()) ||
+    strings.profile.noVerifiedNumber ||
+    'No verified phone';
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <TopAppBar
         title={strings.profile.title}
         leadingIcon={
           <View style={styles.avatarSmall}>
-            <Feather name="user" size={16} color={colors.primary} />
+            {photoUri ? (
+              <Image source={{ uri: photoUri }} style={styles.avatarSmallImage} resizeMode="cover" />
+            ) : (
+              <Feather name="user" size={16} color={colors.primary} />
+            )}
           </View>
         }
         trailingIcon={<Feather name="bell" size={22} color={colors.primary} />}
@@ -57,77 +97,85 @@ const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any }> = ({
         }
       />
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Profile Header */}
-        <View style={styles.profileHeader}>
-          <View style={styles.avatarLarge}>
-            <Feather name="user" size={40} color={colors.onSurfaceVariant} />
-          </View>
-          <Text style={styles.userName}>{mockUser.fullName}</Text>
-          <View style={styles.phoneRow}>
-            <Feather name="phone" size={14} color={colors.onSurfaceVariant} />
-            <Text style={styles.phoneText}>{mockUser.phone}</Text>
-          </View>
-          <Pressable
-            style={styles.editButton}
-            onPress={() => (onEditProfile ? onEditProfile() : navigation?.navigate('EditProfileScreen'))}
-            accessibilityRole="button"
-            accessibilityLabel="Edit Profile"
-          >
-            <Text style={styles.editButtonText}>
-              {strings.profile.editProfile}
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* Menu Card */}
-        <Card variant="outlined" padding="none">
-          <ListRow
-            title={strings.profile.savedAddresses}
-            leading={<MenuIcon name="map-pin" />}
-            trailing={<Chevron />}
-            onPress={() => (onSavedAddresses ? onSavedAddresses() : navigation?.navigate('SavedAddressesScreen'))}
-          />
-          <Divider />
-          <ListRow
-            title="Booking History"
-            leading={<MenuIcon name="clock" />}
-            trailing={<Chevron />}
-            onPress={() => (onBookingHistory ? onBookingHistory() : navigation?.navigate('TripHistoryScreen'))}
-          />
-          <Divider />
-          <ListRow
-            title={strings.profile.notifications}
-            leading={<MenuIcon name="bell" />}
-            trailing={<Chevron />}
-            onPress={() =>
-              onNotifications ? onNotifications() : navigation?.navigate('NotificationCenterScreen')
-            }
-          />
-          <Divider />
-          <ListRow
-            title="Settings"
-            leading={<MenuIcon name="settings" />}
-            trailing={<Chevron />}
-            onPress={() => (onSettings ? onSettings() : navigation?.navigate('CustomerSettingsScreen'))}
-          />
-        </Card>
-
-        {/* Logout Button */}
-        <Pressable
-          style={styles.logoutButton}
-          onPress={() => (onLogout ? onLogout() : navigation?.navigate('LogoutConfirmationScreen'))}
-          accessibilityRole="button"
-          accessibilityLabel="Logout"
+      {showSkeleton ? (
+        <ProfileSkeleton testID="profile-skeleton-loading" />
+      ) : (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
         >
-          <MaterialIcons name="logout" size={20} color={colors.error} />
-          <Text style={styles.logoutText}>{strings.profile.logout}</Text>
-        </Pressable>
-      </ScrollView>
+          {/* Profile Header */}
+          <View style={styles.profileHeader}>
+            <View style={styles.avatarLarge}>
+              {photoUri ? (
+                <Image source={{ uri: photoUri }} style={styles.avatarLargeImage} resizeMode="cover" />
+              ) : (
+                <Feather name="user" size={40} color={colors.onSurfaceVariant} />
+              )}
+            </View>
+            <Text style={styles.userName}>{displayName}</Text>
+            <View style={styles.phoneRow}>
+              <Feather name="phone" size={14} color={colors.onSurfaceVariant} />
+              <Text style={styles.phoneText}>{displayPhone}</Text>
+            </View>
+            <Pressable
+              style={styles.editButton}
+              onPress={() => (onEditProfile ? onEditProfile() : navigation?.navigate('EditProfileScreen'))}
+              accessibilityRole="button"
+              accessibilityLabel="Edit Profile"
+            >
+              <Text style={styles.editButtonText}>
+                {strings.profile.editProfile}
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Menu Card */}
+          <Card variant="outlined" padding="none">
+            <ListRow
+              title={strings.profile.savedAddresses}
+              leading={<MenuIcon name="map-pin" />}
+              trailing={<Chevron />}
+              onPress={() => (onSavedAddresses ? onSavedAddresses() : navigation?.navigate('SavedAddressesScreen'))}
+            />
+            <Divider />
+            <ListRow
+              title="Booking History"
+              leading={<MenuIcon name="clock" />}
+              trailing={<Chevron />}
+              onPress={() => (onBookingHistory ? onBookingHistory() : navigation?.navigate('TripHistoryScreen'))}
+            />
+            <Divider />
+            <ListRow
+              title={strings.profile.notifications}
+              leading={<MenuIcon name="bell" />}
+              trailing={<Chevron />}
+              onPress={() =>
+                onNotifications ? onNotifications() : navigation?.navigate('NotificationCenterScreen')
+              }
+            />
+            <Divider />
+            <ListRow
+              title="Settings"
+              leading={<MenuIcon name="settings" />}
+              trailing={<Chevron />}
+              onPress={() => (onSettings ? onSettings() : navigation?.navigate('CustomerSettingsScreen'))}
+            />
+          </Card>
+
+          {/* Logout Button */}
+          <Pressable
+            style={styles.logoutButton}
+            onPress={() => (onLogout ? onLogout() : navigation?.navigate('LogoutConfirmationScreen'))}
+            accessibilityRole="button"
+            accessibilityLabel="Logout"
+          >
+            <MaterialIcons name="logout" size={20} color={colors.error} />
+            <Text style={styles.logoutText}>{strings.profile.logout}</Text>
+          </Pressable>
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 };
@@ -144,6 +192,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceContainerHigh,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarSmallImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
   },
   scrollView: {
     flex: 1,
@@ -168,6 +222,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  avatarLargeImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
   },
   userName: {
     fontSize: typography.headlineMd.fontSize,
@@ -208,7 +268,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.sm,
     backgroundColor: colors.errorContainer,
-    // Pill, matching every other primary action in the app.
     borderRadius: borderRadius.full,
     paddingVertical: spacing.lg,
   },

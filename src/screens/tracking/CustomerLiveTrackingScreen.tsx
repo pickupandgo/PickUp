@@ -1,11 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
+  ScrollView,
   ImageBackground,
   Image,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -13,10 +15,11 @@ import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
 import { useTripStatus } from '../../hooks/useTripStatus';
 import { useRideOtps } from '../../hooks/useRideOtps';
-import { getDriver, getRide } from '../../api/engine';
+import { getActiveTripForCustomer, getDriver, getRide } from '../../api/engine';
 import type { GeoPoint } from '../../api/types';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
 import { useRoute } from '../../hooks/useRoute';
+import { getVehicleImage } from '../../utils/vehicleAssets';
 
 export interface CustomerLiveTrackingScreenProps {
   readonly onBack?: () => void;
@@ -30,7 +33,39 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
   onChat,
   navigation,
 }) => {
-  const { trip, setTrip, assignedDriver, ride, setRide } = useBooking();
+  const {
+    trip,
+    setTrip,
+    assignedDriver,
+    setAssignedDriver,
+    ride,
+    setRide,
+    customerId,
+    draft,
+  } = useBooking();
+
+  // If customer came directly to live tracking and trip is not yet in context, restore from engine
+  useEffect(() => {
+    if (!trip && customerId) {
+      let active = true;
+      getActiveTripForCustomer(customerId)
+        .then((found) => {
+          if (active && found) {
+            setTrip(found);
+            if (found.rideId) {
+              getRide(found.rideId).then((r) => { if (active && r) setRide(r); }).catch(() => {});
+            }
+            if (found.driverId) {
+              getDriver(found.driverId).then((d) => { if (active && d) setAssignedDriver(d); }).catch(() => {});
+            }
+          }
+        })
+        .catch(() => {});
+      return () => {
+        active = false;
+      };
+    }
+  }, [trip, customerId, setTrip, setRide, setAssignedDriver]);
 
   // If the user killed the app and restarted, `ride` might be undefined, but `trip` exists.
   // Restore `ride` so we have its id for the gated OTP endpoint (the trip never carries OTPs).
@@ -94,8 +129,9 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
     const tick = async () => {
       try {
         const driver = await getDriver(driverId);
-        if (!cancelled) {
+        if (!cancelled && driver) {
           setDriverPoint({ latitude: driver.latitude, longitude: driver.longitude });
+          setAssignedDriver(driver);
         }
       } catch {
         // Keep the last known position on a transient failure.
@@ -108,7 +144,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
       cancelled = true;
       clearInterval(id);
     };
-  }, [driverId]);
+  }, [driverId, setAssignedDriver]);
 
   const markers = useMemo<readonly MapMarker[]>(() => {
     const built: MapMarker[] = [];
@@ -130,7 +166,12 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
         kind: 'driver',
         coordinate: driverPoint,
         title: assignedDriver?.name ?? 'Driver',
-        description: assignedDriver?.vehicleType,
+        vehicleType:
+          assignedDriver?.vehicleType ||
+          (current as any)?.vehicleType ||
+          ride?.vehicleType ||
+          draft?.vehicleType,
+        bearing: assignedDriver?.bearingDegrees,
       });
     }
     return built;
@@ -178,13 +219,60 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
 
   let currentDropAddress = current?.drop?.address ?? '—';
   if (current?.stops && current.stops.length > 0) {
-    const activeDrop = current.stops.find(s => ['PENDING', 'IN_TRANSIT', 'ARRIVED'].includes(s.status)) || current.stops[current.stops.length - 1];
+    const activeDrop =
+      current.stops.find((s) => ['PENDING', 'IN_TRANSIT', 'ARRIVED'].includes(s.status)) ||
+      current.stops[current.stops.length - 1];
     currentDropAddress = activeDrop?.location?.address ?? currentDropAddress;
   }
 
   const tripSubtitle = preTransit
-    ? `Pickup: ${current?.pickup?.address ?? '—'}`
+    ? `Pickup: ${current?.pickup?.address ?? draft?.pickup?.address ?? '—'}`
     : `Drop: ${currentDropAddress}`;
+
+  const pickupAddress = current?.pickup?.address ?? draft?.pickup?.address ?? '—';
+  const dropAddress = currentDropAddress ?? draft?.drops?.[0]?.address ?? '—';
+  const fareDisplay =
+    current?.fare != null
+      ? `₹${current.fare}`
+      : current?.payablePaise != null
+      ? `₹${(current.payablePaise / 100).toFixed(0)}`
+      : draft?.quote?.payablePaise != null
+      ? `₹${(draft.quote.payablePaise / 100).toFixed(0)}`
+      : undefined;
+  const paymentMethodDisplay =
+    (current?.paymentMethod ?? ride?.paymentMethod ?? draft?.paymentMethod) === 'PAY_AT_PICKUP'
+      ? 'Pay at Pickup'
+      : 'Pay at Delivery';
+  const vehicleDisplay =
+    (current as any)?.vehicleType ?? assignedDriver?.vehicleType ?? draft?.vehicleType;
+  const distanceDisplay =
+    typeof current?.totalDistanceKm === 'number'
+      ? `${current.totalDistanceKm.toFixed(1)} km`
+      : undefined;
+
+  const handleBack = useCallback(() => {
+    if (onBack) {
+      onBack();
+    } else if (navigation?.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation?.navigate('MainTabs', { screen: 'HomeScreen' });
+    }
+  }, [onBack, navigation]);
+
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  const toggleCollapsed = useCallback(() => {
+    const next = !isCollapsed;
+    setIsCollapsed(next);
+    Animated.spring(slideAnim, {
+      toValue: next ? 1 : 0,
+      useNativeDriver: false,
+      friction: 8,
+      tension: 40,
+    }).start();
+  }, [isCollapsed, slideAnim]);
 
   // Bar advances as the engine reports progress.
   const progressPercent: `${number}%` =
@@ -202,21 +290,13 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
 
   return (
     <View style={styles.container}>
-      {/* Network Offline Banner (Simulated Hidden State) */}
-      {/* 
-      <View style={styles.networkBanner}>
-        <Feather name="wifi-off" size={16} color={colors.onErrorContainer} />
-        <Text style={styles.networkBannerText}>Reconnecting... trying to find your driver</Text>
-      </View>
-      */}
-
       {/* Top App Bar */}
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Pressable
               style={styles.iconButton}
-              onPress={() => (onBack ? onBack() : navigation?.goBack())}
+              onPress={handleBack}
               accessibilityRole="button"
             >
               <Feather name="arrow-left" size={24} color={colors.onSurfaceVariant} />
@@ -242,98 +322,259 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
       <View style={styles.bottomOverlay}>
         <SafeAreaView edges={['bottom']} style={styles.safeArea}>
           <View style={styles.tripStatusCard}>
-            <View style={styles.tripStatusHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.tripStatusTitle}>{tripHeadline}</Text>
-                {current?.drop?.address && (
-                  <Text style={styles.tripStatusSubtitle} numberOfLines={1}>
-                    {tripSubtitle}
-                  </Text>
-                )}
+            {/* Top Interactive Drag / Slide-down Handle */}
+            <Pressable
+              style={styles.dragHandleBar}
+              onPress={toggleCollapsed}
+              accessibilityRole="button"
+              accessibilityLabel={isCollapsed ? 'Expand details' : 'Slide down to view map'}
+            >
+              <View style={styles.dragHandlePill} />
+              <View style={styles.dragHandleRow}>
+                <Text style={styles.dragHandleHint}>
+                  {isCollapsed ? 'Tap to view details' : 'Swipe / tap to view map'}
+                </Text>
+                <Feather
+                  name={isCollapsed ? 'chevron-up' : 'chevron-down'}
+                  size={15}
+                  color={colors.onSurfaceVariant}
+                />
               </View>
-            </View>
+            </Pressable>
 
-            {/* Coarse progress bar driven off the trip status. */}
-            <View style={styles.progressBarContainer}>
-              <View style={[styles.progressBarFill, { width: progressPercent }]} />
-            </View>
-
-            {/* PICKUP OTP — released by the server once the pickup handover is allowed. For
-                pay-at-pickup that is after payment; until then show that payment is required. */}
-            {(status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED') &&
-              (pickupOtp ? (
-                <View style={styles.otpRow}>
-                  <Text style={styles.otpLabel}>PICKUP OTP</Text>
-                  <Text style={styles.otpValue}>{pickupOtp}</Text>
-                </View>
-              ) : pickupPaymentRequired ? (
-                <View style={styles.otpRow}>
-                  <Text style={styles.otpLabel}>PAYMENT REQUIRED</Text>
-                  <Text style={styles.otpHint}>Pay the driver at pickup to start the trip.</Text>
-                </View>
-              ) : null)}
-
-            {/* DELIVERY OTP — released once this drop's payment is confirmed (pay at delivery). */}
-            {(status === 'IN_TRANSIT' || status === 'DROP_PROGRESS') &&
-              current?.currentStop &&
-              !current.currentStop.otpVerified &&
-              currentDropOtp && (
-                <View style={styles.otpRow}>
-                  <Text style={styles.otpLabel}>DELIVERY OTP</Text>
-                  <Text style={styles.otpValue}>{currentDropOtp}</Text>
-                </View>
-              )}
-
-            <View style={styles.driverDetailsContainer}>
-              <View style={styles.driverDetailsHeader}>
-                <View style={styles.driverInfoLeft}>
-                  <View style={styles.driverAvatarContainer}>
-                    <Feather name="user" size={22} color={colors.onSurfaceVariant} />
-                  </View>
-                  <View>
-                    <Text style={styles.driverName}>
-                      {assignedDriver?.name ?? 'Your driver'}
+            {/* Minimized Pill View when Collapsed */}
+            {isCollapsed ? (
+              <Pressable style={styles.minimizedRow} onPress={toggleCollapsed} accessibilityRole="button">
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.minimizedTitle} numberOfLines={1}>
+                    {tripHeadline}
+                  </Text>
+                  {Boolean(tripSubtitle) && (
+                    <Text style={styles.minimizedSubtitle} numberOfLines={1}>
+                      {tripSubtitle}
                     </Text>
-                    {assignedDriver?.vehicleType && (
-                      <View style={styles.driverSubInfo}>
-                        <Feather name="truck" size={12} color={colors.onSurfaceVariant} />
-                        <Text style={styles.driverSubInfoText}>
-                          {assignedDriver.vehicleType}
+                  )}
+                </View>
+                {Boolean(pickupOtp) && (status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED') && (
+                  <View style={styles.minimizedOtpBadge}>
+                    <Text style={styles.minimizedOtpLabel}>OTP</Text>
+                    <Text style={styles.minimizedOtpValue}>{pickupOtp}</Text>
+                  </View>
+                )}
+                {Boolean(currentDropOtp) && (status === 'IN_TRANSIT' || status === 'DROP_PROGRESS') && (
+                  <View style={styles.minimizedOtpBadge}>
+                    <Text style={styles.minimizedOtpLabel}>OTP</Text>
+                    <Text style={styles.minimizedOtpValue}>{currentDropOtp}</Text>
+                  </View>
+                )}
+              </Pressable>
+            ) : (
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+                contentContainerStyle={styles.cardScrollContent}
+              >
+                <View style={styles.tripStatusHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.tripStatusTitle}>{tripHeadline}</Text>
+                    {Boolean(tripSubtitle) && (
+                      <Text style={styles.tripStatusSubtitle} numberOfLines={1}>
+                        {tripSubtitle}
+                      </Text>
+                    )}
+                  </View>
+                  {typeof assignedDriver?.distanceKm === 'number' && (
+                    <View style={styles.onTimeBadge}>
+                      <Feather name="navigation" size={12} color={colors.onSecondaryContainer} />
+                      <Text style={styles.onTimeText}>
+                        {assignedDriver.distanceKm.toFixed(1)} km
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Coarse progress bar driven off the trip status. */}
+                <View style={styles.progressBarContainer}>
+                  <View style={[styles.progressBarFill, { width: progressPercent }]} />
+                </View>
+
+                {/* PICKUP OTP — released by the server once the pickup handover is allowed. */}
+                {(status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED') &&
+                  (pickupOtp ? (
+                    <View style={styles.premiumOtpCard}>
+                      <View style={styles.otpHeaderRow}>
+                        <View style={styles.otpShieldBadge}>
+                          <Feather name="shield" size={16} color={colors.primary} />
+                        </View>
+                        <View style={styles.otpHeaderTexts}>
+                          <Text style={styles.otpCardTitle}>PICKUP VERIFICATION OTP</Text>
+                          <Text style={styles.otpCardSub}>Share with driver to start ride</Text>
+                        </View>
+                      </View>
+                      <View style={styles.otpDigitsContainer}>
+                        {pickupOtp.split('').map((digit, idx) => (
+                          <View key={idx} style={styles.otpDigitBox}>
+                            <Text style={styles.otpDigitText}>{digit}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : pickupPaymentRequired ? (
+                    <View style={styles.premiumPaymentCard}>
+                      <Feather name="alert-circle" size={18} color="#D97706" />
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text style={styles.paymentCardTitle}>PAYMENT REQUIRED</Text>
+                        <Text style={styles.paymentCardSub}>Pay the driver at pickup to start the trip.</Text>
+                      </View>
+                    </View>
+                  ) : null)}
+
+                {/* DELIVERY OTP — released once this drop's payment is confirmed (pay at delivery). */}
+                {(status === 'IN_TRANSIT' || status === 'DROP_PROGRESS') &&
+                  current?.currentStop &&
+                  !current.currentStop.otpVerified &&
+                  currentDropOtp && (
+                    <View style={styles.premiumOtpCard}>
+                      <View style={styles.otpHeaderRow}>
+                        <View style={styles.otpShieldBadge}>
+                          <Feather name="shield" size={16} color={colors.statusGreen} />
+                        </View>
+                        <View style={styles.otpHeaderTexts}>
+                          <Text style={styles.otpCardTitle}>DELIVERY OTP</Text>
+                          <Text style={styles.otpCardSub}>Share at drop location to confirm receipt</Text>
+                        </View>
+                      </View>
+                      <View style={styles.otpDigitsContainer}>
+                        {currentDropOtp.split('').map((digit, idx) => (
+                          <View key={idx} style={styles.otpDigitBox}>
+                            <Text style={styles.otpDigitText}>{digit}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
+                {/* Route Summary (Pickup & Drop Locations) */}
+                <View style={styles.routeContainer}>
+                  <View style={styles.routeRow}>
+                    <View style={styles.routeDotCol}>
+                      <View style={[styles.routeDot, styles.pickupDot]} />
+                      <View style={styles.routeLine} />
+                    </View>
+                    <View style={styles.routeTextCol}>
+                      <Text style={styles.routeLabel}>PICKUP LOCATION</Text>
+                      <Text style={styles.routeAddress} numberOfLines={2}>
+                        {pickupAddress}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.routeRow}>
+                    <View style={styles.routeDotCol}>
+                      <View style={[styles.routeDot, styles.dropDot]} />
+                    </View>
+                    <View style={styles.routeTextCol}>
+                      <Text style={styles.routeLabel}>
+                        {current?.stops && current.stops.length > 1
+                          ? `DROP LOCATION (${current.stops.length} STOPS)`
+                          : 'DROP LOCATION'}
+                      </Text>
+                      <Text style={styles.routeAddress} numberOfLines={2}>
+                        {dropAddress}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Trip Meta Badges (Fare, Payment, Vehicle, Distance) */}
+                <View style={styles.tripMetaRow}>
+                  {Boolean(fareDisplay) && (
+                    <View style={styles.tripMetaBadge}>
+                      <Feather name="credit-card" size={12} color={colors.primary} />
+                      <Text style={styles.tripMetaBadgeText}>{fareDisplay}</Text>
+                    </View>
+                  )}
+                  <View style={styles.tripMetaBadge}>
+                    <Feather name="check-circle" size={12} color={colors.statusGreen} />
+                    <Text style={styles.tripMetaBadgeText}>{paymentMethodDisplay}</Text>
+                  </View>
+                  {Boolean(vehicleDisplay) && (
+                    <View style={styles.tripMetaBadge}>
+                      <Image
+                        source={getVehicleImage(vehicleDisplay)}
+                        style={styles.metaVehicleImage}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.tripMetaBadgeText}>{vehicleDisplay}</Text>
+                    </View>
+                  )}
+                  {Boolean(distanceDisplay) && (
+                    <View style={styles.tripMetaBadge}>
+                      <Feather name="map-pin" size={12} color={colors.onSurfaceVariant} />
+                      <Text style={styles.tripMetaBadgeText}>{distanceDisplay}</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Driver Details Container */}
+                <View style={styles.driverDetailsContainer}>
+                  <View style={styles.driverDetailsHeader}>
+                    <View style={styles.driverInfoLeft}>
+                      <View style={styles.driverAvatarContainer}>
+                        <Image
+                          source={getVehicleImage(assignedDriver?.vehicleType)}
+                          style={styles.driver3dAvatarImage}
+                          resizeMode="contain"
+                        />
+                      </View>
+                      <View>
+                        <Text style={styles.driverName}>
+                          {assignedDriver?.name ?? 'Your driver'}
+                        </Text>
+                        {assignedDriver?.vehicleType && (
+                          <View style={styles.driverSubInfo}>
+                            <Image
+                              source={getVehicleImage(assignedDriver.vehicleType)}
+                              style={styles.driverSubVehicleImage}
+                              resizeMode="contain"
+                            />
+                            <Text style={styles.driverSubInfoText}>
+                              {assignedDriver.vehicleType}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                    {typeof assignedDriver?.distanceKm === 'number' && (
+                      <View style={styles.licensePlateBadge}>
+                        <Text style={styles.licensePlateText}>
+                          {assignedDriver.distanceKm.toFixed(1)} km
                         </Text>
                       </View>
                     )}
                   </View>
-                </View>
-                {typeof assignedDriver?.distanceKm === 'number' && (
-                  <View style={styles.licensePlateBadge}>
-                    <Text style={styles.licensePlateText}>
-                      {assignedDriver.distanceKm.toFixed(1)} km
-                    </Text>
-                  </View>
-                )}
-              </View>
 
-              {/* The trip is ended by the driver in-app; customer only calls or
-                  chats. Cancellation is available from the header back path. */}
-              <View style={styles.actionsContainer}>
-                <Pressable
-                  style={styles.actionButton}
-                  onPress={() => (onCall ? onCall() : navigation?.navigate('CallDriverScreen'))}
-                  accessibilityRole="button"
-                >
-                  <Feather name="phone" size={18} color={colors.onSurface} />
-                  <Text style={styles.actionButtonText}>Call</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.actionButton}
-                  onPress={() => (onChat ? onChat() : navigation?.navigate('ActiveTripChatScreen'))}
-                  accessibilityRole="button"
-                >
-                  <Feather name="message-circle" size={18} color={colors.onSurface} />
-                  <Text style={styles.actionButtonText}>Chat</Text>
-                </Pressable>
-              </View>
-            </View>
+                  {/* Actions */}
+                  <View style={styles.actionsContainer}>
+                    <Pressable
+                      style={styles.actionButton}
+                      onPress={() => (onCall ? onCall() : navigation?.navigate('CallDriverScreen'))}
+                      accessibilityRole="button"
+                    >
+                      <Feather name="phone" size={18} color={colors.onSurface} />
+                      <Text style={styles.actionButtonText}>Call</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.actionButton}
+                      onPress={() => (onChat ? onChat() : navigation?.navigate('ActiveTripChatScreen'))}
+                      accessibilityRole="button"
+                    >
+                      <Feather name="message-circle" size={18} color={colors.onSurface} />
+                      <Text style={styles.actionButtonText}>Chat</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </ScrollView>
+            )}
           </View>
         </SafeAreaView>
       </View>
@@ -527,6 +768,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.marginMobile,
     paddingBottom: spacing.lg,
     zIndex: 30,
+    maxHeight: '68%',
   },
   safeArea: {
     width: '100%',
@@ -534,10 +776,86 @@ const styles = StyleSheet.create({
   tripStatusCard: {
     backgroundColor: colors.surface,
     borderRadius: 24,
-    padding: spacing.xl,
+    padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.surfaceContainerHighest,
     ...shadows.card,
+  },
+  cardScrollContent: {
+    paddingBottom: spacing.xs,
+  },
+  routeContainer: {
+    backgroundColor: colors.surfaceContainerLow,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.surfaceContainerHighest,
+  },
+  routeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  routeDotCol: {
+    alignItems: 'center',
+    width: 14,
+    paddingTop: 3,
+  },
+  routeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  pickupDot: {
+    backgroundColor: colors.statusGreen,
+  },
+  dropDot: {
+    backgroundColor: colors.error,
+  },
+  routeLine: {
+    width: 1.5,
+    height: 18,
+    backgroundColor: colors.outlineVariant,
+    marginVertical: 2,
+  },
+  routeTextCol: {
+    flex: 1,
+  },
+  routeLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.onSurfaceVariant,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  routeAddress: {
+    fontSize: typography.bodyMd.fontSize,
+    color: colors.onSurface,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  tripMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  tripMetaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.surfaceContainerLow,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.surfaceContainerHighest,
+  },
+  tripMetaBadgeText: {
+    fontSize: typography.labelSm.fontSize,
+    fontWeight: '600',
+    color: colors.onSurface,
   },
   tripStatusHeader: {
     flexDirection: 'row',
@@ -588,6 +906,146 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryContainer,
     borderRadius: borderRadius.full,
   },
+  dragHandleBar: {
+    alignItems: 'center',
+    paddingVertical: 6,
+    marginBottom: spacing.xs,
+  },
+  dragHandlePill: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.outlineVariant,
+    marginBottom: 4,
+  },
+  dragHandleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  dragHandleHint: {
+    fontSize: 10,
+    color: colors.onSurfaceVariant,
+    fontWeight: '500',
+  },
+  minimizedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    gap: spacing.md,
+  },
+  minimizedTitle: {
+    fontSize: typography.bodyLg.fontSize,
+    fontWeight: '700',
+    color: colors.onSurface,
+  },
+  minimizedSubtitle: {
+    fontSize: typography.labelSm.fontSize,
+    color: colors.onSurfaceVariant,
+    marginTop: 2,
+  },
+  minimizedOtpBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  minimizedOtpLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  minimizedOtpValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1E3A8A',
+    letterSpacing: 2,
+  },
+  premiumOtpCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
+    ...shadows.sm,
+  },
+  otpHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  otpShieldBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  otpHeaderTexts: {
+    flex: 1,
+  },
+  otpCardTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: 0.8,
+  },
+  otpCardSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  otpDigitsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  otpDigitBox: {
+    width: 54,
+    height: 54,
+    borderRadius: borderRadius.md,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    ...shadows.sm,
+  },
+  otpDigitText: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#0F172A',
+    fontFamily: typography.dataMono.fontFamily,
+  },
+  premiumPaymentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFBEB',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  paymentCardTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  paymentCardSub: {
+    fontSize: 12,
+    color: '#B45309',
+    marginTop: 2,
+  },
   otpRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -637,12 +1095,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
   },
+  metaVehicleImage: {
+    width: 18,
+    height: 18,
+    marginRight: 2,
+  },
+  driverSubVehicleImage: {
+    width: 14,
+    height: 14,
+    marginRight: 2,
+  },
   driverAvatarContainer: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: colors.surfaceContainerHigh,
-    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: colors.surfaceContainerHighest,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.elevated,
+  },
+  driver3dAvatarImage: {
+    width: 38,
+    height: 38,
   },
   driverAvatar: {
     width: '100%',

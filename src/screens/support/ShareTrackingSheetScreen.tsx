@@ -5,11 +5,14 @@ import {
   StyleSheet,
   Pressable,
   ImageBackground,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { mockActiveTrip } from '../../data/mockData';
+import { useBooking } from '../../state/BookingContext';
+import { getVehicleImage } from '../../utils/vehicleAssets';
 
 export interface ShareTrackingSheetScreenProps {
   readonly onBack?: () => void;
@@ -25,6 +28,7 @@ const ShareTrackingSheetScreen: React.FC<ShareTrackingSheetScreenProps & { navig
   onShare,
   navigation,
 }) => {
+  const { assignedDriver } = useBooking();
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(false);
 
@@ -91,7 +95,11 @@ const ShareTrackingSheetScreen: React.FC<ShareTrackingSheetScreenProps & { navig
             {/* Trip Status Summary */}
             <View style={styles.statusSummary}>
               <View style={styles.statusIcon}>
-                <Feather name="truck" size={20} color={colors.onPrimaryContainer} />
+                <Image
+                  source={getVehicleImage(assignedDriver?.vehicleType)}
+                  style={{ width: 28, height: 28 }}
+                  resizeMode="contain"
+                />
               </View>
               <View>
                 <Text style={styles.statusLabel}>TRIP STATUS</Text>

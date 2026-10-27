@@ -14,12 +14,15 @@ import {
   Pressable,
   TextInput,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { KeyboardAwareScrollView } from '../../components/organisms';
 
 export interface OtpVerificationScreenProps {
   readonly phoneNumber?: string;
@@ -31,6 +34,8 @@ export interface OtpVerificationScreenProps {
   readonly isLoading?: boolean;
   readonly error?: string | null;
   readonly isExpired?: boolean;
+  readonly navigation?: any;
+  readonly route?: any;
 }
 
 const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?: any }> = ({
@@ -90,21 +95,70 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
 
   const handleOtpChange = (text: string, index: number) => {
     // Only allow numbers
-    const cleanText = text.replace(/[^0-9]/g, '');
-    
-    if (cleanText.length > 0) {
-      const newOtp = [...otp];
-      newOtp[index] = cleanText[0];
-      setOtp(newOtp);
-      
-      // Auto-advance
-      if (index < 5) {
-        inputRefs.current[index + 1]?.focus();
-      }
-    } else {
+    const cleanDigits = text.replace(/[^0-9]/g, '');
+
+    // Case 1: Backspace / cleared
+    if (cleanDigits.length === 0) {
       const newOtp = [...otp];
       newOtp[index] = '';
       setOtp(newOtp);
+      return;
+    }
+
+    const prevDigit = otp[index];
+    const isTypingOverSingle =
+      prevDigit &&
+      cleanDigits.length === 2 &&
+      (cleanDigits.startsWith(prevDigit) || cleanDigits.endsWith(prevDigit));
+
+    // Case 2: Multi-digit paste or SMS autofill (e.g. user pasted "123456", "123-456", etc.)
+    if (cleanDigits.length > 1 && !isTypingOverSingle) {
+      let digitsToDistribute = cleanDigits;
+      // Handle native Android paste where existing character was prepended or appended
+      if (prevDigit && digitsToDistribute.length > 6) {
+        if (digitsToDistribute.startsWith(prevDigit)) {
+          digitsToDistribute = digitsToDistribute.slice(1, 7);
+        } else if (digitsToDistribute.endsWith(prevDigit)) {
+          digitsToDistribute = digitsToDistribute.slice(0, 6);
+        }
+      }
+      digitsToDistribute = digitsToDistribute.slice(0, 6);
+
+      const digits = digitsToDistribute.split('');
+      const newOtp = [...otp];
+      // If pasting a full 6-digit code or pasting into the first box, distribute starting from box 0
+      const startIdx = digits.length >= 6 || index === 0 ? 0 : index;
+      for (let i = 0; i < digits.length && startIdx + i < 6; i++) {
+        newOtp[startIdx + i] = digits[i];
+      }
+      setOtp(newOtp);
+
+      // Move focus to the end of the newly filled sequence
+      const targetFocus = Math.min(5, startIdx + digits.length - 1);
+      inputRefs.current[targetFocus]?.focus();
+      return;
+    }
+
+    // Case 3: Overwriting existing single digit in already filled box
+    if (isTypingOverSingle) {
+      const newChar = cleanDigits.startsWith(prevDigit) ? cleanDigits[1] : cleanDigits[0];
+      const newOtp = [...otp];
+      newOtp[index] = newChar;
+      setOtp(newOtp);
+      if (index < 5) {
+        inputRefs.current[index + 1]?.focus();
+      }
+      return;
+    }
+
+    // Case 4: Standard single digit typed
+    const newOtp = [...otp];
+    newOtp[index] = cleanDigits[0];
+    setOtp(newOtp);
+
+    // Auto-advance
+    if (index < 5) {
+      inputRefs.current[index + 1]?.focus();
     }
   };
 
@@ -160,7 +214,11 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
         <View style={styles.iconButton} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header Section */}
         <View style={styles.titleSection}>
           <Text style={styles.title}>
@@ -190,7 +248,10 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
                 onChangeText={(text) => handleOtpChange(text, index)}
                 onKeyPress={(e) => handleKeyPress(e, index)}
                 keyboardType="number-pad"
-                maxLength={1}
+                maxLength={12}
+                selectTextOnFocus
+                textContentType="oneTimeCode"
+                autoComplete="sms-otp"
                 placeholder="-"
                 placeholderTextColor={colors.onSurfaceVariant}
                 editable={!isLoading && !isExpired && !isResending}
@@ -238,10 +299,11 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
             fullWidth
             size="lg"
             disabled={otp.join('').length < 6 || isLoading || isVerifying}
-            icon={(isLoading || isVerifying) ? <MaterialIcons name="loop" size={20} color={colors.onSurfaceVariant} /> : undefined}
+            icon={(isLoading || isVerifying) ? <MaterialIcons name="loop" size={20} color={colors.onPrimary} /> : undefined}
+            style={styles.verifyButton}
           />
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };
@@ -278,7 +340,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.marginMobile,
     paddingTop: spacing.xxxl * 2, // mt-24 approx
     paddingBottom: spacing.xxxl,
-    alignItems: 'center',
   },
   titleSection: {
     alignItems: 'center',
@@ -311,11 +372,13 @@ const styles = StyleSheet.create({
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: spacing.md,
+    alignItems: 'center',
+    gap: 8,
     marginBottom: spacing.lg,
+    width: '100%',
   },
   otpInput: {
-    width: 48,
+    width: 44,
     height: 56,
     backgroundColor: colors.surfaceVariant,
     borderRadius: borderRadius.md,
@@ -384,7 +447,14 @@ const styles = StyleSheet.create({
   },
   actionsContainer: {
     width: '100%',
-    maxWidth: 400,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    marginTop: spacing.md,
+  },
+  verifyButton: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: borderRadius.full,
   },
 });
 

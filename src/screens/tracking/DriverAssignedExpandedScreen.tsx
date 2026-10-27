@@ -1,16 +1,21 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
   ScrollView,
   Pressable,
   StyleSheet,
-  ImageBackground,
   Image,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { useBooking } from '../../state/BookingContext';
+import { getVehicleImage } from '../../utils/vehicleAssets';
+import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
+import { useRoute } from '../../hooks/useRoute';
+import type { GeoPoint } from '../../api/types';
 
 export interface DriverAssignedExpandedScreenProps {
   readonly onBack?: () => void;
@@ -20,14 +25,216 @@ export interface DriverAssignedExpandedScreenProps {
   readonly onCancelBooking?: () => void;
 }
 
-const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps & { navigation?: any }> = ({
+const DriverAssignedExpandedScreen: React.FC<
+  DriverAssignedExpandedScreenProps & { navigation?: any; route?: any }
+> = ({
   onBack,
   onTrackDriver,
   onCallDriver,
   onChatDriver,
   onCancelBooking,
   navigation,
+  route,
 }) => {
+  const { assignedDriver, trip, ride, draft } = useBooking();
+
+  const driverName =
+    route?.params?.driverName ||
+    assignedDriver?.name ||
+    (trip as any)?.driverName ||
+    (trip as any)?.driver?.name ||
+    'Driver';
+
+  const vehicleType =
+    route?.params?.vehicleType ||
+    assignedDriver?.vehicleType ||
+    (trip as any)?.vehicleType ||
+    ride?.vehicleType ||
+    draft?.vehicleType ||
+    'Mini Truck';
+
+  const vehicleNumber =
+    route?.params?.vehicleNumber ||
+    (assignedDriver as any)?.vehicleNumber ||
+    (assignedDriver as any)?.vehicleRegistrationNumber ||
+    (trip as any)?.vehicleRegistration ||
+    (ride as any)?.vehicleRegistration ||
+    'RJ 19 XX 1234';
+
+  const driverRating =
+    (assignedDriver as any)?.rating != null
+      ? Number((assignedDriver as any).rating).toFixed(1)
+      : '4.8';
+
+  const tripReference =
+    trip?.id ||
+    ride?.id ||
+    trip?.paymentBookingId ||
+    ride?.paymentBookingId ||
+    '4910';
+
+  const shortTripId =
+    tripReference.length > 8 ? tripReference.slice(0, 8) : tripReference;
+
+  // Real geographic points
+  const pickupPoint: GeoPoint | undefined =
+    trip?.pickup || ride?.pickup || draft?.pickup;
+
+  const dropPoint: GeoPoint | undefined =
+    trip?.drop ||
+    ride?.drop ||
+    (draft?.drops && draft.drops.length > 0 ? draft.drops[0] : undefined);
+
+  const driverPoint: GeoPoint | undefined =
+    assignedDriver?.latitude != null && assignedDriver?.longitude != null
+      ? {
+          latitude: assignedDriver.latitude,
+          longitude: assignedDriver.longitude,
+        }
+      : undefined;
+
+  // Real Road Route
+  const routeOrigin = driverPoint ?? pickupPoint;
+  const routeDestination = pickupPoint ?? dropPoint;
+  const roadRoute = useRoute(routeOrigin, routeDestination);
+
+  // Markers for MapCanvas
+  const mapMarkers = useMemo(() => {
+    const list: MapMarker[] = [];
+    if (pickupPoint) {
+      list.push({
+        id: 'pickup',
+        kind: 'pickup',
+        coordinate: pickupPoint,
+        title: 'Pickup Location',
+      });
+    }
+    if (dropPoint) {
+      list.push({
+        id: 'drop',
+        kind: 'drop',
+        coordinate: dropPoint,
+        title: 'Drop Location',
+      });
+    }
+    if (driverPoint) {
+      list.push({
+        id: 'driver',
+        kind: 'driver',
+        coordinate: driverPoint,
+        title: driverName,
+        vehicleType,
+        bearing: assignedDriver?.bearingDegrees,
+      });
+    }
+    return list;
+  }, [pickupPoint, dropPoint, driverPoint, driverName, vehicleType, assignedDriver]);
+
+  // Real ETA and status calculation
+  const etaData = useMemo(() => {
+    if (trip?.status === 'DRIVER_ARRIVED' || (trip as any)?.arrivedAt) {
+      return {
+        arrived: true,
+        title: 'Driver has arrived',
+        subtitle: 'Driver is waiting at your pickup location.',
+      };
+    }
+    if (driverPoint && pickupPoint) {
+      const R = 6371e3; // metres
+      const phi1 = (driverPoint.latitude * Math.PI) / 180;
+      const phi2 = (pickupPoint.latitude * Math.PI) / 180;
+      const dPhi = ((pickupPoint.latitude - driverPoint.latitude) * Math.PI) / 180;
+      const dLam = ((pickupPoint.longitude - driverPoint.longitude) * Math.PI) / 180;
+      const a =
+        Math.sin(dPhi / 2) * Math.sin(dPhi / 2) +
+        Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLam / 2) * Math.sin(dLam / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distanceMeters = R * c;
+      const km = (distanceMeters / 1000).toFixed(1);
+
+      // Estimate ~25 km/h in city traffic (~416 m/min) with 1.3 road factor
+      const minutes = Math.max(1, Math.round((distanceMeters * 1.3) / 416));
+      return {
+        arrived: false,
+        title: `Arriving in ${minutes} mins`,
+        subtitle: `Driver is ~${km} km away, heading to your pickup location.`,
+      };
+    }
+    return {
+      arrived: false,
+      title: 'Driver on the way',
+      subtitle: 'Driver is en route to your pickup location.',
+    };
+  }, [trip?.status, (trip as any)?.arrivedAt, driverPoint, pickupPoint]);
+
+  const statusTitle = etaData.title;
+  const statusSubtitle = etaData.subtitle;
+
+  const pickupAddress =
+    draft?.pickup?.address ||
+    trip?.pickup?.address ||
+    ride?.pickup?.address ||
+    '228, Mansarover Colony, Jodhpur, Pal, Rajasthan';
+
+  const dropsList = useMemo(() => {
+    if (trip?.stops && trip.stops.length > 0) {
+      return trip.stops.map((s, idx) => ({
+        id: s.id || `stop-${idx}`,
+        address: s.location?.address || `Drop Location ${idx + 1}`,
+      }));
+    }
+    if (draft?.drops && draft.drops.length > 0) {
+      return draft.drops.map((d, idx) => ({
+        id: `draft-drop-${idx}`,
+        address: d.address || `Drop Location ${idx + 1}`,
+      }));
+    }
+    if (trip?.drop?.address) {
+      return [{ id: 'trip-drop', address: trip.drop.address }];
+    }
+    return [{ id: 'default-drop', address: '6RX8+45 Kishan Nagar, Rajasthan, India' }];
+  }, [trip, draft]);
+
+  const handleTrackDriver = () => {
+    if (onTrackDriver) {
+      onTrackDriver();
+      return;
+    }
+    navigation?.navigate('CustomerLiveTrackingScreen');
+  };
+
+  const handleCall = () => {
+    if (onCallDriver) {
+      onCallDriver();
+      return;
+    }
+    const phone = (assignedDriver as any)?.phone || '+919876543210';
+    Linking.openURL(`tel:${phone}`).catch(() => {
+      navigation?.navigate('CallDriverScreen');
+    });
+  };
+
+  const handleChat = () => {
+    if (onChatDriver) {
+      onChatDriver();
+      return;
+    }
+    navigation?.navigate('ActiveTripChatScreen', {
+      tripId: trip?.id,
+      bookingId: trip?.paymentBookingId || ride?.paymentBookingId,
+      driverName,
+      vehicleType,
+    });
+  };
+
+  const handleCancel = () => {
+    if (onCancelBooking) {
+      onCancelBooking();
+      return;
+    }
+    navigation?.navigate('CancellationReasonScreen');
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       {/* Top App Bar */}
@@ -44,49 +251,36 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
         </View>
       </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Map Header Area */}
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* Real Interactive Map Header Area */}
         <View style={styles.mapHeaderContainer}>
-          <ImageBackground
-            source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuA28cLUnVVRVaSHJOdRuzgZjKppEqFuT5so4q4W35xmGab0vLLcVZXOWINiIy68iUgn1VrfXRMfVXUkf0kBaQEefit23WUXhFbwvfRlPGkyqadWtqvDvsNDDazyD9MzN46EsEG-fyYTGM51950UdOMOp2wCwM9PKS7LLgNKbR-XThbtH7Ii7MtWc3NCD9LoRv5ajpMA35oFhTEquN7GaDHQVD7Bo_oSeu0wepcZoQgJXgsgiPjlEHqb' }}
+          <MapCanvas
             style={styles.mapCanvas}
-            imageStyle={{ opacity: 0.6 }}
-          >
-            <View style={styles.mapGradient} />
-            
-            {/* Mock Map Elements */}
-            <View style={styles.truckMarkerContainer}>
-              <View style={styles.truckMarker}>
-                <Feather name="truck" size={16} color={colors.primary} />
-              </View>
-              <View style={styles.etaPill}>
-                <Text style={styles.etaPillText}>4 MIN</Text>
-              </View>
-            </View>
+            center={driverPoint ?? pickupPoint}
+            markers={mapMarkers}
+            polyline={roadRoute}
+            fitToMarkers={Boolean(pickupPoint && (dropPoint || driverPoint))}
+          />
 
-            <View style={styles.pickupMarkerContainer}>
-              <View style={styles.pickupMarkerOuter}>
-                <View style={styles.pickupMarkerInner} />
-              </View>
-            </View>
-          </ImageBackground>
+          {/* Floating Trip Subhead Pill over map */}
+          <View style={styles.mapSubheadBadge}>
+            <Text style={styles.mapSubheadText}>
+              Driver Assigned • Trip #{shortTripId}
+            </Text>
+          </View>
         </View>
 
         {/* Content Area */}
         <View style={styles.contentContainer}>
-          
           {/* Status Banner */}
           <View style={styles.statusBanner}>
             <View style={styles.statusBannerHeader}>
               <View style={styles.clockIconContainer}>
-                <Feather name="clock" size={14} color={colors.onSecondaryContainer} />
+                <Feather name="clock" size={14} color="#1E3A8A" />
               </View>
-              <Text style={styles.statusTitle}>Arriving in 4 mins</Text>
+              <Text style={styles.statusTitle}>{statusTitle}</Text>
             </View>
-            <Text style={styles.statusSubtitle}>Driver is on the way to your pickup location.</Text>
+            <Text style={styles.statusSubtitle}>{statusSubtitle}</Text>
           </View>
 
           {/* Driver Info Card */}
@@ -95,22 +289,23 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
               <View style={styles.driverInfoLeft}>
                 <View style={styles.driverAvatarContainer}>
                   <Image
-                    source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAkxoEdQOf30gW6pDewFHY2PByhn6TVKuXsi_CmFRhj5u6pTDQXutuhNshIaV6Z8D4n9PD2i1WO2CS8Vw78R4JL4VF6Zgm8TSP4wOIO-iKdZzA-XiP0zY_ZjaUYA43Tk8QqXaM6Sjb04XuD5_weeYTIdXgZgy119Gnutg9LTzoT8Y9eNPc-rYTmvE0mXsbk1g7N6oPptLsfil-yqnPwi1DnlmsdbIinA4C-IIgmd4ygZ7gA4lhMm7nZ' }}
-                    style={styles.driverAvatar}
+                    source={getVehicleImage(vehicleType)}
+                    style={{ width: 44, height: 44 }}
+                    resizeMode="contain"
                   />
                 </View>
                 <View>
-                  <Text style={styles.driverName}>Ramesh Kumar</Text>
+                  <Text style={styles.driverName}>{driverName}</Text>
                   <View style={styles.driverRatingPill}>
-                    <Feather name="star" size={12} color={colors.onTertiaryContainer} />
-                    <Text style={styles.driverRatingText}>4.8</Text>
+                    <Feather name="star" size={12} color="#EAB308" />
+                    <Text style={styles.driverRatingText}>{driverRating}</Text>
                   </View>
                 </View>
               </View>
 
               <View style={styles.driverInfoRight}>
-                <Text style={styles.vehicleName}>Tata Ace</Text>
-                <Text style={styles.vehicleNumber}>RJ 19 XX 1234</Text>
+                <Text style={styles.vehicleName}>{vehicleType}</Text>
+                <Text style={styles.vehicleNumber}>{vehicleNumber}</Text>
               </View>
             </View>
 
@@ -118,44 +313,46 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
             <View style={styles.communicationActions}>
               <Pressable
                 style={styles.trackButton}
-                onPress={() => (onTrackDriver ? onTrackDriver() : navigation?.navigate('CustomerLiveTrackingScreen'))}
+                onPress={handleTrackDriver}
                 accessibilityRole="button"
               >
                 <Text style={styles.trackButtonText}>Track Driver</Text>
               </Pressable>
-              
+
               <Pressable
                 style={styles.iconActionButton}
-                onPress={() => (onCallDriver ? onCallDriver() : navigation?.navigate('CallDriverScreen'))}
+                onPress={handleCall}
                 accessibilityRole="button"
+                accessibilityLabel="Call driver"
               >
-                <Feather name="phone" size={20} color={colors.onSecondaryContainer} />
+                <Feather name="phone" size={20} color="#1E293B" />
               </Pressable>
-              
+
               <Pressable
                 style={styles.iconActionButton}
-                onPress={() => (onChatDriver ? onChatDriver() : navigation?.navigate('ActiveTripChatScreen'))}
+                onPress={handleChat}
                 accessibilityRole="button"
+                accessibilityLabel="Chat with driver"
               >
-                <Feather name="message-circle" size={20} color={colors.onSecondaryContainer} />
+                <Feather name="message-circle" size={20} color="#1E293B" />
               </Pressable>
             </View>
-            <Text style={styles.privacyNote}>Calls are masked for your privacy</Text>
+            <Text style={styles.privacyNote}>CALLS ARE MASKED FOR YOUR PRIVACY</Text>
           </View>
 
           {/* Logistics Details */}
           <View style={styles.logisticsCard}>
             <Text style={styles.logisticsTitle}>Logistics Details</Text>
-            
+
             <View style={styles.timelineList}>
               <View style={styles.timelineLine} />
-              
+
               {/* Pickup */}
               <View style={styles.timelineItem}>
                 <View style={styles.timelineDotPickup} />
                 <View style={styles.timelineContent}>
-                  <Text style={styles.timelineLabel}>PICKUP</Text>
-                  <Text style={styles.timelineText}>Sardarpura Warehouse</Text>
+                  <Text style={styles.timelineLabel}>PICKUP LOCATION</Text>
+                  <Text style={styles.timelineText}>{pickupAddress}</Text>
                 </View>
               </View>
 
@@ -164,14 +361,19 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
                 <View style={styles.timelineDotDrops} />
                 <View style={styles.timelineContent}>
                   <View style={styles.dropsHeaderRow}>
-                    <Text style={styles.timelineLabel}>DROPS</Text>
-                    <View style={styles.dropsBadge}>
-                      <Text style={styles.dropsBadgeText}>3 Locations</Text>
-                    </View>
+                    <Text style={styles.timelineLabel}>DROP LOCATION</Text>
+                    {dropsList.length > 1 && (
+                      <View style={styles.dropsBadge}>
+                        <Text style={styles.dropsBadgeText}>{dropsList.length} Locations</Text>
+                      </View>
+                    )}
                   </View>
-                  <Text style={styles.timelineTextSub}>1. Ratanada Hub</Text>
-                  <Text style={styles.timelineTextSub}>2. Pal Road</Text>
-                  <Text style={styles.timelineTextSub}>3. Basni Phase II</Text>
+                  {dropsList.map((drop, idx) => (
+                    <Text key={drop.id} style={styles.timelineTextSub}>
+                      {dropsList.length > 1 ? `${idx + 1}. ` : ''}
+                      {drop.address}
+                    </Text>
+                  ))}
                 </View>
               </View>
             </View>
@@ -180,12 +382,11 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
           {/* Cancel Action */}
           <Pressable
             style={styles.cancelButton}
-            onPress={() => (onCancelBooking ? onCancelBooking() : navigation?.navigate('CancellationReasonScreen'))}
+            onPress={handleCancel}
             accessibilityRole="button"
           >
             <Text style={styles.cancelButtonText}>Cancel Booking</Text>
           </Pressable>
-
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -195,366 +396,299 @@ const DriverAssignedExpandedScreen: React.FC<DriverAssignedExpandedScreenProps &
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.sm,
-    height: spacing.rowHeightStandard,
-    backgroundColor: colors.surface,
+    paddingHorizontal: 16,
+    height: 52,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
     zIndex: 50,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: 12,
   },
   iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 6,
+    borderRadius: 20,
   },
   headerTitle: {
-    fontSize: typography.headlineMd.fontSize,
+    fontSize: 18,
     fontWeight: '700',
-    color: colors.primary,
-    fontFamily: typography.headlineMd.fontFamily,
+    color: '#0F172A',
   },
-
   scrollView: {
     flex: 1,
+    backgroundColor: '#F8FAFC',
   },
-  
-  // Map Header Area
   mapHeaderContainer: {
     width: '100%',
-    height: 353,
-    backgroundColor: colors.surfaceContainer,
+    height: 240,
+    backgroundColor: '#E2E8F0',
+    position: 'relative',
+    overflow: 'hidden',
   },
   mapCanvas: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
   },
-  mapGradient: {
+  mapSubheadBadge: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 128, // 32rem equivalent roughly
-    // Fallback for native linear gradient (solid color with opacity is simpler, but a library would be better. using a simple view here)
-    backgroundColor: colors.surface,
-    opacity: 0.8,
-  },
-  truckMarkerContainer: {
-    position: 'absolute',
-    top: '33%',
-    left: '25%',
-    alignItems: 'center',
-  },
-  truckMarker: {
-    backgroundColor: colors.surfaceContainerLowest,
-    padding: spacing.xs,
-    borderRadius: borderRadius.full,
-    ...shadows.sm,
-  },
-  etaPill: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 4,
-    borderRadius: borderRadius.xs,
-    marginTop: 4,
-    ...shadows.sm,
-  },
-  etaPillText: {
-    fontSize: typography.labelCaps.fontSize,
-    color: colors.onPrimary,
-    fontFamily: typography.labelCaps.fontFamily,
-    fontWeight: '700',
-  },
-  pickupMarkerContainer: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    alignItems: 'center',
-  },
-  pickupMarkerOuter: {
-    backgroundColor: colors.primary,
-    padding: 6,
-    borderRadius: borderRadius.full,
-    borderWidth: 2,
-    borderColor: colors.surfaceContainerLowest,
-    ...shadows.sm,
-  },
-  pickupMarkerInner: {
-    width: 8,
-    height: 8,
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: borderRadius.full,
-  },
-
-  // Content Area
-  contentContainer: {
-    paddingHorizontal: spacing.marginMobile,
-    marginTop: -32, // overlapping map
-    paddingBottom: spacing.xxxl,
-    gap: spacing.lg,
-  },
-
-  // Status Banner
-  statusBanner: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: 24,
-    padding: spacing.xl,
+    top: 12,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.surfaceContainerLow,
-    ...shadows.card,
+    borderColor: '#E2E8F0',
+  },
+  mapSubheadText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  contentContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 32,
+    gap: 14,
+  },
+  statusBanner: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: borderRadius.lg,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   statusBannerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.xs,
+    gap: 8,
+    marginBottom: 4,
   },
   clockIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.secondaryContainer,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#EFF6FF',
     alignItems: 'center',
     justifyContent: 'center',
   },
   statusTitle: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.headlineSm.fontFamily,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   statusSubtitle: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.bodyMd.fontFamily,
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 18,
+    marginLeft: 32,
   },
-
-  // Driver Card
   driverCard: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: 24,
-    padding: spacing.xl,
+    backgroundColor: '#FFFFFF',
+    borderRadius: borderRadius.lg,
+    padding: 16,
     borderWidth: 1,
-    borderColor: colors.surfaceContainerLow,
-    ...shadows.card,
-    gap: spacing.xl,
+    borderColor: '#E2E8F0',
   },
   driverCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   driverInfoLeft: {
     flexDirection: 'row',
-    gap: spacing.md,
     alignItems: 'center',
+    gap: 12,
   },
   driverAvatarContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.surfaceContainer,
-    borderWidth: 2,
-    borderColor: colors.surface,
-    overflow: 'hidden',
-  },
-  driverAvatar: {
-    width: '100%',
-    height: '100%',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   driverName: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.headlineSm.fontFamily,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   driverRatingPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: colors.surfaceContainerLow,
-    paddingHorizontal: 8,
+    backgroundColor: '#FEF9C3',
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: borderRadius.full,
-    marginTop: 4,
+    borderRadius: 8,
     alignSelf: 'flex-start',
+    marginTop: 3,
   },
   driverRatingText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelSm.fontFamily,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#854D0E',
   },
   driverInfoRight: {
     alignItems: 'flex-end',
   },
   vehicleName: {
-    fontSize: typography.bodyMd.fontSize,
+    fontSize: 14,
     fontWeight: '600',
-    color: colors.onSurface,
-    fontFamily: typography.bodyMd.fontFamily,
+    color: '#0F172A',
   },
   vehicleNumber: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelSm.fontFamily,
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
     marginTop: 2,
   },
   communicationActions: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    paddingTop: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.surfaceContainerLow,
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
   },
   trackButton: {
     flex: 1,
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.full,
-    flexDirection: 'row',
+    backgroundColor: '#03071D',
+    borderRadius: 24,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.md,
   },
   trackButtonText: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onPrimary,
-    fontFamily: typography.bodyMd.fontFamily,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   iconActionButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.secondaryContainer,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EFF6FF',
     alignItems: 'center',
     justifyContent: 'center',
   },
   privacyNote: {
-    fontSize: typography.labelCaps.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelCaps.fontFamily,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#94A3B8',
     textAlign: 'center',
-    opacity: 0.7,
-    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-
-  // Logistics Card
   logisticsCard: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: 24,
-    padding: spacing.xl,
+    backgroundColor: '#FFFFFF',
+    borderRadius: borderRadius.lg,
+    padding: 16,
     borderWidth: 1,
-    borderColor: colors.surfaceContainerLow,
-    ...shadows.card,
+    borderColor: '#E2E8F0',
   },
   logisticsTitle: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.headlineSm.fontFamily,
-    marginBottom: spacing.xl,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 16,
   },
   timelineList: {
     position: 'relative',
-    paddingLeft: spacing.xl,
+    paddingLeft: 4,
   },
   timelineLine: {
     position: 'absolute',
-    left: 5,
-    top: 8,
-    bottom: 8,
+    left: 8,
+    top: 14,
+    bottom: 24,
     width: 2,
-    backgroundColor: colors.surfaceContainerHigh,
+    backgroundColor: '#E2E8F0',
   },
   timelineItem: {
-    position: 'relative',
-    marginBottom: spacing.xl,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+    marginBottom: 18,
   },
   timelineDotPickup: {
-    position: 'absolute',
-    left: -26,
-    top: 4,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.primary,
-    borderWidth: 4,
-    borderColor: colors.surfaceContainerLowest,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#16A34A',
+    marginTop: 4,
+    zIndex: 2,
   },
   timelineDotDrops: {
-    position: 'absolute',
-    left: -26,
-    top: 4,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.surfaceContainerLowest,
-    borderWidth: 2,
-    borderColor: colors.primary,
+    width: 10,
+    height: 10,
+    borderRadius: 2,
+    backgroundColor: '#DC2626',
+    marginTop: 4,
+    zIndex: 2,
   },
   timelineContent: {
-    paddingLeft: spacing.xs,
+    flex: 1,
   },
   timelineLabel: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelSm.fontFamily,
-    textTransform: 'uppercase',
-    letterSpacing: typography.labelSm.letterSpacing,
-    marginBottom: 4,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
   timelineText: {
-    fontSize: typography.bodyLg.fontSize,
-    color: colors.onSurface,
-    fontFamily: typography.bodyLg.fontFamily,
+    fontSize: 13,
+    color: '#0F172A',
+    lineHeight: 18,
+    fontWeight: '500',
   },
   dropsHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: 4,
+    justifyContent: 'space-between',
+    marginBottom: 2,
   },
   dropsBadge: {
-    backgroundColor: colors.secondaryContainer,
+    backgroundColor: '#EFF6FF',
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: borderRadius.full,
+    borderRadius: 8,
   },
   dropsBadgeText: {
-    fontSize: typography.labelCaps.fontSize,
-    color: colors.onSecondaryContainer,
-    fontFamily: typography.labelCaps.fontFamily,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#2563EB',
   },
   timelineTextSub: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.bodyMd.fontFamily,
+    fontSize: 13,
+    color: '#334155',
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  cancelButton: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#FECACA',
     marginTop: 4,
   },
-
-  // Cancel Action
-  cancelButton: {
-    alignSelf: 'center',
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.full,
-    marginTop: spacing.md,
-  },
   cancelButtonText: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.error,
-    fontFamily: typography.bodyMd.fontFamily,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#DC2626',
   },
 });
 

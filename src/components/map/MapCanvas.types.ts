@@ -20,6 +20,10 @@ export interface MapMarker {
   readonly description?: string;
   /** Visual role, so screens don't pass raw colours. */
   readonly kind: 'pickup' | 'drop' | 'driver' | 'nearby';
+  /** Driver vehicle type for 3D vehicle rendering on map */
+  readonly vehicleType?: string;
+  /** Heading in degrees (0-360) */
+  readonly bearing?: number;
 }
 
 export interface MapCanvasProps {

@@ -123,17 +123,6 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
         </Card>
 
 
-        {/* Offers and Discounts */}
-        <Text style={styles.sectionTitle}>Offers and Discounts</Text>
-        <Card variant="outlined" padding="md" style={styles.offerCard}>
-          <View style={styles.offerRow}>
-            <View style={styles.offerIconWrapper}>
-              <Feather name="tag" size={20} color={colors.statusGreen} />
-            </View>
-            <Text style={styles.offerText}>Apply Coupon</Text>
-            <Feather name="chevron-right" size={20} color={colors.onSurfaceVariant} />
-          </View>
-        </Card>
 
 
         {/* Declared Value & Insurance */}

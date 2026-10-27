@@ -13,6 +13,8 @@ import { colors, spacing, borderRadius, typography } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { useBooking } from '../../state/BookingContext';
+import { getVehicleImage } from '../../utils/vehicleAssets';
 
 export interface CallDriverScreenProps {
   readonly driverName?: string;
@@ -23,13 +25,18 @@ export interface CallDriverScreenProps {
 }
 
 const CallDriverScreen: React.FC<CallDriverScreenProps & { navigation?: any }> = ({
-  driverName = 'Ramesh Kumar',
-  vehicleInfo = 'Tata Ace • RJ 19 XX 1234',
-  pickupLocation = 'Sardarpura Warehouse',
+  driverName: defaultDriverName = 'Ramesh Kumar',
+  vehicleInfo: defaultVehicleInfo = 'Tata Ace • RJ 19 XX 1234',
+  pickupLocation: defaultPickupLocation = 'Sardarpura Warehouse',
   onEndCall,
   onBack,
   navigation,
 }) => {
+  const { assignedDriver, trip } = useBooking();
+  const driverName = assignedDriver?.name || defaultDriverName;
+  const vehicleInfo = assignedDriver?.vehicleType || defaultVehicleInfo;
+  const pickupLocation = trip?.pickup?.address || defaultPickupLocation;
+
   const ripple1 = useRef(new Animated.Value(0)).current;
   const ripple2 = useRef(new Animated.Value(0)).current;
   const [isMuted, setIsMuted] = useState(false);
@@ -131,7 +138,11 @@ const CallDriverScreen: React.FC<CallDriverScreenProps & { navigation?: any }> =
         <View style={styles.contextCards}>
           <View style={styles.contextCard}>
             <View style={styles.contextIconBox}>
-              <MaterialIcons name="local-shipping" size={20} color={colors.onSurfaceVariant} />
+              <Image
+                source={getVehicleImage(vehicleInfo)}
+                style={{ width: 28, height: 28 }}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.contextTextContainer}>
               <Text style={styles.contextLabel}>VEHICLE</Text>

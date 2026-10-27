@@ -28,6 +28,8 @@ let activePhoneNumber: string | null = null;
 let isRequestingSms = false;
 let isGoogleConfigured = false;
 
+export const getActivePhoneNumber = (): string | null => activePhoneNumber;
+
 // Web Client ID from google-services.json (client_type: 3)
 const GOOGLE_WEB_CLIENT_ID = '702412484863-l9l6scc4qprnv8vok5ptjoomcknvhom7.apps.googleusercontent.com';
 
@@ -69,22 +71,8 @@ export const hasActiveSession = (phone?: string): boolean => {
   return true;
 };
 
-/** Normalizes and validates Indian phone numbers into E.164 (+91XXXXXXXXXX) format */
-export const formatToE164 = (phoneNumber: string): string => {
-  const trimmed = phoneNumber.trim();
-  const digitsOnly = trimmed.replace(/\D/g, '');
-
-  if (digitsOnly.length === 10) {
-    return `+91${digitsOnly}`;
-  }
-  if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) {
-    return `+${digitsOnly}`;
-  }
-  if (trimmed.startsWith('+') && digitsOnly.length >= 10 && digitsOnly.length <= 15) {
-    return `+${digitsOnly}`;
-  }
-  throw new Error('Please enter a valid 10-digit mobile number.');
-};
+export { formatToE164, normalizePhoneNumber } from './phoneUtils';
+import { formatToE164 } from './phoneUtils';
 
 /** Masks a phone number for privacy in logs (e.g. +91******1234) */
 export const maskPhoneNumber = (phone: string): string => {
@@ -413,6 +401,13 @@ export const signOut = async (): Promise<void> => {
     await fbSignOut(getAuth());
     currentConfirmationResult = null;
     activePhoneNumber = null;
+    try {
+      if (GoogleSignin) {
+        await GoogleSignin.signOut();
+      }
+    } catch {
+      // Non-fatal if Google Sign-In wasn't active
+    }
     console.log('[AUTH] Firebase sign-out completed');
   } catch (error) {
     console.warn('[AUTH] Error during sign-out:', error);

@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Image } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { colors, shadows } from '../../theme';
 import type { GeoPoint } from '../../api/types';
+import { getVehicleImage } from '../../utils/vehicleAssets';
 import {
   DEFAULT_DELTA,
   FALLBACK_CENTER,
@@ -48,28 +49,30 @@ const StopPin: React.FC<{ readonly color: string }> = ({ color }) => (
   </View>
 );
 
-/** Truck glyph on a white disc for the driver's live position. */
-const DriverPin: React.FC = () => (
-  <View style={styles.driverPin}>
-    <MaterialIcons name="local-shipping" size={22} color={colors.primary} />
-  </View>
-);
+import { VehicleMarkerBody } from './VehicleMapMarker';
 
-/** Smaller, muted disc for other nearby drivers on Home. */
-const NearbyDriverPin: React.FC = () => (
-  <View style={styles.nearbyPin}>
-    <MaterialIcons name="local-shipping" size={16} color={colors.onSurfaceVariant} />
-  </View>
-);
-
-const renderMarkerBody = (kind: MapMarker['kind']): React.ReactElement => {
-  switch (kind) {
+const renderMarkerBody = (marker: MapMarker): React.ReactElement => {
+  switch (marker.kind) {
     case 'driver':
-      return <DriverPin />;
+      return (
+        <VehicleMarkerBody
+          vehicleType={marker.vehicleType}
+          isLive
+          bearing={marker.bearing}
+          size={52}
+        />
+      );
     case 'nearby':
-      return <NearbyDriverPin />;
+      return (
+        <VehicleMarkerBody
+          vehicleType={marker.vehicleType}
+          isLive={false}
+          bearing={marker.bearing}
+          size={42}
+        />
+      );
     default:
-      return <StopPin color={PIN_COLORS[kind]} />;
+      return <StopPin color={PIN_COLORS[marker.kind]} />;
   }
 };
 
@@ -90,9 +93,56 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
   const mapRef = useRef<MapView | null>(null);
   const delta = zoomDelta ?? DEFAULT_DELTA;
 
+  const validMarkers = useMemo<MapMarker[]>(() => {
+    if (!Array.isArray(markers)) return [];
+    return markers.filter(
+      (m): m is MapMarker =>
+        Boolean(
+          m &&
+          m.coordinate &&
+          typeof m.coordinate.latitude === 'number' &&
+          typeof m.coordinate.longitude === 'number' &&
+          Number.isFinite(m.coordinate.latitude) &&
+          Number.isFinite(m.coordinate.longitude) &&
+          m.coordinate.latitude >= -90 &&
+          m.coordinate.latitude <= 90 &&
+          m.coordinate.longitude >= -180 &&
+          m.coordinate.longitude <= 180
+        )
+    );
+  }, [markers]);
+
+  const validPolyline = useMemo(() => {
+    if (!Array.isArray(polyline)) return [];
+    return polyline.filter(
+      (p) =>
+        p &&
+        typeof p.latitude === 'number' &&
+        typeof p.longitude === 'number' &&
+        Number.isFinite(p.latitude) &&
+        Number.isFinite(p.longitude) &&
+        p.latitude >= -90 &&
+        p.latitude <= 90 &&
+        p.longitude >= -180 &&
+        p.longitude <= 180
+    );
+  }, [polyline]);
+
   const initialRegion = useMemo(() => {
-    const target = center ?? markers[0]?.coordinate ?? FALLBACK_CENTER;
-    console.log('[DEBUG_INITIAL_REGION]', target);
+    let target = center ?? validMarkers[0]?.coordinate ?? FALLBACK_CENTER;
+    if (
+      !target ||
+      typeof target.latitude !== 'number' ||
+      typeof target.longitude !== 'number' ||
+      !Number.isFinite(target.latitude) ||
+      !Number.isFinite(target.longitude) ||
+      target.latitude < -90 ||
+      target.latitude > 90 ||
+      target.longitude < -180 ||
+      target.longitude > 180
+    ) {
+      target = FALLBACK_CENTER;
+    }
     return {
       latitude: target.latitude,
       longitude: target.longitude,
@@ -107,41 +157,62 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
   // the driver's 5s location poll would yank the camera back and destroy any
   // pan or zoom the user made. Sorted-ids as the key is stable across renders.
   const markerIdsKey = useMemo(
-    () => markers.map((m) => m.id).sort().join('|'),
-    [markers]
+    () => validMarkers.map((m) => m.id).sort().join('|'),
+    [validMarkers]
   );
 
   useEffect(() => {
-    if (!fitToMarkers || !mapRef.current || markers.length === 0) return;
+    if (!fitToMarkers || !mapRef.current || validMarkers.length === 0) return;
 
-    if (markers.length === 1) {
-      mapRef.current.animateToRegion(
-        { ...markers[0].coordinate, latitudeDelta: delta, longitudeDelta: delta },
-        400
+    try {
+      if (validMarkers.length === 1) {
+        mapRef.current.animateToRegion(
+          { ...validMarkers[0].coordinate, latitudeDelta: delta, longitudeDelta: delta },
+          400
+        );
+        return;
+      }
+
+      mapRef.current.fitToCoordinates(
+        validMarkers.map((m) => ({ latitude: m.coordinate.latitude, longitude: m.coordinate.longitude })),
+        { edgePadding: { top: 90, right: 60, bottom: 240, left: 60 }, animated: true }
       );
-      return;
+    } catch (e) {
+      console.warn('[MapCanvas] fitToCoordinates failed safely:', e);
     }
-
-    mapRef.current.fitToCoordinates(
-      markers.map((m) => ({ latitude: m.coordinate.latitude, longitude: m.coordinate.longitude })),
-      { edgePadding: { top: 90, right: 60, bottom: 240, left: 60 }, animated: true }
-    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitToMarkers, markerIdsKey]);
 
   useEffect(() => {
-    if (fitToMarkers || !center || !mapRef.current) return;
-    console.log('[DEBUG_MAP_CAMERA]', { latitude: center.latitude, longitude: center.longitude });
-    mapRef.current.animateCamera(
-      {
-        center: {
-          latitude: center.latitude,
-          longitude: center.longitude,
+    if (
+      fitToMarkers ||
+      !center ||
+      !mapRef.current ||
+      typeof center.latitude !== 'number' ||
+      typeof center.longitude !== 'number' ||
+      !Number.isFinite(center.latitude) ||
+      !Number.isFinite(center.longitude) ||
+      center.latitude < -90 ||
+      center.latitude > 90 ||
+      center.longitude < -180 ||
+      center.longitude > 180
+    ) {
+      return;
+    }
+    try {
+      mapRef.current.animateCamera(
+        {
+          center: {
+            latitude: center.latitude,
+            longitude: center.longitude,
+          },
+          zoom: 17,
         },
-        zoom: 17,
-      },
-      { duration: 800 }
-    );
+        { duration: 800 }
+      );
+    } catch (e) {
+      console.warn('[MapCanvas] animateCamera failed safely:', e);
+    }
   }, [center?.latitude, center?.longitude, fitToMarkers, forceCenterKey]);
 
   // Android has a first-mount rendering quirk where custom marker views appear
@@ -165,7 +236,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
         initialRegion={initialRegion}
         showsUserLocation={showsUserLocation}
           onUserLocationChange={onUserLocationChange ? (e) => {
-            if (e.nativeEvent.coordinate) {
+            if (e.nativeEvent.coordinate && Number.isFinite(e.nativeEvent.coordinate.latitude) && Number.isFinite(e.nativeEvent.coordinate.longitude)) {
               onUserLocationChange(e.nativeEvent.coordinate);
             }
           } : undefined}
@@ -175,15 +246,18 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
         zoomEnabled={scrollEnabled}
         onRegionChangeComplete={
           onRegionChangeComplete
-            ? (region, details) =>
-                onRegionChangeComplete({
-                  latitude: region.latitude,
-                  longitude: region.longitude,
-                } as GeoPoint, details)
+            ? (region, details) => {
+                if (region && Number.isFinite(region.latitude) && Number.isFinite(region.longitude)) {
+                  onRegionChangeComplete({
+                    latitude: region.latitude,
+                    longitude: region.longitude,
+                  } as GeoPoint, details);
+                }
+              }
             : undefined
         }
       >
-        {markers.map((marker) => (
+        {validMarkers.map((marker) => (
           <Marker
             key={marker.id}
             coordinate={{
@@ -196,13 +270,13 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
 
             tracksViewChanges={tracking}
           >
-            {renderMarkerBody(marker.kind)}
+            {renderMarkerBody(marker)}
           </Marker>
         ))}
 
-        {polyline && polyline.length > 1 && (
+        {validPolyline.length > 1 && (
           <Polyline
-            coordinates={polyline.map((p) => ({ latitude: p.latitude, longitude: p.longitude }))}
+            coordinates={validPolyline.map((p) => ({ latitude: p.latitude, longitude: p.longitude }))}
             strokeColor={colors.primary}
             strokeWidth={4}
           />
@@ -247,7 +321,41 @@ const styles = StyleSheet.create({
     marginTop: -2,
   },
 
-  // Driver marker — truck icon on a white disc.
+  // 3D Vehicle Marker Styles
+  vehicleMarkerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 52,
+    height: 52,
+  },
+  livePulseRing: {
+    position: 'absolute',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: colors.primaryContainer,
+    opacity: 0.45,
+  },
+  vehicleMarkerDisc: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    ...shadows.elevated,
+  },
+  vehicleMarkerDiscLive: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+    backgroundColor: '#FFFFFF',
+  },
+  vehicle3dImage: {
+    width: 38,
+    height: 38,
+  },
   driverPin: {
     width: 44,
     height: 44,

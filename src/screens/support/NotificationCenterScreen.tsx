@@ -116,7 +116,11 @@ const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navig
       onPress={() => {
         onNotificationPress?.(item.id);
         if (item.destination) {
-          navigation?.navigate(item.destination);
+          if (item.destination === 'CustomerLiveTrackingScreen') {
+            navigation?.navigate('ActiveTripStack', { screen: 'CustomerLiveTrackingScreen' });
+          } else {
+            navigation?.navigate(item.destination);
+          }
         }
       }}
     >

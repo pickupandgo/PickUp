@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getAuth } from '@react-native-firebase/auth';
 
 const SESSION_KEY = 'pickup.isLoggedIn';
 const PROFILE_KEY = 'pickup.profileComplete';
@@ -9,7 +10,25 @@ export interface CustomerProfileData {
   email: string;
   age?: string;
   address?: string;
+  phone?: string;
+  photoUri?: string;
 }
+
+const getFirebaseUid = (): string | null => {
+  try {
+    return getAuth().currentUser?.uid ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const getUserProfileKey = (uid?: string | null): string => {
+  return uid ? `${PROFILE_KEY}.${uid}` : PROFILE_KEY;
+};
+
+const getUserProfileDataKey = (uid?: string | null): string => {
+  return uid ? `${PROFILE_DATA_KEY}.${uid}` : PROFILE_DATA_KEY;
+};
 
 /** Marks the user as logged in. */
 export const setLoggedIn = async (): Promise<void> => {
@@ -21,10 +40,16 @@ export const setLoggedIn = async (): Promise<void> => {
 };
 
 /** Clears session and profile completion on logout. */
-export const clearSession = async (): Promise<void> => {
+export const clearSession = async (uid?: string | null): Promise<void> => {
   try {
+    const userUid = uid ?? getFirebaseUid();
     await AsyncStorage.removeItem(SESSION_KEY);
     await AsyncStorage.removeItem(PROFILE_KEY);
+    await AsyncStorage.removeItem(PROFILE_DATA_KEY);
+    if (userUid) {
+      await AsyncStorage.removeItem(getUserProfileKey(userUid));
+      await AsyncStorage.removeItem(getUserProfileDataKey(userUid));
+    }
   } catch {
     // Non-fatal
   }
@@ -40,11 +65,22 @@ export const getIsLoggedIn = async (): Promise<boolean> => {
 };
 
 /** Marks the customer profile as completed. */
-export const setProfileComplete = async (profileData?: CustomerProfileData): Promise<void> => {
+export const setProfileComplete = async (
+  profileData?: CustomerProfileData,
+  uid?: string | null,
+): Promise<void> => {
   try {
+    const userUid = uid ?? getFirebaseUid();
+    const profileKey = getUserProfileKey(userUid);
+    const dataKey = getUserProfileDataKey(userUid);
+
+    await AsyncStorage.setItem(profileKey, 'true');
     await AsyncStorage.setItem(PROFILE_KEY, 'true');
+
     if (profileData) {
-      await AsyncStorage.setItem(PROFILE_DATA_KEY, JSON.stringify(profileData));
+      const serialized = JSON.stringify(profileData);
+      await AsyncStorage.setItem(dataKey, serialized);
+      await AsyncStorage.setItem(PROFILE_DATA_KEY, serialized);
     }
   } catch {
     // Non-fatal
@@ -52,8 +88,31 @@ export const setProfileComplete = async (profileData?: CustomerProfileData): Pro
 };
 
 /** Checks if the customer profile has been completed. */
-export const isProfileComplete = async (): Promise<boolean> => {
+export const isProfileComplete = async (uid?: string | null): Promise<boolean> => {
   try {
+    const userUid = uid ?? getFirebaseUid();
+    if (userUid) {
+      const rawUser = await AsyncStorage.getItem(getUserProfileDataKey(userUid));
+      if (rawUser) {
+        try {
+          const parsed = JSON.parse(rawUser);
+          const hasName = Boolean(parsed?.fullName && parsed.fullName.trim().length > 0);
+          const hasValidEmail = Boolean(
+            parsed?.email &&
+              parsed.email.trim().length > 0 &&
+              /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed.email.trim())
+          );
+          if (hasName && hasValidEmail) {
+            return true;
+          }
+        } catch {
+          // parse failed
+        }
+      }
+      const scopedFlag = await AsyncStorage.getItem(getUserProfileKey(userUid));
+      if (scopedFlag === 'true') return true;
+    }
+
     return (await AsyncStorage.getItem(PROFILE_KEY)) === 'true';
   } catch {
     return false;
@@ -61,17 +120,28 @@ export const isProfileComplete = async (): Promise<boolean> => {
 };
 
 /** Clears the profile completed status. */
-export const clearProfileComplete = async (): Promise<void> => {
+export const clearProfileComplete = async (uid?: string | null): Promise<void> => {
   try {
+    const userUid = uid ?? getFirebaseUid();
     await AsyncStorage.removeItem(PROFILE_KEY);
+    if (userUid) {
+      await AsyncStorage.removeItem(getUserProfileKey(userUid));
+    }
   } catch {
     // Non-fatal
   }
 };
 
 /** Gets persisted customer profile data. */
-export const getCustomerProfile = async (): Promise<CustomerProfileData | null> => {
+export const getCustomerProfile = async (uid?: string | null): Promise<CustomerProfileData | null> => {
   try {
+    const userUid = uid ?? getFirebaseUid();
+    if (userUid) {
+      const rawScoped = await AsyncStorage.getItem(getUserProfileDataKey(userUid));
+      if (rawScoped) {
+        return JSON.parse(rawScoped);
+      }
+    }
     const raw = await AsyncStorage.getItem(PROFILE_DATA_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {

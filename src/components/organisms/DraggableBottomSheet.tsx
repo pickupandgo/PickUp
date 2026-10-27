@@ -1,11 +1,14 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import {
   Animated,
   PanResponder,
   StyleSheet,
   View,
   Dimensions,
-  LayoutChangeEvent,
+  Keyboard,
+  type KeyboardEvent,
+  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { colors, shadows, borderRadius, spacing } from '../../theme';
 
@@ -13,20 +16,34 @@ export interface DraggableBottomSheetProps {
   children: React.ReactNode;
   snapPoints?: number[]; // e.g. [100, Dimensions.get('window').height * 0.6]
   initialSnapIndex?: number;
+  keyboardAware?: boolean;
 }
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const DraggableBottomSheet: React.FC<DraggableBottomSheetProps> = ({
   children,
-  snapPoints = [100, SCREEN_HEIGHT * 0.5, SCREEN_HEIGHT * 0.8],
+  snapPoints,
   initialSnapIndex = 1,
+  keyboardAware = true,
 }) => {
-  const sortedSnapPoints = snapPoints.sort((a, b) => b - a); // highest to lowest (from top)
-  const initialY = SCREEN_HEIGHT - sortedSnapPoints[initialSnapIndex];
+  const { height: windowHeight } = useWindowDimensions();
+
+  const effectiveSnapPoints = useMemo(
+    () => snapPoints ?? [100, windowHeight * 0.5, windowHeight * 0.8],
+    [snapPoints, windowHeight]
+  );
+
+  const sortedSnapPoints = useMemo(
+    () => [...effectiveSnapPoints].sort((a, b) => b - a), // highest to lowest (from top)
+    [effectiveSnapPoints]
+  );
+
+  const initialY = windowHeight - (sortedSnapPoints[initialSnapIndex] ?? sortedSnapPoints[0]);
 
   const panY = useRef(new Animated.Value(initialY)).current;
   const currentY = useRef(initialY);
+  const isKeyboardVisible = useRef(false);
+  const previousYBeforeKeyboard = useRef(initialY);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const snapTo = (y: number) => {
     Animated.spring(panY, {
@@ -37,17 +54,61 @@ const DraggableBottomSheet: React.FC<DraggableBottomSheetProps> = ({
     currentY.current = y;
   };
 
+  useEffect(() => {
+    if (!keyboardAware) return;
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const onKeyboardShow = (e: KeyboardEvent) => {
+      const kh = e.endCoordinates?.height ?? 0;
+      setKeyboardHeight(kh);
+      if (!isKeyboardVisible.current) {
+        isKeyboardVisible.current = true;
+        previousYBeforeKeyboard.current = currentY.current;
+      }
+      // Snap sheet so maximum vertical space is available above the keyboard.
+      // On Android (adjustResize), windowHeight already reflects the space above keyboard.
+      // On iOS, window is not resized by the OS so we account for kh.
+      const visibleHeight = Platform.OS === 'ios' ? Math.max(100, windowHeight - kh) : windowHeight;
+      const targetHeight = Math.min(sortedSnapPoints[0], visibleHeight - 20);
+      const targetY = Math.max(10, visibleHeight - targetHeight);
+      snapTo(targetY);
+    };
+
+    const onKeyboardHide = () => {
+      setKeyboardHeight(0);
+      if (isKeyboardVisible.current) {
+        isKeyboardVisible.current = false;
+        snapTo(previousYBeforeKeyboard.current);
+      }
+    };
+
+    const showSub = Keyboard.addListener(showEvent, onKeyboardShow);
+    const hideSub = Keyboard.addListener(hideEvent, onKeyboardHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [keyboardAware, sortedSnapPoints, windowHeight]);
+
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
         // Only claim the responder if they're actually dragging vertically
         return Math.abs(gestureState.dy) > 5;
       },
+      onPanResponderGrant: () => {
+        if (isKeyboardVisible.current) {
+          Keyboard.dismiss();
+        }
+      },
       onPanResponderMove: (_, gestureState) => {
         const newY = currentY.current + gestureState.dy;
         // Prevent dragging higher than the highest snap point (which is the lowest Y value)
-        const minY = SCREEN_HEIGHT - sortedSnapPoints[0];
+        const minY = Math.max(10, windowHeight - sortedSnapPoints[0]);
         if (newY >= minY) {
           panY.setValue(newY);
         }
@@ -60,11 +121,11 @@ const DraggableBottomSheet: React.FC<DraggableBottomSheetProps> = ({
         const predictedY = draggedY + velocityY * 50;
 
         // Find closest snap point
-        let closestY = SCREEN_HEIGHT - sortedSnapPoints[0];
+        let closestY = Math.max(10, windowHeight - sortedSnapPoints[0]);
         let minDistance = Infinity;
 
         sortedSnapPoints.forEach((point) => {
-          const snapY = SCREEN_HEIGHT - point;
+          const snapY = Math.max(10, windowHeight - point);
           const distance = Math.abs(snapY - predictedY);
           if (distance < minDistance) {
             minDistance = distance;
@@ -77,12 +138,23 @@ const DraggableBottomSheet: React.FC<DraggableBottomSheetProps> = ({
     })
   ).current;
 
+  // Clamped max sheet height so the sheet never extends below the keyboard viewport
+  const maxSheetHeight = Math.min(sortedSnapPoints[0] + 80, windowHeight);
+
+  // Platform-appropriate bottom padding to prevent double-offsets on Android
+  const contentBottomPadding =
+    Platform.OS === 'ios'
+      ? Math.max(100, keyboardHeight + spacing.lg)
+      : keyboardHeight > 0
+      ? spacing.lg
+      : 100;
+
   return (
     <Animated.View
       style={[
         styles.container,
         {
-          height: sortedSnapPoints[0] + 80, // Set height to max snap point + tab bar padding
+          height: maxSheetHeight,
           transform: [{ translateY: panY }],
         },
       ]}
@@ -90,7 +162,14 @@ const DraggableBottomSheet: React.FC<DraggableBottomSheetProps> = ({
       <View {...panResponder.panHandlers} style={styles.dragZone}>
         <View style={styles.handle} />
       </View>
-      <View style={styles.contentContainer}>
+      <View
+        style={[
+          styles.contentContainer,
+          {
+            paddingBottom: contentBottomPadding,
+          },
+        ]}
+      >
         {children}
       </View>
     </Animated.View>
@@ -103,7 +182,6 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: SCREEN_HEIGHT,
     backgroundColor: colors.surface,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,

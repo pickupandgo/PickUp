@@ -21,7 +21,9 @@ import {
   getBookingPayment,
   registerCustomer,
   isQuoteBookable,
+  buildPaymentsUrl,
 } from '../src/api/payments';
+import { ApiError } from '../src/api/http';
 import type { FareQuote } from '../src/api/types';
 
 type FetchCall = { url: string; init: RequestInit };
@@ -168,3 +170,107 @@ describe('isQuoteBookable', () => {
     ).toBe(false);
   });
 });
+
+describe('buildPaymentsUrl', () => {
+  it('properly joins base URL without duplicate /v1 when base ends in /v1', () => {
+    expect(
+      buildPaymentsUrl('https://pickup-backend-engine-v2.onrender.com/v1', '/v1/fare/quotes')
+    ).toBe('https://pickup-backend-engine-v2.onrender.com/v1/fare/quotes');
+  });
+
+  it('properly joins base URL when base does not end in /v1', () => {
+    expect(
+      buildPaymentsUrl('https://pickup-backend-engine-v2.onrender.com', '/v1/fare/quotes')
+    ).toBe('https://pickup-backend-engine-v2.onrender.com/v1/fare/quotes');
+  });
+
+  it('handles trailing slash on base URL correctly', () => {
+    expect(
+      buildPaymentsUrl('https://pickup-backend-engine-v2.onrender.com/v1/', '/v1/fare/quotes')
+    ).toBe('https://pickup-backend-engine-v2.onrender.com/v1/fare/quotes');
+  });
+
+  it('handles path without leading slash', () => {
+    expect(
+      buildPaymentsUrl('https://pickup-backend-engine-v2.onrender.com', 'v1/fare/quotes')
+    ).toBe('https://pickup-backend-engine-v2.onrender.com/v1/fare/quotes');
+  });
+
+  it('ensures /v1 is included when path lacks /v1', () => {
+    expect(
+      buildPaymentsUrl('https://pickup-backend-engine-v2.onrender.com', '/fare/quotes')
+    ).toBe('https://pickup-backend-engine-v2.onrender.com/v1/fare/quotes');
+  });
+});
+
+describe('ApiError userMessage handling', () => {
+  it('extracts server message from NestJS error response envelope', () => {
+    const error503 = new ApiError('http', '503 Service Unavailable', 503, {
+      error: {
+        code: 'PRICING_NOT_CONFIGURED',
+        message: 'Fares are not available right now. Please try again later',
+      },
+    });
+    expect(error503.userMessage).toBe('Fares are not available right now. Please try again later');
+
+    const error401 = new ApiError('http', '401 Unauthorized', 401, {
+      error: {
+        code: 'AUTH_REQUIRED',
+        message: 'Authentication required',
+      },
+    });
+    expect(error401.userMessage).toBe('Authentication required');
+
+    const error422 = new ApiError('http', '422 Unprocessable Entity', 422, {
+      error: {
+        code: 'TOO_MANY_DROPS',
+        message: 'A booking can have at most 5 drops',
+      },
+    });
+    expect(error422.userMessage).toBe('A booking can have at most 5 drops');
+  });
+
+  it('maps specific 403 and 503 error codes cleanly when server message is missing', () => {
+    const unprovisioned = new ApiError('http', '403 Forbidden', 403, {
+      error: { code: 'USER_NOT_PROVISIONED' },
+    });
+    expect(unprovisioned.userMessage).toBe(
+      'Your customer account registration is pending. Please complete your profile.'
+    );
+
+    const roleConflict = new ApiError('http', '403 Forbidden', 403, {
+      error: { code: 'ACCOUNT_ROLE_CONFLICT' },
+    });
+    expect(roleConflict.userMessage).toBe(
+      'This account is registered as a driver and cannot be used for booking customer rides.'
+    );
+
+    const phoneRequired = new ApiError('http', '403 Forbidden', 403, {
+      error: { code: 'PHONE_VERIFICATION_REQUIRED' },
+    });
+    expect(phoneRequired.userMessage).toBe(
+      'Please verify your mobile number with an OTP to continue.'
+    );
+
+    const pricingMissing = new ApiError('http', '503 Service Unavailable', 503, {
+      error: { code: 'PRICING_NOT_CONFIGURED' },
+    });
+    expect(pricingMissing.userMessage).toBe(
+      'Fare pricing is currently unavailable for your route. Please try again shortly.'
+    );
+  });
+
+  it('falls back to helpful messages when server details are not provided', () => {
+    expect(new ApiError('config', 'The payments backend is not configured.').userMessage).toBe(
+      'The payments backend is not configured.'
+    );
+    expect(new ApiError('network', 'Could not reach server').userMessage).toBe(
+      'No connection to the server. Check your internet and try again.'
+    );
+    expect(new ApiError('timeout', 'Request timed out').userMessage).toBe(
+      'The server took too long to respond. Please try again.'
+    );
+  });
+});
+
+

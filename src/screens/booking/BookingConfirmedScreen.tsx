@@ -6,6 +6,8 @@ import {
   Pressable,
   ImageBackground,
   Animated,
+  Alert,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -24,6 +26,34 @@ const BookingConfirmedScreen: React.FC<BookingConfirmedScreenProps & { navigatio
 }) => {
   const { draft, primaryDrop } = useBooking();
   const roadRoute = useRoute(draft.pickup, primaryDrop);
+
+  useEffect(() => {
+    if (BackHandler && typeof BackHandler.addEventListener === 'function') {
+      const subscription = BackHandler.addEventListener(
+        'hardwareBackPress',
+        () => {
+          Alert.alert(
+            'Cancel Booking?',
+            'Are you sure you want to cancel the booking?',
+            [
+              { text: 'Keep Booking', style: 'cancel' },
+              {
+                text: 'Cancel Booking',
+                style: 'destructive',
+                onPress: () => {
+                  if (onCancel) onCancel();
+                  else navigation?.navigate('CancellationReasonScreen');
+                },
+              },
+            ],
+            { cancelable: true }
+          );
+          return true;
+        }
+      );
+      return () => subscription?.remove?.();
+    }
+  }, [navigation, onCancel]);
 
   const markers = useMemo<readonly MapMarker[]>(() => {
     const built: MapMarker[] = [];
@@ -121,14 +151,6 @@ const BookingConfirmedScreen: React.FC<BookingConfirmedScreenProps & { navigatio
                 ]}
               />
             </View>
-
-            <Pressable
-              style={styles.cancelButton}
-              onPress={() => (onCancel ? onCancel() : navigation?.navigate('CancellationReasonScreen'))}
-              accessibilityRole="button"
-            >
-              <Text style={styles.cancelButtonText}>Cancel Booking</Text>
-            </Pressable>
           </View>
         </SafeAreaView>
       </View>
@@ -206,7 +228,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceVariant,
     borderRadius: borderRadius.full,
     overflow: 'hidden',
-    marginBottom: 48,
+    marginBottom: spacing.lg,
   },
   progressBar: {
     height: '100%',

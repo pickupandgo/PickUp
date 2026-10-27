@@ -6,11 +6,14 @@ import {
   StyleSheet,
   Pressable,
   ImageBackground,
+  Image,
   Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { useBooking } from '../../state/BookingContext';
+import { getVehicleImage } from '../../utils/vehicleAssets';
 
 export interface DriverFoundScreenProps {
   readonly onCancel?: () => void;
@@ -20,6 +23,7 @@ const DriverFoundScreen: React.FC<DriverFoundScreenProps & { navigation?: any }>
   onCancel,
   navigation,
 }) => {
+  const { assignedDriver, trip, ride, draft } = useBooking();
   const [pulseAnim] = useState(new Animated.Value(0));
   const [slideDownAnim] = useState(new Animated.Value(-100)); // for toast
   const [slideUpAnim] = useState(new Animated.Value(200)); // for bottom sheet
@@ -124,7 +128,16 @@ const DriverFoundScreen: React.FC<DriverFoundScreenProps & { navigation?: any }>
               ]}
             />
             <View style={styles.markerCenter}>
-              <Feather name="truck" size={24} color={colors.onPrimary} />
+              <Image
+                source={getVehicleImage(
+                  assignedDriver?.vehicleType ||
+                  (trip as any)?.vehicleType ||
+                  ride?.vehicleType ||
+                  draft?.vehicleType
+                )}
+                style={{ width: 38, height: 38 }}
+                resizeMode="contain"
+              />
             </View>
           </View>
         </View>
@@ -239,7 +252,9 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.primary,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,

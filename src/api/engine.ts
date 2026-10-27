@@ -125,12 +125,30 @@ export const getActiveTripForCustomer = async (
 
 export const cancelTrip = async (
   tripId: string,
-  reason = 'Cancelled by the customer',
+  customerIdOrReason?: string,
+  reasonOrSignal?: string | AbortSignal,
   signal?: AbortSignal
 ): Promise<Trip> => {
+  let customerId: string | undefined;
+  let reason = 'Cancelled by the customer';
+  let abortSignal = signal;
+
+  if (typeof reasonOrSignal === 'string') {
+    customerId = customerIdOrReason;
+    reason = reasonOrSignal;
+  } else if (reasonOrSignal && typeof (reasonOrSignal as any).aborted === 'boolean') {
+    abortSignal = reasonOrSignal as AbortSignal;
+    reason = customerIdOrReason || reason;
+  } else if (customerIdOrReason) {
+    reason = customerIdOrReason;
+  }
+
+  const body: Record<string, any> = { reason };
+  if (customerId) body.customerId = customerId;
+
   const res = await request<Envelope & { trip: Trip }>(
     `/trips/${encodeURIComponent(tripId)}/cancel`,
-    { method: 'POST', body: { reason }, signal, retries: 0 }
+    { method: 'POST', body, signal: abortSignal, retries: 0 }
   );
   return res.trip;
 };

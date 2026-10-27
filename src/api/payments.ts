@@ -20,7 +20,7 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 
 const assertPaymentsConfig = (): void => {
   if (!hasPaymentsConfig()) {
-    throw new ApiError('config', 'The payments backend is not configured.');
+    throw new ApiError('config', 'The fare and booking service is not configured.');
   }
 };
 
@@ -32,7 +32,21 @@ interface PaymentsRequestOptions {
   readonly signal?: AbortSignal;
 }
 
-const buildUrl = (path: string): string => `${env.paymentsApiBaseUrl}${path}`;
+export const buildPaymentsUrl = (baseUrl: string, path: string): string => {
+  const base = baseUrl.replace(/\/+$/, '');
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const baseHasV1 = base.endsWith('/v1');
+  const pathHasV1 = cleanPath.startsWith('/v1/');
+  if (baseHasV1 && pathHasV1) {
+    return `${base}${cleanPath.slice(3)}`;
+  }
+  if (!baseHasV1 && !pathHasV1) {
+    return `${base}/v1${cleanPath}`;
+  }
+  return `${base}${cleanPath}`;
+};
+
+const buildUrl = (path: string): string => buildPaymentsUrl(env.paymentsApiBaseUrl, path);
 
 const attempt = async <T>(
   path: string,
@@ -109,6 +123,23 @@ const paymentsRequest = async <T>(path: string, options: PaymentsRequestOptions 
     if (error instanceof ApiError && error.kind === 'http' && error.status === 401) {
       return attempt<T>(path, options, true);
     }
+    // If the customer identity is unprovisioned, auto-register and retry once
+    const errBody = (error as any)?.body;
+    const errCode = errBody?.error?.code || errBody?.code;
+    if (
+      error instanceof ApiError &&
+      error.kind === 'http' &&
+      error.status === 403 &&
+      errCode === 'USER_NOT_PROVISIONED' &&
+      path !== '/v1/customers/me'
+    ) {
+      try {
+        await attempt<CustomerAccount>('/v1/customers/me', { method: 'POST', signal: options.signal }, false);
+        return await attempt<T>(path, options, false);
+      } catch {
+        throw error;
+      }
+    }
     throw error;
   }
 };
@@ -119,8 +150,11 @@ const paymentsRequest = async <T>(path: string, options: PaymentsRequestOptions 
  * Registers the signed-in customer, or returns the existing account. Safe to call after every
  * sign-in. The sign-in must carry a verified phone number.
  */
-export const registerCustomer = async (signal?: AbortSignal): Promise<CustomerAccount> =>
-  paymentsRequest<CustomerAccount>('/v1/customers/me', { method: 'POST', signal });
+export const registerCustomer = async (
+  body?: { name?: string; email?: string },
+  signal?: AbortSignal
+): Promise<CustomerAccount> =>
+  paymentsRequest<CustomerAccount>('/v1/customers/me', { method: 'POST', body, signal });
 
 // ─── Fare quotes ────────────────────────────────────────────────────────────
 

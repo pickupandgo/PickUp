@@ -42,8 +42,14 @@ export const useNearbyDrivers = (
   const [isLoading, setIsLoading] = useState(false);
 
   // Rounded position so tiny GPS jitter (metre-level) doesn't restart the loop.
-  const lat = point ? Number(point.latitude.toFixed(3)) : undefined;
-  const lng = point ? Number(point.longitude.toFixed(3)) : undefined;
+  const lat =
+    point && typeof point.latitude === 'number' && Number.isFinite(point.latitude)
+      ? Number(point.latitude.toFixed(3))
+      : undefined;
+  const lng =
+    point && typeof point.longitude === 'number' && Number.isFinite(point.longitude)
+      ? Number(point.longitude.toFixed(3))
+      : undefined;
 
   // Bumped every time a caller wants to force an immediate refetch. Keeping it
   // outside the poll effect keeps the poll loop stable across manual refreshes.

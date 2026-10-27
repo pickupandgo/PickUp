@@ -11,15 +11,54 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { mockActiveTrip } from '../../data/mockData';
+import { useBooking } from '../../state/BookingContext';
+import { getVehicleImage } from '../../utils/vehicleAssets';
 
 export interface PickupVerifiedSuccessScreenProps {
   readonly onContinue?: () => void;
 }
 
-const PickupVerifiedSuccessScreen: React.FC<PickupVerifiedSuccessScreenProps & { navigation?: any }> = ({
+const PickupVerifiedSuccessScreen: React.FC<PickupVerifiedSuccessScreenProps & { navigation?: any; route?: any }> = ({
   onContinue,
   navigation,
+  route,
 }) => {
+  const { assignedDriver, draft, ride, trip } = useBooking();
+
+  const driverName =
+    route?.params?.driverName ||
+    assignedDriver?.name ||
+    (trip as any)?.driverName ||
+    (trip as any)?.driver?.name ||
+    'Assigned Driver';
+
+  const vehicleType =
+    route?.params?.vehicleType ||
+    assignedDriver?.vehicleType ||
+    (trip as any)?.vehicleType ||
+    ride?.vehicleType ||
+    draft.vehicleType ||
+    'Mini Truck';
+
+  const vehicleNumber =
+    route?.params?.vehicleNumber ||
+    (assignedDriver as any)?.vehicleNumber ||
+    (assignedDriver as any)?.vehicleRegistrationNumber ||
+    (assignedDriver as any)?.licensePlate ||
+    (trip as any)?.vehicleRegistration ||
+    (trip as any)?.vehicle?.registrationNumber ||
+    (ride as any)?.vehicleRegistration ||
+    '';
+
+  const pickupAddress =
+    route?.params?.pickupAddress ||
+    draft.pickup?.address ||
+    ride?.pickup?.address ||
+    trip?.pickup?.address ||
+    (trip?.stops && (trip.stops[0] as any)?.address) ||
+    trip?.stops?.[0]?.location?.address ||
+    'Pickup Location';
+
   // Success celebration is a moment, not a stop. `replace` (not `navigate`)
   // takes this screen off the stack so the customer can't back-swipe into it
   // once live tracking has begun.
@@ -114,7 +153,7 @@ const PickupVerifiedSuccessScreen: React.FC<PickupVerifiedSuccessScreenProps & {
             />
             <View style={styles.infoTextContainer}>
               <Text style={styles.label}>DRIVER</Text>
-              <Text style={styles.valueText}>{mockActiveTrip.driverName}</Text>
+              <Text style={styles.valueText}>{driverName}</Text>
             </View>
           </View>
 
@@ -123,12 +162,22 @@ const PickupVerifiedSuccessScreen: React.FC<PickupVerifiedSuccessScreenProps & {
           {/* Vehicle Info */}
           <View style={styles.infoRow}>
             <View style={styles.iconCircle}>
-              <Feather name="truck" size={24} color={colors.onSurfaceVariant} />
+              <Image
+                source={getVehicleImage(vehicleType)}
+                style={{ width: 32, height: 32 }}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.infoTextContainer}>
               <Text style={styles.label}>VEHICLE</Text>
               <Text style={styles.dataText}>
-                {mockActiveTrip.vehicleType} <Text style={{ color: colors.outlineVariant }}>•</Text> {mockActiveTrip.vehicleNumber}
+                {vehicleType}
+                {Boolean(vehicleNumber) && (
+                  <>
+                    {' '}
+                    <Text style={{ color: colors.outlineVariant }}>•</Text> {vehicleNumber}
+                  </>
+                )}
               </Text>
             </View>
           </View>
@@ -142,7 +191,9 @@ const PickupVerifiedSuccessScreen: React.FC<PickupVerifiedSuccessScreenProps & {
             </View>
             <View style={styles.infoTextContainer}>
               <Text style={styles.label}>PICKUP</Text>
-              <Text style={styles.valueText}>{mockActiveTrip.stops[0]?.address}</Text>
+              <Text style={styles.valueText} numberOfLines={2}>
+                {pickupAddress}
+              </Text>
             </View>
           </View>
         </Animated.View>

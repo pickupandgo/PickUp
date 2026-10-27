@@ -9,6 +9,7 @@ import { BookingProvider, useBooking } from './src/state/BookingContext';
 import { SessionProvider, useSession } from './src/state/SessionContext';
 import { AuthProvider } from './src/auth/AuthProvider';
 import { colors } from './src/theme';
+import ErrorBoundary from './src/components/common/ErrorBoundary';
 
 import ActiveTripChatScreen from './src/screens/support/ActiveTripChatScreen';
 import ActiveTripTrackingScreen from './src/screens/tracking/ActiveTripTrackingScreen';
@@ -277,7 +278,7 @@ function OnboardingNavigator() {
 function RootNavigator() {
   const { isLoggedIn, hasProfile } = useSession();
 
-  if (isLoggedIn === null) {
+  if (isLoggedIn === null || (isLoggedIn && hasProfile === null)) {
     return (
       <View style={styles.splash}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -302,13 +303,15 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
-      <AuthProvider>
-        <SessionProvider>
-          <BookingProvider>
-            <RootNavigator />
-          </BookingProvider>
-        </SessionProvider>
-      </AuthProvider>
+      <ErrorBoundary>
+        <AuthProvider>
+          <SessionProvider>
+            <BookingProvider>
+              <RootNavigator />
+            </BookingProvider>
+          </SessionProvider>
+        </AuthProvider>
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }

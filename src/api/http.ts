@@ -24,6 +24,11 @@ export class ApiError extends Error {
     this.body = body;
   }
 
+  get errorCode(): string | undefined {
+    const body = this.body as any;
+    return body?.error?.code || body?.code;
+  }
+
   /** Retrying may succeed: connectivity blips and server-side faults. */
   get isRetryable(): boolean {
     if (this.kind === 'network' || this.kind === 'timeout') return true;
@@ -34,17 +39,9 @@ export class ApiError extends Error {
   get userMessage(): string {
     switch (this.kind) {
       case 'config':
-        return 'The app is not configured to reach the server.';
+        return this.serverMessage ?? (this.message && !this.message.startsWith('[object') ? this.message : 'The app is not configured to reach the server.');
       case 'timeout':
         return 'The server took too long to respond. Please try again.';
-      case 'location_permission':
-        return 'Location permission is required to detect your pickup location.';
-      case 'location_services':
-        return 'Please turn on Location services to detect your pickup location.';
-      case 'location_unavailable':
-        return 'Unable to determine your current location. Please try again.';
-      case 'location_timeout':
-        return 'Location detection timed out. Please try again.';
       case 'location_permission':
         return 'Location permission is required to detect your pickup location.';
       case 'location_services':
@@ -58,21 +55,45 @@ export class ApiError extends Error {
       case 'parse':
         return 'The server sent an unexpected response.';
       case 'http':
+        if (this.status === 401) return this.serverMessage ?? 'Please sign in to continue.';
+        if (this.status === 403) {
+          if (this.errorCode === 'USER_NOT_PROVISIONED') {
+            return this.serverMessage ?? 'Your customer account registration is pending. Please complete your profile.';
+          }
+          if (this.errorCode === 'ACCOUNT_ROLE_CONFLICT') {
+            return this.serverMessage ?? 'This account is registered as a driver and cannot be used for booking customer rides.';
+          }
+          if (this.errorCode === 'PHONE_VERIFICATION_REQUIRED') {
+            return this.serverMessage ?? 'Please verify your mobile number with an OTP to continue.';
+          }
+          return this.serverMessage ?? 'This action is not permitted for your account.';
+        }
         if (this.status === 404) return 'Not found.';
         if (this.status === 409) return 'That action is no longer possible.';
-        if (this.status === 400) return this.serverMessage ?? 'That request was rejected.';
-        if (this.status && this.status >= 500) return 'The server had a problem. Please try again.';
+        if (this.status === 400 || this.status === 422) return this.serverMessage ?? 'That request was rejected.';
+        if (this.status === 503) {
+          if (this.errorCode === 'PRICING_NOT_CONFIGURED') {
+            return this.serverMessage ?? 'Fare pricing is currently unavailable for your route. Please try again shortly.';
+          }
+          return this.serverMessage ?? 'The server is temporarily unavailable. Please try again shortly.';
+        }
+        if (this.status && this.status >= 500) return this.serverMessage ?? 'The server had a problem. Please try again.';
         return this.serverMessage ?? 'Something went wrong.';
       default:
-        return 'Something went wrong.';
+        return this.message || 'Something went wrong.';
     }
   }
 
-  /** NestJS puts human-readable detail in `message` on its error responses. */
+  /** NestJS puts human-readable detail in `error.message` or `message` on its error responses. */
   private get serverMessage(): string | undefined {
-    const body = this.body as { message?: string | string[] } | undefined;
-    if (!body?.message) return undefined;
-    return Array.isArray(body.message) ? body.message.join(', ') : body.message;
+    const body = this.body as any;
+    if (body?.error?.message && typeof body.error.message === 'string') {
+      return body.error.message;
+    }
+    if (body?.message) {
+      return Array.isArray(body.message) ? body.message.join(', ') : String(body.message);
+    }
+    return undefined;
   }
 }
 

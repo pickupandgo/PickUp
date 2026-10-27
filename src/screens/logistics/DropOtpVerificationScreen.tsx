@@ -5,13 +5,12 @@ import {
   StyleSheet,
   Pressable,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { mockActiveTrip } from '../../data/mockData';
+import { KeyboardAwareScrollView } from '../../components/organisms';
 
 export interface DropOtpVerificationScreenProps {
   readonly onBack?: () => void;
@@ -30,11 +29,65 @@ const DropOtpVerificationScreen: React.FC<DropOtpVerificationScreenProps & { nav
   const dropDetails = mockActiveTrip.stops[1]; // assuming index 1 is Drop 1
 
   const handleOtpChange = (value: string, index: number) => {
+    const cleanDigits = value.replace(/[^0-9]/g, '');
+
+    // Case 1: Cleared/backspace
+    if (cleanDigits.length === 0) {
+      const newOtp = [...otp];
+      newOtp[index] = '';
+      setOtp(newOtp);
+      return;
+    }
+
+    const prevDigit = otp[index];
+    const isTypingOverSingle =
+      prevDigit &&
+      cleanDigits.length === 2 &&
+      (cleanDigits.startsWith(prevDigit) || cleanDigits.endsWith(prevDigit));
+
+    // Case 2: Multi-digit paste (4 digits)
+    if (cleanDigits.length > 1 && !isTypingOverSingle) {
+      let digitsToDistribute = cleanDigits;
+      if (prevDigit && digitsToDistribute.length > 4) {
+        if (digitsToDistribute.startsWith(prevDigit)) {
+          digitsToDistribute = digitsToDistribute.slice(1, 5);
+        } else if (digitsToDistribute.endsWith(prevDigit)) {
+          digitsToDistribute = digitsToDistribute.slice(0, 4);
+        }
+      }
+      digitsToDistribute = digitsToDistribute.slice(0, 4);
+
+      const digits = digitsToDistribute.split('');
+      const newOtp = [...otp];
+      const startIdx = digits.length >= 4 || index === 0 ? 0 : index;
+      for (let i = 0; i < digits.length && startIdx + i < 4; i++) {
+        newOtp[startIdx + i] = digits[i];
+      }
+      setOtp(newOtp);
+
+      const targetFocus = Math.min(3, startIdx + digits.length - 1);
+      inputs.current[targetFocus]?.focus();
+      return;
+    }
+
+    // Case 3: Overwriting existing single digit
+    if (isTypingOverSingle) {
+      const newChar = cleanDigits.startsWith(prevDigit) ? cleanDigits[1] : cleanDigits[0];
+      const newOtp = [...otp];
+      newOtp[index] = newChar;
+      setOtp(newOtp);
+      if (index < 3) {
+        inputs.current[index + 1]?.focus();
+      }
+      return;
+    }
+
+    // Case 4: Normal single digit
     const newOtp = [...otp];
-    newOtp[index] = value;
+    newOtp[index] = cleanDigits[0];
     setOtp(newOtp);
 
-    if (value && index < 3) {
+    if (index < 3) {
       inputs.current[index + 1]?.focus();
     }
   };
@@ -54,29 +107,29 @@ const DropOtpVerificationScreen: React.FC<DropOtpVerificationScreenProps & { nav
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView
-        style={styles.keyboardAvoid}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        {/* Top App Bar */}
-        <View style={styles.header}>
-          <Pressable
-            style={styles.iconButton}
-            onPress={() => (onBack ? onBack() : navigation?.goBack())}
-            accessibilityRole="button"
-          >
-            <Feather name="arrow-left" size={24} color={colors.primary} />
-          </Pressable>
-          <Text style={styles.headerTitle}>Delivery Verification</Text>
-          <Pressable
-            style={styles.iconButton}
-            onPress={() => navigation?.navigate('ShareTrackingSheetScreen')}
-            accessibilityRole="button"
-          >
-            <Feather name="more-vertical" size={24} color={colors.primary} />
-          </Pressable>
-        </View>
+      {/* Top App Bar */}
+      <View style={styles.header}>
+        <Pressable
+          style={styles.iconButton}
+          onPress={() => (onBack ? onBack() : navigation?.goBack())}
+          accessibilityRole="button"
+        >
+          <Feather name="arrow-left" size={24} color={colors.primary} />
+        </Pressable>
+        <Text style={styles.headerTitle}>Delivery Verification</Text>
+        <Pressable
+          style={styles.iconButton}
+          onPress={() => navigation?.navigate('ShareTrackingSheetScreen')}
+          accessibilityRole="button"
+        >
+          <Feather name="more-vertical" size={24} color={colors.primary} />
+        </Pressable>
+      </View>
 
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.content}>
           {/* Drop Context Card */}
           <View style={styles.contextCard}>
@@ -114,15 +167,17 @@ const DropOtpVerificationScreen: React.FC<DropOtpVerificationScreenProps & { nav
                   onChangeText={(val) => handleOtpChange(val, index)}
                   onKeyPress={(e) => handleKeyPress(e, index)}
                   keyboardType="number-pad"
-                  maxLength={1}
+                  maxLength={8}
                   selectTextOnFocus
+                  textContentType="oneTimeCode"
+                  autoComplete="sms-otp"
                 />
               ))}
             </View>
           </View>
         </View>
 
-        <View style={{ flexGrow: 1 }} />
+        <View style={{ flexGrow: 1, minHeight: spacing.xl }} />
 
         {/* Actions */}
         <View style={styles.actionContainer}>
@@ -147,7 +202,7 @@ const DropOtpVerificationScreen: React.FC<DropOtpVerificationScreenProps & { nav
             <Text style={styles.resendButtonText}>Resend OTP</Text>
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };
@@ -157,8 +212,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  keyboardAvoid: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
+    paddingBottom: spacing.xl,
   },
   header: {
     flexDirection: 'row',

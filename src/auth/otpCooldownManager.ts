@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { formatToE164 } from './authService';
+import { formatToE164 } from './phoneUtils';
 
-const COOLDOWN_STORAGE_KEY = '@multiride/otp_cooldowns_v1';
+const COOLDOWN_STORAGE_KEY = '@multipleride/otp_cooldowns_v1';
 export const DEFAULT_COOLDOWN_SECONDS = 60;
 
 /**

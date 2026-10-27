@@ -1,25 +1,28 @@
-import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TextInput,
   Pressable,
   StyleSheet,
-  Dimensions,
   ScrollView,
+  Keyboard,
+  ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
-import { reverseGeocode, type ResolvedPlace } from '../../api/geocoding';
+import { reverseGeocode, type ResolvedPlace, type PlaceSuggestion } from '../../api/geocoding';
 import type { GeoPoint } from '../../api/types';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useBooking } from '../../state/BookingContext';
+import { useRecentLocations, saveRecentLocation } from '../../state/recentLocations';
 import Button from '../../components/atoms/Button';
 import DraggableBottomSheet from '../../components/organisms/DraggableBottomSheet';
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { KeyboardAwareScrollView } from '../../components/organisms';
+import { usePlaceSearch } from '../../hooks/usePlaceSearch';
 
 export type LocationSelectionMode = 'pickup' | 'drop' | 'stop' | 'edit';
 
@@ -42,9 +45,11 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
     replaceDrop,
     setPendingDrop,
     commitPendingDrop,
+    customerId,
   } = useBooking();
 
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   
   // High-level mode
   const initialMode = route?.params?.mode ?? 'pickup';
@@ -78,7 +83,18 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
   // Form State
   const [tempPlace, setTempPlace] = useState<ResolvedPlace | undefined>(initialPlace);
   const [searchQuery, setSearchQuery] = useState(initialPlace?.address ?? '');
-  
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+  const { locations: recentLocations } = useRecentLocations(customerId);
+
+  const {
+    setQuery: setSearchQueryPlace,
+    suggestions,
+    isSearching: isPlaceSearching,
+    resolve: resolvePlaceSuggestion,
+    clear: clearPlaceSuggestions,
+  } = usePlaceSearch(tempPlace);
+
   // Person fields
   const [instructions, setInstructions] = useState(
     activeType === 'pickup' ? (draft.pickupInstructions ?? '') : (initialPlace?.instructions ?? '')
@@ -93,6 +109,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
   );
 
   const [isResolving, setIsResolving] = useState(false);
+  const latestResolveSeq = useRef(0);
 
   // Re-sync form state when activeType or initialPlace changes (e.g. user tapped a timeline item)
   useEffect(() => {
@@ -102,6 +119,42 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
     setPersonName(activeType === 'pickup' ? (draft.senderName ?? '') : (initialPlace?.receiverName ?? ''));
     setPersonPhone(activeType === 'pickup' ? (draft.senderPhone ?? '') : (initialPlace?.receiverPhone ?? ''));
   }, [activeType, initialPlace, draft.pickupInstructions, draft.senderName, draft.senderPhone]);
+
+  const handleSearchChange = (text: string) => {
+    setSearchQuery(text);
+    setSearchQueryPlace(text);
+  };
+
+  const handleSearchClear = () => {
+    setSearchQuery('');
+    clearPlaceSuggestions();
+  };
+
+  const handleSelectSuggestion = async (s: PlaceSuggestion) => {
+    try {
+      setIsResolving(true);
+      const place = await resolvePlaceSuggestion(s);
+      setTempPlace(place);
+      setSearchQuery(place.address);
+      clearPlaceSuggestions();
+      setIsSearchFocused(false);
+      Keyboard.dismiss();
+      void saveRecentLocation(
+        {
+          name: s.primaryText,
+          address: place.address,
+          latitude: place.latitude,
+          longitude: place.longitude,
+          placeId: place.placeId || s.placeId,
+        },
+        customerId
+      );
+    } catch {
+      // Ignore resolution failures and retain current place
+    } finally {
+      setIsResolving(false);
+    }
+  };
 
   // Map markers: if editing pickup, maybe show drops. If editing drop, definitely show pickup.
   const mapMarkers = useMemo<readonly MapMarker[]>(() => {
@@ -135,18 +188,37 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
         return;
       }
 
+      const seq = ++latestResolveSeq.current;
       setIsResolving(true);
       void (async () => {
-        let address = 'Dropped pin';
         try {
           const resolved = await reverseGeocode(point);
-          if (resolved) address = resolved;
-        } catch {}
-        
-        setSearchQuery(address);
-        const newPlace = { ...tempPlace, ...point, address };
-        setTempPlace(newPlace);
-        setIsResolving(false);
+          if (seq !== latestResolveSeq.current) return;
+
+          const address = resolved && resolved.trim().length > 0
+            ? resolved
+            : `${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`;
+
+          setSearchQuery(address);
+          setTempPlace((prev) => ({
+            ...(prev ?? {}),
+            ...point,
+            address,
+          }));
+        } catch {
+          if (seq !== latestResolveSeq.current) return;
+          const fallback = `${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`;
+          setSearchQuery(fallback);
+          setTempPlace((prev) => ({
+            ...(prev ?? {}),
+            ...point,
+            address: fallback,
+          }));
+        } finally {
+          if (seq === latestResolveSeq.current) {
+            setIsResolving(false);
+          }
+        }
       })();
     },
     [mode, editTarget, tempPlace]
@@ -157,6 +229,17 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
 
   const handleConfirm = () => {
     if (!tempPlace) return;
+
+    void saveRecentLocation(
+      {
+        name: tempPlace.address.split(',')[0].trim(),
+        address: tempPlace.address,
+        latitude: tempPlace.latitude,
+        longitude: tempPlace.longitude,
+        placeId: tempPlace.placeId,
+      },
+      customerId
+    );
 
     if (activeType === 'pickup') {
       setPickup(tempPlace);
@@ -195,6 +278,17 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
   const handleAddAnother = () => {
     if (!tempPlace) return;
     
+    void saveRecentLocation(
+      {
+        name: tempPlace.address.split(',')[0].trim(),
+        address: tempPlace.address,
+        latitude: tempPlace.latitude,
+        longitude: tempPlace.longitude,
+        placeId: tempPlace.placeId,
+      },
+      customerId
+    );
+
     // Save current as a new drop
     const dropObj = {
       ...tempPlace,
@@ -218,36 +312,79 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
   // ----------------------------------------------------------------------
 
   const renderTopControls = () => (
-    <View style={[styles.topControls, { paddingTop: Math.max(insets.top, spacing.marginMobile) }]}>
-      <Pressable
-        style={styles.backButton}
-        onPress={() => {
-          if (mode === 'edit' && editTarget) {
-            setEditTarget(undefined); // Back to timeline
-          } else {
-            navigation?.goBack();
-          }
-        }}
-      >
-        <Feather name="arrow-left" size={22} color={colors.onSurface} />
-      </Pressable>
+    <View style={styles.topControlsWrapper}>
+      <View style={[styles.topControls, { paddingTop: Math.max(insets.top, spacing.marginMobile) }]}>
+        <Pressable
+          style={styles.backButton}
+          onPress={() => {
+            if (isSearchFocused) {
+              setIsSearchFocused(false);
+              clearPlaceSuggestions();
+              Keyboard.dismiss();
+              return;
+            }
+            if (mode === 'edit' && editTarget) {
+              setEditTarget(undefined); // Back to timeline
+            } else {
+              navigation?.goBack();
+            }
+          }}
+        >
+          <Feather name="arrow-left" size={22} color={colors.onSurface} />
+        </Pressable>
 
-      <View style={styles.searchContainer}>
-        <Feather name="search" size={20} color={colors.onSurfaceVariant} style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search location"
-          placeholderTextColor={colors.onSurfaceVariant}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          editable={mode !== 'edit' || editTarget !== undefined}
-        />
-        {searchQuery.length > 0 && (
-          <Pressable style={styles.clearButton} onPress={() => setSearchQuery('')}>
-            <Feather name="x" size={20} color={colors.onSurfaceVariant} />
-          </Pressable>
-        )}
+        <View style={styles.searchContainer}>
+          <Feather name="search" size={20} color={colors.onSurfaceVariant} style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search location"
+            placeholderTextColor={colors.onSurfaceVariant}
+            value={searchQuery}
+            onChangeText={handleSearchChange}
+            onFocus={() => setIsSearchFocused(true)}
+            editable={mode !== 'edit' || editTarget !== undefined}
+            returnKeyType="search"
+          />
+          {isPlaceSearching && (
+            <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: spacing.xs }} />
+          )}
+          {searchQuery.length > 0 && !isPlaceSearching && (
+            <Pressable style={styles.clearButton} onPress={handleSearchClear}>
+              <Feather name="x" size={20} color={colors.onSurfaceVariant} />
+            </Pressable>
+          )}
+        </View>
       </View>
+
+      {/* Floating Autocomplete Suggestions Overlay */}
+      {isSearchFocused && suggestions.length > 0 && (
+        <View style={styles.suggestionsContainer}>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
+            style={styles.suggestionsScroll}
+          >
+            {suggestions.map((s) => (
+              <Pressable
+                key={s.placeId}
+                style={styles.suggestionItem}
+                onPress={() => handleSelectSuggestion(s)}
+              >
+                <View style={styles.suggestionIconWrapper}>
+                  <Feather name="map-pin" size={16} color={colors.primary} />
+                </View>
+                <View style={styles.suggestionTextWrapper}>
+                  <Text style={styles.suggestionPrimary} numberOfLines={1}>{s.primaryText}</Text>
+                  {s.secondaryText.length > 0 && (
+                    <Text style={styles.suggestionSecondary} numberOfLines={1}>{s.secondaryText}</Text>
+                  )}
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      )}
     </View>
   );
 
@@ -354,7 +491,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
             >
               <View style={styles.stopCardContent}>
                 <Text style={styles.stopLabel}>PICKUP</Text>
-                <Text style={styles.stopTitle}>{draft.pickup?.address || 'Current Location'}</Text>
+                <Text style={styles.stopTitle}>{draft.pickup?.address || 'Pickup location'}</Text>
               </View>
               <Feather name="edit-2" size={18} color={colors.primary} style={{ alignSelf: 'center' }} />
             </Pressable>
@@ -424,16 +561,16 @@ label="Done Editing"
       </MapCanvas>
 
       <DraggableBottomSheet
-        snapPoints={[200, SCREEN_HEIGHT * 0.65, SCREEN_HEIGHT * 0.85]}
+        snapPoints={[200, windowHeight * 0.65, windowHeight * 0.88]}
         initialSnapIndex={initialMode === 'drop' ? 2 : 1}
       >
-        <ScrollView
+        <KeyboardAwareScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scrollContent}
         >
           {mode === 'edit' && editTarget === undefined ? renderTimeline() : renderForm()}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </DraggableBottomSheet>
     </View>
   );
@@ -508,7 +645,7 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   scrollContent: {
-    paddingBottom: spacing.xxxl,
+    paddingBottom: spacing.xxxl + spacing.xl,
   },
   sheetContent: {
     paddingHorizontal: spacing.marginMobile,
@@ -639,6 +776,57 @@ const styles = StyleSheet.create({
   stopTitle: {
     fontSize: typography.headlineSm.fontSize,
     color: colors.onSurface,
+  },
+  topControlsWrapper: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+  },
+  suggestionsContainer: {
+    marginHorizontal: spacing.marginMobile,
+    marginTop: spacing.xs,
+    backgroundColor: colors.surfaceContainerLowest,
+    borderRadius: borderRadius.lg,
+    maxHeight: 220,
+    ...shadows.elevated,
+    overflow: 'hidden',
+  },
+  suggestionsScroll: {
+    maxHeight: 220,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.outlineVariant + '33',
+    gap: spacing.sm,
+  },
+  suggestionIconWrapper: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceVariant,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suggestionTextWrapper: {
+    flex: 1,
+  },
+  suggestionPrimary: {
+    fontSize: typography.bodyMd.fontSize,
+    fontFamily: typography.bodyMd.fontFamily,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  suggestionSecondary: {
+    fontSize: typography.labelSm.fontSize,
+    fontFamily: typography.labelSm.fontFamily,
+    color: colors.onSurfaceVariant,
+    marginTop: 2,
   },
 });
 

@@ -21,7 +21,8 @@ export interface FareEstimateScreenProps {
   readonly onHelp?: () => void;
 }
 
-const rupees = (paise: number): string => `₹ ${(paise / 100).toFixed(2)}`;
+const rupees = (paise: number): string =>
+  `₹ ${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any }> = ({
   onBack,
@@ -60,6 +61,7 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
       });
       setQuote(fresh);
     } catch (caught) {
+      setQuote(undefined);
       setError(toApiError(caught).userMessage);
     } finally {
       setIsLoading(false);
@@ -114,7 +116,14 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
           ) : (
             <View style={styles.totalAmountRow}>
               <Text style={styles.currencySymbol}>₹</Text>
-              <Text style={styles.totalAmount}>{quote ? (quote.payablePaise / 100).toFixed(2) : '—'}</Text>
+              <Text style={styles.totalAmount}>
+                {quote
+                  ? (quote.payablePaise / 100).toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })
+                  : '—'}
+              </Text>
             </View>
           )}
           {quote && !isLoading && (
@@ -128,7 +137,9 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
         {error && (
           <Pressable style={styles.errorCard} onPress={loadQuote} accessibilityRole="button">
             <Feather name="alert-circle" size={16} color={colors.error} />
-            <Text style={styles.errorCardText}>{error} Tap to retry.</Text>
+            <Text style={styles.errorCardText}>
+              {error.endsWith('.') ? error : `${error}.`} Tap to retry.
+            </Text>
           </Pressable>
         )}
 

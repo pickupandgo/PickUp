@@ -100,6 +100,10 @@ android {
         versionCode 1
         versionName "1.0"
         manifestPlaceholders = [GOOGLE_MAPS_API_KEY: mapsApiKey]
+        resValue "string", "build_config_package", "com.multipleride.customer"
+    }
+    buildFeatures {
+        buildConfig true
     }
     signingConfigs {
         debug {

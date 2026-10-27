@@ -29,7 +29,7 @@ const PaymentMethodScreen: React.FC<PaymentMethodScreenProps & { navigation?: an
   const amount = draft.quote ? `₹${(draft.quote.payablePaise / 100).toFixed(2)}` : '--';
 
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(
-    draft.paymentMethod ?? 'PAY_AT_PICKUP',
+    draft.paymentMethod ?? 'PAY_AT_DELIVERY',
   );
 
   const handleContinue = () => {

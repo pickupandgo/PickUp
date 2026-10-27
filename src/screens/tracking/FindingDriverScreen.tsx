@@ -7,6 +7,8 @@ import {
   Pressable,
   Easing,
   Image,
+  Alert,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -19,6 +21,7 @@ import { getRideTrip } from '../../api/engine';
 import { isQuoteBookable } from '../../api/payments';
 import { toApiError } from '../../api/http';
 import { vehicleLabelFor } from '../../data/mockData';
+import { getVehicleImage } from '../../utils/vehicleAssets';
 
 import { MIN_DRIVER_SEARCH_DURATION_MS } from '../../config/constants';
 
@@ -88,9 +91,12 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
             signal: controller.signal,
             searchCenter: pickup,
             onProgress: ({ attempt, totalCandidates, driver: candidate }) => {
-              if (cancelled) return;
+              const distStr =
+                typeof candidate.distanceKm === 'number' && Number.isFinite(candidate.distanceKm)
+                  ? ` · ${candidate.distanceKm.toFixed(1)} km away`
+                  : '';
               setStatusText(
-                `Contacting ${candidate.name} · ${candidate.distanceKm.toFixed(1)} km away (${attempt} of ${totalCandidates})`
+                `Contacting ${candidate.name || 'driver'}${distStr} (${attempt} of ${totalCandidates})`
               );
             },
           }
@@ -166,6 +172,41 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
     navigation?.navigate('CancellationReasonScreen');
   };
 
+  const handleBackPress = () => {
+    Alert.alert(
+      'Cancel Booking?',
+      'Are you sure you want to cancel the booking?',
+      [
+        {
+          text: 'Keep Searching',
+          style: 'cancel',
+        },
+        {
+          text: 'Cancel Booking',
+          style: 'destructive',
+          onPress: () => {
+            handleCancel();
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  useEffect(() => {
+    if (BackHandler && typeof BackHandler.addEventListener === 'function') {
+      const subscription = BackHandler.addEventListener(
+        'hardwareBackPress',
+        () => {
+          handleBackPress();
+          return true;
+        }
+      );
+      return () => subscription?.remove?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     // Indeterminate progress bar animation
     const progressLoop = Animated.loop(
@@ -209,8 +250,9 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
         <View style={styles.header} pointerEvents="box-none">
           <Pressable
             style={styles.iconButton}
-            onPress={() => (onBack ? onBack() : navigation?.goBack())}
+            onPress={handleBackPress}
             accessibilityRole="button"
+            accessibilityLabel="Back"
           >
             <Feather name="arrow-left" size={22} color={colors.primary} />
           </Pressable>
@@ -259,11 +301,11 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
 
               <View style={styles.vehicleCard}>
                 <View style={styles.vehicleInfoRow}>
-                  {vehicleData?.image ? (
-                    <Image source={vehicleData.image} style={styles.vehicleIconImage} resizeMode="contain" />
-                  ) : (
-                    <Feather name="truck" size={20} color={colors.onSurfaceVariant} />
-                  )}
+                  <Image
+                    source={vehicleData?.image || getVehicleImage(currentVehicle)}
+                    style={styles.vehicleIconImage}
+                    resizeMode="contain"
+                  />
                   <View>
                     <Text style={styles.vehicleLabel}>Vehicle</Text>
                     <Text style={styles.vehicleText}>{currentVehicle}</Text>
@@ -278,7 +320,12 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
           </View>
 
           {/* Cancel Action */}
-          <Pressable style={styles.cancelButton} onPress={handleCancel} accessibilityRole="button">
+          <Pressable
+            style={styles.cancelButton}
+            onPress={handleBackPress}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel Booking"
+          >
             <Text style={styles.cancelButtonText}>CANCEL BOOKING</Text>
           </Pressable>
         </View>

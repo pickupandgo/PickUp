@@ -1,17 +1,27 @@
-import React from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { colors, spacing, borderRadius, typography } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { useBooking } from '../../state/BookingContext';
+import {
+  getCancellationEstimate,
+  executeTripCancellation,
+} from '../../services/cancellationService';
+import { toApiError } from '../../api/http';
 
 export interface CancellationConfirmationScreenProps {
+  readonly trip?: any;
+  readonly ride?: any;
   readonly eta?: string;
   readonly vehicleInfo?: string;
   readonly cancelFee?: string;
@@ -22,17 +32,98 @@ export interface CancellationConfirmationScreenProps {
   readonly onClose?: () => void;
 }
 
-const CancellationConfirmationScreen: React.FC<CancellationConfirmationScreenProps & { navigation?: any }> = ({
-  eta = 'Driver is 5 mins away',
-  vehicleInfo = 'Tata Ace • RJ 19 XX 1234',
-  cancelFee = '₹112.50',
-  feeNote = '(25% of fare)',
-  policyText = "A cancellation fee may apply based on the driver's proximity to the pickup. Charges are determined by the current cancellation policy.",
+const CancellationConfirmationScreen: React.FC<
+  CancellationConfirmationScreenProps & { navigation?: any; route?: any }
+> = ({
+  trip: propTrip,
+  ride: propRide,
+  eta: propEta,
+  vehicleInfo: propVehicleInfo,
+  cancelFee: propCancelFee,
+  feeNote: propFeeNote,
+  policyText: propPolicyText,
   onCancelTrip,
   onKeepTrip,
   onClose,
   navigation,
+  route,
 }) => {
+  const {
+    trip: contextTrip,
+    ride: contextRide,
+    draft,
+    assignedDriver: contextDriver,
+    customerId,
+    setTrip,
+  } = useBooking();
+
+  const [isCancelling, setIsCancelling] = useState(false);
+  const isCancellingRef = useRef(false);
+
+  const activeTrip = propTrip || route?.params?.trip || contextTrip;
+  const activeRide = propRide || route?.params?.ride || contextRide;
+  const activeDriver = route?.params?.assignedDriver || contextDriver;
+  const reason = route?.params?.reason || 'Customer cancelled booking';
+
+  const estimate = useMemo(() => {
+    return getCancellationEstimate({
+      trip: activeTrip,
+      ride: activeRide,
+      draft,
+      assignedDriver: activeDriver,
+    });
+  }, [activeTrip, activeRide, draft, activeDriver]);
+
+  const effectiveEta = propEta || route?.params?.eta || estimate.etaText;
+  const effectiveVehicleInfo =
+    propVehicleInfo || route?.params?.vehicleInfo || estimate.vehicleInfo;
+  const effectiveCancelFee =
+    propCancelFee || route?.params?.cancelFee || estimate.formattedFee;
+  const effectiveFeeNote =
+    propFeeNote ||
+    route?.params?.feeNote ||
+    `(${estimate.percentage}% of fare)`;
+  const effectivePolicy =
+    propPolicyText ||
+    route?.params?.policyText ||
+    "A cancellation fee may apply based on the driver's proximity to the pickup. Charges are determined by the current cancellation policy.";
+
+  const handleCancelTrip = async () => {
+    if (isCancellingRef.current) return;
+    isCancellingRef.current = true;
+    setIsCancelling(true);
+
+    try {
+      const result = await executeTripCancellation({
+        trip: activeTrip,
+        ride: activeRide,
+        customerId,
+        reason,
+      });
+
+      if (activeTrip && setTrip) {
+        setTrip({ ...activeTrip, status: 'CANCELLED' });
+      }
+
+      onCancelTrip?.();
+
+      navigation?.navigate('CancellationResultScreen', {
+        tripId: result.tripId || estimate.tripReference,
+        feeAmount: result.feeAmount || estimate.formattedFee,
+        cancelledTrip: result.cancelledTrip,
+      });
+    } catch (err: unknown) {
+      const apiErr = toApiError(err);
+      Alert.alert(
+        'Cancellation Error',
+        apiErr.userMessage || 'Could not cancel booking. Please try again.'
+      );
+    } finally {
+      isCancellingRef.current = false;
+      setIsCancelling(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Background Dim (Simulating modal) */}
@@ -52,6 +143,8 @@ const CancellationConfirmationScreen: React.FC<CancellationConfirmationScreenPro
             <Pressable
               style={styles.closeButton}
               onPress={() => (onClose ? onClose() : navigation?.goBack())}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
             >
               <Feather name="x" size={20} color={colors.onSurfaceVariant} />
             </Pressable>
@@ -60,40 +153,54 @@ const CancellationConfirmationScreen: React.FC<CancellationConfirmationScreenPro
           {/* Trip Context */}
           <View style={styles.contextCard}>
             <View style={styles.vehicleIconBox}>
-              <MaterialIcons name="local-shipping" size={24} color={colors.onSecondaryContainer} />
+              <MaterialIcons
+                name={estimate.vehicleIconName as any}
+                size={24}
+                color={colors.onSecondaryContainer}
+              />
             </View>
             <View style={styles.contextTexts}>
-              <Text style={styles.etaText}>{eta}</Text>
-              <Text style={styles.vehicleText}>{vehicleInfo}</Text>
+              <Text style={styles.etaText}>{effectiveEta}</Text>
+              <Text style={styles.vehicleText}>{effectiveVehicleInfo}</Text>
             </View>
           </View>
 
           {/* Warning Box */}
           <View style={styles.warningBox}>
             <View style={styles.warningHeader}>
-              <MaterialIcons name="warning" size={20} color={colors.error} style={styles.warningIcon} />
+              <MaterialIcons
+                name="warning"
+                size={20}
+                color={colors.error}
+                style={styles.warningIcon}
+              />
               <View style={styles.warningTexts}>
-                <Text style={styles.warningTitle}>Estimated Cancellation Fee: {cancelFee}</Text>
-                <Text style={styles.warningSubtitle}>{feeNote}</Text>
+                <Text style={styles.warningTitle}>
+                  Estimated Cancellation Fee: {effectiveCancelFee}
+                </Text>
+                <Text style={styles.warningSubtitle}>{effectiveFeeNote}</Text>
               </View>
             </View>
             <View style={styles.policyBox}>
-              <Text style={styles.policyText}>{policyText}</Text>
+              <Text style={styles.policyText}>{effectivePolicy}</Text>
             </View>
           </View>
 
           {/* Actions */}
           <View style={styles.actionsContainer}>
             <Button
-              label="CANCEL TRIP"
-              onPress={() => {
-                onCancelTrip?.();
-                navigation?.navigate('CancellationResultScreen');
-              }}
-              variant="primary" // The design has it red, but we'll use a custom style or Button variant if we had one. Using button with custom color via style.
+              label={isCancelling ? 'CANCELLING...' : 'CANCEL TRIP'}
+              onPress={handleCancelTrip}
+              variant="primary"
               fullWidth
               size="lg"
+              disabled={isCancelling}
               style={styles.cancelButton}
+              icon={
+                isCancelling ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : undefined
+              }
             />
             <Button
               label="KEEP TRIP"
@@ -101,6 +208,7 @@ const CancellationConfirmationScreen: React.FC<CancellationConfirmationScreenPro
               variant="secondary"
               fullWidth
               size="lg"
+              disabled={isCancelling}
               style={styles.keepButton}
             />
           </View>
@@ -118,37 +226,33 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.surface + 'B3', // Dimmed surface (approx 70%)
-    // Wait, the design says bg-surface-dim. 
-    // We'll use a solid color for the safe area and let the sheet sit at the bottom.
+    backgroundColor: colors.surface + 'B3',
   },
   sheetContainer: {
     backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    ...shadows.card,
-    elevation: 16,
+    borderTopLeftRadius: borderRadius.xxl,
+    borderTopRightRadius: borderRadius.xxl,
+    overflow: 'hidden',
+    paddingBottom: spacing.xxl,
   },
   dragHandleContainer: {
     alignItems: 'center',
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xs,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
   dragHandle: {
-    width: 48,
-    height: 6,
-    borderRadius: 3,
+    width: 36,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: colors.outlineVariant,
-    opacity: 0.5,
   },
   contentPadding: {
-    padding: spacing.marginMobile,
-    paddingBottom: spacing.xxxl,
+    paddingHorizontal: spacing.marginMobile,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: spacing.lg,
   },
   headerTitle: {
@@ -158,9 +262,9 @@ const styles = StyleSheet.create({
     fontFamily: typography.headlineMd.fontFamily,
   },
   closeButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: colors.surfaceContainerHigh,
     alignItems: 'center',
     justifyContent: 'center',
@@ -169,14 +273,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surfaceContainerLow,
-    padding: spacing.md,
     borderRadius: borderRadius.lg,
+    padding: spacing.md,
     marginBottom: spacing.lg,
   },
   vehicleIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.md,
     backgroundColor: colors.secondaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
@@ -198,7 +302,7 @@ const styles = StyleSheet.create({
     fontFamily: typography.headlineSm.fontFamily,
   },
   warningBox: {
-    backgroundColor: colors.errorContainer + '33', // 20% opacity
+    backgroundColor: colors.errorContainer + '33',
     borderColor: colors.errorContainer,
     borderWidth: 1,
     borderRadius: borderRadius.lg,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,14 @@ import {
   Pressable,
   TextInput,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { KeyboardAwareScrollView } from '../../components/organisms';
+import { useBooking } from '../../state/BookingContext';
 
 export interface GoodsInsuranceScreenProps {
   readonly onBack?: () => void;
@@ -23,11 +27,37 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
   onHelp,
   navigation,
 }) => {
-  const [declaredValue, setDeclaredValue] = useState('50,000');
-  const [isInsured, setIsInsured] = useState(false);
+  const keyboardAwareRef = useRef<any>(null);
+  const inputRef = useRef<TextInput>(null);
+
+  const scrollToInput = useCallback((target: any) => {
+    keyboardAwareRef.current?.scrollIntoView(target);
+  }, []);
+
+  const { draft, setGoods, setInsured } = useBooking();
+
+  const [declaredValue, setDeclaredValue] = useState<string>(() => {
+    const raw = draft.declaredValue?.trim();
+    return raw && raw !== '50,000' && raw !== '50000' ? raw : '';
+  });
+  const [isInsured, setIsInsuredState] = useState<boolean>(() => draft.insured ?? false);
+
+  const parsedVal = parseFloat(declaredValue.replace(/,/g, ''));
+  const effectiveValue = Number.isFinite(parsedVal) && parsedVal > 0 ? parsedVal : 5000;
+  const estPremium = Math.max(25, Math.round(effectiveValue * 0.005));
+
+  const handleContinue = () => {
+    const cleanVal = declaredValue.trim().replace(/,/g, '');
+    setGoods({
+      declaredValue: cleanVal || '5000',
+    });
+    setInsured(isInsured);
+    onContinue?.();
+    navigation?.navigate('FareEstimateScreen');
+  };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top App Bar */}
       <View style={styles.header}>
         <Pressable
@@ -50,11 +80,24 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
       </View>
 
       {/* Content */}
-      <ScrollView
+      <KeyboardAwareScrollView
+        ref={keyboardAwareRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        footer={
+          <View style={styles.bottomBar}>
+            <Pressable
+              style={styles.continueButton}
+              onPress={handleContinue}
+              accessibilityRole="button"
+              accessibilityLabel="Continue"
+            >
+              <Text style={styles.continueText}>CONTINUE</Text>
+            </Pressable>
+          </View>
+        }
       >
         {/* Header Section */}
         <View style={styles.titleSection}>
@@ -74,12 +117,14 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
           <View style={styles.valueInputWrapper}>
             <Text style={styles.currencyPrefix}>₹</Text>
             <TextInput
+              ref={inputRef}
               style={styles.valueInput}
-              placeholder="0"
+              placeholder="5000"
               placeholderTextColor={colors.outline}
               keyboardType="numeric"
               value={declaredValue}
               onChangeText={setDeclaredValue}
+              onFocus={() => scrollToInput(inputRef)}
               accessibilityLabel="Declared value"
             />
           </View>
@@ -88,7 +133,7 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
         {/* Insurance Option Toggle */}
         <Pressable
           style={[styles.insuranceCard, isInsured && styles.insuranceCardActive]}
-          onPress={() => setIsInsured(!isInsured)}
+          onPress={() => setIsInsuredState(!isInsured)}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: isInsured }}
           accessibilityLabel="Select Goods Insurance"
@@ -100,7 +145,7 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
               </View>
               <View style={styles.insuranceTitleCol}>
                 <Text style={styles.insuranceTitle}>Goods Insurance</Text>
-                <Text style={styles.insurancePremium}>Est. Premium: ₹ 250</Text>
+                <Text style={styles.insurancePremium}>Est. Premium: ₹ {estPremium}</Text>
               </View>
             </View>
             <View style={[styles.checkbox, isInsured && styles.checkboxChecked]}>
@@ -126,22 +171,7 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
             </View>
           </View>
         </Pressable>
-      </ScrollView>
-
-      {/* Bottom Action Bar */}
-      <View style={styles.bottomBar}>
-        <Pressable
-          style={styles.continueButton}
-          onPress={() => {
-            onContinue?.();
-            navigation?.navigate('FareEstimateScreen');
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Continue"
-        >
-          <Text style={styles.continueText}>CONTINUE</Text>
-        </Pressable>
-      </View>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };
@@ -176,7 +206,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: spacing.marginMobile,
     paddingTop: spacing.xl,
-    paddingBottom: 140,
+    paddingBottom: spacing.xl,
     gap: spacing.xl,
   },
 
@@ -347,14 +377,10 @@ const styles = StyleSheet.create({
 
   // Bottom Bar
   bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.marginMobile,
     paddingTop: spacing.marginMobile,
-    paddingBottom: spacing.xxl,
+    paddingBottom: spacing.marginMobile,
     borderTopWidth: 1,
     borderTopColor: colors.surfaceVariant,
     ...shadows.ghostShadow,

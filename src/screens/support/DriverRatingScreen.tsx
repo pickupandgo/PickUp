@@ -12,6 +12,8 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { mockActiveTrip } from '../../data/mockData';
+import { useBooking } from '../../state/BookingContext';
+import { getVehicleImage } from '../../utils/vehicleAssets';
 
 export interface DriverRatingScreenProps {
   readonly onClose?: () => void;
@@ -40,6 +42,7 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any 
   onSkip,
   navigation,
 }) => {
+  const { assignedDriver } = useBooking();
   const [rating, setRating] = useState(0);
   const [selectedFeedback, setSelectedFeedback] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -95,15 +98,22 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any 
         <View style={styles.driverCard}>
           <View style={styles.avatarContainer}>
             <Image
-              source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCWntcyPIVgiSDivK0EorrdK-G74AH-FCCM27R9fnQXloBZ8WPOgAVZNkucgODeZqOuhkJW6UDEBmKEvyqDn9XZc3kLo2iqaOQrRgHW4kxG_oc3uUzxh8ebtAfYuaPSEVBwXYFMAJrFK90v1ketbn_ZMUXq2-sUmSfpgbxzjKHEHmPaTAaWE6QsI8OHGQgu50uKCdZQgoXcrd04UoWM3Rh5VUxazpJG5nB53-XZsaAkqDVVnAcFeIcd' }}
-              style={styles.avatarImage}
+              source={getVehicleImage(assignedDriver?.vehicleType)}
+              style={{ width: 52, height: 52 }}
+              resizeMode="contain"
             />
           </View>
-          <Text style={styles.driverName}>{mockActiveTrip.driverName.split(' ')[0]}</Text>
+          <Text style={styles.driverName}>
+            {(assignedDriver?.name || mockActiveTrip.driverName).split(' ')[0]}
+          </Text>
           <View style={styles.driverSubRow}>
-            <Feather name="truck" size={16} color={colors.onSurfaceVariant} />
+            <Image
+              source={getVehicleImage(assignedDriver?.vehicleType)}
+              style={{ width: 16, height: 16, marginRight: 4 }}
+              resizeMode="contain"
+            />
             <Text style={styles.driverSubText}>
-              {mockActiveTrip.vehicleType} | {mockActiveTrip.vehicleNumber}
+              {assignedDriver?.vehicleType || mockActiveTrip.vehicleType} | {mockActiveTrip.vehicleNumber}
             </Text>
           </View>
         </View>
@@ -252,11 +262,13 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    borderWidth: 4,
-    borderColor: colors.surface,
-    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: colors.surfaceContainerHighest,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: spacing.md,
-    ...shadows.card,
+    ...shadows.elevated,
   },
   avatarImage: {
     width: '100%',

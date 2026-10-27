@@ -12,6 +12,8 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { useBooking } from '../../state/BookingContext';
+import { getVehicleImage } from '../../utils/vehicleAssets';
 
 export interface NextDropScreenProps {
   readonly onBack?: () => void;
@@ -29,6 +31,7 @@ const NextDropScreen: React.FC<NextDropScreenProps & { navigation?: any }> = ({
   onChat,
   navigation,
 }) => {
+  const { assignedDriver } = useBooking();
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top App Bar */}
@@ -54,7 +57,10 @@ const NextDropScreen: React.FC<NextDropScreenProps & { navigation?: any }> = ({
         {/* Status Banner */}
         <View style={styles.statusBannerContainer}>
           <View style={styles.statusBanner}>
-            <MaterialIcons name="local-shipping" size={16} color={colors.onSecondaryContainer} />
+            <Image
+              source={getVehicleImage(assignedDriver?.vehicleType)}
+              style={{ width: 22, height: 22, resizeMode: 'contain' }}
+            />
             <Text style={styles.statusBannerText}>On the way to Drop 3</Text>
           </View>
         </View>

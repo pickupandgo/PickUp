@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   Pressable,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -16,20 +17,31 @@ import { getDriver, getRide } from '../../api/engine';
 import type { GeoPoint } from '../../api/types';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
 import { useRoute } from '../../hooks/useRoute';
+import { getVehicleImage } from '../../utils/vehicleAssets';
+import { DriverAssignedPanelSkeleton, useSkeletonVisibility } from '../../components/skeleton';
 
 export interface DriverAssignedScreenProps {
   readonly onMenuPress?: () => void;
   readonly onContactDriver?: () => void;
   readonly onTripDetails?: () => void;
+  readonly isLoading?: boolean;
 }
 
-const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: any }> = ({
+const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: any; route?: any }> = ({
   onMenuPress,
   onContactDriver,
   onTripDetails,
+  isLoading = false,
   navigation,
+  route,
 }) => {
-  const { assignedDriver, trip, setTrip, ride, setRide } = useBooking();
+  const effectiveLoading = isLoading || route?.params?.isLoading;
+  const { assignedDriver, trip, setTrip, ride, setRide, draft } = useBooking();
+  const hasData = Boolean(assignedDriver && trip);
+  const showSkeleton = useSkeletonVisibility({
+    isLoading: Boolean(effectiveLoading),
+    hasData,
+  });
 
   // If the user killed the app and restarted, `ride` might be undefined, but `trip` exists.
   // We fetch `ride` to restore access to the OTPs since the `trip` object strips them.
@@ -145,7 +157,12 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
         kind: 'driver',
         coordinate: driverPoint,
         title: assignedDriver?.name ?? 'Driver',
-        description: assignedDriver?.vehicleType,
+        vehicleType:
+          assignedDriver?.vehicleType ||
+          (current as any)?.vehicleType ||
+          ride?.vehicleType ||
+          draft?.vehicleType,
+        bearing: assignedDriver?.bearingDegrees,
       });
     }
     return built;
@@ -180,62 +197,72 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
       {/* Driver Info Bottom Card (Using DraggableBottomSheet for consistent feel, or a static view) */}
       {/* We will use a static positioned view to match the design closely as a fixed bottom card. */}
       <View style={styles.bottomSheetContainer}>
-        {/* Drag Handle Indicator */}
-        <View style={styles.dragHandle} />
+        {showSkeleton ? (
+          <DriverAssignedPanelSkeleton testID="driver-assigned-panel-skeleton" />
+        ) : (
+          <>
+            {/* Drag Handle Indicator */}
+            <View style={styles.dragHandle} />
 
-        {/* Status Header */}
-        <View style={styles.statusHeaderRow}>
-          <View style={styles.statusTextCol}>
-            <Text style={styles.statusTitle}>Driver Assigned</Text>
-            <Text style={styles.statusSubtitle}>Heading to your pickup point</Text>
-          </View>
-        </View>
-
-        {/* Driver Details */}
-        <View style={styles.driverDetailsCard}>
-          <View style={styles.driverAvatar}>
-            <Feather name="user" size={32} color={colors.onSurfaceVariant} />
-          </View>
-          <View style={styles.driverInfoText}>
-            <Text style={styles.driverName}>{assignedDriver?.name ?? 'Driver assigned'}</Text>
-            <Text style={styles.vehicleType}>{assignedDriver?.vehicleType ?? '—'}</Text>
-          </View>
-          {typeof assignedDriver?.distanceKm === 'number' && (
-            <View style={styles.vehiclePlateBox}>
-              <Text style={styles.vehiclePlateText}>
-                {assignedDriver.distanceKm.toFixed(1)} km
-              </Text>
+            {/* Status Header */}
+            <View style={styles.statusHeaderRow}>
+              <View style={styles.statusTextCol}>
+                <Text style={styles.statusTitle}>Driver Assigned</Text>
+                <Text style={styles.statusSubtitle}>Heading to your pickup point</Text>
+              </View>
             </View>
-          )}
-        </View>
 
-        {/* Pay-at-pickup: tell the customer payment is due at pickup. The pickup OTP is never
-            shown here — the server withholds it until the driver arrives and (for pay-at-pickup)
-            the payment is confirmed; it then appears on the pickup verification screen. */}
-        {(current?.paymentMethod ?? ride?.paymentMethod) === 'PAY_AT_PICKUP' && (
-          <View style={styles.otpRow}>
-            <Text style={styles.otpLabel}>PAYMENT AT PICKUP</Text>
-            <Text style={styles.paymentHintValue}>Pay the driver when they arrive to start the trip.</Text>
-          </View>
+            {/* Driver Details */}
+            <View style={styles.driverDetailsCard}>
+              <View style={styles.driverAvatar}>
+                <Image
+                  source={getVehicleImage(assignedDriver?.vehicleType)}
+                  style={{ width: 44, height: 44 }}
+                  resizeMode="contain"
+                />
+              </View>
+              <View style={styles.driverInfoText}>
+                <Text style={styles.driverName}>{assignedDriver?.name ?? 'Driver assigned'}</Text>
+                <Text style={styles.vehicleType}>{assignedDriver?.vehicleType ?? '—'}</Text>
+              </View>
+              {typeof assignedDriver?.distanceKm === 'number' && (
+                <View style={styles.vehiclePlateBox}>
+                  <Text style={styles.vehiclePlateText}>
+                    {assignedDriver.distanceKm.toFixed(1)} km
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Pay-at-pickup: tell the customer payment is due at pickup. The pickup OTP is never
+                shown here — the server withholds it until the driver arrives and (for pay-at-pickup)
+                the payment is confirmed; it then appears on the pickup verification screen. */}
+            {(current?.paymentMethod ?? ride?.paymentMethod) === 'PAY_AT_PICKUP' && (
+              <View style={styles.otpRow}>
+                <Text style={styles.otpLabel}>PAYMENT AT PICKUP</Text>
+                <Text style={styles.paymentHintValue}>Pay the driver when they arrive to start the trip.</Text>
+              </View>
+            )}
+
+            {/* Actions */}
+            <View style={styles.actionsContainer}>
+              <Button
+                label="Contact Driver"
+                onPress={() => (onContactDriver ? onContactDriver() : navigation?.navigate('CallDriverScreen'))}
+                variant="primary"
+                fullWidth
+                icon={<MaterialIcons name="call" size={20} color={colors.onPrimary} />}
+              />
+              <Button
+                label="Trip Details"
+                onPress={() => (onTripDetails ? onTripDetails() : navigation?.navigate('DriverAssignedExpandedScreen'))}
+                variant="secondary"
+                fullWidth
+                icon={<MaterialIcons name="list-alt" size={20} color={colors.onSecondaryContainer} />}
+              />
+            </View>
+          </>
         )}
-
-        {/* Actions */}
-        <View style={styles.actionsContainer}>
-          <Button
-            label="Contact Driver"
-            onPress={() => (onContactDriver ? onContactDriver() : navigation?.navigate('CallDriverScreen'))}
-            variant="primary"
-            fullWidth
-            icon={<MaterialIcons name="call" size={20} color={colors.onPrimary} />}
-          />
-          <Button
-            label="Trip Details"
-            onPress={() => (onTripDetails ? onTripDetails() : navigation?.navigate('DriverAssignedExpandedScreen'))}
-            variant="secondary"
-            fullWidth
-            icon={<MaterialIcons name="list-alt" size={20} color={colors.onSecondaryContainer} />}
-          />
-        </View>
       </View>
     </View>
   );
@@ -425,12 +452,12 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: colors.surfaceContainerHigh,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: colors.surfaceVariant,
+    borderColor: colors.surfaceContainerHighest,
   },
   driverInfoText: {
     flex: 1,

@@ -7,6 +7,7 @@ import {
   Animated,
   Easing,
   ScrollView,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -14,8 +15,11 @@ import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import BottomNavBar from '../../components/BottomNavBar';
 import { navigateToTab } from '../../navigation/tabRoutes';
+import { useBooking } from '../../state/BookingContext';
+import { getVehicleImage } from '../../utils/vehicleAssets';
 
 const LiveTrackingExceptionsScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
+  const { assignedDriver } = useBooking();
   const pulseValue = useRef(new Animated.Value(1)).current;
   const slideValue = useRef(new Animated.Value(0)).current;
   const spinValue = useRef(new Animated.Value(0)).current;
@@ -122,7 +126,10 @@ const LiveTrackingExceptionsScreen: React.FC<{ navigation?: any }> = ({ navigati
           <View style={styles.overlayCard}>
             <View style={styles.markerContainer}>
               <View style={styles.markerCircle}>
-                <Feather name="truck" size={16} color={colors.onPrimaryContainer} />
+                <Image
+                  source={getVehicleImage(assignedDriver?.vehicleType)}
+                  style={{ width: 26, height: 26, resizeMode: 'contain' }}
+                />
               </View>
               <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseValue }], opacity: pulseValue }]} />
             </View>
@@ -142,7 +149,10 @@ const LiveTrackingExceptionsScreen: React.FC<{ navigation?: any }> = ({ navigati
           <View style={styles.overlayCard}>
             <View style={styles.markerContainer}>
               <View style={[styles.markerCircle, { backgroundColor: colors.surfaceVariant }]}>
-                <Feather name="truck" size={16} color={colors.onSurfaceVariant} />
+                <Image
+                  source={getVehicleImage(assignedDriver?.vehicleType)}
+                  style={{ width: 26, height: 26, resizeMode: 'contain', opacity: 0.6 }}
+                />
               </View>
             </View>
             <View style={styles.overlayTextContainer}>

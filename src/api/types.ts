@@ -25,15 +25,17 @@ export interface Driver {
   readonly longitude: number;
   readonly isAvailable: boolean;
   readonly lastSeen?: number;
+  readonly bearingDegrees?: number;
 }
 
 export interface NearbyDriver extends Driver {
   readonly distanceKm: number;
+  readonly etaMinutes?: number;
 }
 
 // ─── Fare quote (payments backend: POST /v1/fare/quotes) ──────────────────────
 
-/** The only two payment methods (review H). No prepaid / pay-now. */
+/** Exactly two payment methods (review H): PAY_AT_PICKUP or PAY_AT_DELIVERY. */
 export type PaymentMethod = 'PAY_AT_PICKUP' | 'PAY_AT_DELIVERY';
 
 export interface FareQuoteDrop {

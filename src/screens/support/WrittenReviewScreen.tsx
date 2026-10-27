@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import BottomNavBar from '../../components/BottomNavBar';
 import { navigateToTab } from '../../navigation/tabRoutes';
 import { useBooking } from '../../state/BookingContext';
+import { KeyboardAwareScrollView, type KeyboardAwareScrollViewRef } from '../../components/organisms';
 
 export interface WrittenReviewScreenProps {
   readonly onBack?: () => void;
@@ -47,6 +48,7 @@ const WrittenReviewScreen: React.FC<WrittenReviewScreenProps & { navigation?: an
   onTabPress,
   navigation,
 }) => {
+  const scrollRef = useRef<KeyboardAwareScrollViewRef>(null);
   const { clearActiveRide } = useBooking();
   const [reviewText, setReviewText] = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -63,30 +65,30 @@ const WrittenReviewScreen: React.FC<WrittenReviewScreenProps & { navigation?: an
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView
-        style={styles.keyboardAvoid}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        {/* Top App Bar */}
-        <View style={styles.header}>
-          <Pressable
-            style={styles.iconButton}
-            onPress={() => (onBack ? onBack() : navigation?.goBack())}
-          >
-            <Feather name="arrow-left" size={24} color={colors.onSurfaceVariant} />
-          </Pressable>
-          <Text style={styles.headerTitle}>Write a Review</Text>
-          <Pressable
-            style={styles.skipHeaderButton}
-            onPress={() =>
-              onSkip ? onSkip() : navigation?.navigate('TripCompletedSummaryScreen')
-            }
-          >
-            <Text style={styles.skipHeaderText}>Skip</Text>
-          </Pressable>
-        </View>
+      {/* Top App Bar */}
+      <View style={styles.header}>
+        <Pressable
+          style={styles.iconButton}
+          onPress={() => (onBack ? onBack() : navigation?.goBack())}
+        >
+          <Feather name="arrow-left" size={24} color={colors.onSurfaceVariant} />
+        </Pressable>
+        <Text style={styles.headerTitle}>Write a Review</Text>
+        <Pressable
+          style={styles.skipHeaderButton}
+          onPress={() =>
+            onSkip ? onSkip() : navigation?.navigate('TripCompletedSummaryScreen')
+          }
+        >
+          <Text style={styles.skipHeaderText}>Skip</Text>
+        </Pressable>
+      </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+      <KeyboardAwareScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
           {/* Header Text */}
           <View style={styles.textHeader}>
             <Text style={styles.title}>How can we improve?</Text>
@@ -105,7 +107,10 @@ const WrittenReviewScreen: React.FC<WrittenReviewScreenProps & { navigation?: an
               maxLength={MAX_CHARS}
               value={reviewText}
               onChangeText={setReviewText}
-              onFocus={() => setIsFocused(true)}
+              onFocus={(e) => {
+                setIsFocused(true);
+                scrollRef.current?.scrollIntoView(e?.target ?? e?.nativeEvent?.target);
+              }}
               onBlur={() => setIsFocused(false)}
               textAlignVertical="top"
             />
@@ -175,8 +180,7 @@ const WrittenReviewScreen: React.FC<WrittenReviewScreenProps & { navigation?: an
             <Text style={styles.submitButtonText}>SUBMIT REVIEW</Text>
             <Feather name="send" size={18} color={colors.onPrimary} />
           </Pressable>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAwareScrollView>
 
       <BottomNavBar
         currentTab={currentTab}

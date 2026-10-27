@@ -11,6 +11,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { mockActiveTrip } from '../../data/mockData';
+import { TripDetailSkeleton, useSkeletonVisibility } from '../../components/skeleton';
 
 export interface HistoricalTripDetailScreenProps {
   readonly onBack?: () => void;
@@ -18,16 +19,24 @@ export interface HistoricalTripDetailScreenProps {
   readonly onDownloadInvoice?: () => void;
   readonly onNeedHelp?: () => void;
   readonly onRateTrip?: () => void;
+  readonly isLoading?: boolean;
 }
 
-const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { navigation?: any }> = ({
+const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { navigation?: any; route?: any }> = ({
   onBack,
   onMore,
   onDownloadInvoice,
   onNeedHelp,
   onRateTrip,
+  isLoading = false,
   navigation,
+  route,
 }) => {
+  const effectiveLoading = isLoading || route?.params?.isLoading;
+  const showSkeleton = useSkeletonVisibility({
+    isLoading: Boolean(effectiveLoading),
+    hasData: false,
+  });
   const stops = mockActiveTrip.stops;
 
   return (
@@ -46,8 +55,11 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Status & Meta */}
+      {showSkeleton ? (
+        <TripDetailSkeleton testID="historical-trip-detail-loading" />
+      ) : (
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {/* Status & Meta */}
         <View style={styles.statusSection}>
           <View style={styles.statusCard}>
             <Feather name="check-circle" size={24} color={colors.primary} />
@@ -180,6 +192,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
           </Pressable>
         </View>
       </ScrollView>
+      )}
     </SafeAreaView>
   );
 };

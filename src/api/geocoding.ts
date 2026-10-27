@@ -51,10 +51,7 @@ export interface ResolvedPlace extends GeoPoint {
 
 const assertKey = (): void => {
   if (!hasGeocodingConfig()) {
-    throw new ApiError(
-      'config',
-      'EXPO_PUBLIC_GOOGLE_MAPS_API_KEY is not set, so address search is unavailable.'
-    );
+    console.warn('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY is not set; falling back to open location services.');
   }
 };
 
@@ -121,6 +118,103 @@ const googleFetch = async <T>(
   return body as T;
 };
 
+// ─── Open Provider (Photon + OpenStreetMap Nominatim) Fallbacks ─────────────
+
+const openSearchPlaces = async (
+  query: string,
+  options: { readonly origin?: GeoPoint; readonly signal?: AbortSignal } = {}
+): Promise<readonly PlaceSuggestion[]> => {
+  const input = query.trim();
+  if (input.length < 3) return [];
+
+  // 1. Try Photon (fast, typo-tolerant, OSM-backed)
+  try {
+    const originParam = options.origin
+      ? `&lat=${options.origin.latitude}&lon=${options.origin.longitude}`
+      : '';
+    const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(input)}&limit=10${originParam}`;
+    const resp = await fetch(photonUrl, { signal: options.signal });
+    if (resp.ok) {
+      const data = (await resp.json()) as {
+        features?: Array<{
+          properties?: {
+            name?: string;
+            street?: string;
+            district?: string;
+            city?: string;
+            state?: string;
+            country?: string;
+          };
+          geometry?: { coordinates?: [number, number] };
+        }>;
+      };
+      const features = data.features ?? [];
+      if (features.length > 0) {
+        return features
+          .filter((f) => {
+            const coords = f.geometry?.coordinates;
+            return (
+              Array.isArray(coords) &&
+              coords.length === 2 &&
+              typeof coords[0] === 'number' &&
+              typeof coords[1] === 'number'
+            );
+          })
+          .map((f) => {
+            const p = f.properties ?? {};
+            const name = p.name ?? p.street ?? p.city ?? input;
+            const parts = [p.street, p.district, p.city, p.state, p.country].filter(Boolean) as string[];
+            const secondary = Array.from(new Set(parts)).filter((x) => x !== name).join(', ');
+            const [lon, lat] = f.geometry!.coordinates!;
+            const fullDesc = [name, secondary].filter(Boolean).join(', ');
+            return {
+              placeId: `osm:${lat}:${lon}:${encodeURIComponent(fullDesc || name)}`,
+              primaryText: name,
+              secondaryText: secondary,
+              description: fullDesc,
+            };
+          });
+      }
+    }
+  } catch (err: any) {
+    if (err?.name === 'AbortError') throw err;
+  }
+
+  // 2. Fallback to Nominatim search
+  try {
+    const nominatimUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(input)}&format=json&addressdetails=1&limit=10&countrycodes=in`;
+    const resp = await fetch(nominatimUrl, {
+      signal: options.signal,
+      headers: { 'User-Agent': 'MultipleRideCustomerApp/1.0 (support@multipleride.com)' },
+    });
+    if (resp.ok) {
+      const list = (await resp.json()) as Array<{
+        place_id: number;
+        lat: string;
+        lon: string;
+        display_name: string;
+        name?: string;
+      }>;
+      if (Array.isArray(list) && list.length > 0) {
+        return list.map((item) => {
+          const name = item.name ?? item.display_name.split(',')[0].trim();
+          const rest = item.display_name.replace(name, '').replace(/^,\s*/, '').trim();
+          return {
+            placeId: `osm:${item.lat}:${item.lon}:${encodeURIComponent(item.display_name)}`,
+            primaryText: name,
+            secondaryText: rest,
+            description: item.display_name,
+          };
+        });
+      }
+    }
+  } catch (err: any) {
+    if (err?.name === 'AbortError') throw err;
+  }
+
+  return [];
+};
+
 // ─── Autocomplete (New) ──────────────────────────────────────────────────────
 
 interface AutocompleteResponse {
@@ -139,60 +233,75 @@ interface AutocompleteResponse {
 /**
  * Autocomplete suggestions for a partial address.
  *
- * `sessionToken` groups keystrokes plus the final Place Details call into one
- * billed session. It must be URL/filename-safe and at most 36 characters.
- * `origin` biases results toward the user, which matters for short queries.
+ * Uses configured Google Places (New) autocomplete as primary, seamlessly falling
+ * back to open providers (Photon / Nominatim) if Google Maps Platform returns an
+ * authorization, billing, or configuration error.
  */
 export const searchPlaces = async (
   query: string,
   options: { readonly sessionToken?: string; readonly origin?: GeoPoint; readonly signal?: AbortSignal } = {}
 ): Promise<readonly PlaceSuggestion[]> => {
-  assertKey();
   const input = query.trim();
   if (input.length < 3) return [];
 
-  const body: Record<string, unknown> = {
-    input,
-    // Restrict to India; widen or make configurable when expanding.
-    includedRegionCodes: ['in'],
-  };
-  if (options.sessionToken) body.sessionToken = options.sessionToken;
-  if (options.origin) {
-    body.locationBias = {
-      circle: {
-        center: { latitude: options.origin.latitude, longitude: options.origin.longitude },
-        radius: BIAS_RADIUS_M,
-      },
-    };
-    body.origin = { latitude: options.origin.latitude, longitude: options.origin.longitude };
+  // Primary: Google Places (New)
+  if (hasGeocodingConfig()) {
+    try {
+      const body: Record<string, unknown> = {
+        input,
+        includedRegionCodes: ['in'],
+      };
+      if (options.sessionToken) body.sessionToken = options.sessionToken;
+      if (options.origin) {
+        body.locationBias = {
+          circle: {
+            center: { latitude: options.origin.latitude, longitude: options.origin.longitude },
+            radius: BIAS_RADIUS_M,
+          },
+        };
+        body.origin = { latitude: options.origin.latitude, longitude: options.origin.longitude };
+      }
+
+      const data = await googleFetch<AutocompleteResponse>(
+        `${PLACES_HOST}/places:autocomplete`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': env.googleMapsApiKey,
+          },
+          body: JSON.stringify(body),
+        },
+        options.signal
+      );
+
+      const suggestions = (data.suggestions ?? [])
+        .map((s) => s.placePrediction)
+        .filter((p): p is NonNullable<typeof p> => Boolean(p?.placeId))
+        .map((p) => {
+          const main = p.structuredFormat?.mainText?.text ?? p.text?.text ?? '';
+          const secondary = p.structuredFormat?.secondaryText?.text ?? '';
+          return {
+            placeId: p.placeId as string,
+            primaryText: main,
+            secondaryText: secondary,
+            description: p.text?.text ?? [main, secondary].filter(Boolean).join(', '),
+          };
+        });
+
+      if (suggestions.length > 0) {
+        return suggestions;
+      }
+    } catch (caught: any) {
+      if (caught?.name === 'AbortError' || caught?.message?.includes('aborted')) {
+        throw caught;
+      }
+      console.warn('[searchPlaces] Google Places request failed, falling back to open provider:', caught?.message);
+    }
   }
 
-  const data = await googleFetch<AutocompleteResponse>(
-    `${PLACES_HOST}/places:autocomplete`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': env.googleMapsApiKey,
-      },
-      body: JSON.stringify(body),
-    },
-    options.signal
-  );
-
-  return (data.suggestions ?? [])
-    .map((s) => s.placePrediction)
-    .filter((p): p is NonNullable<typeof p> => Boolean(p?.placeId))
-    .map((p) => {
-      const main = p.structuredFormat?.mainText?.text ?? p.text?.text ?? '';
-      const secondary = p.structuredFormat?.secondaryText?.text ?? '';
-      return {
-        placeId: p.placeId as string,
-        primaryText: main,
-        secondaryText: secondary,
-        description: p.text?.text ?? [main, secondary].filter(Boolean).join(', '),
-      };
-    });
+  // Fallback: OpenStreetMap / Photon provider
+  return openSearchPlaces(input, options);
 };
 
 // ─── Place Details (New) ─────────────────────────────────────────────────────
@@ -209,37 +318,57 @@ export const resolvePlaceId = async (
   placeId: string,
   options: { readonly sessionToken?: string; readonly signal?: AbortSignal } = {}
 ): Promise<ResolvedPlace> => {
-  assertKey();
-
-  const query = options.sessionToken
-    ? `?sessionToken=${encodeURIComponent(options.sessionToken)}`
-    : '';
-
-  const data = await googleFetch<PlaceDetailsResponse>(
-    `${PLACES_HOST}/places/${encodeURIComponent(placeId)}${query}`,
-    {
-      method: 'GET',
-      headers: {
-        'X-Goog-Api-Key': env.googleMapsApiKey,
-        // Field mask is mandatory on Places (New); requesting less costs less.
-        'X-Goog-FieldMask': 'id,location,formattedAddress,displayName',
-      },
-    },
-    options.signal
-  );
-
-  const lat = data.location?.latitude;
-  const lng = data.location?.longitude;
-  if (typeof lat !== 'number' || typeof lng !== 'number') {
-    throw new ApiError('parse', 'That place has no coordinates');
+  // Check if place was provided by open geocoding provider
+  if (placeId.startsWith('osm:')) {
+    const parts = placeId.split(':');
+    const lat = parseFloat(parts[1]);
+    const lng = parseFloat(parts[2]);
+    const address = decodeURIComponent(parts.slice(3).join(':'));
+    if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+      return {
+        latitude: lat,
+        longitude: lng,
+        address: address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+        placeId,
+      };
+    }
   }
 
-  return {
-    latitude: lat,
-    longitude: lng,
-    address: data.formattedAddress ?? data.displayName?.text ?? '',
-    placeId,
-  };
+  if (hasGeocodingConfig()) {
+    try {
+      const query = options.sessionToken
+        ? `?sessionToken=${encodeURIComponent(options.sessionToken)}`
+        : '';
+
+      const data = await googleFetch<PlaceDetailsResponse>(
+        `${PLACES_HOST}/places/${encodeURIComponent(placeId)}${query}`,
+        {
+          method: 'GET',
+          headers: {
+            'X-Goog-Api-Key': env.googleMapsApiKey,
+            'X-Goog-FieldMask': 'id,location,formattedAddress,displayName',
+          },
+        },
+        options.signal
+      );
+
+      const lat = data.location?.latitude;
+      const lng = data.location?.longitude;
+      if (typeof lat === 'number' && typeof lng === 'number') {
+        return {
+          latitude: lat,
+          longitude: lng,
+          address: data.formattedAddress ?? data.displayName?.text ?? '',
+          placeId,
+        };
+      }
+    } catch (caught: any) {
+      if (caught?.name === 'AbortError') throw caught;
+      console.warn('[resolvePlaceId] Google Place Details failed:', caught?.message);
+    }
+  }
+
+  throw new ApiError('parse', 'That place has no coordinates');
 };
 
 // ─── Reverse geocoding ───────────────────────────────────────────────────────
@@ -253,20 +382,53 @@ export const reverseGeocode = async (
   point: GeoPoint,
   signal?: AbortSignal
 ): Promise<string> => {
-  assertKey();
+  // 1. Primary: Google Maps Geocoding API
+  if (hasGeocodingConfig()) {
+    try {
+      const params = new URLSearchParams({
+        latlng: `${point.latitude},${point.longitude}`,
+        key: env.googleMapsApiKey,
+      });
 
-  const params = new URLSearchParams({
-    latlng: `${point.latitude},${point.longitude}`,
-    key: env.googleMapsApiKey,
-  });
+      const data = await googleFetch<GeocodeResponse>(
+        `${GEOCODE_HOST}?${params.toString()}`,
+        { method: 'GET' },
+        signal
+      );
 
-  const data = await googleFetch<GeocodeResponse>(
-    `${GEOCODE_HOST}?${params.toString()}`,
-    { method: 'GET' },
-    signal
-  );
+      const googleAddress = data.results?.[0]?.formatted_address;
+      if (googleAddress && googleAddress.trim().length > 0) {
+        return googleAddress;
+      }
+    } catch (caught: any) {
+      if (caught?.name === 'AbortError') throw caught;
+      console.warn('[reverseGeocode] Google reverse geocode failed, falling back:', caught?.message);
+    }
+  }
 
-  return data.results?.[0]?.formatted_address ?? '';
+  // 2. Fallback: OpenStreetMap Nominatim reverse geocode
+  try {
+    const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${point.latitude}&lon=${point.longitude}&addressdetails=1`;
+    const resp = await fetch(nominatimUrl, {
+      signal,
+      headers: { 'User-Agent': 'MultipleRideCustomerApp/1.0 (support@multipleride.com)' },
+    });
+    if (resp.ok) {
+      const data = (await resp.json()) as {
+        display_name?: string;
+        address?: Record<string, string>;
+      };
+      if (data.display_name && data.display_name.trim().length > 0) {
+        return data.display_name;
+      }
+    }
+  } catch (caught: any) {
+    if (caught?.name === 'AbortError') throw caught;
+    console.warn('[reverseGeocode] Nominatim reverse geocode failed:', caught?.message);
+  }
+
+  // 3. Fallback: Formatted coordinate string (never empty, never 'Dropped pin', never 'Current location')
+  return `${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`;
 };
 
 export class LocationPermissionDeniedError extends Error {
@@ -279,8 +441,8 @@ export class LocationPermissionDeniedError extends Error {
 /**
  * Current device position with a resolved address.
  *
- * Requests foreground permission on first call. Falls back to a coordinate-only
- * result if reverse geocoding fails, so a Maps outage cannot block booking.
+ * Requests foreground permission on first call. Reverse geocodes the coordinates into a
+ * readable address, falling back to clean coordinate notation if geocoding is unavailable.
  */
 export const getCurrentPlace = async (signal?: AbortSignal): Promise<ResolvedPlace> => {
   console.log('[CUSTOMER_LOCATION] getCurrentPosition started');
@@ -292,23 +454,35 @@ export const getCurrentPlace = async (signal?: AbortSignal): Promise<ResolvedPla
     );
     console.log('[CUSTOMER_LOCATION] permission result:', granted);
     if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-      throw new ApiError('location_permission', 'Location permission denied');
+      throw new ApiError('location_permission', 'Location permission is required to detect your pickup location.');
     }
   }
 
   const position = await new Promise<any>((resolve, reject) => {
     Geolocation.getCurrentPosition(
       (pos) => resolve(pos),
-      (err) => reject(err),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+      (err) => {
+        // Fallback for indoors / slow GPS: try cell/WiFi/network fused location
+        if (err?.code === 2 || err?.code === 3) {
+          console.log('[CUSTOMER_LOCATION] High accuracy failed, trying network fallback...');
+          Geolocation.getCurrentPosition(
+            (fallbackPos) => resolve(fallbackPos),
+            () => reject(err),
+            { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+          );
+        } else {
+          reject(err);
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
     );
   }).catch((err) => {
-    console.log('[CUSTOMER_LOCATION] error code:', err.code);
-    console.log('[CUSTOMER_LOCATION] error message:', err.message);
-    if (err.code === 1) throw new ApiError('location_permission', 'Location permission denied');
-    if (err.code === 2) throw new ApiError('location_unavailable', 'GPS position unavailable');
-    if (err.code === 3) throw new ApiError('location_timeout', 'GPS timeout');
-    throw new ApiError('location_unavailable', 'GPS error');
+    console.log('[CUSTOMER_LOCATION] error code:', err?.code);
+    console.log('[CUSTOMER_LOCATION] error message:', err?.message);
+    if (err?.code === 1) throw new ApiError('location_permission', 'Location permission is required to detect your pickup location.');
+    if (err?.code === 2) throw new ApiError('location_unavailable', 'GPS position unavailable. Please ensure location services are enabled.');
+    if (err?.code === 3) throw new ApiError('location_timeout', 'Location detection timed out. Please try again.');
+    throw new ApiError('location_unavailable', 'Unable to determine your current location. Please try again.');
   });
 
   console.log('[CUSTOMER_LOCATION] success');
@@ -321,9 +495,8 @@ export const getCurrentPlace = async (signal?: AbortSignal): Promise<ResolvedPla
     Math.abs(position.coords.latitude) > 90 ||
     Math.abs(position.coords.longitude) > 180
   ) {
-    throw new ApiError('location_unavailable', 'Invalid coordinates received');
+    throw new ApiError('location_unavailable', 'Invalid coordinates received from GPS.');
   }
-
 
   const point: GeoPoint = {
     latitude: position.coords.latitude,
@@ -332,11 +505,14 @@ export const getCurrentPlace = async (signal?: AbortSignal): Promise<ResolvedPla
 
   try {
     const address = await reverseGeocode(point, signal);
-    if (address) return { ...point, address };
+    if (address && address.trim().length > 0) {
+      return { ...point, address };
+    }
   } catch {
-    // Geocoding API may be disabled on the project; fall through.
+    // Reverse geocoding failed; fall back to coordinate string.
   }
 
-  return { ...point, address: 'Current location' };
+  return { ...point, address: `${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}` };
 };
+
 

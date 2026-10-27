@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { KeyboardAwareScrollView, useKeyboardAware } from '../../components/organisms';
 
 export interface ReceiverDetailsScreenProps {
   readonly dropNumber?: number;
@@ -29,6 +30,10 @@ const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?
   onContinue,
   navigation,
 }) => {
+  const keyboardAwareRef = useRef<any>(null);
+  const scrollToInput = useCallback((target: any) => {
+    keyboardAwareRef.current?.scrollIntoView(target);
+  }, []);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [instructions, setInstructions] = useState('');
@@ -56,87 +61,89 @@ const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?
         <View style={styles.iconButton} />
       </View>
 
-      <KeyboardAvoidingView 
-        style={styles.keyboardAvoid} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      <KeyboardAwareScrollView
+        ref={keyboardAwareRef}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        footer={
+          <View style={styles.footer}>
+            <Button
+              label="CONTINUE"
+              onPress={() => {
+                handleContinue();
+                navigation?.navigate('FareEstimateScreen');
+              }}
+              variant="primary"
+              disabled={isContinueDisabled}
+              fullWidth
+            />
+          </View>
+        }
       >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          
-          {/* Destination Header */}
-          <View style={styles.destinationCard}>
-            <View style={styles.locationIconCircle}>
-              <MaterialIcons name="location-on" size={20} color={colors.onSecondaryContainer} />
-            </View>
-            <View style={styles.destinationTextContainer}>
-              <Text style={styles.dropLabel}>DROP {dropNumber}</Text>
-              <Text style={styles.dropAddress}>{dropAddress}</Text>
-            </View>
+        {/* Destination Header */}
+        <View style={styles.destinationCard}>
+          <View style={styles.locationIconCircle}>
+            <MaterialIcons name="location-on" size={20} color={colors.onSecondaryContainer} />
           </View>
-
-          {/* Form Section */}
-          <View style={styles.formSection}>
-            <Text style={styles.formTitle}>Who is receiving the goods?</Text>
-
-            {/* Input 1 (Name) */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>RECEIVER NAME</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Enter name"
-                placeholderTextColor={colors.outlineVariant}
-                value={name}
-                onChangeText={setName}
-              />
-            </View>
-
-            {/* Input 2 (Contact) */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
-              <View style={styles.phoneInputContainer}>
-                <Text style={styles.phonePrefix}>+91</Text>
-                <TextInput
-                  style={styles.phoneInput}
-                  placeholder="Enter 10-digit number"
-                  placeholderTextColor={colors.outlineVariant}
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                  value={phone}
-                  onChangeText={setPhone}
-                />
-              </View>
-            </View>
-
-            {/* Input 3 (Instructions) */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>DELIVERY INSTRUCTIONS (OPTIONAL)</Text>
-              <TextInput
-                style={[styles.textInput, styles.textArea]}
-                placeholder="e.g. Near the blue gate, 2nd floor..."
-                placeholderTextColor={colors.outlineVariant}
-                multiline
-                numberOfLines={3}
-                value={instructions}
-                onChangeText={setInstructions}
-                textAlignVertical="top"
-              />
-            </View>
+          <View style={styles.destinationTextContainer}>
+            <Text style={styles.dropLabel}>DROP {dropNumber}</Text>
+            <Text style={styles.dropAddress}>{dropAddress}</Text>
           </View>
-
-        </ScrollView>
-
-        <View style={styles.footer}>
-          <Button
-            label="CONTINUE"
-            onPress={() => {
-              handleContinue();
-              navigation?.navigate('FareEstimateScreen');
-            }}
-            variant="primary"
-            disabled={isContinueDisabled}
-            fullWidth
-          />
         </View>
-      </KeyboardAvoidingView>
+
+        {/* Form Section */}
+        <View style={styles.formSection}>
+          <Text style={styles.formTitle}>Who is receiving the goods?</Text>
+
+          {/* Input 1 (Name) */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>RECEIVER NAME</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Enter name"
+              placeholderTextColor={colors.outlineVariant}
+              value={name}
+              onChangeText={setName}
+              onFocus={(e) => scrollToInput(e?.target ?? e?.nativeEvent?.target)}
+            />
+          </View>
+
+          {/* Input 2 (Contact) */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
+            <View style={styles.phoneInputContainer}>
+              <Text style={styles.phonePrefix}>+91</Text>
+              <TextInput
+                style={styles.phoneInput}
+                placeholder="Enter 10-digit number"
+                placeholderTextColor={colors.outlineVariant}
+                keyboardType="phone-pad"
+                maxLength={10}
+                value={phone}
+                onChangeText={setPhone}
+                onFocus={(e) => scrollToInput(e?.target ?? e?.nativeEvent?.target)}
+              />
+            </View>
+          </View>
+
+          {/* Input 3 (Instructions) */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>DELIVERY INSTRUCTIONS (OPTIONAL)</Text>
+            <TextInput
+              style={[styles.textInput, styles.textArea]}
+              placeholder="e.g. Near the blue gate, 2nd floor..."
+              placeholderTextColor={colors.outlineVariant}
+              multiline
+              numberOfLines={3}
+              value={instructions}
+              onChangeText={setInstructions}
+              onFocus={(e) => scrollToInput(e?.target ?? e?.nativeEvent?.target)}
+              textAlignVertical="top"
+            />
+          </View>
+        </View>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };

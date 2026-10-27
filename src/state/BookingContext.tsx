@@ -1,4 +1,4 @@
-﻿import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { getAuth, onAuthStateChanged } from '@react-native-firebase/auth';
 import type { FareQuote, GeoPoint, NearbyDriver, PaymentMethod, Ride, Trip } from '../api/types';
 import type { ResolvedPlace } from '../api/geocoding';
@@ -23,6 +23,9 @@ export interface BookingDraft {
   readonly weightKg?: number;
   readonly goodsDescription?: string;
   readonly declaredValue?: string;
+  readonly goodsType?: string;
+  readonly weightUnit?: 'kg' | 'lbs';
+  readonly specialInstructions?: string;
   readonly insured?: boolean;
   readonly senderName?: string;
   readonly senderPhone?: string;
@@ -35,7 +38,7 @@ export interface BookingDraft {
   readonly paymentMethod?: PaymentMethod;
 }
 
-const EMPTY_DRAFT: BookingDraft = { drops: [] };
+const EMPTY_DRAFT: BookingDraft = { drops: [], paymentMethod: 'PAY_AT_DELIVERY' };
 
 interface BookingContextValue {
   /** The signed-in customer's id (Firebase uid), or undefined when signed out. */
@@ -58,6 +61,9 @@ interface BookingContextValue {
     readonly weightKg?: number;
     readonly goodsDescription?: string;
     readonly declaredValue?: string;
+    readonly goodsType?: string;
+    readonly weightUnit?: 'kg' | 'lbs';
+    readonly specialInstructions?: string;
   }) => void;
   readonly setInsured: (insured: boolean) => void;
   readonly setSender: (sender: { readonly name?: string; readonly phone?: string; readonly instructions?: string }) => void;
@@ -78,7 +84,7 @@ interface BookingContextValue {
   readonly clearActiveRide: () => void;
 }
 
-const BookingContext = createContext<BookingContextValue | undefined>(undefined);
+export const BookingContext = createContext<BookingContextValue | undefined>(undefined);
 
 export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> = ({ children }) => {
   const [customerId, setCustomerId] = useState<string>();
@@ -145,7 +151,14 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
   }, []);
 
   const setGoods = useCallback(
-    (goods: { weightKg?: number; goodsDescription?: string; declaredValue?: string }) => {
+    (goods: {
+      weightKg?: number;
+      goodsDescription?: string;
+      declaredValue?: string;
+      goodsType?: string;
+      weightUnit?: 'kg' | 'lbs';
+      specialInstructions?: string;
+    }) => {
       // Weight feeds the fare, so a change invalidates the quote.
       setDraft((d) => ({ ...d, ...goods, quote: undefined }));
     },
@@ -184,9 +197,23 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
       ...EMPTY_DRAFT,
       pickup: d.pickup,
     }));
-    setRide(undefined);
-    setTrip(undefined);
-    setAssignedDriver(undefined);
+    setTrip((currentTrip) => {
+      if (
+        currentTrip &&
+        currentTrip.status !== 'DELIVERED' &&
+        currentTrip.status !== 'COMPLETED' &&
+        currentTrip.status !== 'CANCELLED'
+      ) {
+        return currentTrip;
+      }
+      return undefined;
+    });
+    setRide((currentRide) => {
+      return currentRide;
+    });
+    setAssignedDriver((currentDriver) => {
+      return currentDriver;
+    });
   }, []);
 
   const clearActiveRide = useCallback(() => {

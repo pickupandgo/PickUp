@@ -1,3 +1,4 @@
+
 /**
  * Wiring verification for the PICKUP UI prototype.
  *
@@ -22,7 +23,7 @@ const walk = (dir) =>
 // --- registered routes -------------------------------------------------------
 const appSrc = fs.readFileSync(path.join(root, 'App.tsx'), 'utf8');
 const registered = new Set(
-  [...appSrc.matchAll(/<Stack\.Screen\s+name="([^"]+)"/g)].map((m) => m[1])
+  [...appSrc.matchAll(/<(?:Stack|Tab)\.Screen\s+name="([^"]+)"/g)].map((m) => m[1])
 );
 
 // --- navigation targets used by screens --------------------------------------

@@ -9,3 +9,6 @@ export type { LocationInputRowProps } from './LocationInputRow';
 
 export { default as VehicleOptionCard } from './VehicleOptionCard';
 export type { VehicleOptionCardProps } from './VehicleOptionCard';
+
+export { default as GoodsTypeDropdown, GOODS_CATEGORIES } from './GoodsTypeDropdown';
+export type { GoodsTypeDropdownProps } from './GoodsTypeDropdown';

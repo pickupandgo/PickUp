@@ -33,7 +33,7 @@ const defaultStops: readonly DropStop[] = [
     id: '1',
     type: 'pickup',
     label: 'Pickup',
-    title: 'Current Location',
+    title: 'Pickup Location',
   },
   {
     id: '2',
@@ -75,7 +75,7 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
         id: 'pickup',
         type: 'pickup',
         label: 'Pickup',
-        title: draft.pickup.address || 'Current Location',
+        title: draft.pickup.address || 'Pickup Location',
       });
     }
     draft.drops.forEach((drop, index) => {

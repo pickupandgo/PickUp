@@ -26,20 +26,61 @@ export interface TripCancelledStatusScreenProps {
   readonly onBack?: () => void;
 }
 
-const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { navigation?: any }> = ({
-  tripId = 'BK-849201',
-  feeTitle = 'No cancellation fee applies',
-  feeSubtitle = 'You cancelled within the grace period. No payment was captured.',
-  pickupLocation = 'Tech Park West',
-  pickupTime = '10:45 AM',
-  dropLocation = 'Airport Terminal 2',
-  cancelledAt = 'Cancelled on Oct 24, 10:48 AM',
+const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { navigation?: any; route?: any }> = ({
+  tripId: propTripId,
+  feeTitle,
+  feeSubtitle,
+  pickupLocation: propPickupLocation,
+  pickupTime: propPickupTime,
+  dropLocation: propDropLocation,
+  cancelledAt: propCancelledAt,
   onHome,
   onViewHistory,
   onBack,
   navigation,
+  route,
 }) => {
   const { clearActiveRide } = useBooking();
+
+  const trip = route?.params?.trip;
+  const effectiveTripId =
+    route?.params?.tripId ||
+    propTripId ||
+    trip?.externalRef ||
+    trip?.id ||
+    'TRP-CANCELLED';
+
+  const effectivePickup =
+    route?.params?.pickupLocation ||
+    trip?.pickup?.address ||
+    propPickupLocation ||
+    'Pickup Location';
+
+  const effectivePickupTime =
+    route?.params?.pickupTime ||
+    propPickupTime ||
+    (trip?.createdAt ? new Date(trip.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recent');
+
+  const effectiveDrop =
+    route?.params?.dropLocation ||
+    trip?.drop?.address ||
+    (trip?.stops?.[0]?.location?.address) ||
+    propDropLocation ||
+    'Drop Location';
+
+  const effectiveCancelledAt =
+    route?.params?.cancelledAt ||
+    (trip?.cancelledAt
+      ? `Cancelled on ${new Date(trip.cancelledAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${new Date(trip.cancelledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+      : propCancelledAt || 'Booking Cancelled');
+
+  const feeAmount = route?.params?.feeAmount;
+  const effectiveFeeTitle = feeTitle || (feeAmount ? 'Cancellation Charge' : 'No cancellation fee applies');
+  const effectiveFeeSubtitle =
+    feeSubtitle ||
+    (feeAmount
+      ? `A cancellation fee of ₹${feeAmount} has been charged to your account.`
+      : 'You cancelled within the grace period. No payment was captured.');
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -64,7 +105,7 @@ const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { nav
           <Text style={styles.statusTitle}>Trip Cancelled</Text>
           <Text style={styles.statusSubtitle}>This booking has been successfully cancelled.</Text>
           <View style={styles.tripIdBadge}>
-            <Text style={styles.tripIdText}>ID: {tripId}</Text>
+            <Text style={styles.tripIdText}>ID: {effectiveTripId}</Text>
           </View>
         </View>
 
@@ -73,8 +114,8 @@ const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { nav
           <View style={styles.infoRow}>
             <MaterialIcons name="info" size={20} color={colors.secondary} style={styles.infoIcon} />
             <View style={styles.infoTexts}>
-              <Text style={styles.infoTitle}>{feeTitle}</Text>
-              <Text style={styles.infoSubtitle}>{feeSubtitle}</Text>
+              <Text style={styles.infoTitle}>{effectiveFeeTitle}</Text>
+              <Text style={styles.infoSubtitle}>{effectiveFeeSubtitle}</Text>
             </View>
           </View>
         </View>
@@ -91,17 +132,17 @@ const TripCancelledStatusScreen: React.FC<TripCancelledStatusScreenProps & { nav
             </View>
             <View style={styles.routeDetails}>
               <View style={styles.pickupBlock}>
-                <Text style={styles.locationText}>{pickupLocation}</Text>
-                <Text style={styles.timeText}>{pickupTime}</Text>
+                <Text style={styles.locationText}>{effectivePickup}</Text>
+                <Text style={styles.timeText}>{effectivePickupTime}</Text>
               </View>
               <View style={styles.dropBlock}>
-                <Text style={styles.locationText}>{dropLocation}</Text>
+                <Text style={styles.locationText}>{effectiveDrop}</Text>
               </View>
             </View>
           </View>
 
           <View style={styles.summaryFooter}>
-            <Text style={styles.cancelledAtText}>{cancelledAt}</Text>
+            <Text style={styles.cancelledAtText}>{effectiveCancelledAt}</Text>
           </View>
         </View>
 
