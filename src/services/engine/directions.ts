@@ -86,18 +86,94 @@ const parseDuration = (duration: string | undefined): number => {
 };
 
 /**
- * Fetches a driving route between two points and returns the decoded polyline.
- * Any waypoints go through the same route as ordered intermediate stops.
+ * OpenStreetMap / OSRM routing endpoints for resilient, road-following navigation.
+ * Used when Google Routes API reaches its quota limit, requires billing, or is unavailable.
  */
-export const getRoute = async (
+const OSRM_ENDPOINTS = [
+  'https://routing.openstreetmap.de/routed-car/route/v1/driving',
+  'https://router.project-osrm.org/route/v1/driving',
+];
+
+interface OsrmResponse {
+  readonly code?: string;
+  readonly message?: string;
+  readonly routes?: ReadonlyArray<{
+    readonly geometry?: string;
+    readonly distance?: number;
+    readonly duration?: number;
+    readonly legs?: ReadonlyArray<{
+      readonly distance?: number;
+      readonly duration?: number;
+    }>;
+  }>;
+}
+
+/**
+ * Fetches real road turn-by-turn driving polyline from OpenStreetMap / OSRM.
+ */
+const getOsrmRoute = async (
+  origin: GeoPoint,
+  destination: GeoPoint,
+  options: { readonly waypoints?: readonly GeoPoint[]; readonly signal?: AbortSignal } = {}
+): Promise<RouteResult | null> => {
+  const allPoints = [origin, ...(options.waypoints ?? []), destination];
+  const coordsStr = allPoints.map((p) => `${p.longitude},${p.latitude}`).join(';');
+
+  for (const baseUrl of OSRM_ENDPOINTS) {
+    try {
+      const url = `${baseUrl}/${coordsStr}?overview=full&geometries=polyline`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+      // Merge signals if options.signal is provided
+      if (options.signal) {
+        options.signal.addEventListener('abort', () => controller.abort());
+      }
+
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'MultipleRide/1.0 (Mobile App)',
+          Accept: 'application/json',
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!res.ok) continue;
+      const data: OsrmResponse = await res.json();
+      if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) continue;
+
+      const r = data.routes[0];
+      const encoded = r.geometry;
+      if (!encoded) continue;
+
+      const polyline = decodePolyline(encoded);
+      if (polyline.length === 0) continue;
+
+      return {
+        polyline,
+        distanceMeters: Math.round(r.distance ?? 0),
+        durationSeconds: Math.round(r.duration ?? 0),
+      };
+    } catch {
+      // Try next OSRM mirror
+      continue;
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Fetches route via Google Routes API (v2).
+ */
+const getGoogleRoute = async (
   origin: GeoPoint,
   destination: GeoPoint,
   options: { readonly waypoints?: readonly GeoPoint[]; readonly signal?: AbortSignal } = {}
 ): Promise<RouteResult> => {
-  if (!hasGeocodingConfig()) {
-    throw new ApiError('config', 'Google Maps API key is not set.');
-  }
-
   const body: Record<string, unknown> = {
     origin: {
       location: {
@@ -137,13 +213,14 @@ export const getRoute = async (
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': env.googleMapsApiKey as string,
-        'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.distanceMeters,routes.legs.duration',
+        'X-Goog-FieldMask':
+          'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.distanceMeters,routes.legs.duration',
       },
       body: JSON.stringify(body),
       signal: options.signal,
     });
   } catch {
-    throw new ApiError('network', 'Could not reach the directions service');
+    throw new ApiError('network', 'Could not reach Google directions service');
   }
 
   const raw = await response.text();
@@ -151,7 +228,7 @@ export const getRoute = async (
   try {
     data = raw.length ? JSON.parse(raw) : {};
   } catch {
-    throw new ApiError('parse', 'Malformed response from directions service');
+    throw new ApiError('parse', 'Malformed response from Google directions service');
   }
 
   if (!response.ok || data.error) {
@@ -170,7 +247,6 @@ export const getRoute = async (
   const encoded = route?.polyline?.encodedPolyline;
   if (!encoded) throw new ApiError('parse', 'No polyline in routes response');
 
-  // Sum the legs. For A→B there is one leg; with intermediates there are more.
   const legs = route?.legs ?? [];
   const distanceMeters = legs.reduce((sum, leg) => sum + (leg.distanceMeters ?? 0), 0);
   const durationSeconds = legs.reduce((sum, leg) => sum + parseDuration(leg.duration), 0);
@@ -180,4 +256,41 @@ export const getRoute = async (
     distanceMeters,
     durationSeconds,
   };
+};
+
+/**
+ * Fetches a driving route between two points and returns the decoded polyline.
+ * Any waypoints go through the same route as ordered intermediate stops.
+ *
+ * Resilience: Attempts Google Routes API first. If unavailable, rate limited (429),
+ * or billing not active, automatically falls back to OpenStreetMap / OSRM driving
+ * service so the driver always receives a real road-following navigation route.
+ */
+export const getRoute = async (
+  origin: GeoPoint,
+  destination: GeoPoint,
+  options: { readonly waypoints?: readonly GeoPoint[]; readonly signal?: AbortSignal } = {}
+): Promise<RouteResult> => {
+  // 1. Try Google Routes API if key is available
+  if (hasGeocodingConfig()) {
+    try {
+      const googleResult = await getGoogleRoute(origin, destination, options);
+      if (googleResult && googleResult.polyline.length > 0) {
+        return googleResult;
+      }
+    } catch (googleError) {
+      console.warn(
+        '[Directions] Google Routes API unavailable/quota exceeded, falling back to OpenStreetMap road routing:',
+        googleError
+      );
+    }
+  }
+
+  // 2. Fall back to OpenStreetMap / OSRM for real road routing
+  const osrmResult = await getOsrmRoute(origin, destination, options);
+  if (osrmResult && osrmResult.polyline.length > 0) {
+    return osrmResult;
+  }
+
+  throw new ApiError('network', 'Could not obtain driving directions from any provider');
 };

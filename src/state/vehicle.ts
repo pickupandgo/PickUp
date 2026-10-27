@@ -2,6 +2,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { vehicleImages } from '../data/mockData';
 
 export const VEHICLE_STORAGE_KEY = 'driver.selectedVehicleId';
+const VEHICLE_PROFILE_KEY_PREFIX = 'driver.vehicleProfile';
+
+export interface DriverVehicleProfile {
+  readonly vehicleType: string;
+  readonly vehicleRegistrationNumber: string;
+  readonly vehicleMakeModel: string;
+  readonly drivingLicenseNumber: string;
+  readonly updatedAt?: string;
+}
 
 export interface VehicleDetails {
   readonly id: string;
@@ -12,6 +21,40 @@ export interface VehicleDetails {
   readonly image: any;
   readonly status: 'approved' | 'pending' | 'under_review' | 'rejected';
 }
+
+const getScopedProfileKey = (uid?: string | null): string => {
+  return uid ? `${VEHICLE_PROFILE_KEY_PREFIX}.${uid}` : VEHICLE_PROFILE_KEY_PREFIX;
+};
+
+export const saveDriverVehicleProfile = async (
+  uid: string | null | undefined,
+  profile: DriverVehicleProfile,
+): Promise<void> => {
+  try {
+    const key = getScopedProfileKey(uid);
+    await AsyncStorage.setItem(key, JSON.stringify(profile));
+    if (uid) {
+      await AsyncStorage.setItem(VEHICLE_PROFILE_KEY_PREFIX, JSON.stringify(profile));
+    }
+    if (profile.vehicleType) {
+      await saveSelectedVehicleId(profile.vehicleType);
+    }
+  } catch (err) {
+    console.warn('[vehicleState] Failed to save driver vehicle profile:', err);
+  }
+};
+
+export const getDriverVehicleProfile = async (
+  uid?: string | null,
+): Promise<DriverVehicleProfile | null> => {
+  try {
+    const key = getScopedProfileKey(uid);
+    const data = await AsyncStorage.getItem(key);
+    return data ? (JSON.parse(data) as DriverVehicleProfile) : null;
+  } catch {
+    return null;
+  }
+};
 
 export const saveSelectedVehicleId = async (vehicleId: string): Promise<void> => {
   try {
@@ -32,9 +75,10 @@ export const getSelectedVehicleId = async (): Promise<string | null> => {
 export const getVehicleDetails = (
   vehicleId?: string | null,
   t?: (key: string) => string,
+  customRegistration?: string | null,
 ): VehicleDetails => {
   const id = vehicleId || 'mini_truck';
-  const reg = 'RJ 19 XX 1234';
+  const reg = customRegistration || 'RJ 19 XX 1234';
 
   switch (id) {
     case 'two_wheeler':

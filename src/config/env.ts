@@ -33,9 +33,10 @@ const parsePaymentsBaseUrl = (value: string | undefined): string | undefined => 
     return undefined;
   }
   const url = value.replace(/\/+$/, '');
-  const isHttps = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(url);
-  const isDevHttp = __DEV__ && /^http:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(url);
-  return isHttps || isDevHttp ? url : undefined;
+  const rootUrl = url.replace(/\/v1$/, '');
+  const isHttps = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(rootUrl);
+  const isDevHttp = __DEV__ && /^http:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(rootUrl);
+  return isHttps || isDevHttp ? rootUrl : undefined;
 };
 
 const PAYMENTS_API_BASE_URL = parsePaymentsBaseUrl(readOptional(Config.PAYMENTS_API_BASE_URL));

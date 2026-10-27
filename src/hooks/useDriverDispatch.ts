@@ -110,12 +110,12 @@ export function useDriverDispatch({
       }
     };
 
-    const kickoff = setTimeout(tick, 800);
+    // Execute first tick immediately upon activation
+    void tick();
     intervalRef.current = setInterval(tick, POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
-      clearTimeout(kickoff);
       clearTimer();
       // Best-effort: mark offline when leaving the online state.
       setDriverAvailability(driverId, false).catch(() => {});

@@ -7,6 +7,7 @@ import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.multipleride.driver.location.LocationPackage
+import com.multipleride.driver.overlay.FloatingBubblePackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -17,6 +18,7 @@ class MainApplication : Application(), ReactApplication {
         PackageList(this).packages.apply {
           // Manually linked packages:
           add(LocationPackage())
+          add(FloatingBubblePackage())
         },
     )
   }

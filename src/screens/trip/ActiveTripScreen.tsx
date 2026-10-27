@@ -29,7 +29,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   const { t } = useI18n();
   const { currentLocation } = useDriverLocation();
   const trip = useActiveTrip(navRoute.params?.tripId);
-  const { route: routingData } = useTripRoute();
+  const { route: routingData } = useTripRoute({ tripId: navRoute.params?.tripId });
 
   const getStopLabel = useCallback((stops: readonly TripStop[], index: number): string => {
     const stop = stops[index];
@@ -121,6 +121,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
           routeData={routeData}
           showControls={false}
           followDriver
+          vehicleType={trip.vehicleId || (trip as any).vehicleType}
           style={StyleSheet.absoluteFill}
         />
       </View>

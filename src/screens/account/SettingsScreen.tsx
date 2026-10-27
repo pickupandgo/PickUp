@@ -9,6 +9,9 @@ import { useI18n } from '../../i18n';
 import type { SettingsItem, SettingsSection } from '../../types/user';
 import type { AccountScreenProps, AccountStackParamList } from '../../types/navigation';
 
+import { Alert } from 'react-native';
+import { floatingBubbleService } from '../../services/overlay/FloatingBubbleService';
+
 export interface SettingsScreenProps {
   readonly navigation: AccountScreenProps<'Settings'>['navigation'];
   readonly testID?: string;
@@ -20,6 +23,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 }) => {
   const { logout } = useAuth();
   const { t, locale } = useI18n();
+  const [bubbleEnabled, setBubbleEnabled] = React.useState(floatingBubbleService.isFeatureEnabled());
+
+  React.useEffect(() => {
+    return floatingBubbleService.subscribe((enabled) => {
+      setBubbleEnabled(enabled);
+    });
+  }, []);
   
   const noParamRoutes = new Set<string>([
     'Profile', 'KYCDocuments', 'VehicleDocuments', 'VehicleStatus', 'VehicleSelection',
@@ -31,10 +41,35 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       await logout();
       return;
     }
+    if (item.id === 's_bubble') {
+      if (bubbleEnabled) {
+        await floatingBubbleService.setFeatureEnabled(false);
+      } else {
+        const canDraw = await floatingBubbleService.canDrawOverlays();
+        if (!canDraw) {
+          Alert.alert(
+            t('settings.floatingBubbleTitle'),
+            t('settings.floatingBubbleMsg'),
+            [
+              { text: t('common.cancel'), style: 'cancel' },
+              {
+                text: t('settings.openSettings'),
+                onPress: () => {
+                  floatingBubbleService.requestOverlayPermission().catch(() => {});
+                },
+              },
+            ],
+          );
+        } else {
+          await floatingBubbleService.setFeatureEnabled(true);
+        }
+      }
+      return;
+    }
     if (item.route && noParamRoutes.has(item.route)) {
       navigation.navigate(item.route as any);
     }
-  }, [navigation, logout]);
+  }, [navigation, logout, bubbleEnabled, t]);
 
   const sections: { title: string; data: SettingsItem[] }[] = useMemo(() => [
     {
@@ -57,6 +92,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       data: [
         { id: 's5', label: t('settings.notifications'), iconName: 'notifications', hasChevron: true },
         { id: 's6', label: t('settings.privacy'), iconName: 'lock', hasChevron: true },
+        {
+          id: 's_bubble',
+          label: t('settings.floatingBubble'),
+          value: bubbleEnabled ? t('common.enabled') : t('common.disabled'),
+          iconName: 'bubble_chart',
+          hasChevron: true,
+        },
       ],
     },
     {

@@ -15,6 +15,7 @@ import { AppHeader } from '../../components/molecules/AppHeader';
 import { InlineErrorBanner } from '../../components/molecules/InlineErrorBanner';
 import { TransactionRow } from '../../components/molecules/TransactionRow';
 import { TabChip } from '../../components/atoms/TabChip';
+import { SkeletonListItem, useSkeletonVisibility } from '../../components/skeleton';
 import { useWallet } from '../../hooks/useWallet';
 import { TRANSACTION_ICON } from './transactionIcons';
 import type { Transaction } from '../../types/wallet';
@@ -52,6 +53,11 @@ export const TransactionHistoryScreen: React.FC<
         : transactions.filter(txn => txn.type === activeTab),
     [activeTab, transactions],
   );
+  const showTxnSkeleton = useSkeletonVisibility({
+    isLoading,
+    hasData: transactions.length > 0,
+    isError: Boolean(error),
+  });
   const firstLoad = isLoading && balance === null;
 
   const handleRefresh = useCallback(() => {
@@ -80,10 +86,10 @@ export const TransactionHistoryScreen: React.FC<
   );
 
   const renderEmpty = useCallback(() => {
-    if (firstLoad) {
+    if (showTxnSkeleton) {
       return (
-        <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+        <View style={{ paddingHorizontal: spacing.md, paddingTop: spacing.sm }}>
+          <SkeletonListItem count={5} hasAvatar={true} hasSubtitle={true} testID="txns-history-loading" />
         </View>
       );
     }

@@ -43,20 +43,21 @@ export function useChat(tripId: string) {
     };
   }, [fetchMessages]);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, imageUrl?: string) => {
     const tempId = `temp-${Date.now()}`;
     const tempMsg: ChatMessage = {
       id: tempId,
       text,
+      imageUrl,
       sender: 'driver',
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: 'sending',
     };
 
     setMessages((prev) => [...prev, tempMsg]);
 
     try {
-      const sentMsg = await ChatService.getInstance().sendMessage(tripId, text);
+      const sentMsg = await ChatService.getInstance().sendMessage(tripId, text, imageUrl);
       setMessages((prev) => prev.map((m) => (m.id === tempId ? sentMsg : m)));
     } catch (err: unknown) {
       setError((err instanceof Error ? err.message : 'Unknown error') || 'Failed to send message');
@@ -67,13 +68,13 @@ export function useChat(tripId: string) {
   }, [tripId]);
 
   const retryMessage = useCallback(async (failedMsg: ChatMessage) => {
-    if (!failedMsg.text) return;
+    if (!failedMsg.text && !failedMsg.imageUrl) return;
     setMessages((prev) =>
       prev.map((m) => (m.id === failedMsg.id ? { ...m, status: 'sending' as const } : m)),
     );
 
     try {
-      const sentMsg = await ChatService.getInstance().sendMessage(tripId, failedMsg.text);
+      const sentMsg = await ChatService.getInstance().sendMessage(tripId, failedMsg.text ?? '', failedMsg.imageUrl);
       setMessages((prev) => prev.map((m) => (m.id === failedMsg.id ? sentMsg : m)));
     } catch (err: unknown) {
       setMessages((prev) =>

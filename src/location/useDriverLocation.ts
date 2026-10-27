@@ -63,7 +63,7 @@ export function useDriverLocation() {
   // driver (and trip routing can compute) even before continuous tracking runs.
   useEffect(() => {
     if (permissionState === 'granted' && !currentLocation) {
-      LocationService.getCurrentLocation()
+      LocationService.getFreshOrCachedLocation(60_000)
         .then((loc) => {
           setCurrentLocation(loc);
           setError(null);
@@ -113,7 +113,7 @@ export function useDriverLocation() {
   const getCurrentLocation = useCallback(async () => {
     setError(null);
     try {
-      const loc = await LocationService.getCurrentLocation();
+      const loc = await LocationService.getFreshOrCachedLocation(60_000);
       setCurrentLocation(loc);
       return loc;
     } catch (err: unknown) {

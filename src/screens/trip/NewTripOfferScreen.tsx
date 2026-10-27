@@ -12,6 +12,7 @@ import { TripController } from '../../services/trip/TripController';
 import { describeTripError } from '../../services/trip/tripErrors';
 import { useI18n } from '../../i18n';
 import type { HomeScreenProps } from '../../types/navigation';
+import type { TripStop } from '../../types/trip';
 
 export interface NewTripOfferScreenProps {
   readonly navigation: HomeScreenProps<'TripOffer'>['navigation'];
@@ -41,7 +42,7 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
           longitude: offer.pickupStop.longitude,
         },
       },
-      ...offer.dropStops.map((drop, index) => ({
+      ...offer.dropStops.map((drop: TripStop, index: number) => ({
         id: drop.id,
         type: 'drop' as StopType,
         coordinate: {
@@ -102,6 +103,7 @@ export const NewTripOfferScreen: React.FC<NewTripOfferScreenProps> = ({
             routeData={offerRouteData}
             showControls={false}
             followDriver={true}
+            vehicleType={offer.vehicleType}
           />
 
           {/* Overlays for Pending State (Top) */}

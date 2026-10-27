@@ -186,19 +186,24 @@ jest.mock('react-native-config', () => ({
 
 // Mock @react-native-firebase/auth
 jest.mock('@react-native-firebase/auth', () => {
-  const mockAuth = () => ({
+  const mockAuthInstance = {
     signInWithPhoneNumber: jest.fn(),
     onAuthStateChanged: jest.fn(),
     currentUser: null,
-  });
-  mockAuth.getAuth = jest.fn(() => ({
-    currentUser: null,
-  }));
+    signOut: jest.fn().mockResolvedValue(undefined),
+  };
+  const mockAuth = () => mockAuthInstance;
+  mockAuth.getAuth = jest.fn(() => mockAuthInstance);
   return {
     __esModule: true,
     default: mockAuth,
     getAuth: mockAuth.getAuth,
+    signInWithPhoneNumber: jest.fn(),
     onAuthStateChanged: jest.fn(() => jest.fn()),
+    signOut: jest.fn().mockResolvedValue(undefined),
+    signInWithEmailAndPassword: jest.fn(),
+    createUserWithEmailAndPassword: jest.fn(),
+    getIdToken: jest.fn().mockResolvedValue('mock-token'),
   };
 });
 

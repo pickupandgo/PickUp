@@ -6,3 +6,4 @@ export * from './DropMarker';
 export * from './RoutePolyline';
 export * from './MapControls';
 export * from './MapOverlay';
+export * from './VehicleMapMarker';

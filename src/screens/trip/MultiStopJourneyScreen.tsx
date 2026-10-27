@@ -26,8 +26,8 @@ export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
 }) => {
   const { t } = useI18n();
   const { currentLocation } = useDriverLocation();
-  const trip = useActiveTrip() || mockActiveTrip;
-  const { route: routingData } = useTripRoute();
+  const trip = useActiveTrip(navRoute.params?.tripId) || mockActiveTrip;
+  const { route: routingData } = useTripRoute({ tripId: navRoute.params?.tripId });
 
   const compactAddress = useCallback((address?: string): string => {
     if (!address) return t('trip.destination');
@@ -96,6 +96,7 @@ export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
           routeData={routeData}
           followDriver
           showControls={false}
+          vehicleType={trip.vehicleId || (trip as any).vehicleType}
           style={StyleSheet.absoluteFill}
         />
       </View>

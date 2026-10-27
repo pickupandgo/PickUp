@@ -397,8 +397,11 @@ export class ApiTripService implements ITripService {
   }
 
   async getHistory(): Promise<HistoricalTrip[]> {
-    // Driver trip history is not part of the Phase 9 contract (unchanged).
-    return [];
+    const driverId = engine.getCurrentDriverId();
+    if (!driverId) {
+      return [];
+    }
+    return engine.getDriverTripHistory(driverId);
   }
 
   async getActiveTrip(): Promise<ActiveTrip | null> {

@@ -7,11 +7,13 @@ import { DropMarker } from './DropMarker';
 import { RoutePolyline } from './RoutePolyline';
 import { MapControls } from './MapControls';
 import { colors } from '../theme';
+import { getSelectedVehicleId } from '../state/vehicle';
 import type { Coordinate, RouteData, MapRegion } from './types';
 
 export interface DriverMapProps {
   currentLocation?: Coordinate;
   heading?: number;
+  vehicleType?: string | null;
   routeData?: RouteData;
   followDriver?: boolean;
   showControls?: boolean;
@@ -36,6 +38,7 @@ const FALLBACK_REGION = {
 export const DriverMap: React.FC<DriverMapProps> = ({
   currentLocation,
   heading,
+  vehicleType,
   routeData,
   followDriver = false,
   showControls = true,
@@ -45,6 +48,18 @@ export const DriverMap: React.FC<DriverMapProps> = ({
   testID,
 }) => {
   const mapRef = useRef<MapView>(null);
+  const [profileVehicleType, setProfileVehicleType] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (vehicleType) return;
+    getSelectedVehicleId()
+      .then((id) => {
+        if (id) setProfileVehicleType(id);
+      })
+      .catch(() => {});
+  }, [vehicleType]);
+
+  const activeVehicleType = vehicleType || profileVehicleType;
   const [mapReady, setMapReady] = useState(false);
   const hasInitialZoomed = useRef(false);
 
@@ -178,7 +193,11 @@ export const DriverMap: React.FC<DriverMapProps> = ({
 
         {/* Driver location */}
         {currentLocation && (
-          <DriverMarker coordinate={currentLocation} heading={heading} />
+          <DriverMarker
+            coordinate={currentLocation}
+            heading={heading}
+            vehicleType={activeVehicleType}
+          />
         )}
       </MapView>
 

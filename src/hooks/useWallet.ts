@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getAuth } from '@react-native-firebase/auth';
 import {
   WalletService,
   type WalletMode,
@@ -42,6 +44,9 @@ export function useWallet(options: UseWalletOptions = {}): UseWalletResult {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const uid = getAuth().currentUser?.uid;
+  const cacheKey = uid ? `driver.wallet.${uid}` : null;
+
   // Each load gets a number; only the latest one may update state, so a slow earlier
   // response can never overwrite newer data.
   const generation = useRef(0);
@@ -50,10 +55,24 @@ export function useWallet(options: UseWalletOptions = {}): UseWalletResult {
 
   useEffect(() => {
     mounted.current = true;
+    if (!cacheKey) return;
+    AsyncStorage.getItem(cacheKey)
+      .then((raw) => {
+        if (!mounted.current || !raw) return;
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed.balance === 'number') {
+            setBalance(parsed);
+          }
+        } catch {
+          // ignore cache error
+        }
+      })
+      .catch(() => {});
     return () => {
       mounted.current = false;
     };
-  }, []);
+  }, [cacheKey]);
 
   const load = useCallback(
     async (userInitiated: boolean) => {
@@ -76,6 +95,9 @@ export function useWallet(options: UseWalletOptions = {}): UseWalletResult {
           return;
         }
         setBalance(nextBalance);
+        if (cacheKey && nextBalance) {
+          AsyncStorage.setItem(cacheKey, JSON.stringify(nextBalance)).catch(() => {});
+        }
         if (page) {
           setTransactions(page.items);
           setNextCursor(page.nextCursor);
@@ -92,7 +114,7 @@ export function useWallet(options: UseWalletOptions = {}): UseWalletResult {
         }
       }
     },
-    [includeTransactions],
+    [cacheKey, includeTransactions],
   );
 
   useFocusEffect(

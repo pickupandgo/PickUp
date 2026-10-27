@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ViewStyle, Pressable } from 'react-native';
 import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import { Skeleton } from '../skeleton';
 
 import { useI18n } from '../../i18n';
 
@@ -12,6 +13,7 @@ export interface EarningsCardProps {
   readonly tripCount?: number;
   readonly iconName?: string;
   readonly onDetailsPress?: () => void;
+  readonly isLoading?: boolean;
   readonly style?: ViewStyle;
   readonly testID?: string;
 }
@@ -23,6 +25,7 @@ export const EarningsCard: React.FC<EarningsCardProps> = ({
   tripCount,
   iconName = 'trending_up', // Used to match the arrow icon in screenshot
   onDetailsPress,
+  isLoading = false,
   style,
   testID,
 }) => {
@@ -36,17 +39,26 @@ export const EarningsCard: React.FC<EarningsCardProps> = ({
         </View>
         <Text style={styles.label}>{label}</Text>
       </View>
-      <Text style={styles.amount}>
-        {currency}{amount.toLocaleString('en-IN')}
-      </Text>
+      {isLoading ? (
+        <View style={{ marginVertical: 6 }} testID="earnings-card-loading">
+          <Skeleton width={80} height={22} borderRadius={4} />
+        </View>
+      ) : (
+        <Text style={styles.amount}>
+          {currency}{amount.toLocaleString('en-IN')}
+        </Text>
+      )}
       <View style={styles.footer}>
-        {tripCount !== undefined ? (
+        {isLoading ? (
+          <Skeleton width={44} height={12} borderRadius={4} />
+        ) : tripCount !== undefined ? (
           <Text style={styles.trips}>{t('wallet.tripsCount', { count: tripCount })}</Text>
         ) : <View />}
         {onDetailsPress ? (
           <Pressable
             onPress={onDetailsPress}
-            style={styles.pillButton}
+            style={({ pressed }) => [styles.pillButton, pressed && styles.pillButtonPressed]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
             accessibilityLabel={t('home.details')}
           >
@@ -102,15 +114,23 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceVariant,
   },
   pillButton: {
-    backgroundColor: colors.primaryContainer,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
     borderRadius: borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 64,
+  },
+  pillButtonPressed: {
+    opacity: 0.8,
   },
   pillLabel: {
     ...typography.labelCaps,
-    fontSize: 10,
-    color: colors.onPrimaryContainer,
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.onPrimary,
+    letterSpacing: 0.5,
   },
 });
 

@@ -41,7 +41,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
     startTracking,
   } = useDriverLocation();
   const trip = useActiveTrip(navRoute.params?.tripId);
-  const { route: routingData, isLoading: routeLoading, error: routeError } = useTripRoute();
+  const { route: routingData, isLoading: routeLoading, error: routeError } = useTripRoute({ tripId: navRoute.params?.tripId });
 
   const [networkDismissed, setNetworkDismissed] = useState(false);
 
@@ -160,6 +160,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
           routeData={routeData}
           showControls={false}
           followDriver
+          vehicleType={trip?.vehicleId || (trip as any)?.vehicleType}
           style={StyleSheet.absoluteFill}
         />
       </View>

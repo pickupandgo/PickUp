@@ -31,6 +31,7 @@ interface PendingRequest {
 export class ApiClient {
   private static instance: ApiClient;
   private token: string | null = null;
+  private tokenProvider: (() => Promise<string | null>) | null = null;
   private pendingRequests = new Map<string, PendingRequest>();
 
   private constructor() {}
@@ -46,14 +47,58 @@ export class ApiClient {
     this.token = token;
   }
 
+  setTokenProvider(provider: (() => Promise<string | null>) | null) {
+    this.tokenProvider = provider;
+  }
+
+  async fetchFreshToken(): Promise<string | null> {
+    if (this.tokenProvider) {
+      try {
+        const token = await this.tokenProvider();
+        if (token) {
+          this.token = token;
+          return token;
+        }
+      } catch {
+        // Fall back to firebase
+      }
+    }
+    try {
+      const { getAuth } = require('@react-native-firebase/auth');
+      const user = getAuth().currentUser;
+      if (user && typeof user.getIdToken === 'function') {
+        const token = await user.getIdToken(true);
+        if (token) {
+          this.token = token;
+          return token;
+        }
+      }
+    } catch {
+      // Test environment or offline
+    }
+    return null;
+  }
+
   private buildUrl(endpoint: string, params?: Record<string, string | number | boolean>): string {
-    if (!env.API_BASE_URL) {
+    const isV1 = endpoint.startsWith('/v1/') || endpoint === '/v1';
+    const configuredBase = (isV1 && env.PAYMENTS_API_BASE_URL) ? env.PAYMENTS_API_BASE_URL : env.API_BASE_URL;
+    if (!configuredBase) {
       throw new ApiError(
         'API_BASE_URL is not configured. Cannot make API requests in mock mode.',
         'CONFIG_ERROR',
       );
     }
-    const url = new URL(endpoint.startsWith('http') ? endpoint : `${env.API_BASE_URL}${endpoint}`);
+    const base = configuredBase.replace(/\/+$/, '');
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    let fullUrl: string;
+    if (endpoint.startsWith('http')) {
+      fullUrl = endpoint;
+    } else if (base.endsWith('/v1') && cleanEndpoint.startsWith('/v1/')) {
+      fullUrl = `${base}${cleanEndpoint.slice(3)}`;
+    } else {
+      fullUrl = `${base}${cleanEndpoint}`;
+    }
+    const url = new URL(fullUrl);
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined && value !== null) {
@@ -168,12 +213,24 @@ export class ApiClient {
       requestOptions.body = body instanceof FormData ? body : JSON.stringify(body);
     }
 
+    let hasRetriedAuth = false;
+
     const makeRequest = async (): Promise<T> => {
       try {
         const response = await fetch(url, requestOptions);
         clearTimeout(timeoutId);
         return await this.handleResponse<T>(response);
       } catch (error: unknown) {
+        if (error instanceof UnauthorizedError && withAuth && !hasRetriedAuth) {
+          hasRetriedAuth = true;
+          const freshToken = await this.fetchFreshToken();
+          if (freshToken) {
+            requestHeaders.set('Authorization', `Bearer ${freshToken}`);
+            const retryResponse = await fetch(url, requestOptions);
+            clearTimeout(timeoutId);
+            return await this.handleResponse<T>(retryResponse);
+          }
+        }
         clearTimeout(timeoutId);
         if (error instanceof Error && error.name === 'AbortError') {
           throw new NetworkError('Request timed out');

@@ -77,7 +77,7 @@ export const RechargeResultScreen: React.FC<RechargeResultScreenProps> = ({
   }, []);
 
   const amount = formatRupees(paiseToRupees(amountPaise));
-  const visual = VISUALS[outcome];
+  const visual = VISUALS[outcome as RechargeOutcomeKind];
   const canCheckStatus =
     outcome === 'pending' &&
     paymentId !== undefined &&

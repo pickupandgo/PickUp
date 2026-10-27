@@ -12,6 +12,13 @@ import type {
 import type { EmitterSubscription } from 'react-native';
 
 export class LocationService {
+  private static lastKnownLocation: LocationResult | null = null;
+  private static lastLocationTimestamp: number = 0;
+
+  static getLastKnownLocation(): LocationResult | null {
+    return this.lastKnownLocation;
+  }
+
   static async getPermissionStatus(): Promise<PermissionState> {
     return NativeLocationModule.getPermissionStatus();
   }
@@ -26,10 +33,24 @@ export class LocationService {
 
   static async getCurrentLocation(): Promise<LocationResult> {
     try {
-      return await NativeLocationModule.getCurrentLocation();
+      const loc = await NativeLocationModule.getCurrentLocation();
+      this.lastKnownLocation = loc;
+      this.lastLocationTimestamp = Date.now();
+      return loc;
     } catch (e: unknown) {
       throw this.normalizeError(e);
     }
+  }
+
+  /**
+   * Returns a cached location if obtained within maxAgeMs (default 60s),
+   * avoiding repeated high-accuracy GPS locks that block UI transitions.
+   */
+  static async getFreshOrCachedLocation(maxAgeMs: number = 60_000): Promise<LocationResult> {
+    if (this.lastKnownLocation && Date.now() - this.lastLocationTimestamp < maxAgeMs) {
+      return this.lastKnownLocation;
+    }
+    return this.getCurrentLocation();
   }
 
   static async startTracking(config?: LocationConfig): Promise<boolean> {
@@ -91,7 +112,11 @@ export class LocationService {
   // --- Subscriptions ---
 
   static subscribeToLocationUpdates(callback: (location: LocationResult) => void): EmitterSubscription {
-    return LocationEventEmitter.addListener(LOCATION_EVENTS.LOCATION_UPDATE, callback as any);
+    return LocationEventEmitter.addListener(LOCATION_EVENTS.LOCATION_UPDATE, ((location: LocationResult) => {
+      LocationService.lastKnownLocation = location;
+      LocationService.lastLocationTimestamp = Date.now();
+      callback(location);
+    }) as any);
   }
 
   static subscribeToLocationErrors(callback: (error: LocationError) => void): EmitterSubscription {

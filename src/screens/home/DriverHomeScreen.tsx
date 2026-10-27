@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Animated, Easing, ScrollView, Image } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Animated, Easing, ScrollView, Image, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { EarningsCard } from '../../components/molecules/EarningsCard';
@@ -17,8 +17,12 @@ import { useWallet } from '../../hooks/useWallet';
 import { useEarnings } from '../../hooks/useEarnings';
 import { useActiveTrip } from '../../hooks/useActiveTrip';
 import { useI18n } from '../../i18n';
-import { vehicleImages } from '../../data/mockData';
 import { getSelectedVehicleId, getVehicleDetails, type VehicleDetails } from '../../state/vehicle';
+import { AuthService } from '../../services/auth/AuthService';
+import { getCurrentDriverId, setDriverAvailability, updateDriverLocation } from '../../services/engine/dispatch';
+import { perfMetrics } from '../../utils/perfMetrics';
+import { useSkeletonVisibility } from '../../components/skeleton';
+import { floatingBubbleService } from '../../services/overlay/FloatingBubbleService';
 
 export type DriverMode = 'offline' | 'searching' | 'active_trip';
 
@@ -198,11 +202,20 @@ const ActiveTripHero: React.FC<{ trip: ActiveTrip; onOpen: () => void }> = ({ tr
 export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, testID }) => {
   const { startTracking, stopTracking, requestPermission, currentLocation } = useDriverLocation();
   const { t } = useI18n();
-  const { balance } = useWallet();
-  const { summary } = useEarnings();
+  const { balance, isLoading: isWalletLoading } = useWallet({ includeTransactions: false });
+  const { summary, isLoading: isEarningsLoading } = useEarnings();
+  const showEarningsSkeleton = useSkeletonVisibility({
+    isLoading: isEarningsLoading,
+    hasData: summary !== null,
+  });
+  const showWalletSkeleton = useSkeletonVisibility({
+    isLoading: isWalletLoading,
+    hasData: balance !== null,
+  });
   const activeTrip = useActiveTrip();
   const [driverMode, setDriverMode] = useState<Exclude<DriverMode, 'active_trip'>>('offline');
   const [sheetMode, setSheetMode] = useState<'none' | 'go_live' | 'go_offline'>('none');
+  const [isTogglingLive, setIsTogglingLive] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -210,40 +223,150 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
     requestPermission().catch(console.error);
   }, [requestPermission]);
 
-  const handleToggleLive = useCallback((value: boolean) => {
-    setSheetMode(value ? 'go_live' : 'go_offline');
-  }, []);
+  useEffect(() => {
+    const isEligible = driverMode === 'searching' || activeTrip !== null;
+    floatingBubbleService.syncDriverState(isEligible);
+    if (!isEligible) {
+      floatingBubbleService.hideBubble();
+    }
+  }, [driverMode, activeTrip]);
+
+  const handleToggleLive = useCallback(
+    (value: boolean) => {
+      if (isTogglingLive) return;
+
+      if (value) {
+        // Fast-path: Check cached profile synchronously (<1ms)
+        const cached = AuthService.getCachedProfile();
+        if (cached && cached.approvalStatus !== 'APPROVED') {
+          Alert.alert(
+            'Account Verification Pending',
+            'Your driver profile is currently under review. You cannot go online until your account is approved.',
+            [
+              {
+                text: 'View Status',
+                onPress: () => {
+                  const root: any = navigation.getParent()?.getParent() ?? navigation.getParent() ?? navigation;
+                  root.navigate('PendingVerification', {
+                    phone: cached.phone ?? '',
+                    name: cached.name,
+                    approvalStatus: cached.approvalStatus,
+                  });
+                },
+              },
+              { text: 'OK', style: 'cancel' },
+            ],
+          );
+          return;
+        }
+      }
+      // Instant sheet open without blocking on network round-trip
+      setSheetMode(value ? 'go_live' : 'go_offline');
+    },
+    [isTogglingLive, navigation],
+  );
 
   const confirmToggleLive = useCallback(
-    (value: boolean) => {
+    async (value: boolean) => {
+      if (isTogglingLive) return;
       setSheetMode('none');
+      setIsTogglingLive(true);
+      const perfId = perfMetrics.start(value ? 'GO_LIVE_TRANSITION' : 'GO_OFFLINE_TRANSITION');
+
+      // Start subtle fade animation smoothly without delaying async operations
       Animated.timing(fadeAnim, {
-        toValue: 0.5,
-        duration: 200,
+        toValue: 0.6,
+        duration: 150,
         useNativeDriver: true,
-      }).start(async () => {
-        try {
-          if (value) {
-            await requestPermission();
-            await LocationService.startForegroundService();
-            await startTracking();
-          } else {
-            await stopTracking();
-            await LocationService.stopForegroundService();
+      }).start();
+
+      try {
+        if (value) {
+          // 1. Eligibility Check: Check memory cache first, or fetch with deduplication
+          let profile = AuthService.getCachedProfile();
+          if (!profile) {
+            profile = await AuthService.fetchDriverProfile().catch(() => null);
           }
-          setDriverMode(value ? 'searching' : 'offline');
-        } catch (err) {
-          console.error('Failed to toggle tracking:', err);
-        } finally {
-          Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 200,
-            useNativeDriver: true,
-          }).start();
+          if (profile && profile.approvalStatus !== 'APPROVED') {
+            Alert.alert(
+              'Account Verification Pending',
+              'Your account must be approved before you can accept rides or go live.',
+            );
+            setDriverMode('offline');
+            return;
+          }
+
+          // 2. Location permissions & location acquisition
+          const pStatus = await requestPermission();
+          if (pStatus !== 'granted') {
+            Alert.alert(
+              'Location Required',
+              'MultipleRide Driver needs location access to receive rides and navigate to passengers.',
+            );
+            setDriverMode('offline');
+            return;
+          }
+
+          // Start native services in parallel
+          await Promise.all([
+            LocationService.startForegroundService().catch((e) =>
+              console.warn('[Home] startForegroundService warning:', e),
+            ),
+            startTracking().catch((e) =>
+              console.warn('[Home] startTracking warning:', e),
+            ),
+          ]);
+
+          // Get fresh or cached location (< 60s) without blocking on GPS hardware lock
+          const loc = await LocationService.getFreshOrCachedLocation(60_000).catch(() => null);
+          const driverId = getCurrentDriverId();
+
+          if (driverId) {
+            // Update backend authoritatively
+            const updates: Promise<any>[] = [setDriverAvailability(driverId, true)];
+            if (loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
+              updates.push(updateDriverLocation(driverId, loc.latitude, loc.longitude).catch(() => {}));
+            }
+            await Promise.all(updates);
+          }
+
+          setDriverMode('searching');
+          perfMetrics.end(perfId, { status: 'ONLINE_CONFIRMED' });
+        } else {
+          // Going offline
+          const driverId = getCurrentDriverId();
+          if (driverId) {
+            await setDriverAvailability(driverId, false).catch((e) =>
+              console.warn('[Home] Failed to set availability offline:', e),
+            );
+          }
+          await Promise.all([
+            stopTracking().catch(() => {}),
+            LocationService.stopForegroundService().catch(() => {}),
+          ]);
+          setDriverMode('offline');
+          perfMetrics.end(perfId, { status: 'OFFLINE_CONFIRMED' });
         }
-      });
+      } catch (err: any) {
+        console.error('[Home] Failed to toggle live status:', err);
+        Alert.alert(
+          'Connection Issue',
+          'Could not update availability status. Please check your internet connection and try again.',
+        );
+        // Roll back to offline on failure
+        setDriverMode('offline');
+        await stopTracking().catch(() => {});
+        await LocationService.stopForegroundService().catch(() => {});
+      } finally {
+        setIsTogglingLive(false);
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 150,
+          useNativeDriver: true,
+        }).start();
+      }
     },
-    [fadeAnim, startTracking, stopTracking, requestPermission],
+    [isTogglingLive, fadeAnim, requestPermission, startTracking, stopTracking],
   );
 
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
@@ -252,19 +375,15 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
-      AsyncStorage.getItem('driver.avatarUri')
-        .then((uri) => {
-          if (isMounted && uri) setAvatarUri(uri);
-        })
-        .catch(() => {});
-
-      getSelectedVehicleId()
-        .then((id) => {
-          if (isMounted) {
-            setVehicleDetails(getVehicleDetails(id, t));
-          }
-        })
-        .catch(() => {});
+      // Parallelize avatar and vehicle preference reads
+      Promise.all([
+        AsyncStorage.getItem('driver.avatarUri').catch(() => null),
+        getSelectedVehicleId().catch(() => null),
+      ]).then(([uri, id]) => {
+        if (!isMounted) return;
+        if (uri) setAvatarUri(uri);
+        if (id !== undefined) setVehicleDetails(getVehicleDetails(id, t));
+      });
 
       return () => {
         isMounted = false;
@@ -351,15 +470,19 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
         </Pressable>
         <View style={styles.headerRight}>
           <Pressable
-            onPress={canToggle ? () => handleToggleLive(!isLive) : undefined}
-            disabled={!canToggle}
+            onPress={canToggle && !isTogglingLive ? () => handleToggleLive(!isLive) : undefined}
+            disabled={!canToggle || isTogglingLive}
             style={[
               styles.pill,
               mode === 'offline' && styles.pillOffline,
               mode !== 'offline' && styles.pillOnlineOuter,
             ]}
           >
-            {mode === 'offline' ? (
+            {isTogglingLive ? (
+              <View style={mode === 'offline' ? styles.pillInnerOffline : styles.pillInnerOnline}>
+                <ActivityIndicator size="small" color={mode === 'offline' ? colors.primary : colors.surface} />
+              </View>
+            ) : mode === 'offline' ? (
               <View style={styles.pillInnerOffline}>
                 <Text style={styles.pillTextOffline}>{t('home.offline')}</Text>
                 <View style={styles.dotStatic} />
@@ -445,6 +568,7 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
               currency={summary?.currency || '₹'}
               tripCount={summary?.totalTrips || 0}
               onDetailsPress={handleDetails}
+              isLoading={showEarningsSkeleton}
             />
             <WalletCard
               label={t('home.walletLabel')}
@@ -452,6 +576,7 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
               currency={balance?.currency || '₹'}
               minimumBalance={balance?.minimumBalance || 0}
               onRechargePress={handleRecharge}
+              isLoading={showWalletSkeleton}
             />
           </View>
 

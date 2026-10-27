@@ -60,22 +60,78 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
       const success = await onVerifyOtp(value);
       if (!success) {
         setHasError(true);
-      } else {
-        if (isSignUp && route.params?.driverData) {
-          try {
-            await AuthService.getInstance().registerDriver({
-              phone,
-              name: route.params.driverData.name || '',
-              email: route.params.driverData.email,
-              vehicleMake: route.params.driverData.vehicleMake,
-              licensePlate: route.params.driverData.licensePlate,
-            });
-          } catch (regErr: any) {
-            console.warn('[AUTH] Driver registration backend call:', regErr?.message);
-          }
-        }
-        navigation.navigate('LanguageSelection');
+        setLocalError(t('otp.invalidOtp'));
+        return;
       }
+
+      const authService = AuthService.getInstance();
+      const registrationData = route.params?.registrationData;
+      const legacyDriverData = route.params?.driverData;
+
+      if (isSignUp && (registrationData || legacyDriverData)) {
+        try {
+          const regPayload = {
+            phone,
+            name: registrationData?.fullName || legacyDriverData?.name || '',
+            email: registrationData?.email || legacyDriverData?.email,
+            vehicleType: registrationData?.vehicleType,
+            vehicleMakeModel: registrationData?.vehicleMakeModel || legacyDriverData?.vehicleMake,
+            vehicleRegistrationNumber: registrationData?.vehicleRegistrationNumber || legacyDriverData?.licensePlate,
+            drivingLicenseNumber: registrationData?.drivingLicenseNumber,
+          };
+
+          const regResponse = await authService.registerDriver(regPayload);
+          
+          navigation.navigate('PendingVerification', {
+            driverId: regResponse?.driverId,
+            legalName: regResponse?.legalName || regPayload.name,
+            phone: regResponse?.phone || phone,
+            vehicleType: regResponse?.vehicleType || regPayload.vehicleType,
+            vehicleRegistrationNumber: regResponse?.vehicleRegistrationNumber || regPayload.vehicleRegistrationNumber,
+            approvalStatus: regResponse?.approvalStatus || 'PENDING',
+          });
+          return;
+        } catch (regErr: any) {
+          console.error('[AUTH] Driver registration backend call failed:', regErr);
+          setHasError(true);
+          const errMsg = regErr?.message || 'Driver registration failed on server. Please try again.';
+          setLocalError(errMsg);
+          return;
+        }
+      }
+
+      // Login flow: check existing backend driver profile
+      try {
+        if (authService.fetchDriverProfile) {
+          const profile = await authService.fetchDriverProfile();
+          if (!profile) {
+            // Identity verified in Firebase but not registered in backend database
+            navigation.navigate('DriverRegistration', { phone });
+            return;
+          }
+          if (profile.approvalStatus === 'APPROVED') {
+            navigation.navigate('LanguageSelection');
+          } else {
+            navigation.navigate('PendingVerification', {
+              driverId: profile.driverId,
+              legalName: profile.legalName,
+              phone: profile.phone || phone,
+              vehicleType: profile.vehicleType,
+              vehicleRegistrationNumber: profile.vehicleRegistrationNumber,
+              approvalStatus: profile.approvalStatus || 'PENDING',
+            });
+          }
+          return;
+        }
+      } catch (profileErr: any) {
+        const msg = profileErr?.message || '';
+        if (msg.includes('USER_NOT_PROVISIONED') || msg.includes('not registered') || profileErr?.statusCode === 403) {
+          navigation.navigate('DriverRegistration', { phone });
+          return;
+        }
+      }
+
+      navigation.navigate('LanguageSelection');
     } catch (e: any) {
       setHasError(true);
       setLocalError(e?.message || t('otp.invalidOtp'));

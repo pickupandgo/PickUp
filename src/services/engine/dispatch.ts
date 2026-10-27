@@ -18,6 +18,8 @@
 import { getAuth } from '@react-native-firebase/auth';
 import type {
   ActiveTrip,
+  HistoricalTrip,
+  StopType,
   TripOffer,
   TripStatus,
   TripStop,
@@ -463,6 +465,21 @@ export const getTripById = async (tripId: string): Promise<EngineTrip> => {
   return parseEngineTrip(json.trip);
 };
 
+/** GET /trips/history/driver/:driverId: the driver's past trips (completed and cancelled). */
+export const getDriverTripHistory = async (
+  driverId: string,
+): Promise<HistoricalTrip[]> => {
+  const json = record(
+    await getEngineClient().request({
+      method: 'GET',
+      path: `/trips/history/driver/${enc(driver(driverId))}`,
+    }),
+    'driver trip history',
+  );
+  const trips = Array.isArray(json.trips) ? json.trips : [];
+  return trips.map(parseHistoricalTrip);
+};
+
 /** One engine step. Never chained with another one. */
 const tripAction = async (
   tripId: string,
@@ -618,7 +635,8 @@ export const engineTripToActiveTrip = (t: EngineTrip): ActiveTrip => {
     status: ENGINE_TO_APP_TRIP_STATUS[t.status],
     stops,
     currentStopIndex,
-    estimatedEarning: t.fare ?? 0,
+    // Driver earnings is actual customer price minus 8%
+    estimatedEarning: Math.round((t.fare ?? 0) * 0.92),
     currency: '₹',
     totalDistanceKm:
       t.totalDistanceKm ??
@@ -696,9 +714,12 @@ export const rideRequestToOffer = (r: EngineRideRequest): TripOffer => {
     status: 'pending',
   }));
 
+  // Driver offer shows the actual price minus 8% (e.g. 100 customer fare -> 92 driver earning)
+  const driverEarning = Math.round((r.fare ?? 0) * 0.92);
+
   return {
     id: r.rideId,
-    estimatedEarning: r.fare ?? 0,
+    estimatedEarning: driverEarning,
     currency: '₹',
     pickupStop: {
       id: `${r.rideId}-pickup`,
@@ -718,5 +739,147 @@ export const rideRequestToOffer = (r: EngineRideRequest): TripOffer => {
       ? expiresMs
       : (Number.isFinite(createdMs) ? createdMs : Date.now()) + RIDE_TTL_MS,
     demandLevel: 'medium',
+  };
+};
+
+const formatHistoricalDate = (d: Date): string => {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[d.getMonth()] ?? 'Jan'} ${d.getDate()}, ${d.getFullYear()}`;
+};
+
+const formatHistoricalTime = (d: Date): string => {
+  let hours = d.getHours();
+  const minutes = d.getMinutes();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  const minStr = minutes < 10 ? `0${minutes}` : `${minutes}`;
+  return `${hours}:${minStr} ${ampm}`;
+};
+
+const formatVehicleDisplay = (rawType?: string | null): string => {
+  if (!rawType) return 'Mini Truck';
+  const clean = rawType.trim().toUpperCase();
+  const map: Record<string, string> = {
+    TWO_WHEELER: 'Two Wheeler',
+    THREE_WHEELER: '3 Wheeler (Tempo)',
+    TATA_ACE: 'Tata Ace',
+    PICKUP_8FT: '8ft Pickup',
+    PICKUP: 'Pickup Truck',
+    MINI_TRUCK: 'Mini Truck',
+    TRUCK: 'Commercial Truck',
+  };
+  return map[clean] || rawType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+
+export const parseHistoricalTrip = (raw: unknown): HistoricalTrip => {
+  const v = record(raw, 'historical trip');
+  const id = optionalText(v.id) ?? 'unknown';
+  const isCancelled = v.status === 'CANCELLED';
+
+  const rawDate = optionalText(v.completedAt) ?? optionalText(v.cancelledAt) ?? optionalText(v.createdAt);
+  const d = rawDate ? new Date(rawDate) : new Date();
+
+  const pickupObj = isRecord(v.pickup) ? v.pickup : {};
+  const pickupLat = finite(pickupObj.latitude) ?? 0;
+  const pickupLng = finite(pickupObj.longitude) ?? 0;
+  const pickupAddr = optionalText(pickupObj.address) ?? `${pickupLat.toFixed(4)}, ${pickupLng.toFixed(4)}`;
+
+  const pickupStop: TripStop = {
+    id: `${id}-pickup`,
+    type: 'pickup',
+    label: 'PICKUP',
+    address: pickupAddr,
+    latitude: pickupLat,
+    longitude: pickupLng,
+    status: 'completed',
+  };
+
+  const rawStops = Array.isArray(v.stops) ? v.stops : [];
+  let dropStops: TripStop[] = rawStops.map((s, idx) => {
+    const sRec = isRecord(s) ? s : {};
+    const loc = isRecord(sRec.location) ? sRec.location : {};
+    const lat = finite(loc.latitude) ?? 0;
+    const lng = finite(loc.longitude) ?? 0;
+    const addr = optionalText(loc.address) ?? `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    const isFinal = idx === rawStops.length - 1;
+    return {
+      id: optionalText(sRec.id) ?? `${id}-drop-${idx + 1}`,
+      type: (isFinal ? 'drop_final' : 'drop') as StopType,
+      label: isFinal ? `DROP ${idx + 1} (FINAL)` : `DROP ${idx + 1}`,
+      address: addr,
+      latitude: lat,
+      longitude: lng,
+      status: isCancelled ? 'pending' : 'completed',
+      sequence: finite(sRec.sequence) ?? idx + 1,
+    };
+  });
+
+  if (dropStops.length === 0) {
+    const dropObj = isRecord(v.drop)
+      ? v.drop
+      : isRecord(v.destination)
+      ? v.destination
+      : isRecord(v.dropLocation)
+      ? v.dropLocation
+      : {};
+    const dLat = finite(dropObj.latitude) ?? 0;
+    const dLng = finite(dropObj.longitude) ?? 0;
+    const dAddr = optionalText(dropObj.address) ?? optionalText(v.dropAddress) ?? optionalText(v.destinationAddress);
+    if (dAddr || dLat !== 0) {
+      dropStops = [
+        {
+          id: `${id}-drop-1`,
+          type: 'drop_final',
+          label: 'DROP-OFF',
+          address: dAddr ?? `${dLat.toFixed(4)}, ${dLng.toFixed(4)}`,
+          latitude: dLat,
+          longitude: dLng,
+          status: isCancelled ? 'pending' : 'completed',
+          sequence: 1,
+        },
+      ];
+    }
+  }
+
+  const fareNum = finite(v.fare) ?? (finite(v.payablePaise) ? (v.payablePaise as number) / 100 : 0);
+  const commission = isCancelled ? 0 : Math.round(fareNum * 0.08);
+  const net = isCancelled ? 0 : Math.max(0, fareNum - commission);
+  const rawVehicleType = optionalText(v.vehicleType);
+  const vehicleType = formatVehicleDisplay(rawVehicleType);
+  const vehicleReg = optionalText(v.vehicleRegistration) ??
+    optionalText(v.vehicleRegistrationNumber) ??
+    (optionalText(v.externalRef) && !String(v.externalRef).startsWith('ENG-')
+      ? String(v.externalRef)
+      : `#${id.slice(0, 8)}`);
+
+  const cancellationReason = optionalText(v.cancellationReason) ?? (isCancelled ? 'Cancelled by user' : undefined);
+  const totalDistanceKm = finite(v.totalDistanceKm) ?? undefined;
+  const paymentMethod = optionalText(v.paymentMethod) ?? 'CASH';
+
+  return {
+    id,
+    date: formatHistoricalDate(d),
+    time: formatHistoricalTime(d),
+    status: isCancelled ? 'cancelled' : 'completed',
+    stops: [pickupStop, ...dropStops],
+    loadType: 'other',
+    goodsType: vehicleType,
+    totalWeight: finite(v.weight) ? `${v.weight} kg` : 'Standard Load',
+    vehicleType,
+    vehicleRegistration: vehicleReg,
+    cancellationReason,
+    totalDistanceKm,
+    paymentMethod,
+    earnings: {
+      tripId: id,
+      grossEarning: fareNum,
+      platformCommission: commission,
+      platformCommissionPercent: 8,
+      otherDeductions: 0,
+      netEarning: net,
+      currency: '₹',
+      paidToWallet: !isCancelled,
+    },
   };
 };

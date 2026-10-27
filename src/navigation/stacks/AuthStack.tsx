@@ -6,6 +6,7 @@ import { DriverRegistrationScreen } from '../../screens/auth/DriverRegistrationS
 import { OTPVerificationScreen } from '../../screens/auth/OTPVerificationScreen';
 import { VehicleSelectionScreen } from '../../screens/auth/VehicleSelectionScreen';
 import { LanguageSelectionScreen } from '../../screens/auth/LanguageSelectionScreen';
+import { PendingVerificationScreen } from '../../screens/auth/PendingVerificationScreen';
 import { useAuth } from '../../hooks/useAuth';
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
@@ -39,8 +40,8 @@ export const AuthStack: React.FC<AuthStackProps> = ({ onAuthComplete, initialRou
         )}
       </Stack.Screen>
       <Stack.Screen name="DriverRegistration">
-        {({ navigation }) => (
-          <DriverRegistrationScreen navigation={navigation} />
+        {({ navigation, route }) => (
+          <DriverRegistrationScreen navigation={navigation} route={route} />
         )}
       </Stack.Screen>
       <Stack.Screen name="OTPVerification">
@@ -71,6 +72,14 @@ export const AuthStack: React.FC<AuthStackProps> = ({ onAuthComplete, initialRou
               completeOnboarding(vehicleId, language);
               onAuthComplete();
             }}
+          />
+        )}
+      </Stack.Screen>
+      <Stack.Screen name="PendingVerification">
+        {({ navigation, route }) => (
+          <PendingVerificationScreen
+            navigation={navigation}
+            route={route}
           />
         )}
       </Stack.Screen>

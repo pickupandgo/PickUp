@@ -5,17 +5,28 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
-import type { TripOffer } from './trip';
+import type { TripOffer, HistoricalTrip } from './trip';
 
 // ─── Auth Stack ────────────────────────────────────────────────────
 
+export interface DriverRegistrationData {
+  readonly fullName: string;
+  readonly phone: string;
+  readonly email?: string;
+  readonly vehicleType: string;
+  readonly vehicleRegistrationNumber: string;
+  readonly vehicleMakeModel: string;
+  readonly drivingLicenseNumber: string;
+}
+
 export type AuthStackParamList = {
   UnifiedAuth: undefined;
-  DriverRegistration: undefined;
+  DriverRegistration: { readonly phone?: string } | undefined;
   OTPVerification: {
     readonly phone: string;
     readonly intendedRole?: 'driver';
     readonly authMode?: 'signup' | 'login';
+    readonly registrationData?: DriverRegistrationData;
     readonly driverData?: {
       readonly name?: string;
       readonly email?: string;
@@ -25,6 +36,14 @@ export type AuthStackParamList = {
   };
   VehicleSelection: { readonly language: string };
   LanguageSelection: undefined;
+  PendingVerification: {
+    readonly driverId?: string;
+    readonly legalName?: string;
+    readonly phone?: string;
+    readonly vehicleType?: string;
+    readonly vehicleRegistrationNumber?: string;
+    readonly approvalStatus?: string;
+  } | undefined;
 };
 
 // ─── Home Stack ────────────────────────────────────────────────────
@@ -55,7 +74,7 @@ export type HomeStackParamList = {
 
 export type TripsStackParamList = {
   TripHistory: undefined;
-  HistoricalTripDetail: { readonly tripId: string };
+  HistoricalTripDetail: { readonly tripId: string; readonly trip?: HistoricalTrip };
 };
 
 // ─── Earnings Stack ────────────────────────────────────────────────
@@ -121,6 +140,7 @@ export type MainTabParamList = {
 export type RootStackParamList = {
   Auth: NavigatorScreenParams<AuthStackParamList>;
   Onboarding: NavigatorScreenParams<AuthStackParamList>;
+  PendingVerification: NavigatorScreenParams<AuthStackParamList> | undefined;
   Main: NavigatorScreenParams<MainTabParamList>;
 };
 

@@ -1,4 +1,4 @@
-﻿import { RoutingService } from './RoutingService';
+import { RoutingService } from './RoutingService';
 import { MockRoutingProvider } from './MockRoutingProvider';
 import { EngineRoutingProvider } from './EngineRoutingProvider';
 import { hasGeocodingConfig } from '../../config/env';
@@ -10,11 +10,10 @@ export * from './MockRoutingProvider';
 export * from './EngineRoutingProvider';
 export * from './RoutingService';
 
-// When a Google Maps key is configured, draw real road-following routes from the
-// engine's Directions call (with a mock fallback baked in). Otherwise fall back
-// to the straight-line mock so the map still renders in dev without a key.
-const defaultProvider = hasGeocodingConfig()
-  ? new EngineRoutingProvider()
-  : new MockRoutingProvider({ averageSpeedKmh: 30 });
+// Draw real road-following routes from the engine / Google Directions / OSRM call
+// (with graceful fallback). This guarantees real road directions even when Google
+// quotas are exhausted or keys are unconfigured.
+const defaultProvider = new EngineRoutingProvider();
 
 export const routingService = new RoutingService(defaultProvider);
+

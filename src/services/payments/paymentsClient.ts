@@ -118,6 +118,8 @@ export function createPaymentsClient(
 }
 
 function buildUrl(baseUrl: string, request: PaymentsRequest): string {
+  const root = baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
+  const cleanPath = request.path.startsWith('/') ? request.path : `/${request.path}`;
   const query = Object.entries(request.query ?? {})
     .filter(
       (entry): entry is [string, string | number] => entry[1] !== undefined,
@@ -127,7 +129,7 @@ function buildUrl(baseUrl: string, request: PaymentsRequest): string {
         `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`,
     )
     .join('&');
-  return `${baseUrl}${request.path}${query ? `?${query}` : ''}`;
+  return `${root}${cleanPath}${query ? `?${query}` : ''}`;
 }
 
 function buildHeaders(

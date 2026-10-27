@@ -135,6 +135,9 @@ export interface HistoricalTrip {
   readonly vehicleType: string;
   readonly vehicleRegistration: string;
   readonly earnings: TripEarnings;
+  readonly cancellationReason?: string;
+  readonly totalDistanceKm?: number;
+  readonly paymentMethod?: string;
 }
 
 export interface CancellationRequest {

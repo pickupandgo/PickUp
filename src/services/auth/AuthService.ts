@@ -1,5 +1,7 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ApiClient } from '../api/ApiClient';
 import type { DriverProfile } from '../../types/user';
+import { saveDriverVehicleProfile } from '../../state/vehicle';
 import {
   getAuth,
   signInWithPhoneNumber,
@@ -11,20 +13,38 @@ import {
   type ConfirmationResult,
 } from '@react-native-firebase/auth';
 import { OtpCooldownManager, usePhoneCooldown, DEFAULT_COOLDOWN_SECONDS } from './OtpCooldownManager';
+import { floatingBubbleService } from '../overlay/FloatingBubbleService';
 
 export type { User, ConfirmationResult };
 export { OtpCooldownManager, usePhoneCooldown };
+
+export const PROFILE_CACHE_KEY_PREFIX = 'driver.cachedProfile';
 
 export interface IAuthService {
   requestOtp(phone: string, forceResend?: boolean): Promise<void>;
   verifyOtp(phone: string, otp: string): Promise<{ token: string; isNewUser: boolean }>;
   loginWithEmail(email: string, password: string): Promise<{ token: string; isNewUser: boolean }>;
   signUpWithEmail(email: string, password: string): Promise<{ token: string; isNewUser: boolean }>;
-  registerDriver(data: { name: string; phone: string; email?: string; vehicleMake?: string; licensePlate?: string }): Promise<any>;
+  registerDriver(data: {
+    name: string;
+    phone: string;
+    email?: string;
+    vehicleType?: string;
+    vehicleMake?: string;
+    vehicleMakeModel?: string;
+    licensePlate?: string;
+    vehicleRegistrationNumber?: string;
+    drivingLicenseNumber?: string;
+  }): Promise<any>;
   completeOnboarding(vehicleId: string, language: string): Promise<{ driver: DriverProfile }>;
   getProfile(): Promise<DriverProfile>;
+  fetchDriverProfile(options?: { forceRefresh?: boolean }): Promise<any>;
+  getCachedProfile?(): any;
+  loadCachedProfile?(uid: string): Promise<any>;
   logout(): Promise<void>;
   observeAuthState?(callback: (user: User | null) => void): () => void;
+  observeProfileState?(callback: (profile: any) => void): () => void;
+  notifyProfileChanged?(profile: any): void;
   getConfirmation?(): ConfirmationResult | null;
   getRemainingCooldown?(phone?: string): number;
   hasActiveSession?(phone?: string): boolean;
@@ -102,6 +122,53 @@ export class FirebaseAuthService implements IAuthService {
   private confirmation: ConfirmationResult | null = null;
   private isRequesting: boolean = false;
   private activePhone: string | null = null;
+  private profileListeners: Set<(profile: any) => void> = new Set();
+  private cachedProfile: any = null;
+  private inFlightProfilePromise: Promise<any> | null = null;
+
+  getCachedProfile(): any {
+    return this.cachedProfile;
+  }
+
+  async loadCachedProfile(uid: string): Promise<any> {
+    if (this.cachedProfile) {
+      return this.cachedProfile;
+    }
+    try {
+      const raw = await AsyncStorage.getItem(`${PROFILE_CACHE_KEY_PREFIX}.${uid}`);
+      if (raw) {
+        this.cachedProfile = JSON.parse(raw);
+        return this.cachedProfile;
+      }
+    } catch {
+      // non-fatal
+    }
+    return null;
+  }
+
+  observeProfileState(callback: (profile: any) => void): () => void {
+    this.profileListeners.add(callback);
+    return () => this.profileListeners.delete(callback);
+  }
+
+  notifyProfileChanged(profile: any): void {
+    this.cachedProfile = profile;
+    const uid = getAuth().currentUser?.uid;
+    if (uid) {
+      if (profile) {
+        AsyncStorage.setItem(`${PROFILE_CACHE_KEY_PREFIX}.${uid}`, JSON.stringify(profile)).catch(() => {});
+      } else {
+        AsyncStorage.removeItem(`${PROFILE_CACHE_KEY_PREFIX}.${uid}`).catch(() => {});
+      }
+    }
+    for (const listener of this.profileListeners) {
+      try {
+        listener(profile);
+      } catch (err) {
+        console.warn('[AUTH] Error in profile listener:', err);
+      }
+    }
+  }
 
   getConfirmation(): ConfirmationResult | null {
     return this.confirmation;
@@ -294,59 +361,110 @@ export class FirebaseAuthService implements IAuthService {
     name: string;
     phone: string;
     email?: string;
+    vehicleType?: string;
     vehicleMake?: string;
+    vehicleMakeModel?: string;
     licensePlate?: string;
+    vehicleRegistrationNumber?: string;
+    drivingLicenseNumber?: string;
   }): Promise<any> {
     const formattedPhone = formatToE164(data.phone);
     console.log(`[AUTH] Registering driver with backend for phone: ${maskPhoneNumber(formattedPhone)}`);
 
-    try {
-      const currentUser = getAuth().currentUser;
-      if (currentUser) {
-        const token = await currentUser.getIdToken();
+    const currentUser = getAuth().currentUser;
+    if (currentUser) {
+      try {
+        const token = await currentUser.getIdToken(true);
         if (token) {
           ApiClient.getInstance().setToken(token);
         }
+      } catch (tokenErr) {
+        console.warn('[AUTH] Failed to refresh Firebase token prior to registration:', tokenErr);
       }
-
-      const response = await ApiClient.getInstance().post<any>('/v1/drivers/me', {
-        name: data.name,
-        phone: formattedPhone,
-      });
-      console.log('[AUTH] Backend driver registration response received:', response);
-      return response;
-    } catch (error: any) {
-      console.warn('[AUTH] Backend driver registration response:', error?.message);
-      if (
-        error?.message?.includes('CONFIG_ERROR') ||
-        error?.message?.includes('API_BASE_URL') ||
-        error?.message?.includes('Network') ||
-        error?.message?.includes('Could not reach')
-      ) {
-        console.warn('[AUTH] Continuing gracefully in offline/mock mode');
-        return { success: true, offline: true };
-      }
-      throw error;
     }
+
+    const payload = {
+      name: data.name.trim(),
+      phone: formattedPhone,
+      email: data.email?.trim() || undefined,
+      vehicleType: data.vehicleType?.trim() || undefined,
+      vehicleMakeModel: (data.vehicleMakeModel || data.vehicleMake)?.trim() || undefined,
+      vehicleRegistrationNumber: (data.vehicleRegistrationNumber || data.licensePlate)?.trim().toUpperCase() || undefined,
+      drivingLicenseNumber: data.drivingLicenseNumber?.trim().toUpperCase() || undefined,
+    };
+
+    const response = await ApiClient.getInstance().post<any>('/v1/drivers/me', payload);
+    console.log('[AUTH] Backend driver registration response received:', response);
+    this.notifyProfileChanged(response);
+
+    if (data.vehicleType) {
+      await saveDriverVehicleProfile(currentUser?.uid ?? 'driver', {
+        vehicleType: data.vehicleType,
+        vehicleRegistrationNumber: payload.vehicleRegistrationNumber || '',
+        vehicleMakeModel: payload.vehicleMakeModel || '',
+        drivingLicenseNumber: payload.drivingLicenseNumber || '',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    return response;
+  }
+
+  async fetchDriverProfile(options?: { forceRefresh?: boolean }): Promise<any> {
+    if (!options?.forceRefresh && this.inFlightProfilePromise) {
+      return this.inFlightProfilePromise;
+    }
+
+    this.inFlightProfilePromise = (async () => {
+      const currentUser = getAuth().currentUser;
+      if (currentUser) {
+        try {
+          const token = await currentUser.getIdToken();
+          if (token) {
+            ApiClient.getInstance().setToken(token);
+          }
+        } catch (tokenErr) {
+          console.warn('[AUTH] Token fetch for profile failed:', tokenErr);
+        }
+      }
+      try {
+        const profile = await ApiClient.getInstance().get<any>('/v1/drivers/me');
+        this.notifyProfileChanged(profile);
+        return profile;
+      } catch (err: any) {
+        if (err?.statusCode === 403 || err?.statusCode === 404 || err?.code === 'DRIVER_NOT_FOUND') {
+          this.notifyProfileChanged(null);
+          return null;
+        }
+        throw err;
+      } finally {
+        this.inFlightProfilePromise = null;
+      }
+    })();
+
+    return this.inFlightProfilePromise;
   }
 
   async getProfile(): Promise<DriverProfile> {
-    await delay(500);
     const currentUser = getAuth().currentUser;
     const phone = currentUser?.phoneNumber || this.activePhone || '';
     let name = currentUser?.displayName || (phone ? `Driver (${phone})` : 'Driver');
     let profileCompletionPercent = 0;
+    let status: any = 'offline';
 
     try {
-      if (currentUser) {
-        const token = await currentUser.getIdToken();
-        if (token) {
-          ApiClient.getInstance().setToken(token);
-          const backendProfile = await ApiClient.getInstance().get<any>('/v1/drivers/me');
-          if (backendProfile) {
-            name = backendProfile.legalName || name;
-            profileCompletionPercent = backendProfile.approvalStatus === 'APPROVED' ? 100 : 50;
-          }
+      const backendProfile = await this.fetchDriverProfile();
+      if (backendProfile) {
+        name = backendProfile.legalName || name;
+        if (backendProfile.approvalStatus === 'APPROVED') {
+          profileCompletionPercent = 100;
+          status = 'offline';
+        } else if (backendProfile.approvalStatus === 'PENDING' || backendProfile.approvalStatus === 'UNDER_REVIEW') {
+          profileCompletionPercent = 70;
+          status = 'restricted';
+        } else {
+          profileCompletionPercent = 30;
+          status = 'restricted';
         }
       }
     } catch (e: any) {
@@ -359,7 +477,7 @@ export class FirebaseAuthService implements IAuthService {
       phone,
       location: '',
       profileCompletionPercent,
-      status: 'offline',
+      status,
       language: 'en',
     };
   }
@@ -369,7 +487,16 @@ export class FirebaseAuthService implements IAuthService {
       await fbSignOut(getAuth());
       this.confirmation = null;
       this.activePhone = null;
+      this.cachedProfile = null;
+      this.inFlightProfilePromise = null;
+      const uid = getAuth().currentUser?.uid;
+      if (uid) {
+        AsyncStorage.removeItem(`${PROFILE_CACHE_KEY_PREFIX}.${uid}`).catch(() => {});
+      }
       ApiClient.getInstance().setToken(null);
+      this.notifyProfileChanged(null);
+      floatingBubbleService.syncDriverState(false).catch(() => {});
+      floatingBubbleService.hideBubble().catch(() => {});
       console.log('[AUTH] Firebase sign-out completed');
     } catch (error) {
       console.warn('[AUTH] Error during sign-out:', error);
@@ -404,5 +531,27 @@ export class AuthService {
       AuthService.instance = new FirebaseAuthService();
     }
     return AuthService.instance;
+  }
+
+  static async fetchDriverProfile(options?: { forceRefresh?: boolean }): Promise<any> {
+    return AuthService.getInstance().fetchDriverProfile(options);
+  }
+
+  static getCachedProfile(): any {
+    const instance = AuthService.getInstance();
+    return instance.getCachedProfile ? instance.getCachedProfile() : null;
+  }
+
+  static async loadCachedProfile(uid: string): Promise<any> {
+    const instance = AuthService.getInstance();
+    return instance.loadCachedProfile ? instance.loadCachedProfile(uid) : null;
+  }
+
+  static observeProfileState(callback: (profile: any) => void): () => void {
+    const instance = AuthService.getInstance();
+    if (instance.observeProfileState) {
+      return instance.observeProfileState(callback);
+    }
+    return () => {};
   }
 }

@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CommonActions } from '@react-navigation/native';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { InlineErrorBanner } from '../../components/molecules/InlineErrorBanner';
+import { Skeleton, SkeletonListItem, useSkeletonVisibility } from '../../components/skeleton';
 import { useWallet } from '../../hooks/useWallet';
 import { useEarnings } from '../../hooks/useEarnings';
 import { useI18n } from '../../i18n';
@@ -49,6 +50,16 @@ export const DriverWalletScreen: React.FC<DriverWalletScreenProps> = ({ navigati
   }, [navigation]);
 
   const recent = transactions.slice(0, 3);
+  const showBalanceSkeleton = useSkeletonVisibility({
+    isLoading,
+    hasData: balance !== null,
+    isError: Boolean(error),
+  });
+  const showTxnSkeleton = useSkeletonVisibility({
+    isLoading,
+    hasData: recent.length > 0,
+    isError: Boolean(error),
+  });
 
   const renderTransaction = (txn: Transaction, isLast: boolean) => {
     const isCredit = txn.type === 'credit';
@@ -112,12 +123,10 @@ export const DriverWalletScreen: React.FC<DriverWalletScreenProps> = ({ navigati
           <Text style={styles.balanceLabel}>{t('wallet.availableBalance')}</Text>
           {balance ? (
             <Text style={styles.balanceValue}>{formatMoney(balance.balance, currency)}</Text>
-          ) : isLoading ? (
-            <ActivityIndicator
-              style={styles.balanceLoading}
-              color={colors.primary}
-              accessibilityLabel={t('wallet.availableBalance')}
-            />
+          ) : showBalanceSkeleton ? (
+            <View style={{ marginVertical: 6 }} testID="wallet-balance-loading">
+              <Skeleton width={140} height={32} borderRadius={6} />
+            </View>
           ) : (
             <Text style={styles.balanceValue}>—</Text>
           )}
@@ -170,7 +179,9 @@ export const DriverWalletScreen: React.FC<DriverWalletScreenProps> = ({ navigati
         {/* Recent Transactions */}
         <View style={styles.txnSection}>
           <Text style={styles.sectionTitle}>{t('wallet.recent')}</Text>
-          {recent.length > 0 ? (
+          {showTxnSkeleton ? (
+            <SkeletonListItem count={3} hasAvatar={true} hasSubtitle={true} testID="wallet-txns-loading" />
+          ) : recent.length > 0 ? (
             <View style={styles.txnCard}>
               {recent.map((txn, i) => renderTransaction(txn, i === recent.length - 1))}
             </View>

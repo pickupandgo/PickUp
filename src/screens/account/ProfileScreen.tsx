@@ -11,9 +11,11 @@ import type { DriverProfile } from '../../types/user';
 import { AuthService } from '../../services/auth/AuthService';
 import { useAuth } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n';
+import { DriverProfileSkeleton, useSkeletonVisibility } from '../../components/skeleton';
 
 export interface ProfileScreenProps {
   readonly navigation: AccountScreenProps<'Profile'>['navigation'];
+  readonly isLoading?: boolean;
   readonly testID?: string;
 }
 
@@ -35,20 +37,33 @@ const DOCUMENTS: readonly DocItem[] = [
   { key: 'rc', labelKey: 'doc.rc', icon: 'directions_car', status: 'pending', route: 'VehicleDocuments' },
 ];
 
-export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID }) => {
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, isLoading = false, testID }) => {
   const { driver, logout } = useAuth();
   const { t, locale } = useI18n();
   const [avatarUri, setAvatarUri] = useState<string | undefined>(undefined);
-  const [profile, setProfile] = useState<DriverProfile | null>(null);
+  const [profile, setProfile] = useState<DriverProfile | null>(() => AuthService.getCachedProfile());
+  const [loadingProfile, setLoadingProfile] = useState(!AuthService.getCachedProfile() && !driver);
 
   const currentUser = getAuth().currentUser;
   const avatarStorageKey = currentUser?.uid ? `${AVATAR_KEY}.${currentUser.uid}` : AVATAR_KEY;
 
   useEffect(() => {
-    AuthService.getInstance().getProfile().then(setProfile).catch(() => {});
+    AuthService.getInstance()
+      .getProfile()
+      .then((p) => {
+        setProfile(p);
+      })
+      .catch(() => {})
+      .finally(() => {
+        setLoadingProfile(false);
+      });
   }, []);
 
   const activeDriver = profile || driver;
+  const showSkeleton = useSkeletonVisibility({
+    isLoading: isLoading || loadingProfile,
+    hasData: Boolean(activeDriver),
+  });
   const name = activeDriver?.name || (activeDriver?.phone ? `Driver (${activeDriver.phone})` : 'Driver');
   const location = activeDriver?.location || '';
   const completion = activeDriver?.profileCompletionPercent ?? 0;
@@ -107,7 +122,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      {showSkeleton ? (
+        <DriverProfileSkeleton testID="driver-profile-skeleton-loading" />
+      ) : (
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Hero */}
         <View style={styles.hero}>
           <Pressable style={styles.avatarWrap} onPress={handlePickAvatar} accessibilityRole="button">
@@ -230,6 +248,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
           <Text style={styles.logoutText}>{t('profile.logout')}</Text>
         </Pressable>
       </ScrollView>
+      )}
     </SafeAreaView>
   );
 };

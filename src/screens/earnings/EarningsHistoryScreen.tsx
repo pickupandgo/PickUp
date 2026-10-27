@@ -18,6 +18,7 @@ import { InlineErrorBanner } from '../../components/molecules/InlineErrorBanner'
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { useI18n } from '../../i18n';
 import { useDriverEarnings } from '../../hooks/useDriverEarnings';
+import { Skeleton, SkeletonListItem, EarningsHistorySkeleton, useSkeletonVisibility } from '../../components/skeleton';
 import { formatRupees, paiseToRupees } from '../../services/payments/money';
 import {
   EARNING_STATUSES,
@@ -68,6 +69,16 @@ export const EarningsHistoryScreen: React.FC<EarningsHistoryScreenProps> = ({
     refresh,
     loadMore,
   } = useDriverEarnings();
+  const showHeroSkeleton = useSkeletonVisibility({
+    isLoading,
+    hasData: summary !== null,
+    isError: Boolean(error),
+  });
+  const showListSkeleton = useSkeletonVisibility({
+    isLoading,
+    hasData: earnings.length > 0,
+    isError: Boolean(error),
+  });
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const handleRefresh = useCallback(() => {
@@ -106,12 +117,8 @@ export const EarningsHistoryScreen: React.FC<EarningsHistoryScreenProps> = ({
           <Text style={styles.heroLabel}>{t('earnings.payable')}</Text>
           {summary ? (
             <Text style={styles.heroValue}>{money(summary.payablePaise)}</Text>
-          ) : isLoading ? (
-            <ActivityIndicator
-              style={styles.heroLoading}
-              color={colors.onPrimary}
-              accessibilityLabel={t('earnings.payable')}
-            />
+          ) : showHeroSkeleton ? (
+            <Skeleton width={120} height={28} borderRadius={4} />
           ) : (
             <Text style={styles.heroValue}>—</Text>
           )}
@@ -368,17 +375,14 @@ export const EarningsHistoryScreen: React.FC<EarningsHistoryScreenProps> = ({
 
   const empty = useMemo(
     () =>
-      isLoading ? (
-        <ActivityIndicator
-          style={styles.footerLoading}
-          color={colors.primary}
-        />
+      showListSkeleton ? (
+        <SkeletonListItem count={3} hasAvatar={true} hasSubtitle={true} testID="earnings-list-loading" />
       ) : (
         <Text style={[styles.emptyText, styles.emptyList]}>
           {t('earnings.emptyList')}
         </Text>
       ),
-    [isLoading, t],
+    [showListSkeleton, t],
   );
 
   if (!available) {

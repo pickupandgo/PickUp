@@ -76,9 +76,10 @@ function fetchMock(
 function makeClient(
   fetchImpl: FetchMock,
   getToken: TokenProvider = async () => 'token-1',
+  baseUrl = BASE_URL,
 ) {
   return createPaymentsClient({
-    baseUrl: BASE_URL,
+    baseUrl,
     getToken,
     fetchImpl: fetchImpl as unknown as typeof fetch,
     sleep: async () => undefined,
@@ -129,6 +130,18 @@ describe('paymentsClient', () => {
     expect(fetchImpl.mock.calls[0][0]).toBe(
       `${BASE_URL}/v1/wallet/transactions?limit=20`,
     );
+  });
+
+  it('normalizes baseUrl ending with /v1 without duplicating /v1', async () => {
+    const fetchImpl = fetchMock(async () => jsonResponse(200, { ok: true }));
+    const client = makeClient(fetchImpl, undefined, `${BASE_URL}/v1/`);
+
+    await client.request({
+      method: 'GET',
+      path: '/v1/wallet',
+    });
+
+    expect(fetchImpl.mock.calls[0][0]).toBe(`${BASE_URL}/v1/wallet`);
   });
 
   it('refreshes the Firebase token once when the server rejects it', async () => {

@@ -1,4 +1,4 @@
-﻿import { pointToPolylineDistance, distanceBetween, validateCoordinate, getRouteBounds } from '../src/services/routing/geometry';
+import { pointToPolylineDistance, distanceBetween, validateCoordinate, getRouteBounds } from '../src/services/routing/geometry';
 import { MockRoutingProvider } from '../src/services/routing/MockRoutingProvider';
 import { RoutingService } from '../src/services/routing/RoutingService';
 import { RoutingError } from '../src/services/routing/types';
@@ -108,4 +108,34 @@ describe('RoutingService & MockRoutingProvider', () => {
     
     await expect(req1).rejects.toThrow('Stale response ignored');
   });
+
+  it('EngineRoutingProvider delegates to directions.getRoute with road polyline', async () => {
+    const { EngineRoutingProvider } = require('../src/services/routing/EngineRoutingProvider');
+    const directions = require('../src/services/engine/directions');
+    
+    const mockPolyline = [
+      { latitude: 26.29, longitude: 73.02 },
+      { latitude: 26.25, longitude: 73.30 },
+      { latitude: 26.18, longitude: 73.71 },
+    ];
+    
+    const spy = jest.spyOn(directions, 'getRoute').mockResolvedValueOnce({
+      polyline: mockPolyline,
+      distanceMeters: 78709,
+      durationSeconds: 3876,
+    });
+    
+    const engineProvider = new EngineRoutingProvider();
+    const res = await engineProvider.getRoute({
+      origin: { latitude: 26.29, longitude: 73.02 },
+      destinations: [{ latitude: 26.18, longitude: 73.71 }],
+    });
+    
+    expect(res.polylinePoints).toEqual(mockPolyline);
+    expect(res.totalDistanceMeters).toBe(78709);
+    expect(res.totalDurationSeconds).toBe(3876);
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
 });
+

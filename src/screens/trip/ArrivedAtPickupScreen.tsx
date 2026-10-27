@@ -214,6 +214,7 @@ export const ArrivedAtPickupScreen: React.FC<ArrivedAtPickupScreenProps> = ({
           routeData={routeData}
           followDriver={true}
           showControls={false}
+          vehicleType={trip?.vehicleId || (trip as any)?.vehicleType}
         />
       </View>
 
