@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import { mockActiveTrip } from '../../data/mockData';
 import { useBooking } from '../../state/BookingContext';
+import { getVehicleDisplayName } from '../../utils/vehicleAssets';
 
 export interface TripCompletedSummaryScreenProps {
   readonly onBack?: () => void;
@@ -18,18 +19,144 @@ export interface TripCompletedSummaryScreenProps {
   readonly onRateDriver?: () => void;
   readonly onViewReceipt?: () => void;
   readonly onBackToHome?: () => void;
+  readonly navigation?: any;
+  readonly route?: any;
 }
 
-const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { navigation?: any }> = ({
+const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { navigation?: any; route?: any }> = ({
   onBack,
   onMore,
   onRateDriver,
   onViewReceipt,
   onBackToHome,
   navigation,
+  route,
 }) => {
-  const { clearActiveRide } = useBooking();
-  const stops = mockActiveTrip.stops;
+  const { clearActiveRide, ride, trip, draft, assignedDriver } = useBooking();
+
+  // 1. Route Stops
+  const stops = useMemo(() => {
+    // 1. Try trip
+    if (trip?.pickup?.address || (trip?.stops && trip.stops.length > 0)) {
+      const list: Array<{ label: string; address: string }> = [];
+      const pickupAddr = trip.pickup?.address || draft.pickup?.address;
+      if (pickupAddr) {
+        list.push({ label: 'Pickup', address: pickupAddr });
+      }
+      if (trip.stops && trip.stops.length > 0) {
+        trip.stops.forEach((s, i) => {
+          const isSingle = trip.stops.length === 1;
+          const isLast = i === trip.stops.length - 1;
+          const label = isSingle ? 'Final Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
+          list.push({
+            label,
+            address: s.location?.address || `Drop Location ${i + 1}`,
+          });
+        });
+      } else if (trip.drop?.address) {
+        list.push({ label: 'Final Drop', address: trip.drop.address });
+      }
+      if (list.length >= 2) return list;
+    }
+
+    // 2. Try ride
+    const rideDrops = ride?.drops;
+    if (ride?.pickup?.address || (rideDrops && rideDrops.length > 0)) {
+      const list: Array<{ label: string; address: string }> = [];
+      const pickupAddr = ride.pickup?.address || draft.pickup?.address;
+      if (pickupAddr) {
+        list.push({ label: 'Pickup', address: pickupAddr });
+      }
+      if (rideDrops && rideDrops.length > 0) {
+        rideDrops.forEach((d, i) => {
+          const isSingle = rideDrops.length === 1;
+          const isLast = i === rideDrops.length - 1;
+          const label = isSingle ? 'Final Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
+          list.push({
+            label,
+            address: d.address || `Drop Location ${i + 1}`,
+          });
+        });
+      } else if (ride.drop?.address) {
+        list.push({ label: 'Final Drop', address: ride.drop.address });
+      }
+      if (list.length >= 2) return list;
+    }
+
+    // 3. Try draft
+    if (draft.pickup?.address && draft.drops && draft.drops.length > 0) {
+      const list: Array<{ label: string; address: string }> = [
+        { label: 'Pickup', address: draft.pickup.address },
+      ];
+      draft.drops.forEach((d, i) => {
+        const isSingle = draft.drops.length === 1;
+        const isLast = i === draft.drops.length - 1;
+        const label = isSingle ? 'Final Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
+        list.push({
+          label,
+          address: d.address,
+        });
+      });
+      return list;
+    }
+
+    return mockActiveTrip.stops;
+  }, [trip, ride, draft]);
+
+  // 2. Vehicle Summary
+  const displayVehicleSummary = useMemo(() => {
+    const rawType =
+      route?.params?.vehicleType ||
+      assignedDriver?.vehicleType ||
+      (trip as any)?.vehicleType ||
+      ride?.vehicleType ||
+      draft.vehicleType;
+    const vName = getVehicleDisplayName(rawType);
+    const vNumber =
+      route?.params?.vehicleNumber ||
+      (assignedDriver as any)?.vehicleNumber ||
+      (assignedDriver as any)?.vehicleRegistrationNumber ||
+      (trip as any)?.vehicleNumber ||
+      (ride as any)?.vehicleNumber ||
+      mockActiveTrip.vehicleNumber;
+    return `${vName} | ${vNumber}`;
+  }, [route?.params, assignedDriver, trip, ride, draft.vehicleType]);
+
+  // 3. Completion Time
+  const displayCompletionTime = useMemo(() => {
+    const rawTime =
+      route?.params?.completedAt ||
+      trip?.completedAt ||
+      trip?.updatedAt ||
+      (trip as any)?.deliveredAt;
+    const d = rawTime ? new Date(rawTime) : new Date();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[d.getMonth()];
+    const day = d.getDate();
+    const year = d.getFullYear();
+    let hours = d.getHours();
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${month} ${day}, ${year} • ${hours}:${minutes} ${ampm}`;
+  }, [route?.params?.completedAt, trip?.completedAt, trip?.updatedAt]);
+
+  // 4. Payment Status
+  const displayPaymentStatus = useMemo(() => {
+    const amount =
+      route?.params?.fare ??
+      trip?.fare ??
+      ride?.fare ??
+      (trip?.payablePaise ? trip.payablePaise / 100 : undefined) ??
+      (ride?.payablePaise ? ride.payablePaise / 100 : undefined) ??
+      (draft.quote ? draft.quote.payablePaise / 100 : undefined);
+    const fareStr =
+      typeof amount === 'number' && !isNaN(amount) && amount > 0
+        ? `₹${Math.round(amount)}`
+        : mockActiveTrip.fare;
+    return `Paid • ${fareStr}`;
+  }, [route?.params?.fare, trip, ride, draft.quote]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -73,10 +200,10 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
               const isLast = index === stops.length - 1;
               const isPrimaryNode = isFirst || isLast;
               
-              let stopLabel = 'Drop';
-              if (isFirst) stopLabel = 'Pickup';
-              else if (isLast) stopLabel = 'Final Drop';
-              else stopLabel = `Drop ${index}`;
+              let stopLabel = 'DROP';
+              if (isFirst) stopLabel = 'PICKUP';
+              else if (isLast) stopLabel = stops.length > 2 ? 'FINAL DROP' : 'FINAL DROP';
+              else stopLabel = `DROP ${index}`;
 
               return (
                 <View key={index} style={styles.timelineRow}>
@@ -95,7 +222,7 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
                   <View style={styles.contentColumn}>
                     <Text style={styles.stopLabelCaps}>{stopLabel}</Text>
                     <Text style={isPrimaryNode ? styles.stopAddressLg : styles.stopAddressMd}>
-                      {stop.address.split(',')[0]} {/* Shorten for UI matching */}
+                      {stop.address.split(',')[0]}
                     </Text>
                   </View>
                 </View>
@@ -110,18 +237,18 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
             <View style={styles.gridItemHalf}>
               <Text style={styles.gridLabel}>Vehicle</Text>
               <Text style={styles.gridValueMono}>
-                {mockActiveTrip.vehicleType} | {mockActiveTrip.vehicleNumber}
+                {displayVehicleSummary}
               </Text>
             </View>
             <View style={styles.gridItemHalf}>
               <Text style={styles.gridLabel}>Completion Time</Text>
-              <Text style={styles.gridValueMono}>Oct 24, 2023 • 11:30 AM</Text>
+              <Text style={styles.gridValueMono}>{displayCompletionTime}</Text>
             </View>
             <View style={styles.gridItemFull}>
               <Text style={styles.gridLabel}>Payment Status</Text>
               <View style={styles.paymentStatusRow}>
                 <View style={styles.statusDot} />
-                <Text style={styles.gridValueMono}>Paid • {mockActiveTrip.fare}</Text>
+                <Text style={styles.gridValueMono}>{displayPaymentStatus}</Text>
               </View>
             </View>
           </View>

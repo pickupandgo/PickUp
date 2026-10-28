@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -7,17 +7,155 @@ import Card from '../../components/molecules/Card';
 import ListRow from '../../components/molecules/ListRow';
 import Divider from '../../components/atoms/Divider';
 import Button from '../../components/atoms/Button';
+import { useBooking } from '../../state/BookingContext';
+import { getVehicleDisplayName } from '../../utils/vehicleAssets';
 
 export interface TripCompletedScreenProps {
   readonly onDone?: () => void;
   readonly onWriteReview?: () => void;
+  readonly navigation?: any;
+  readonly route?: any;
 }
 
-const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: any }> = ({
+const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: any; route?: any }> = ({
   onDone,
   onWriteReview,
   navigation,
+  route,
 }) => {
+  const { ride, trip, draft, assignedDriver } = useBooking();
+
+  // 1. Trip ID
+  const displayTripId = useMemo(() => {
+    return (
+      route?.params?.tripId ||
+      trip?.externalRef ||
+      (trip?.id ? `TRIP-${trip.id.substring(0, 6).toUpperCase()}` : undefined) ||
+      ride?.externalRef ||
+      (ride?.id ? `TRIP-${ride.id.substring(0, 6).toUpperCase()}` : undefined) ||
+      mockActiveTrip.id
+    );
+  }, [route?.params?.tripId, trip, ride]);
+
+  // 2. Distance
+  const displayDistance = useMemo(() => {
+    const km =
+      route?.params?.distanceKm ??
+      trip?.totalDistanceKm ??
+      ride?.totalDistanceKm ??
+      (draft.quote ? draft.quote.distanceMeters / 1000 : undefined);
+    if (typeof km === 'number' && !isNaN(km) && km > 0) {
+      return `${km.toFixed(1)} km`;
+    }
+    return mockActiveTrip.distance;
+  }, [route?.params?.distanceKm, trip, ride, draft.quote]);
+
+  // 3. Vehicle Display Name
+  const displayVehicle = useMemo(() => {
+    const rawType =
+      route?.params?.vehicleType ||
+      assignedDriver?.vehicleType ||
+      (trip as any)?.vehicleType ||
+      ride?.vehicleType ||
+      draft.vehicleType;
+    return getVehicleDisplayName(rawType);
+  }, [route?.params?.vehicleType, assignedDriver?.vehicleType, trip, ride?.vehicleType, draft.vehicleType]);
+
+  // 4. Driver Name
+  const displayDriver = useMemo(() => {
+    return (
+      route?.params?.driverName ||
+      assignedDriver?.name ||
+      (trip as any)?.driverName ||
+      (ride as any)?.driverName ||
+      mockActiveTrip.driverName
+    );
+  }, [route?.params?.driverName, assignedDriver?.name, trip, ride]);
+
+  // 5. Total Fare
+  const displayFare = useMemo(() => {
+    const amount =
+      route?.params?.fare ??
+      trip?.fare ??
+      ride?.fare ??
+      (trip?.payablePaise ? trip.payablePaise / 100 : undefined) ??
+      (ride?.payablePaise ? ride.payablePaise / 100 : undefined) ??
+      (draft.quote ? draft.quote.payablePaise / 100 : undefined);
+    if (typeof amount === 'number' && !isNaN(amount) && amount > 0) {
+      return `₹${Math.round(amount)}`;
+    }
+    return mockActiveTrip.fare;
+  }, [route?.params?.fare, trip, ride, draft.quote]);
+
+  // 6. Route Stops
+  const stops = useMemo(() => {
+    // 1. Try trip
+    if (trip?.pickup?.address || (trip?.stops && trip.stops.length > 0)) {
+      const list: Array<{ label: string; address: string }> = [];
+      const pickupAddr = trip.pickup?.address || draft.pickup?.address;
+      if (pickupAddr) {
+        list.push({ label: 'Pickup', address: pickupAddr });
+      }
+      if (trip.stops && trip.stops.length > 0) {
+        trip.stops.forEach((s, i) => {
+          const isSingle = trip.stops.length === 1;
+          const isLast = i === trip.stops.length - 1;
+          const label = isSingle ? 'Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
+          list.push({
+            label,
+            address: s.location?.address || `Drop Location ${i + 1}`,
+          });
+        });
+      } else if (trip.drop?.address) {
+        list.push({ label: 'Drop', address: trip.drop.address });
+      }
+      if (list.length >= 2) return list;
+    }
+
+    // 2. Try ride
+    const rideDrops = ride?.drops;
+    if (ride?.pickup?.address || (rideDrops && rideDrops.length > 0)) {
+      const list: Array<{ label: string; address: string }> = [];
+      const pickupAddr = ride.pickup?.address || draft.pickup?.address;
+      if (pickupAddr) {
+        list.push({ label: 'Pickup', address: pickupAddr });
+      }
+      if (rideDrops && rideDrops.length > 0) {
+        rideDrops.forEach((d, i) => {
+          const isSingle = rideDrops.length === 1;
+          const isLast = i === rideDrops.length - 1;
+          const label = isSingle ? 'Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
+          list.push({
+            label,
+            address: d.address || `Drop Location ${i + 1}`,
+          });
+        });
+      } else if (ride.drop?.address) {
+        list.push({ label: 'Drop', address: ride.drop.address });
+      }
+      if (list.length >= 2) return list;
+    }
+
+    // 3. Try draft
+    if (draft.pickup?.address && draft.drops && draft.drops.length > 0) {
+      const list: Array<{ label: string; address: string }> = [
+        { label: 'Pickup', address: draft.pickup.address },
+      ];
+      draft.drops.forEach((d, i) => {
+        const isSingle = draft.drops.length === 1;
+        const isLast = i === draft.drops.length - 1;
+        const label = isSingle ? 'Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
+        list.push({
+          label,
+          address: d.address,
+        });
+      });
+      return list;
+    }
+
+    return mockActiveTrip.stops;
+  }, [trip, ride, draft]);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
@@ -40,39 +178,39 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
         <Card variant="outlined" padding="none">
           <View style={styles.summaryHeader}>
             <Text style={styles.summaryTitle}>{strings.trip.summary}</Text>
-            <Text style={styles.tripId}>{mockActiveTrip.id}</Text>
+            <Text style={styles.tripId}>{displayTripId}</Text>
           </View>
           <Divider />
           <ListRow
             title="Distance"
             trailing={
-              <Text style={styles.valueText}>{mockActiveTrip.distance}</Text>
+              <Text style={styles.valueText}>{displayDistance}</Text>
             }
           />
           <Divider />
           <ListRow
             title="Vehicle"
             trailing={
-              <Text style={styles.valueText}>{mockActiveTrip.vehicleType}</Text>
+              <Text style={styles.valueText}>{displayVehicle}</Text>
             }
           />
           <Divider />
           <ListRow
             title="Driver"
             trailing={
-              <Text style={styles.valueText}>{mockActiveTrip.driverName}</Text>
+              <Text style={styles.valueText}>{displayDriver}</Text>
             }
           />
           <Divider />
           <View style={styles.fareRow}>
             <Text style={styles.fareLabel}>Total Fare</Text>
-            <Text style={styles.fareAmount}>{mockActiveTrip.fare}</Text>
+            <Text style={styles.fareAmount}>{displayFare}</Text>
           </View>
         </Card>
 
         {/* Route Summary */}
         <Card variant="filled" padding="md">
-          {mockActiveTrip.stops.map((stop, i) => (
+          {stops.map((stop, i) => (
             <View key={`stop-${i}`} style={styles.stopRow}>
               <View
                 style={[

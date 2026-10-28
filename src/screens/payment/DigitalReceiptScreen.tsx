@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
 
 import { useBooking } from '../../state/BookingContext';
+import { getVehicleDisplayName } from '../../utils/vehicleAssets';
 
 export interface DigitalReceiptScreenProps {
   readonly tripId?: string;
@@ -47,16 +48,116 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
   onBack,
   navigation,
 }) => {
-  const { ride, trip, draft } = useBooking();
+  const { ride, trip, draft, assignedDriver } = useBooking();
   // Display only, from the server's quote figure; the backend is authoritative for what was paid.
   const currentFare =
     trip?.fare ?? ride?.fare ?? (draft.quote ? draft.quote.payablePaise / 100 : undefined);
 
-  const actualTotal = currentFare ? `₹${currentFare}` : '--';
-  const actualBase = currentFare ? `₹${(currentFare * 0.8).toFixed(2)}` : '--'; // Simplified breakup
-  const actualTaxes = currentFare ? `₹${(currentFare * 0.2).toFixed(2)}` : '--';
+  const actualTotal = currentFare ? `₹${Math.round(currentFare)}` : (totalAmount || '₹349');
+  const actualBase = currentFare ? `₹${(currentFare * 0.8).toFixed(2)}` : baseFare; // Simplified breakup
+  const actualTaxes = currentFare ? `₹${(currentFare * 0.2).toFixed(2)}` : surcharges;
 
-  const actualTripId = trip?.id || ride?.id ? `#TRP-${(trip?.id || ride?.id)?.substring(0, 6).toUpperCase()}` : tripId;
+  const actualTripId =
+    trip?.externalRef ||
+    ride?.externalRef ||
+    (trip?.id ? `#TRP-${trip.id.substring(0, 6).toUpperCase()}` : undefined) ||
+    (ride?.id ? `#TRP-${ride.id.substring(0, 6).toUpperCase()}` : undefined) ||
+    tripId;
+
+  const actualDate = useMemo(() => {
+    const rawTime = trip?.completedAt || trip?.updatedAt || (trip as any)?.deliveredAt;
+    if (rawTime) {
+      const d = new Date(rawTime);
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const month = months[d.getMonth()];
+      const day = d.getDate();
+      const year = d.getFullYear();
+      let hours = d.getHours();
+      const minutes = d.getMinutes().toString().padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${month} ${day}, ${year} • ${hours}:${minutes} ${ampm}`;
+    }
+    return date;
+  }, [trip?.completedAt, trip?.updatedAt, date]);
+
+  const rawVehicleType =
+    assignedDriver?.vehicleType ||
+    (trip as any)?.vehicleType ||
+    ride?.vehicleType ||
+    draft.vehicleType;
+  const vehicleName = getVehicleDisplayName(rawVehicleType);
+  const vehiclePlate =
+    (assignedDriver as any)?.vehicleNumber ||
+    (assignedDriver as any)?.vehicleRegistrationNumber ||
+    (trip as any)?.vehicleNumber ||
+    (ride as any)?.vehicleNumber ||
+    'KA 01 AB 1234';
+  const actualVehicle = `${vehicleName} (${vehiclePlate})`;
+
+  const actualPaymentMethod = useMemo(() => {
+    const method = trip?.paymentMethod || ride?.paymentMethod || draft.paymentMethod;
+    if (method === 'PAY_AT_PICKUP') return 'Cash / UPI (Pay at Pickup)';
+    if (method === 'PAY_AT_DELIVERY') return 'Cash / UPI (Pay at Delivery)';
+    return paymentMethod;
+  }, [trip?.paymentMethod, ride?.paymentMethod, draft.paymentMethod, paymentMethod]);
+
+  const stops = useMemo<Array<{ label: string; address: string }>>(() => {
+    if (trip?.pickup?.address || (trip?.stops && trip.stops.length > 0)) {
+      const list: Array<{ label: string; address: string }> = [];
+      const pickupAddr = trip.pickup?.address || draft.pickup?.address;
+      if (pickupAddr) list.push({ label: 'Pickup', address: pickupAddr });
+      if (trip.stops && trip.stops.length > 0) {
+        trip.stops.forEach((s, i) => {
+          const isSingle = trip.stops.length === 1;
+          const isLast = i === trip.stops.length - 1;
+          const label = isSingle ? 'Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
+          list.push({ label, address: s.location?.address || `Drop Location ${i + 1}` });
+        });
+      } else if (trip.drop?.address) {
+        list.push({ label: 'Drop', address: trip.drop.address });
+      }
+      if (list.length >= 2) return list;
+    }
+
+    const rideDrops = ride?.drops;
+    if (ride?.pickup?.address || (rideDrops && rideDrops.length > 0)) {
+      const list: Array<{ label: string; address: string }> = [];
+      const pickupAddr = ride.pickup?.address || draft.pickup?.address;
+      if (pickupAddr) list.push({ label: 'Pickup', address: pickupAddr });
+      if (rideDrops && rideDrops.length > 0) {
+        rideDrops.forEach((d, i) => {
+          const isSingle = rideDrops.length === 1;
+          const isLast = i === rideDrops.length - 1;
+          const label = isSingle ? 'Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
+          list.push({ label, address: d.address || `Drop Location ${i + 1}` });
+        });
+      } else if (ride.drop?.address) {
+        list.push({ label: 'Drop', address: ride.drop.address });
+      }
+      if (list.length >= 2) return list;
+    }
+
+    if (draft.pickup?.address && draft.drops && draft.drops.length > 0) {
+      const list: Array<{ label: string; address: string }> = [
+        { label: 'Pickup', address: draft.pickup.address },
+      ];
+      draft.drops.forEach((d, i) => {
+        const isSingle = draft.drops.length === 1;
+        const isLast = i === draft.drops.length - 1;
+        const label = isSingle ? 'Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
+        list.push({ label, address: d.address });
+      });
+      return list;
+    }
+
+    return [
+      { label: 'Pickup', address: '42 MG Road, Bangalore' },
+      { label: 'Drop 1', address: 'HSR Layout, Bangalore' },
+      { label: 'Final Drop', address: 'Koramangala, Bangalore' },
+    ];
+  }, [trip, ride, draft]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -100,11 +201,11 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
             </View>
             <View style={styles.row}>
               <Text style={styles.detailLabel}>Date & Time</Text>
-              <Text style={styles.detailValue}>{date}</Text>
+              <Text style={styles.detailValue}>{actualDate}</Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.detailLabel}>Vehicle</Text>
-              <Text style={styles.detailValue}>{vehicle}</Text>
+              <Text style={styles.detailValue}>{actualVehicle}</Text>
             </View>
           </View>
 
@@ -117,43 +218,27 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
             <View style={styles.routeContainer}>
               <View style={styles.timelineLine} />
               
-              {/* Pickup */}
-              <View style={styles.routeItem}>
-                <View style={styles.pickupDotOuter}>
-                  <View style={styles.pickupDotInner} />
-                </View>
-                <View style={styles.routeTextContainer}>
-                  <Text style={styles.routeLabel}>Pickup</Text>
-                  <Text style={styles.routeValue}>Sardarpura Warehouse</Text>
-                </View>
-              </View>
-              
-              {/* Drop 1 */}
-              <View style={styles.routeItem}>
-                <View style={styles.dropIntermediateDot} />
-                <View style={styles.routeTextContainer}>
-                  <Text style={styles.routeLabel}>Drop 1</Text>
-                  <Text style={styles.routeValue}>Ratanada Hub</Text>
-                </View>
-              </View>
-
-              {/* Drop 2 */}
-              <View style={styles.routeItem}>
-                <View style={styles.dropIntermediateDot} />
-                <View style={styles.routeTextContainer}>
-                  <Text style={styles.routeLabel}>Drop 2</Text>
-                  <Text style={styles.routeValue}>Pal Road Business Center</Text>
-                </View>
-              </View>
-
-              {/* Drop 3 */}
-              <View style={styles.routeItem}>
-                <View style={styles.dropFinalDot} />
-                <View style={styles.routeTextContainer}>
-                  <Text style={styles.routeLabel}>Drop 3</Text>
-                  <Text style={styles.routeValue}>Basni Phase II</Text>
-                </View>
-              </View>
+              {stops.map((s, idx) => {
+                const isFirst = idx === 0;
+                const isLast = idx === stops.length - 1;
+                return (
+                  <View key={`route-${idx}`} style={styles.routeItem}>
+                    {isFirst ? (
+                      <View style={styles.pickupDotOuter}>
+                        <View style={styles.pickupDotInner} />
+                      </View>
+                    ) : isLast ? (
+                      <View style={styles.dropFinalDot} />
+                    ) : (
+                      <View style={styles.dropIntermediateDot} />
+                    )}
+                    <View style={styles.routeTextContainer}>
+                      <Text style={styles.routeLabel}>{s.label}</Text>
+                      <Text style={styles.routeValue}>{s.address}</Text>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           </View>
 
@@ -185,7 +270,7 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
               <View style={styles.paymentMethodLeft}>
                 <MaterialIcons name="account-balance" size={24} color={colors.onSurfaceVariant} />
                 <View style={styles.paymentMethodTexts}>
-                  <Text style={styles.paymentMethodName}>{paymentMethod}</Text>
+                  <Text style={styles.paymentMethodName}>{actualPaymentMethod}</Text>
                   <Text style={styles.paymentMethodStatus}>Status: {paymentStatus}</Text>
                 </View>
               </View>

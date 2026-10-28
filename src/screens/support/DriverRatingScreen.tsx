@@ -13,7 +13,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { mockActiveTrip } from '../../data/mockData';
 import { useBooking } from '../../state/BookingContext';
-import { getVehicleImage } from '../../utils/vehicleAssets';
+import { getVehicleImage, getVehicleDisplayName } from '../../utils/vehicleAssets';
 
 export interface DriverRatingScreenProps {
   readonly onClose?: () => void;
@@ -36,16 +36,47 @@ const RATING_DESCRIPTIONS: Record<number, string> = {
   5: 'Excellent',
 };
 
-const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any }> = ({
+const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any; route?: any }> = ({
   onClose,
   onSubmit,
   onSkip,
   navigation,
+  route,
 }) => {
-  const { assignedDriver } = useBooking();
+  const { assignedDriver, trip, ride, draft } = useBooking();
   const [rating, setRating] = useState(0);
   const [selectedFeedback, setSelectedFeedback] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const displayTripId =
+    route?.params?.tripId ||
+    trip?.externalRef ||
+    (trip?.id ? `TRIP-${trip.id.substring(0, 6).toUpperCase()}` : undefined) ||
+    ride?.externalRef ||
+    (ride?.id ? `TRIP-${ride.id.substring(0, 6).toUpperCase()}` : undefined) ||
+    mockActiveTrip.id;
+
+  const rawVehicleType =
+    route?.params?.vehicleType ||
+    assignedDriver?.vehicleType ||
+    (trip as any)?.vehicleType ||
+    ride?.vehicleType ||
+    draft.vehicleType;
+  const vehicleName = getVehicleDisplayName(rawVehicleType);
+  const vehicleNumber =
+    route?.params?.vehicleNumber ||
+    (assignedDriver as any)?.vehicleNumber ||
+    (assignedDriver as any)?.vehicleRegistrationNumber ||
+    (trip as any)?.vehicleNumber ||
+    (ride as any)?.vehicleNumber ||
+    mockActiveTrip.vehicleNumber;
+
+  const driverName =
+    route?.params?.driverName ||
+    assignedDriver?.name ||
+    (trip as any)?.driverName ||
+    (ride as any)?.driverName ||
+    mockActiveTrip.driverName;
 
   const handleFeedbackToggle = (option: string) => {
     if (selectedFeedback.includes(option)) {
@@ -90,7 +121,7 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any 
         <View style={styles.titleContainer}>
           <Text style={styles.title}>How was your delivery?</Text>
           <Text style={styles.subtitle}>
-            Trip Ref: <Text style={styles.monoText}>#{mockActiveTrip.id}</Text>
+            Trip Ref: <Text style={styles.monoText}>#{displayTripId}</Text>
           </Text>
         </View>
 
@@ -98,22 +129,22 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any 
         <View style={styles.driverCard}>
           <View style={styles.avatarContainer}>
             <Image
-              source={getVehicleImage(assignedDriver?.vehicleType)}
+              source={getVehicleImage(rawVehicleType)}
               style={{ width: 52, height: 52 }}
               resizeMode="contain"
             />
           </View>
           <Text style={styles.driverName}>
-            {(assignedDriver?.name || mockActiveTrip.driverName).split(' ')[0]}
+            {driverName.split(' ')[0]}
           </Text>
           <View style={styles.driverSubRow}>
             <Image
-              source={getVehicleImage(assignedDriver?.vehicleType)}
+              source={getVehicleImage(rawVehicleType)}
               style={{ width: 16, height: 16, marginRight: 4 }}
               resizeMode="contain"
             />
             <Text style={styles.driverSubText}>
-              {assignedDriver?.vehicleType || mockActiveTrip.vehicleType} | {mockActiveTrip.vehicleNumber}
+              {vehicleName} | {vehicleNumber}
             </Text>
           </View>
         </View>
