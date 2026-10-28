@@ -53,6 +53,45 @@ enum DriverApprovalStatus {
   @@map("driver_approval_status")
 }
 
+enum KycApplicationStatus {
+  PENDING
+  IN_REVIEW
+  VERIFIED
+  REJECTED
+  NEEDS_CORRECTION
+  EXPIRED
+  PROVIDER_UNAVAILABLE
+  @@map("kyc_application_status")
+}
+
+enum VehicleVerificationStatus {
+  DRAFT
+  SUBMITTED
+  IN_REVIEW
+  VERIFIED
+  REJECTED
+  INACTIVE
+  @@map("vehicle_verification_status")
+}
+
+enum VehicleDocumentStatus {
+  UPLOADING
+  QUARANTINED
+  SCAN_FAILED
+  VERIFIED
+  REJECTED
+  STORAGE_UNAVAILABLE
+  @@map("vehicle_document_status")
+}
+
+enum VehicleChangeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  @@map("vehicle_change_status")
+}
+
 /// PW: ACTIVE, LOW_BALANCE, BLOCKED.
 enum WalletStatus {
   ACTIVE
@@ -311,6 +350,7 @@ model Driver {
   approvalStatus   DriverApprovalStatus @default(PENDING) @map("approval_status")
   approvedAt       DateTime?            @map("approved_at") @db.Timestamptz(6)
   approvedByUserId String?              @map("approved_by_user_id") @db.Uuid
+  profileName String? @map("profile_name") @db.VarChar(120)
   /// Name on the driver's approved KYC documents. Set by ops tooling (never by the API role) and
   /// compared with the account holder name the bank reports during bank-account validation.
   legalName                 String?              @map("legal_name") @db.VarChar(120)
@@ -331,9 +371,169 @@ model Driver {
   bankAccounts DriverBankAccount[]
   bankChanges  BankAccountChangeRequest[]
   payouts      DriverPayout[]
+  kycApplications KycApplication[]
+  vehicles Vehicle[]
+  vehicleChangeRequests VehicleChangeRequest[] @relation("VehicleChangeDriver")
 
   @@index([vehicleRegistrationNumber], map: "idx_drivers_vehicle_registration")
   @@map("drivers")
+}
+
+model KycApplication {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId String @map("driver_id") @db.Uuid
+  provider String @db.VarChar(40)
+  providerReference String? @unique(map: "uq_kyc_provider_reference") @map("provider_reference") @db.VarChar(150)
+  status KycApplicationStatus @default(PENDING)
+  rejectionReason String? @map("rejection_reason")
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
+  verifiedAt DateTime? @map("verified_at") @db.Timestamptz(6)
+  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewedByUserId String? @map("reviewed_by_user_id") @db.Uuid
+  policyVersion String? @map("policy_version") @db.VarChar(50)
+  verificationChecklist Json? @map("verification_checklist")
+  lastProviderPayload Json? @map("last_provider_payload")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  events KycEvent[]
+  documents KycDocument[]
+  @@index([driverId, createdAt(sort: Desc)], map: "idx_kyc_driver_created")
+  @@unique([driverId], map: "uq_kyc_one_open_per_driver", where: raw("((status)::text = ANY ((ARRAY['PENDING'::kyc_application_status, 'IN_REVIEW'::kyc_application_status, 'PROVIDER_UNAVAILABLE'::kyc_application_status])::text[]))"))
+  @@map("kyc_applications")
+}
+
+model KycDocument {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  applicationId String @map("application_id") @db.Uuid
+  documentType String @map("document_type") @db.VarChar(40)
+  version Int @default(1)
+  storageKey String @unique(map: "uq_kyc_documents_storage_key") @map("storage_key") @db.VarChar(500)
+  /// Immutable S3 version observed after the signed upload completes. GuardDuty events must match it.
+  storageVersionId String? @map("storage_version_id") @db.VarChar(1024)
+  storageETag String? @map("storage_etag") @db.VarChar(128)
+  guardDutyScanEventId String? @map("guardduty_scan_event_id") @db.VarChar(150)
+  contentType String @map("content_type") @db.VarChar(100)
+  sizeBytes Int @map("size_bytes")
+  checksumSha256 String? @map("checksum_sha256") @db.VarChar(64)
+  status VehicleDocumentStatus @default(UPLOADING)
+  rejectionReason String? @map("rejection_reason")
+  uploadedAt DateTime? @map("uploaded_at") @db.Timestamptz(6)
+  scannedAt DateTime? @map("scanned_at") @db.Timestamptz(6)
+  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewedByUserId String? @map("reviewed_by_user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  application KycApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  @@unique([applicationId, documentType, version], map: "uq_kyc_document_version")
+  @@index([applicationId, documentType], map: "idx_kyc_documents_application_type")
+  @@index([storageKey, storageVersionId], map: "idx_kyc_documents_storage_version")
+  @@map("kyc_documents")
+}
+
+model KycEvent {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  applicationId String @map("application_id") @db.Uuid
+  providerEventId String @unique(map: "uq_kyc_events_provider_event") @map("provider_event_id") @db.VarChar(150)
+  eventType String @map("event_type") @db.VarChar(80)
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
+  payload Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  application KycApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  @@map("kyc_events")
+}
+
+model Vehicle {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId String @map("driver_id") @db.Uuid
+  category String @db.VarChar(30)
+  registrationNumber String @map("registration_number") @db.VarChar(30)
+  makeModel String @map("make_model") @db.VarChar(100)
+  status VehicleVerificationStatus @default(DRAFT)
+  active Boolean @default(false)
+  verifiedAt DateTime? @map("verified_at") @db.Timestamptz(6)
+  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewedByUserId String? @map("reviewed_by_user_id") @db.Uuid
+  rejectionReason String? @map("rejection_reason")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  documents VehicleDocument[]
+  currentChangeRequests VehicleChangeRequest[] @relation("VehicleChangeCurrent")
+  replacementChangeRequests VehicleChangeRequest[] @relation("VehicleChangeReplacement")
+  @@unique([driverId, registrationNumber], map: "uq_vehicles_driver_registration")
+  @@unique([driverId], map: "uq_vehicles_one_active_per_driver", where: raw("active"))
+  @@index([driverId, active], map: "idx_vehicles_driver_active")
+  @@map("vehicles")
+}
+
+model VehicleDocument {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId String @map("vehicle_id") @db.Uuid
+  documentType String @map("document_type") @db.VarChar(40)
+  version Int @default(1)
+  storageKey String? @unique(map: "uq_vehicle_documents_storage_key") @map("storage_key") @db.VarChar(500)
+  /// Immutable S3 version observed after the signed upload completes. GuardDuty events must match it.
+  storageVersionId String? @map("storage_version_id") @db.VarChar(1024)
+  storageETag String? @map("storage_etag") @db.VarChar(128)
+  guardDutyScanEventId String? @map("guardduty_scan_event_id") @db.VarChar(150)
+  contentType String? @map("content_type") @db.VarChar(100)
+  sizeBytes Int? @map("size_bytes")
+  checksumSha256 String? @map("checksum_sha256") @db.VarChar(64)
+  status VehicleDocumentStatus @default(STORAGE_UNAVAILABLE)
+  rejectionReason String? @map("rejection_reason")
+  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  uploadedAt DateTime? @map("uploaded_at") @db.Timestamptz(6)
+  scannedAt DateTime? @map("scanned_at") @db.Timestamptz(6)
+  reviewedByUserId String? @map("reviewed_by_user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  @@index([vehicleId, documentType], map: "idx_vehicle_documents_vehicle_type")
+  @@index([storageKey, storageVersionId], map: "idx_vehicle_documents_storage_version")
+  @@unique([vehicleId, documentType, version], map: "uq_vehicle_document_version")
+  @@map("vehicle_documents")
+}
+
+/// At-least-once GuardDuty events are retained for audit and idempotency. A row never grants
+/// trust by itself: the application independently checks the exact S3 version and managed tag.
+model DocumentScanEvent {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId String @unique(map: "uq_document_scan_events_event_id") @map("event_id") @db.VarChar(150)
+  source String @db.VarChar(40)
+  awsAccountId String @map("aws_account_id") @db.Char(12)
+  region String @db.VarChar(80)
+  bucket String @db.VarChar(255)
+  objectKey String @map("object_key") @db.VarChar(500)
+  objectVersionId String @map("object_version_id") @db.VarChar(1024)
+  objectETag String @map("object_etag") @db.VarChar(128)
+  scanStatus String @map("scan_status") @db.VarChar(40)
+  scanResult String @map("scan_result") @db.VarChar(40)
+  documentKind String? @map("document_kind") @db.VarChar(20)
+  documentId String? @map("document_id") @db.Uuid
+  outcome String @db.VarChar(40)
+  detail Json
+  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(6)
+
+  @@index([objectKey, objectVersionId], map: "idx_document_scan_events_object_version")
+  @@index([documentKind, documentId, receivedAt(sort: Desc)], map: "idx_document_scan_events_document")
+  @@map("document_scan_events")
+}
+
+model VehicleChangeRequest {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId String @map("driver_id") @db.Uuid
+  currentVehicleId String @map("current_vehicle_id") @db.Uuid
+  replacementVehicleId String @map("replacement_vehicle_id") @db.Uuid
+  status VehicleChangeStatus @default(PENDING)
+  reason String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(6)
+  driver Driver @relation("VehicleChangeDriver", fields: [driverId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  currentVehicle Vehicle @relation("VehicleChangeCurrent", fields: [currentVehicleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  replacementVehicle Vehicle @relation("VehicleChangeReplacement", fields: [replacementVehicleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  @@index([driverId, status], map: "idx_vehicle_changes_driver_status")
+  @@unique([driverId], map: "uq_vehicle_change_one_pending_per_driver", where: raw("(status = 'PENDING'::vehicle_change_status)"))
+  @@map("vehicle_change_requests")
 }
 
 /// PW 1.1: one wallet per driver. balance_paise is a cached balance; the ledger is the audit trail.

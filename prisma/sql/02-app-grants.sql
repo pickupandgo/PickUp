@@ -12,6 +12,7 @@
 
 -- Identity is read-only for the API (provisioning runs as mr_migrator).
 GRANT SELECT ON users, auth_identities, drivers TO mr_app;
+GRANT UPDATE (profile_name, updated_at) ON drivers TO mr_app;
 
 -- Wallets: created lazily by the API; only balance/status bookkeeping columns may change.
 GRANT SELECT, INSERT ON driver_wallets TO mr_app;
@@ -36,6 +37,8 @@ GRANT EXECUTE ON FUNCTION register_customer(TEXT, TEXT, TEXT, TEXT, TEXT) TO mr_
 -- Drivers: self-registration goes through register_driver(), a SECURITY DEFINER function
 -- that creates a DRIVER user with PENDING approval status, vehicle details, licence details and wallet.
 GRANT EXECUTE ON FUNCTION register_driver(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) TO mr_app;
+GRANT EXECUTE ON FUNCTION admin_set_driver_legal_name_after_kyc(UUID, UUID, UUID, TEXT) TO mr_app;
+GRANT EXECUTE ON FUNCTION admin_set_driver_status(UUID, TEXT, UUID, TEXT) TO mr_app;
 
 -- Bookings: registered by the trip engine through the API. Fare, payment method, fee rule and
 -- customer are immutable (no column grant, and a trigger as a second line of defence).
@@ -158,3 +161,13 @@ GRANT UPDATE (status, provider_refund_id, provider_status, provider_reference, f
               submit_attempts, last_submitted_at, completed_at, failed_at, cancelled_at,
               cancelled_by_user_id, cancellation_reason, updated_at)
     ON payment_refunds TO mr_app;
+
+-- Phase 2A onboarding records. Identity and reviewer decisions remain immutable by convention;
+-- the API may update only lifecycle/review fields.
+GRANT SELECT, INSERT ON kyc_applications, kyc_events, kyc_documents, vehicles, vehicle_documents, vehicle_change_requests, document_scan_events TO mr_app;
+GRANT UPDATE (status, rejection_reason, expires_at, verified_at, reviewed_at, reviewed_by_user_id, policy_version, verification_checklist, last_provider_payload, updated_at) ON kyc_applications TO mr_app;
+GRANT UPDATE (status, rejection_reason, checksum_sha256, storage_version_id, storage_etag, guardduty_scan_event_id, uploaded_at, scanned_at, reviewed_at, reviewed_by_user_id) ON kyc_documents TO mr_app;
+GRANT UPDATE (category, registration_number, make_model, status, active, verified_at, reviewed_at, reviewed_by_user_id, rejection_reason, updated_at) ON vehicles TO mr_app;
+GRANT UPDATE (status, rejection_reason, checksum_sha256, storage_version_id, storage_etag, guardduty_scan_event_id, uploaded_at, scanned_at, reviewed_at, reviewed_by_user_id) ON vehicle_documents TO mr_app;
+GRANT UPDATE (document_kind, document_id, outcome, processed_at) ON document_scan_events TO mr_app;
+GRANT UPDATE (status, resolved_at) ON vehicle_change_requests TO mr_app;

@@ -19,6 +19,7 @@ import { FareModule } from './fare/fare.module';
 import { FeesModule } from './fees/fees.module';
 import { HealthModule } from './health/health.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PayoutsModule } from './payouts/payouts.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -45,6 +46,7 @@ export class AppModule {
         HealthModule,
         CustomersModule,
         DriversModule,
+        OnboardingModule,
         FareModule,
         WalletModule,
         FeesModule,

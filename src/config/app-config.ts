@@ -40,6 +40,36 @@ export interface AppConfig {
     /** Accepted X-Internal-Api-Key values. Empty means the internal API is disabled. */
     readonly keys: readonly string[];
   };
+  readonly documents: {
+    readonly storage: null | {
+      readonly endpoint: string | undefined;
+      readonly region: string;
+      readonly bucket: string;
+      readonly accessKeyId: string;
+      readonly secretAccessKey: string;
+      readonly forcePathStyle: boolean;
+    };
+    readonly uploadTtlSeconds: number;
+    readonly downloadTtlSeconds: number;
+    readonly maxBytes: number;
+    readonly allowedContentTypes: readonly string[];
+    readonly scanner:
+      | null
+      | { readonly kind: 'http'; readonly url: string; readonly token: string }
+      | {
+          readonly kind: 'guardduty';
+          readonly eventToken: string;
+          readonly awsAccountId: string;
+          readonly region: string;
+        };
+  };
+  readonly manualKyc: {
+    readonly enabled: boolean;
+    readonly policyVersion: string | null;
+    readonly requiredDocuments: readonly string[];
+    readonly checklist: readonly string[];
+  };
+  readonly onboarding: { readonly requiredVehicleDocuments: readonly string[] };
   readonly collections: {
     /** Product used for new ONLINE_QR collections, or null when online collection is off. */
     readonly product: CollectionProductSetting | null;
@@ -262,6 +292,45 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     internalApi: {
       keys: parseCsv(env.INTERNAL_API_KEYS),
+    },
+    documents: {
+      storage:
+        env.DOCUMENT_STORAGE_PROVIDER === 's3'
+          ? {
+              endpoint: env.DOCUMENT_STORAGE_ENDPOINT,
+              region: env.DOCUMENT_STORAGE_REGION!,
+              bucket: env.DOCUMENT_STORAGE_BUCKET!,
+              accessKeyId: env.DOCUMENT_STORAGE_ACCESS_KEY_ID!,
+              secretAccessKey: env.DOCUMENT_STORAGE_SECRET_ACCESS_KEY!,
+              forcePathStyle: env.DOCUMENT_STORAGE_FORCE_PATH_STYLE,
+            }
+          : null,
+      uploadTtlSeconds: env.DOCUMENT_UPLOAD_TTL_SECONDS,
+      downloadTtlSeconds: env.DOCUMENT_DOWNLOAD_TTL_SECONDS,
+      maxBytes: env.DOCUMENT_MAX_BYTES,
+      allowedContentTypes: parseCsv(env.DOCUMENT_ALLOWED_CONTENT_TYPES),
+      scanner:
+        env.DOCUMENT_SCANNER_PROVIDER === 'http'
+          ? { kind: 'http' as const, url: env.DOCUMENT_SCANNER_URL!, token: env.DOCUMENT_SCANNER_TOKEN! }
+          : env.DOCUMENT_SCANNER_PROVIDER === 'guardduty'
+            ? {
+                kind: 'guardduty' as const,
+                eventToken: env.GUARDDUTY_EVENT_TOKEN!,
+                awsAccountId: env.GUARDDUTY_AWS_ACCOUNT_ID!,
+                region: env.GUARDDUTY_REGION!,
+              }
+            : null,
+    },
+    manualKyc: {
+      enabled: env.MANUAL_KYC_ENABLED,
+      policyVersion: env.MANUAL_KYC_POLICY_VERSION ?? null,
+      requiredDocuments: parseCsv(env.MANUAL_KYC_REQUIRED_DOCUMENTS).map((v) => v.toUpperCase()),
+      checklist: parseCsv(env.MANUAL_KYC_CHECKLIST).map((v) => v.toUpperCase()),
+    },
+    onboarding: {
+      requiredVehicleDocuments: parseCsv(env.VEHICLE_REQUIRED_DOCUMENTS).map((v) =>
+        v.toUpperCase(),
+      ),
     },
     collections: {
       product: COLLECTION_PRODUCTS[env.COLLECTION_LINK_PROVIDER],

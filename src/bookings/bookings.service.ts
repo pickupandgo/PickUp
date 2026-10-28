@@ -9,6 +9,7 @@ import { paiseToNumber } from '../common/money';
 import { EarningsService } from '../earnings/earnings.service';
 import { type FrozenFare, FareQuoteRedeemer } from '../fare/fare-contract';
 import { FeeRulesService } from '../fees/fee-rules.service';
+import { OnboardingService } from '../onboarding/onboarding.service';
 import type { Booking, BookingStop, DriverEarning, Trip } from '../generated/prisma/client';
 import type { BookingPaymentMethod, TripStatus } from '../generated/prisma/enums';
 import { isUniqueViolation } from '../prisma/prisma-errors';
@@ -79,6 +80,7 @@ export class BookingsService {
     private readonly earnings: EarningsService,
     private readonly redeemer: FareQuoteRedeemer,
     private readonly clock: Clock,
+    private readonly onboarding: OnboardingService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -222,11 +224,13 @@ export class BookingsService {
   }
 
   /**
-   * Assignment: creates the booking's single trip (M6: one trip per booking) for an approved
-   * driver. Idempotent for the same driver; a different driver is refused.
+   * Assignment: creates the booking's single trip (M6: one trip per booking) for a driver that
+   * is eligible at the backend now. The eligibility read shares the booking transaction, so an
+   * engine offer can never substitute for final authorization. A retry for an existing trip is
+   * intentionally preserved even if later compliance changes make that driver ineligible.
    */
   async assignDriver(bookingId: string, driverSubject: string): Promise<BookingWithTrip> {
-    const driver = await this.findAssignableDriver(driverSubject);
+    const driver = await this.findDriverBySubject(driverSubject);
     return this.prisma.runInTransaction(async (tx) => {
       const booking = await this.requireLockedBooking(tx, bookingId);
       const existing = await lockTripOfBooking(tx, bookingId);
@@ -242,6 +246,15 @@ export class BookingsService {
       }
       if (booking.status !== 'CREATED' && booking.status !== 'SEARCHING_DRIVER') {
         throw closed(booking);
+      }
+      const eligibility = await this.onboarding.eligibilityIn(driver.id, tx);
+      if (!eligibility.eligible) {
+        throw new AppError(
+          ErrorCode.DRIVER_NOT_ELIGIBLE,
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          'Driver is not currently eligible for a new assignment',
+          { reasons: eligibility.reasons },
+        );
       }
       const trip = await tx.trip.create({ data: { bookingId, driverId: driver.id } });
       const updated = await tx.booking.update({
@@ -656,26 +669,20 @@ export class BookingsService {
     return user.customer;
   }
 
-  private async findAssignableDriver(subject: string): Promise<{ id: string }> {
+  /** Resolves the verified engine subject to an account, without using stale eligibility state. */
+  private async findDriverBySubject(subject: string): Promise<{ id: string }> {
     const identity = await this.prisma.authIdentity.findUnique({
       where: { provider_subject: { provider: this.config.auth.provider, subject } },
       select: {
-        user: { select: { status: true, driver: { select: { id: true, approvalStatus: true } } } },
+        user: { select: { role: true, driver: { select: { id: true } } } },
       },
     });
     const driver = identity?.user.driver;
-    if (!identity || identity.user.status !== 'ACTIVE' || !driver) {
+    if (!identity || identity.user.role !== 'DRIVER' || !driver) {
       throw new AppError(
         ErrorCode.DRIVER_NOT_FOUND,
         HttpStatus.UNPROCESSABLE_ENTITY,
-        'No active driver account is registered for this subject',
-      );
-    }
-    if (driver.approvalStatus !== 'APPROVED') {
-      throw new AppError(
-        ErrorCode.DRIVER_NOT_APPROVED,
-        HttpStatus.UNPROCESSABLE_ENTITY,
-        'Only approved drivers can be assigned',
+        'No driver account is registered for this subject',
       );
     }
     return driver;

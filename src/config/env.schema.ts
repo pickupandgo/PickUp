@@ -84,6 +84,36 @@ export const envSchema = z
     // previous during a rotation). Unset means the internal API is disabled.
     INTERNAL_API_KEYS: z.string().optional(),
 
+    DOCUMENT_STORAGE_PROVIDER: z.enum(['disabled', 's3']).default('disabled'),
+    DOCUMENT_STORAGE_ENDPOINT: httpsOrHttpUrl.optional(),
+    DOCUMENT_STORAGE_REGION: z.string().min(1).max(80).optional(),
+    DOCUMENT_STORAGE_BUCKET: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/)
+      .optional(),
+    DOCUMENT_STORAGE_ACCESS_KEY_ID: z.string().min(8).optional(),
+    DOCUMENT_STORAGE_SECRET_ACCESS_KEY: z.string().min(16).optional(),
+    DOCUMENT_STORAGE_FORCE_PATH_STYLE: booleanString.default(false),
+    DOCUMENT_UPLOAD_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(300),
+    DOCUMENT_DOWNLOAD_TTL_SECONDS: z.coerce.number().int().min(30).max(300).default(60),
+    DOCUMENT_MAX_BYTES: z.coerce.number().int().min(1024).max(20_000_000).default(10_000_000),
+    DOCUMENT_ALLOWED_CONTENT_TYPES: z.string().default('application/pdf,image/jpeg,image/png'),
+    DOCUMENT_SCANNER_PROVIDER: z.enum(['disabled', 'http', 'guardduty']).default('disabled'),
+    DOCUMENT_SCANNER_URL: httpsOrHttpUrl.optional(),
+    DOCUMENT_SCANNER_TOKEN: z.string().min(24).optional(),
+    /** EventBridge API Destination shared secret; never a GuardDuty result itself. */
+    GUARDDUTY_EVENT_TOKEN: z.string().min(32).optional(),
+    GUARDDUTY_AWS_ACCOUNT_ID: z.string().regex(/^\d{12}$/).optional(),
+    GUARDDUTY_REGION: z.string().min(1).max(80).optional(),
+    MANUAL_KYC_ENABLED: booleanString.default(false),
+    MANUAL_KYC_POLICY_VERSION: z
+      .string()
+      .regex(/^[A-Za-z0-9._-]{1,50}$/)
+      .optional(),
+    MANUAL_KYC_REQUIRED_DOCUMENTS: z.string().optional(),
+    MANUAL_KYC_CHECKLIST: z.string().optional(),
+    VEHICLE_REQUIRED_DOCUMENTS: z.string().optional(),
+
     // Pickup/delivery online collection (booking-linked QR). Live: razorpay_qr_code (a UPI QR any
     // UPI app can pay, D-47). razorpay_payment_link draws a QR of a payment link and is allowed
     // only in test mode, where Razorpay QR codes can't be paid. simulated: in-memory QR codes paid
@@ -204,11 +234,128 @@ export const envSchema = z
     PAYOUT_AUTO_EXECUTE: booleanString.default(false),
   })
   .superRefine((env, ctx) => {
+    const policyName = /^[A-Z][A-Z0-9_]{1,39}$/;
+    for (const [name, values] of [
+      [
+        'MANUAL_KYC_REQUIRED_DOCUMENTS',
+        parseCsv(env.MANUAL_KYC_REQUIRED_DOCUMENTS).map((value) => value.toUpperCase()),
+      ],
+      [
+        'MANUAL_KYC_CHECKLIST',
+        parseCsv(env.MANUAL_KYC_CHECKLIST).map((value) => value.toUpperCase()),
+      ],
+      [
+        'VEHICLE_REQUIRED_DOCUMENTS',
+        parseCsv(env.VEHICLE_REQUIRED_DOCUMENTS).map((value) => value.toUpperCase()),
+      ],
+    ] as const) {
+      if (
+        values.some((value) => !policyName.test(value)) ||
+        new Set(values).size !== values.length
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [name],
+          message: 'must contain unique uppercase policy identifiers',
+        });
+      }
+    }
     if (env.WALLET_TOPUP_MAX_PAISE < env.WALLET_TOPUP_MIN_PAISE) {
       ctx.addIssue({
         code: 'custom',
         path: ['WALLET_TOPUP_MAX_PAISE'],
         message: 'must be greater than or equal to WALLET_TOPUP_MIN_PAISE',
+      });
+    }
+    if (env.DOCUMENT_STORAGE_PROVIDER === 's3') {
+      for (const name of [
+        'DOCUMENT_STORAGE_REGION',
+        'DOCUMENT_STORAGE_BUCKET',
+        'DOCUMENT_STORAGE_ACCESS_KEY_ID',
+        'DOCUMENT_STORAGE_SECRET_ACCESS_KEY',
+      ] as const) {
+        if (!env[name])
+          ctx.addIssue({
+            code: 'custom',
+            path: [name],
+            message: 'is required when DOCUMENT_STORAGE_PROVIDER is s3',
+          });
+      }
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.DOCUMENT_STORAGE_ENDPOINT &&
+      !env.DOCUMENT_STORAGE_ENDPOINT.startsWith('https://')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DOCUMENT_STORAGE_ENDPOINT'],
+        message: 'must use HTTPS in production',
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.DOCUMENT_SCANNER_URL &&
+      !env.DOCUMENT_SCANNER_URL.startsWith('https://')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DOCUMENT_SCANNER_URL'],
+        message: 'must use HTTPS in production',
+      });
+    }
+    if (
+      env.DOCUMENT_SCANNER_PROVIDER === 'http' &&
+      (!env.DOCUMENT_SCANNER_URL || !env.DOCUMENT_SCANNER_TOKEN)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DOCUMENT_SCANNER_PROVIDER'],
+        message: 'http scanning requires DOCUMENT_SCANNER_URL and DOCUMENT_SCANNER_TOKEN',
+      });
+    }
+    if (
+      env.DOCUMENT_SCANNER_PROVIDER === 'guardduty' &&
+      (!env.GUARDDUTY_EVENT_TOKEN || !env.GUARDDUTY_AWS_ACCOUNT_ID || !env.GUARDDUTY_REGION)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DOCUMENT_SCANNER_PROVIDER'],
+        message: 'guardduty scanning requires event token, AWS account ID, and region',
+      });
+    }
+    if (
+      env.DOCUMENT_SCANNER_PROVIDER === 'guardduty' &&
+      env.DOCUMENT_STORAGE_REGION &&
+      env.GUARDDUTY_REGION &&
+      env.DOCUMENT_STORAGE_REGION !== env.GUARDDUTY_REGION
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['GUARDDUTY_REGION'],
+        message: 'must match DOCUMENT_STORAGE_REGION because GuardDuty plans scan buckets only in their region',
+      });
+    }
+    if (
+      env.MANUAL_KYC_ENABLED &&
+      (!env.MANUAL_KYC_POLICY_VERSION ||
+        parseCsv(env.MANUAL_KYC_REQUIRED_DOCUMENTS).length === 0 ||
+        parseCsv(env.MANUAL_KYC_CHECKLIST).length === 0)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['MANUAL_KYC_ENABLED'],
+        message: 'requires an approved policy version, required documents, and review checklist',
+      });
+    }
+    if (
+      env.MANUAL_KYC_ENABLED &&
+      (env.DOCUMENT_STORAGE_PROVIDER !== 's3' || env.DOCUMENT_SCANNER_PROVIDER === 'disabled')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['MANUAL_KYC_ENABLED'],
+        message: 'requires private storage and an enabled scanner',
       });
     }
 
