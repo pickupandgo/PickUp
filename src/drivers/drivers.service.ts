@@ -18,8 +18,6 @@ interface RegistrationRow {
 
 export interface DriverRegistrationParams {
   readonly legalName?: string | null;
-  readonly phoneOverride?: string | null;
-  readonly email?: string | null;
   readonly vehicleType?: string | null;
   readonly vehicleMakeModel?: string | null;
   readonly vehicleRegistrationNumber?: string | null;
@@ -43,15 +41,15 @@ export class DriversService {
   async register(
     identity: SignedInIdentity,
     paramsOrLegalName?: DriverRegistrationParams | string | null,
-    phoneOverride?: string | null,
   ): Promise<DriverRegistrationResult> {
     const params: DriverRegistrationParams =
       typeof paramsOrLegalName === 'object' && paramsOrLegalName !== null
         ? paramsOrLegalName
-        : { legalName: paramsOrLegalName, phoneOverride };
+        : { legalName: paramsOrLegalName };
 
-    const rawPhone = identity.phoneNumber ?? params.phoneOverride ?? null;
-    const phone = rawPhone ? rawPhone.trim() : null;
+    // A driver phone is an authentication fact. Never substitute a request-body value when a
+    // social/email Firebase token has no verified phone_number claim.
+    const phone = identity.phoneNumber;
 
     if (phone === null || !E164_PHONE.test(phone)) {
       throw new AppError(
@@ -61,8 +59,9 @@ export class DriversService {
       );
     }
 
-    const trimmedLegalName = params.legalName ? params.legalName.trim().slice(0, 120) : null;
-    const trimmedEmail = params.email ? params.email.trim().slice(0, 255) : null;
+    const trimmedLegalName =
+      identity.name ?? (params.legalName ? params.legalName.trim().slice(0, 120) : null);
+    const trimmedEmail = identity.email;
     const trimmedVehicleType = params.vehicleType ? params.vehicleType.trim().slice(0, 30) : null;
     const trimmedVehicleMakeModel = params.vehicleMakeModel
       ? params.vehicleMakeModel.trim().slice(0, 100)

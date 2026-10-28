@@ -4,7 +4,7 @@ import { requireCustomer } from '../auth/require-driver';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
-import type { CustomerAccountResponse, RegisterCustomerRequest } from './customers.dto';
+import type { CustomerAccountResponse } from './customers.dto';
 
 /** E.164, as Firebase puts it in the `phone_number` claim. */
 const E164_PHONE = /^\+[1-9][0-9]{6,14}$/;
@@ -37,7 +37,6 @@ export class CustomersService {
 
   async register(
     identity: SignedInIdentity,
-    body?: RegisterCustomerRequest,
   ): Promise<RegistrationResult> {
     const phone = identity.phoneNumber;
     if (phone === null || !E164_PHONE.test(phone)) {
@@ -48,8 +47,10 @@ export class CustomersService {
       );
     }
 
-    const name = body?.name?.trim() || null;
-    const email = body?.email?.trim() || null;
+    // Identity/profile facts originate only from the verified Firebase token. This bootstrap
+    // endpoint intentionally accepts no body: callers cannot attach an arbitrary email or UID.
+    const name = identity.name;
+    const email = identity.email;
 
     const [row] = await this.prisma.$queryRaw<RegistrationRow[]>`
       SELECT outcome,

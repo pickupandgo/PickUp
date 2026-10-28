@@ -70,11 +70,23 @@ export async function runProvisionCommand(
   provider: string,
   command: ProvisionCommand,
 ): Promise<ProvisionResult> {
+  const bypassesOnboarding =
+    command.kind === 'approve-driver' ||
+    command.kind === 'set-legal-name' ||
+    (command.kind === 'create-driver' && (command.approve || command.legalName !== null));
+  if (process.env.NODE_ENV === 'production' && bypassesOnboarding) {
+    throw new ProvisionUsageError(
+      'Production driver verification must use the audited onboarding admin API',
+    );
+  }
   switch (command.kind) {
     case 'create-driver':
     case 'create-admin':
     case 'create-customer':
       return createAccount(prisma, provider, command);
+    case 'create-contract-eligible-driver':
+      assertContractFixtureEnvironment();
+      return createContractEligibleDriver(prisma, provider, command);
     case 'approve-driver':
       return approveDriver(prisma, command.phone);
     case 'set-legal-name':
@@ -104,6 +116,186 @@ export async function runProvisionCommand(
     case 'create-pricing-version':
       return createPricingVersion(prisma, command);
   }
+}
+
+/**
+ * Contract fixtures model historical, already-audited evidence without calling object storage.
+ * They are deliberately unavailable outside a test process connected to a disposable *_e2e DB;
+ * production and ordinary development provisioning must use the onboarding/admin workflow.
+ */
+function assertContractFixtureEnvironment(): void {
+  const databaseUrl = process.env.DATABASE_URL;
+  let databaseName = '';
+  try {
+    databaseName = new URL(databaseUrl ?? '').pathname.replace(/^\//, '');
+  } catch {
+    // Kept empty so the generic refusal below does not disclose connection details.
+  }
+  if (
+    process.env.NODE_ENV !== 'test' ||
+    process.env.CONTRACT_E2E_FIXTURE !== 'true' ||
+    !/^[a-z0-9_]+_e2e$/.test(databaseName)
+  ) {
+    throw new ProvisionUsageError(
+      'create-contract-eligible-driver is restricted to an explicitly enabled isolated test database',
+    );
+  }
+}
+
+function requiredFixtureValues(name: string): string[] {
+  const values = (process.env[name] ?? '')
+    .split(',')
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean);
+  if (values.length === 0 || new Set(values).size !== values.length) {
+    throw new ProvisionUsageError(`${name} must define a non-empty unique document/checklist policy`);
+  }
+  return values;
+}
+
+/** Creates a complete, immutable-looking historical compliance fixture for the real-service E2E. */
+async function createContractEligibleDriver(
+  prisma: PrismaClient,
+  provider: string,
+  command: Extract<ProvisionCommand, { kind: 'create-contract-eligible-driver' }>,
+): Promise<AccountResult> {
+  const policyVersion = process.env.MANUAL_KYC_POLICY_VERSION?.trim();
+  const kycDocumentTypes = requiredFixtureValues('MANUAL_KYC_REQUIRED_DOCUMENTS');
+  const checklist = requiredFixtureValues('MANUAL_KYC_CHECKLIST');
+  const vehicleDocumentTypes = requiredFixtureValues('VEHICLE_REQUIRED_DOCUMENTS');
+  if (!policyVersion) {
+    throw new ProvisionUsageError('MANUAL_KYC_POLICY_VERSION is required for contract fixtures');
+  }
+
+  return prisma.$transaction(async (tx) => {
+    if (await tx.user.findUnique({ where: { phone: command.phone }, select: { id: true } })) {
+      throw new ProvisionUsageError('A user with this phone number already exists');
+    }
+    const identityTaken = await tx.authIdentity.findUnique({
+      where: { provider_subject: { provider, subject: command.subject } },
+      select: { id: true },
+    });
+    if (identityTaken) {
+      throw new ProvisionUsageError('This subject is already linked to another user');
+    }
+
+    // Deliberately ordered so the final approval is after the verified KYC and vehicle evidence.
+    const base = Date.now() - 10_000;
+    const uploadedAt = new Date(base);
+    const verifiedAt = new Date(base + 1_000);
+    const vehicleVerifiedAt = new Date(base + 2_000);
+    const approvedAt = new Date(base + 3_000);
+    const user = await tx.user.create({ data: { phone: command.phone, role: 'DRIVER' } });
+    await tx.authIdentity.create({ data: { userId: user.id, provider, subject: command.subject } });
+    const driver = await tx.driver.create({
+      data: {
+        userId: user.id,
+        profileName: command.legalName,
+        legalName: command.legalName,
+        approvalStatus: 'APPROVED',
+        approvedAt,
+      },
+    });
+    await tx.driverWallet.create({ data: { driverId: driver.id } });
+    const application = await tx.kycApplication.create({
+      data: {
+        driverId: driver.id,
+        provider: 'MANUAL_ADMIN_VERIFICATION',
+        status: 'VERIFIED',
+        policyVersion,
+        verificationChecklist: Object.fromEntries(checklist.map((item) => [item, true])),
+        verifiedAt,
+        reviewedAt: verifiedAt,
+        createdAt: uploadedAt,
+      },
+    });
+    for (const documentType of kycDocumentTypes) {
+      await tx.kycDocument.create({
+        data: {
+          applicationId: application.id,
+          documentType,
+          storageKey: `contract-fixtures/${command.subject}/kyc/${documentType}.pdf`,
+          contentType: 'application/pdf',
+          sizeBytes: 1_024,
+          checksumSha256: '0'.repeat(64),
+          status: 'VERIFIED',
+          uploadedAt,
+          scannedAt: verifiedAt,
+          reviewedAt: verifiedAt,
+          createdAt: uploadedAt,
+        },
+      });
+    }
+    await tx.kycEvent.create({
+      data: {
+        applicationId: application.id,
+        providerEventId: `contract-fixture-kyc-${command.subject}`,
+        eventType: 'MANUAL_KYC_VERIFIED',
+        occurredAt: verifiedAt,
+        payload: { fixture: true, policyVersion },
+        createdAt: verifiedAt,
+      },
+    });
+    const vehicle = await tx.vehicle.create({
+      data: {
+        driverId: driver.id,
+        category: 'MINI_TRUCK',
+        registrationNumber: `CT${command.subject.slice(-16).toUpperCase()}`,
+        makeModel: 'Contract Fixture Vehicle',
+        status: 'VERIFIED',
+        active: true,
+        verifiedAt: vehicleVerifiedAt,
+        reviewedAt: vehicleVerifiedAt,
+        createdAt: uploadedAt,
+      },
+    });
+    for (const documentType of vehicleDocumentTypes) {
+      await tx.vehicleDocument.create({
+        data: {
+          vehicleId: vehicle.id,
+          documentType,
+          storageKey: `contract-fixtures/${command.subject}/vehicle/${documentType}.pdf`,
+          contentType: 'application/pdf',
+          sizeBytes: 1_024,
+          checksumSha256: '1'.repeat(64),
+          status: 'VERIFIED',
+          uploadedAt,
+          scannedAt: vehicleVerifiedAt,
+          reviewedAt: vehicleVerifiedAt,
+          createdAt: uploadedAt,
+        },
+      });
+    }
+    await recordAdminAction(tx, {
+      actorUserId: null,
+      action: 'CONTRACT_FIXTURE_KYC_VERIFIED',
+      targetType: 'KYC_APPLICATION',
+      targetId: application.id,
+      reason: 'Isolated contract test fixture: audited manual KYC history',
+      details: { policyVersion },
+    });
+    await recordAdminAction(tx, {
+      actorUserId: null,
+      action: 'CONTRACT_FIXTURE_VEHICLE_VERIFIED',
+      targetType: 'VEHICLE',
+      targetId: vehicle.id,
+      reason: 'Isolated contract test fixture: verified vehicle evidence history',
+    });
+    await recordAdminAction(tx, {
+      actorUserId: null,
+      action: 'CONTRACT_FIXTURE_DRIVER_APPROVED',
+      targetType: 'DRIVER',
+      targetId: driver.id,
+      reason: 'Isolated contract test fixture: final approval after compliance checks',
+    });
+    return {
+      userId: user.id,
+      role: user.role,
+      driverId: driver.id,
+      approvalStatus: driver.approvalStatus,
+      customerId: null,
+    };
+  });
 }
 
 /**

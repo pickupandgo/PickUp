@@ -78,6 +78,8 @@ export class AuthGuard implements CanActivate {
         subject: identity.subject,
         phoneNumber: identity.phoneNumber,
         signInProvider: identity.signInProvider,
+        email: identity.email,
+        name: identity.name,
       };
       const principal = await this.principals.findPrincipal(identity);
       if (principal) {

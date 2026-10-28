@@ -34,6 +34,8 @@ describe('DriversService', () => {
     subject: 'fb-driver-123',
     signInProvider: 'phone',
     phoneNumber: '+919876543210',
+    email: 'rajesh@example.com',
+    name: 'Rajesh Kumar',
   };
 
   const mockDriverDbRow = {
@@ -70,7 +72,6 @@ describe('DriversService', () => {
 
       const result = await service.register(validIdentity, {
         legalName: 'Rajesh Kumar',
-        email: 'rajesh@example.com',
         vehicleType: 'mini_truck',
         vehicleMakeModel: 'Tata Ace Gold',
         vehicleRegistrationNumber: 'RJ14AB1234',
@@ -211,11 +212,9 @@ describe('DriversService', () => {
   describe('RegisterDriverRequest DTO & Validation regression', () => {
     const pipe = createValidationPipe();
 
-    it('successfully validates a payload with all seven registration fields', async () => {
+    it('successfully validates a payload with driver profile fields only', async () => {
       const validPayload = {
         name: 'Rajesh Kumar',
-        phone: '+919799904730',
-        email: 'rajesh@example.com',
         vehicleType: 'CAB',
         vehicleMakeModel: 'Swift Dzire',
         vehicleRegistrationNumber: 'RJ14CA1234',
@@ -234,6 +233,7 @@ describe('DriversService', () => {
       const payloadWithExtraneousField = {
         name: 'Rajesh Kumar',
         phone: '+919799904730',
+        email: 'rajesh@example.com',
         role: 'ADMIN',
         approvalStatus: 'APPROVED',
       };
@@ -246,18 +246,12 @@ describe('DriversService', () => {
       ).rejects.toThrow(AppError);
     });
 
-    it('rejects invalid email formats', async () => {
-      const payloadWithInvalidEmail = {
-        name: 'Rajesh Kumar',
-        phone: '+919799904730',
-        email: 'not-an-email',
-      };
-
+    it('rejects client supplied identity fields', async () => {
       await expect(
-        pipe.transform(payloadWithInvalidEmail, {
-          type: 'body',
-          metatype: RegisterDriverRequest,
-        }),
+        pipe.transform(
+          { email: 'attacker@example.com' },
+          { type: 'body', metatype: RegisterDriverRequest },
+        ),
       ).rejects.toThrow(AppError);
     });
   });
@@ -269,7 +263,7 @@ describe('DriversService', () => {
       controller = new DriversController(service);
     });
 
-    it('maps all seven registration fields and sets HTTP 201 on account creation', async () => {
+    it('maps only non-identity profile fields and sets HTTP 201 on account creation', async () => {
       const registerSpy = jest.spyOn(service, 'register').mockResolvedValueOnce({
         account: {
           driverId: 'd-uuid-1',
@@ -294,8 +288,6 @@ describe('DriversService', () => {
 
       const body: RegisterDriverRequest = {
         name: 'Rajesh Kumar',
-        phone: '+919799904730',
-        email: 'rajesh@example.com',
         vehicleType: 'CAB',
         vehicleMakeModel: 'Swift Dzire',
         vehicleRegistrationNumber: 'RJ14CA1234',
@@ -307,8 +299,6 @@ describe('DriversService', () => {
       expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.CREATED);
       expect(registerSpy).toHaveBeenCalledWith(validIdentity, {
         legalName: 'Rajesh Kumar',
-        phoneOverride: '+919799904730',
-        email: 'rajesh@example.com',
         vehicleType: 'CAB',
         vehicleMakeModel: 'Swift Dzire',
         vehicleRegistrationNumber: 'RJ14CA1234',

@@ -19,6 +19,13 @@ export type ProvisionCommand =
       /** KYC legal name, compared with the bank's registered name before payouts. */
       readonly legalName: string | null;
     }
+  | {
+      /** Isolated contract-test fixture; never available to a deployed environment. */
+      readonly kind: 'create-contract-eligible-driver';
+      readonly phone: string;
+      readonly subject: string;
+      readonly legalName: string;
+    }
   | { readonly kind: 'create-admin'; readonly phone: string; readonly subject: string }
   | { readonly kind: 'create-customer'; readonly phone: string; readonly subject: string }
   | { readonly kind: 'approve-driver'; readonly phone: string }
@@ -50,6 +57,8 @@ export type ProvisionCommand =
 export const PROVISION_USAGE = `Usage:
   node dist/cli/provision.js create-driver   --phone <E.164> --subject <firebase-uid> [--approve]
                                              [--name "<KYC legal name>"]
+  node dist/cli/provision.js create-contract-eligible-driver --phone <E.164> --subject <firebase-uid>
+                                             --name "<KYC legal name>"
   node dist/cli/provision.js create-admin    --phone <E.164> --subject <firebase-uid>
   node dist/cli/provision.js create-customer --phone <E.164> --subject <firebase-uid>
   node dist/cli/provision.js approve-driver  --phone <E.164>
@@ -150,6 +159,14 @@ export function parseProvisionArgs(argv: readonly string[]): ProvisionCommand {
         subject: requireSubject(values.subject),
         approve: values.approve ?? false,
         legalName: values.name === undefined ? null : requireLegalName(values.name),
+      };
+    case 'create-contract-eligible-driver':
+      rejectFlags(values, ['approve', ...FEE_FLAGS, ...PRICING_FLAGS], command);
+      return {
+        kind: command,
+        phone: requirePhone(values.phone),
+        subject: requireSubject(values.subject),
+        legalName: requireLegalName(values.name),
       };
     case 'create-admin':
     case 'create-customer':

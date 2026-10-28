@@ -23,6 +23,8 @@ describe('CustomersService', () => {
     subject: 'fb-user-12345',
     phoneNumber: '+919876543210',
     signInProvider: 'phone',
+    email: 'aarav.patel@example.com',
+    name: 'Aarav Patel',
   };
 
   describe('register', () => {
@@ -72,10 +74,7 @@ describe('CustomersService', () => {
         },
       });
 
-      const result = await service.register(validIdentity, {
-        name: 'Aarav Patel',
-        email: 'aarav.patel@example.com',
-      });
+      const result = await service.register(validIdentity);
 
       expect(mockPrisma.$queryRaw).toHaveBeenCalled();
       expect(result.created).toBe(true);

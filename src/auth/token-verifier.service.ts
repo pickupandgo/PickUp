@@ -21,6 +21,10 @@ export interface VerifiedIdentity {
   readonly authTime: number | null;
   /** `firebase.sign_in_provider`, e.g. "phone". */
   readonly signInProvider: string | null;
+  /** A verified email address, when Firebase includes one in the ID token. */
+  readonly email: string | null;
+  /** The display name asserted by Firebase, when available. Never used for authorization. */
+  readonly name: string | null;
 }
 
 const MAX_TOKEN_LENGTH = 4_096;
@@ -105,6 +109,9 @@ export class TokenVerifier {
     }
 
     const phone: unknown = payload['phone_number'];
+    const email: unknown = payload['email'];
+    const emailVerified: unknown = payload['email_verified'];
+    const name: unknown = payload['name'];
     const firebase: unknown = payload['firebase'];
     const provider: unknown =
       typeof firebase === 'object' && firebase !== null
@@ -115,6 +122,14 @@ export class TokenVerifier {
       phoneNumber: typeof phone === 'string' && phone.length <= 20 ? phone : null,
       authTime: typeof authTime === 'number' && Number.isInteger(authTime) ? authTime : null,
       signInProvider: typeof provider === 'string' && provider.length <= 40 ? provider : null,
+      // An email is profile data only, but accepting an unverified email claim would still make
+      // the server persist a value the identity provider has not confirmed.
+      email:
+        emailVerified === true && typeof email === 'string' && email.length <= 255 ? email : null,
+      name:
+        typeof name === 'string' && name.trim().length > 0 && name.length <= 120
+          ? name.trim()
+          : null,
     };
   }
 }

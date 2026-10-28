@@ -16,6 +16,11 @@ export interface SignOptions {
   readonly phoneNumber?: string;
   /** `firebase.sign_in_provider`. Defaults to "phone". */
   readonly signInProvider?: string;
+  /** Firebase email claim. It is surfaced only when emailVerified is also true. */
+  readonly email?: string;
+  readonly emailVerified?: boolean;
+  /** Firebase display-name claim. */
+  readonly name?: string;
 }
 
 /** Issues Firebase-shaped RS256 ID tokens signed by a key generated for this test run. */
@@ -38,6 +43,9 @@ export class TestTokenIssuer {
         exp: now + (options.expiresInSeconds ?? 3600),
         auth_time: options.authTime ?? now,
         ...(options.phoneNumber === undefined ? {} : { phone_number: options.phoneNumber }),
+        ...(options.email === undefined ? {} : { email: options.email }),
+        ...(options.emailVerified === undefined ? {} : { email_verified: options.emailVerified }),
+        ...(options.name === undefined ? {} : { name: options.name }),
         firebase: { sign_in_provider: options.signInProvider ?? 'phone' },
       },
       options.privateKey ?? this.privateKey,

@@ -64,6 +64,8 @@ describe('TokenVerifier', () => {
       phoneNumber: '+910000000000',
       authTime,
       signInProvider: 'phone',
+      email: null,
+      name: null,
     });
   });
 

@@ -22,6 +22,10 @@ export interface SignedInIdentity {
   /** Verified `phone_number` claim, or null when the sign-in has no verified phone. */
   readonly phoneNumber: string | null;
   readonly signInProvider: string | null;
+  /** Verified Firebase email, or null when absent/unverified. */
+  readonly email: string | null;
+  /** Firebase display name, or null when absent. */
+  readonly name: string | null;
 }
 
 /**

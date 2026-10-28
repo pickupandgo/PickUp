@@ -27,8 +27,6 @@ export class DriversController {
   ): Promise<DriverAccountResponse> {
     const { account, created } = await this.drivers.register(identity, {
       legalName: body?.name,
-      phoneOverride: body?.phone,
-      email: body?.email,
       vehicleType: body?.vehicleType,
       vehicleMakeModel: body?.vehicleMakeModel,
       vehicleRegistrationNumber: body?.vehicleRegistrationNumber,

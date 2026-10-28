@@ -1,10 +1,10 @@
-import { Body, Controller, Get, HttpStatus, Post, Query, Res } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Post, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { CurrentIdentity, CurrentPrincipal, CustomerOnly, Public, SignedIn } from '../auth/decorators';
 import type { Principal, SignedInIdentity } from '../auth/principal';
-import { CustomerAccountResponse, RegisterCustomerRequest } from './customers.dto';
+import { CustomerAccountResponse } from './customers.dto';
 import { CustomersService } from './customers.service';
 
 /** The signed-in customer's own account. */
@@ -34,10 +34,9 @@ export class CustomersController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async register(
     @CurrentIdentity() identity: SignedInIdentity,
-    @Body() body: RegisterCustomerRequest,
     @Res({ passthrough: true }) response: Response,
   ): Promise<CustomerAccountResponse> {
-    const { account, created } = await this.customers.register(identity, body);
+    const { account, created } = await this.customers.register(identity);
     response.status(created ? HttpStatus.CREATED : HttpStatus.OK);
     return account;
   }

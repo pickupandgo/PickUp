@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 /** The signed-in driver's account profile. */
 export class DriverAccountResponse {
@@ -23,15 +23,6 @@ export class RegisterDriverRequest {
   @IsString()
   @MaxLength(120)
   name?: string;
-
-  @IsOptional()
-  @IsString()
-  phone?: string;
-
-  @IsOptional()
-  @IsEmail()
-  @MaxLength(255)
-  email?: string;
 
   @IsOptional()
   @IsString()

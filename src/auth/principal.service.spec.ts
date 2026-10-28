@@ -24,6 +24,8 @@ describe('PrincipalService', () => {
     phoneNumber: '+919876543210',
     signInProvider: 'phone',
     authTime: 1700000000,
+    email: null,
+    name: null,
   };
 
   describe('findPrincipal', () => {
