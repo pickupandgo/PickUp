@@ -7,7 +7,6 @@ import {
   bearer,
   createAdmin,
   createCustomer,
-  createDriver,
   type FixtureDeps,
   idempotencyKey,
   TEST_PRICING_CONFIG,
@@ -16,6 +15,7 @@ import {
   uniqueSubject,
   uniqueVersionCode,
 } from '../helpers/fixtures';
+import { createHistoricalEligibleDriver as createDriver } from '../helpers/onboarding-fixtures';
 import {
   advanceTrip,
   bookedTrip,
@@ -55,7 +55,10 @@ describe('Least-privilege database role', () => {
   let deps: FixtureDeps;
 
   beforeAll(async () => {
-    ctx = await createTestApp({ databaseUrl: restrictedDatabaseUrl() });
+    ctx = await createTestApp({
+      databaseUrl: restrictedDatabaseUrl(),
+      configOverrides: { VEHICLE_REQUIRED_DOCUMENTS: 'TEST_RC' },
+    });
     owner = new PrismaClient({
       adapter: new PrismaPg({ connectionString: TEST_DATABASE_URL, max: 2 }),
     });

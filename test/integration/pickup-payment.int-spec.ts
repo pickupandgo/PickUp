@@ -1,9 +1,9 @@
+import { createHistoricalEligibleDriver } from '../helpers/onboarding-fixtures';
 import request from 'supertest';
 import {
   bearer,
   createAdmin,
   createCustomer,
-  createDriver,
   createFeeRule,
   type TestAdmin,
   type TestCustomer,
@@ -59,7 +59,7 @@ describe('Pickup payment gate (PAY_AT_PICKUP)', () => {
     options: { walletPaise?: number; model?: PaymentModel } = {},
   ): Promise<ArrivedTrip> {
     const customer = await createCustomer(ctx);
-    const driver = await createDriver(ctx);
+    const driver = await createHistoricalEligibleDriver(ctx);
     const model = options.model ?? 'QUOTE_PER_STOP';
     const trip = await bookedTrip(ctx, customer, driver, {
       paymentMethod: 'PAY_AT_PICKUP',
@@ -155,7 +155,7 @@ describe('Pickup payment gate (PAY_AT_PICKUP)', () => {
 
     it('is not yet owed before the driver reaches the pickup', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const { bookingId, tripId } = await bookedTrip(ctx, customer, driver, {
         paymentMethod: 'PAY_AT_PICKUP',
         farePaise: 50_000,
@@ -345,7 +345,7 @@ describe('Pickup payment gate (PAY_AT_PICKUP)', () => {
   describe('other payment methods', () => {
     it('pay-at-delivery and historical prepaid pickups are not gated', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const delivery = await bookedTrip(ctx, customer, driver, {
         paymentMethod: 'PAY_AT_DELIVERY',
         farePaise: 50_000,
@@ -582,7 +582,7 @@ describe('Pickup payment gate (PAY_AT_PICKUP)', () => {
   describe('authorization', () => {
     it('only the trip engine moves a trip; drivers and customers read only their own gate', async () => {
       const { customer, driver, bookingId, tripId } = await arrivedAtPickup();
-      const otherDriver = await createDriver(ctx);
+      const otherDriver = await createHistoricalEligibleDriver(ctx);
       const otherCustomer = await createCustomer(ctx);
       for (const token of [driver.token, customer.token, admin.token]) {
         const res = await request(ctx.server)

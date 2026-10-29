@@ -1,3 +1,4 @@
+import { createHistoricalEligibleDriver } from '../helpers/onboarding-fixtures';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { BookingStop } from '../../src/generated/prisma/client';
@@ -6,7 +7,6 @@ import {
   bearer,
   createAdmin,
   createCustomer,
-  createDriver,
   createFeeRule,
   createVerifiedBankAccount,
   idempotencyKey,
@@ -96,7 +96,7 @@ describe('Earnings funded by several collections (payment flow Phase 5)', () => 
   const sync = () => ctx.app.get(MerchantSettlementsService).sync({ trigger: 'ADMIN' });
 
   async function driverWithBank(): Promise<TestDriver> {
-    const driver = await createDriver(ctx);
+    const driver = await createHistoricalEligibleDriver(ctx);
     await createVerifiedBankAccount(ctx.prisma, driver.driverId, admin.userId);
     await fundWallet(ctx, admin, driver.driverId, 100_000);
     return driver;
@@ -845,7 +845,7 @@ describe('Earnings funded by several collections (payment flow Phase 5)', () => 
     });
 
     it('pays out only what was collected, once settled, without review; the unpaid drop adds nothing and nothing is refunded or debited', async () => {
-      const driver = await createDriver(off);
+      const driver = await createHistoricalEligibleDriver(off);
       await createVerifiedBankAccount(off.prisma, driver.driverId, offAdmin.userId);
       await fundWallet(off, offAdmin, driver.driverId, 100_000);
       const trip = await bookedTrip(off, await createCustomer(off), driver, {

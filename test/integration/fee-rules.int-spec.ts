@@ -1,3 +1,4 @@
+import { createHistoricalEligibleDriver } from '../helpers/onboarding-fixtures';
 import { randomUUID } from 'node:crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import request from 'supertest';
@@ -7,7 +8,6 @@ import {
   bearer,
   createAdmin,
   createCustomer,
-  createDriver,
   createFareQuote,
   fixturePricingVersion,
   type TestAdmin,
@@ -107,7 +107,7 @@ describe('Platform fee rules', () => {
    * returns its earning.
    */
   async function complete(bookingId: string, farePaise = 50_000) {
-    const driver = await createDriver(ctx);
+    const driver = await createHistoricalEligibleDriver(ctx);
     const tripId = await assignDriver(ctx, bookingId, driver);
     await setTripStatus(ctx, tripId, 'DRIVER_ARRIVED').expect(200);
     const shown = await collect(ctx, driver, tripId, {
@@ -156,7 +156,7 @@ describe('Platform fee rules', () => {
       (await createRule({ ...base, effectiveFrom: '2020-01-01T00:00:00.000Z' }).expect(400)).body
         .error.code,
     ).toBe('FEE_RULE_INVALID');
-    const driver = await createDriver(ctx);
+    const driver = await createHistoricalEligibleDriver(ctx);
     await request(ctx.server)
       .post('/v1/admin/fee-rules')
       .set(bearer(driver.token))

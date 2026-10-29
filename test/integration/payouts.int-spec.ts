@@ -1,3 +1,4 @@
+import { createHistoricalEligibleDriver } from '../helpers/onboarding-fixtures';
 import request from 'supertest';
 import * as audit from '../../src/audit/admin-actions';
 import { isoWeekKey, nextScheduledRun, zonedParts } from '../../src/payouts/payout-schedule';
@@ -92,7 +93,7 @@ describe('Driver payouts', () => {
   }
 
   async function driverWithBank(): Promise<TestDriver> {
-    const driver = await createDriver(ctx);
+    const driver = await createHistoricalEligibleDriver(ctx);
     await createVerifiedBankAccount(ctx.prisma, driver.driverId, admin.userId);
     return driver;
   }
@@ -607,7 +608,7 @@ describe('Driver payouts', () => {
 
   describe('bank accounts', () => {
     it('validates with the bank, needs admin approval, and stores only the last 4 digits', async () => {
-      const driver = await createDriver(ctx, { legalName: 'Ramesh Kumar' });
+      const driver = await createHistoricalEligibleDriver(ctx, { legalName: 'Ramesh Kumar' });
       const { earning } = await payableEarning(driver);
 
       const started = await requestBankAccountChange(ctx, driver).expect(201);
@@ -740,7 +741,7 @@ describe('Driver payouts', () => {
     });
 
     it('never approves an invalid account or one whose validation failed', async () => {
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const created = await submitBankAccount(driver, '555566667777');
       const bankAccountId = created.body.bankAccountId as string;
       await bankAnswers(bankAccountId, { accountStatus: 'invalid', registeredName: null });
@@ -826,7 +827,7 @@ describe('Driver payouts', () => {
     });
 
     it('rejects bad bank details reported by the provider, leaving the request open to correct them', async () => {
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const started = await requestBankAccountChange(ctx, driver).expect(201);
       const changeRequestId = started.body.changeRequestId as string;
       const token = stepUpToken(ctx, driver, started.body.createdAt as string);
@@ -848,7 +849,7 @@ describe('Driver payouts', () => {
     });
 
     it('lets a driver switch back to an earlier account (RazorpayX returns the same fund account)', async () => {
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const first = await submitBankAccount(driver, '313131313131');
       await bankAnswers(first.body.bankAccountId as string, {
         accountStatus: 'active',
@@ -894,7 +895,7 @@ describe('Driver payouts', () => {
     }
 
     it('returns a phone OTP challenge and holds no bank details', async () => {
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const { body, changeRequestId } = await openRequest(driver);
       expect(body).toMatchObject({
         status: 'PENDING_STEP_UP',
@@ -961,7 +962,7 @@ describe('Driver payouts', () => {
       ['a non-phone sign-in', () => ({ signInProvider: 'custom' }), 'NOT_PHONE_SIGN_IN'],
     ];
     it.each(cases)('refuses %s', async (_label, tokenOptions, reason) => {
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const { changeRequestId, createdAt } = await openRequest(driver);
       const token = stepUpToken(ctx, driver, createdAt, tokenOptions(createdAt));
       const res = await confirmBankAccountChange(ctx, changeRequestId, token, details).expect(403);
@@ -972,7 +973,7 @@ describe('Driver payouts', () => {
     });
 
     it('a step-up proves this request only: expired, cancelled, used and foreign requests are refused', async () => {
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
 
       // Expired (brought forward by ops; the database never lets it be extended).
       const expired = await openRequest(driver);
@@ -1014,7 +1015,7 @@ describe('Driver payouts', () => {
       });
 
       // Another driver's request, even with a valid step-up of their own.
-      const other = await createDriver(ctx);
+      const other = await createHistoricalEligibleDriver(ctx);
       const foreign = await openRequest(other);
       await confirmBankAccountChange(
         ctx,
@@ -1056,7 +1057,7 @@ describe('Driver payouts', () => {
     });
 
     it('a new request replaces the open one', async () => {
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const first = await openRequest(driver);
       const second = await openRequest(driver);
       const [a, b] = await Promise.all(
@@ -1077,8 +1078,8 @@ describe('Driver payouts', () => {
     });
 
     it('the database refuses an account that is not bound to a step-up verified request', async () => {
-      const driver = await createDriver(ctx);
-      const other = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
+      const other = await createHistoricalEligibleDriver(ctx);
       // Raw SQL, so the database's own reason is visible (Prisma maps it to a generic error).
       const account = (changeRequestId: string | null) =>
         ctx.prisma.$executeRaw`
@@ -1116,7 +1117,7 @@ describe('Driver payouts', () => {
       );
 
       // Backdating a request or extending its window is impossible.
-      const third = await createDriver(ctx);
+      const third = await createHistoricalEligibleDriver(ctx);
       const backdated = await ctx.prisma.bankAccountChangeRequest.create({
         data: {
           driverId: third.driverId,
@@ -1135,7 +1136,7 @@ describe('Driver payouts', () => {
   });
 
   it('#18 full reconciliation: booking -> payment -> settlement -> earning -> payout -> bank', async () => {
-    const driver = await createDriver(ctx, { legalName: 'Suresh Singh' });
+    const driver = await createHistoricalEligibleDriver(ctx, { legalName: 'Suresh Singh' });
     const customer = await createCustomer(ctx);
 
     // Booking confirmed at Rs 500 and assigned.

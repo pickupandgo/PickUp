@@ -1,3 +1,4 @@
+import { createHistoricalEligibleDriver } from '../helpers/onboarding-fixtures';
 import request from 'supertest';
 import {
   bearer,
@@ -49,7 +50,7 @@ describe('Trips and driver earnings', () => {
   /** A prepaid booking, paid by webhook, delivered: ready to complete. */
   async function paidDeliveredTrip(farePaise = 50_000) {
     const customer = await createCustomer(ctx);
-    const driver = await createDriver(ctx);
+    const driver = await createHistoricalEligibleDriver(ctx);
     const { bookingId, tripId } = await bookedTrip(ctx, customer, driver, {
       paymentMethod: 'PREPAID_UPI',
       farePaise,
@@ -148,7 +149,7 @@ describe('Trips and driver earnings', () => {
 
     it('enforces the M6 order and treats repeats as no-ops', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const { tripId } = await bookedTrip(ctx, customer, driver, {
         paymentMethod: 'PAY_AT_DELIVERY',
         farePaise: 50_000,
@@ -170,7 +171,7 @@ describe('Trips and driver earnings', () => {
         .expect(400);
     });
 
-    it('assigns one driver per booking and only approved drivers', async () => {
+    it('assigns an authoritatively eligible driver once per booking', async () => {
       const customer = await createCustomer(ctx);
       const bookingId = await registerBooking(ctx, customer, {
         paymentMethod: 'PREPAID_UPI',
@@ -182,9 +183,13 @@ describe('Trips and driver earnings', () => {
         .post(`/v1/internal/bookings/${bookingId}/assign`)
         .send({ driverSubject: pending.subject })
         .expect(422);
-      expect(refused.body.error.code).toBe('DRIVER_NOT_APPROVED');
+      expect(refused.body.error.code).toBe('DRIVER_NOT_ELIGIBLE');
 
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
+      const eligibility = await engine(ctx)
+        .get(`/v1/internal/drivers/${driver.driverId}/eligibility`)
+        .expect(200);
+      expect(eligibility.body).toMatchObject({ eligible: true, reasons: [] });
       const assigned = await engine(ctx)
         .post(`/v1/internal/bookings/${bookingId}/assign`)
         .send({ driverSubject: driver.subject })
@@ -195,7 +200,7 @@ describe('Trips and driver earnings', () => {
         .expect(200);
       expect(again.body.trip.tripId).toBe(assigned.body.trip.tripId);
 
-      const other = await createDriver(ctx);
+      const other = await createHistoricalEligibleDriver(ctx);
       const taken = await engine(ctx)
         .post(`/v1/internal/bookings/${bookingId}/assign`)
         .send({ driverSubject: other.subject })
@@ -203,9 +208,86 @@ describe('Trips and driver earnings', () => {
       expect(taken.body.error.code).toBe('TRIP_ALREADY_ASSIGNED');
     });
 
+    it.each([
+      ['unverified identity', 'KYC_NOT_VERIFIED'],
+      ['pending KYC', 'KYC_NOT_VERIFIED'],
+      ['missing verified vehicle', 'ACTIVE_VEHICLE_NOT_VERIFIED'],
+      ['suspended driver', 'DRIVER_NOT_APPROVED'],
+      ['reverification required', 'KYC_NOT_VERIFIED'],
+      ['expired KYC', 'KYC_NOT_VERIFIED'],
+      ['revoked vehicle document', 'VEHICLE_DOCUMENTS_NOT_VERIFIED'],
+      ['inactive account', 'USER_INACTIVE'],
+    ])('blocks a new assignment for %s without creating a trip', async (scenario, reason) => {
+      const customer = await createCustomer(ctx);
+      const driver =
+        scenario === 'unverified identity'
+          ? await createDriver(ctx)
+          : await createHistoricalEligibleDriver(ctx);
+      const application = await ctx.prisma.kycApplication.findFirst({
+        where: { driverId: driver.driverId },
+      });
+      // Owner-only mutations model expired/revoked historical evidence in the isolated DB.
+      // Actual admin operations are used for suspension and correction; no checks are mocked.
+      if (scenario === 'pending KYC' || scenario === 'expired KYC') {
+        if (!application) throw new Error('Missing synthetic KYC fixture');
+        await ctx.prisma.kycApplication.update({
+          where: { id: application.id },
+          data:
+            scenario === 'pending KYC'
+              ? { status: 'PENDING', verifiedAt: null }
+              : { expiresAt: new Date(Date.now() - 60_000) },
+        });
+      } else if (scenario === 'missing verified vehicle') {
+        await ctx.prisma.vehicle.updateMany({
+          where: { driverId: driver.driverId, active: true },
+          data: { active: false, status: 'INACTIVE' },
+        });
+      } else if (scenario === 'suspended driver') {
+        await request(ctx.server)
+          .patch(`/v1/admin/onboarding/drivers/${driver.driverId}/decision`)
+          .set(bearer(admin.token))
+          .send({ decision: 'SUSPEND', reason: 'Synthetic assignment security regression' })
+          .expect(200);
+      } else if (scenario === 'reverification required') {
+        if (!application) throw new Error('Missing synthetic KYC fixture');
+        await request(ctx.server)
+          .patch(`/v1/admin/onboarding/kyc/${application.id}/review`)
+          .set(bearer(admin.token))
+          .send({ decision: 'NEEDS_CORRECTION', reason: 'Synthetic reverification regression' })
+          .expect(200);
+      } else if (scenario === 'revoked vehicle document') {
+        await ctx.prisma.vehicleDocument.updateMany({
+          where: { vehicle: { driverId: driver.driverId } },
+          data: { status: 'REJECTED', rejectionReason: 'Synthetic evidence revocation' },
+        });
+      } else if (scenario === 'inactive account') {
+        await ctx.prisma.user.update({
+          where: { id: driver.userId },
+          data: { status: 'SUSPENDED' },
+        });
+      }
+      const bookingId = await registerBooking(ctx, customer, {
+        paymentMethod: 'PAY_AT_DELIVERY',
+        farePaise: 20_000,
+        category,
+      });
+      const refused = await engine(ctx)
+        .post(`/v1/internal/bookings/${bookingId}/assign`)
+        .send({ driverSubject: driver.subject })
+        .expect(422);
+      expect(refused.body.error).toMatchObject({
+        code: 'DRIVER_NOT_ELIGIBLE',
+        details: { reasons: expect.arrayContaining([reason]) },
+      });
+      expect(await ctx.prisma.trip.count({ where: { bookingId } })).toBe(0);
+      expect(
+        (await ctx.prisma.booking.findUniqueOrThrow({ where: { id: bookingId } })).status,
+      ).toBe('CREATED');
+    });
+
     it('cancels the booking and its trip; a cancelled trip cannot move', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const { bookingId, tripId } = await bookedTrip(ctx, customer, driver, {
         paymentMethod: 'PAY_AT_PICKUP',
         farePaise: 20_000,
@@ -223,7 +305,7 @@ describe('Trips and driver earnings', () => {
   describe('completion and earnings', () => {
     it('the payment gate refuses completion until the booking is paid', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const { tripId, bookingId } = await bookedTrip(ctx, customer, driver, {
         paymentMethod: 'PREPAID_UPI',
         farePaise: 50_000,
@@ -346,7 +428,7 @@ describe('Trips and driver earnings', () => {
         tdsPolicy: 'DISABLED',
       });
 
-      const other = await createDriver(ctx);
+      const other = await createHistoricalEligibleDriver(ctx);
       await request(ctx.server).get(`/v1/trips/${tripId}`).set(bearer(other.token)).expect(404);
       await request(ctx.server)
         .get(`/v1/earnings/${list.body.items[0].earningId as string}`)

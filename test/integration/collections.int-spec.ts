@@ -1,3 +1,4 @@
+import { createHistoricalEligibleDriver } from '../helpers/onboarding-fixtures';
 import request from 'supertest';
 import { EarningsReconciliationService } from '../../src/reconciliation/earnings-reconciliation.service';
 import { ReconciliationService } from '../../src/reconciliation/reconciliation.service';
@@ -5,7 +6,6 @@ import {
   bearer,
   createAdmin,
   createCustomer,
-  createDriver,
   createFeeRule,
   idempotencyKey,
   type TestAdmin,
@@ -61,7 +61,7 @@ describe('Pickup and delivery collections', () => {
     } = {},
   ) {
     const customer = await createCustomer(ctx);
-    const driver = options.driver ?? (await createDriver(ctx));
+    const driver = options.driver ?? (await createHistoricalEligibleDriver(ctx));
     const method = options.method ?? 'PAY_AT_DELIVERY';
     const trip = await bookedTrip(ctx, customer, driver, {
       paymentMethod: method,
@@ -227,7 +227,7 @@ describe('Pickup and delivery collections', () => {
     });
 
     it('#9 concurrent fee debits from one wallet never overdraw it', async () => {
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       await fundWallet(ctx, admin, driver.driverId, 6_000);
       const trips = await Promise.all(
         Array.from({ length: 3 }, () => tripReadyToCollect({ driver, method: 'PAY_AT_PICKUP' })),
@@ -291,7 +291,7 @@ describe('Pickup and delivery collections', () => {
 
     it('only collects inside the payment window and never for prepaid bookings', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       await fundWallet(ctx, admin, driver.driverId, 10_000);
 
       const delivery = await bookedTrip(ctx, customer, driver, {
@@ -334,7 +334,7 @@ describe('Pickup and delivery collections', () => {
 
     it('another driver cannot collect for a trip', async () => {
       const { tripId } = await tripReadyToCollect({ walletPaise: 10_000 });
-      const other = await createDriver(ctx);
+      const other = await createHistoricalEligibleDriver(ctx);
       await fundWallet(ctx, admin, other.driverId, 10_000);
       const res = await collect(ctx, other, tripId, { method: 'CASH', amountPaise: 50_000 }).expect(
         404,
@@ -584,7 +584,7 @@ describe('Pickup and delivery collections', () => {
 
     it('a QR code payment (no order id) is mapped back to its collection from payment.captured', async () => {
       const customer = await createCustomer(qrCtx);
-      const driver = await createDriver(qrCtx);
+      const driver = await createHistoricalEligibleDriver(qrCtx);
       const { bookingId, tripId } = await bookedTrip(qrCtx, customer, driver, {
         paymentMethod: 'PAY_AT_DELIVERY',
         farePaise: 30_000,

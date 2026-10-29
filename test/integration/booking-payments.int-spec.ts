@@ -1,3 +1,4 @@
+import { createHistoricalEligibleDriver } from '../helpers/onboarding-fixtures';
 import request from 'supertest';
 import { Prisma } from '../../src/generated/prisma/client';
 import { EarningsReconciliationService } from '../../src/reconciliation/earnings-reconciliation.service';
@@ -6,7 +7,6 @@ import {
   bearer,
   createAdmin,
   createCustomer,
-  createDriver,
   createFeeRule,
   uniqueCategory,
 } from '../helpers/fixtures';
@@ -45,7 +45,7 @@ describe('Customer prepaid booking payments', () => {
 
   async function prepaidTrip(farePaise = 50_000) {
     const customer = await createCustomer(ctx);
-    const driver = await createDriver(ctx);
+    const driver = await createHistoricalEligibleDriver(ctx);
     const trip = await bookedTrip(ctx, customer, driver, {
       paymentMethod: 'PREPAID_UPI',
       farePaise,
@@ -257,7 +257,7 @@ describe('Customer prepaid booking payments', () => {
 
   it('refuses online payment for pay-at-pickup bookings and for paid bookings', async () => {
     const customer = await createCustomer(ctx);
-    const driver = await createDriver(ctx);
+    const driver = await createHistoricalEligibleDriver(ctx);
     const cash = await bookedTrip(ctx, customer, driver, {
       paymentMethod: 'PAY_AT_PICKUP',
       farePaise: 30_000,

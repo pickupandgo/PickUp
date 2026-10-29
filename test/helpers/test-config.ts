@@ -31,6 +31,10 @@ export function buildTestConfig(overrides: Record<string, string> = {}): AppConf
     WALLET_TOPUP_MAX_PAISE: String(TEST_TOPUP_MAX_PAISE),
     ADMIN_ADJUSTMENT_MAX_PAISE: String(TEST_ADJUSTMENT_MAX_PAISE),
     INTERNAL_API_KEYS: TEST_INTERNAL_API_KEY,
+    // Synthetic compliance policy for explicitly eligible historical fixtures. Does not
+    // enable Manual KYC or make createDriver() eligible. Individual suites can override it.
+    MANUAL_KYC_REQUIRED_DOCUMENTS: 'TEST_ID',
+    VEHICLE_REQUIRED_DOCUMENTS: 'TEST_RC',
     COLLECTION_LINK_PROVIDER: 'razorpay_payment_link',
     PAYOUT_PROVIDER: 'razorpayx',
     RAZORPAYX_ACCOUNT_NUMBER: TEST_RAZORPAYX_ACCOUNT_NUMBER,

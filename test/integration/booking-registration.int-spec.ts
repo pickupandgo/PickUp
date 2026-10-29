@@ -1,10 +1,10 @@
+import { createHistoricalEligibleDriver } from '../helpers/onboarding-fixtures';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { Prisma } from '../../src/generated/prisma/client';
 import {
   bearer,
   createCustomer,
-  createDriver,
   createFareQuote,
   createFeeRule,
   createLegacyBooking,
@@ -429,7 +429,7 @@ describe('Booking registration from fare quotes', () => {
   describe('collection of a booking paid drop by drop', () => {
     it('refuses a whole-booking delivery collection for a per-stop booking, in the API and the database', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const quote = await quoteFor(customer, [20_000, 30_000]);
       const booked = await register(
         registration(customer, quote.quoteId, { paymentMethod: 'PAY_AT_DELIVERY' }),
@@ -494,7 +494,7 @@ describe('Booking registration from fare quotes', () => {
 
     it('the database holds a pickup collection to the booking amount and its frozen fee', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const quote = await quoteFor(customer, [40_000]);
       const booked = await register(registration(customer, quote.quoteId)).expect(201);
       const bookingId = booked.body.bookingId as string;

@@ -1,3 +1,4 @@
+import { createHistoricalEligibleDriver } from '../helpers/onboarding-fixtures';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { BookingPaymentMethod } from '../../src/generated/prisma/enums';
@@ -5,7 +6,6 @@ import {
   bearer,
   createAdmin,
   createCustomer,
-  createDriver,
   createFeeRule,
   createLegacyBooking,
   type TestAdmin,
@@ -74,7 +74,7 @@ describe('Historical (legacy) bookings', () => {
   describe('in-app payment (Razorpay Checkout)', () => {
     it('still pays and completes a historical PREPAID_UPI booking, verified with Razorpay', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const { bookingId, tripId } = await legacyTrip(customer, driver, 'PREPAID_UPI');
 
       const started = await startBookingPayment(ctx, customer, bookingId).expect(201);
@@ -106,7 +106,7 @@ describe('Historical (legacy) bookings', () => {
 
     it('still applies the Razorpay webhook to a historical PREPAID_UPI booking', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const { bookingId } = await legacyTrip(customer, driver, 'PREPAID_UPI');
       const started = await startBookingPayment(ctx, customer, bookingId).expect(201);
       const paid = ctx.razorpay.pay(started.body.checkout.orderId as string);
@@ -116,7 +116,7 @@ describe('Historical (legacy) bookings', () => {
 
     it('refuses every booking that is not a historical PREPAID_UPI booking', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const refusedBookings = [
         await registerBooking(ctx, customer, {
           paymentMethod: 'PAY_AT_PICKUP',
@@ -173,7 +173,7 @@ describe('Historical (legacy) bookings', () => {
     it('keeps the ownership and signature checks for historical bookings', async () => {
       const customer = await createCustomer(ctx);
       const stranger = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const { bookingId } = await legacyTrip(customer, driver, 'PREPAID_UPI');
 
       // Another customer's booking behaves like a missing one.
@@ -207,7 +207,7 @@ describe('Historical (legacy) bookings', () => {
   describe('collection by the driver', () => {
     it('still collects a historical pay-at-delivery booking by QR at delivery, as one amount', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const { bookingId, tripId } = await legacyTrip(customer, driver, 'PAY_AT_DELIVERY');
       await advanceTrip(ctx, tripId, TO_DELIVERED);
 
@@ -259,7 +259,7 @@ describe('Historical (legacy) bookings', () => {
       await rule('10', 'Legacy integration test: the rule in force');
 
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       await fundWallet(ctx, admin, driver.driverId, 20_000);
       const pickup = await legacyTrip(customer, driver, 'PAY_AT_PICKUP', { category: own });
       const delivery = await legacyTrip(customer, driver, 'PAY_AT_DELIVERY', { category: own });
@@ -298,7 +298,7 @@ describe('Historical (legacy) bookings', () => {
 
     it('still refuses to collect a historical prepaid booking from the driver', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const { bookingId, tripId } = await legacyTrip(customer, driver, 'PREPAID_UPI');
       await advanceTrip(ctx, tripId, TO_DELIVERED);
       const res = await collect(ctx, driver, tripId, {

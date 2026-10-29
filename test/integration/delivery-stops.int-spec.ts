@@ -1,3 +1,4 @@
+import { createHistoricalEligibleDriver } from '../helpers/onboarding-fixtures';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { BookingStop, Prisma } from '../../src/generated/prisma/client';
@@ -5,7 +6,6 @@ import {
   bearer,
   createAdmin,
   createCustomer,
-  createDriver,
   createFeeRule,
   type TestAdmin,
   type TestCustomer,
@@ -70,7 +70,7 @@ describe('Drops of a booking priced per drop', () => {
     const drops = options.drops ?? [20_000, 30_000];
     const fare = drops.reduce((sum, paise) => sum + paise, 0);
     const customer = await createCustomer(ctx);
-    const driver = await createDriver(ctx);
+    const driver = await createHistoricalEligibleDriver(ctx);
     const trip = await bookedTrip(ctx, customer, driver, {
       paymentMethod: method,
       farePaise: fare,
@@ -221,7 +221,7 @@ describe('Drops of a booking priced per drop', () => {
 
     it('reaches no drop before the trip has started', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const { tripId } = await bookedTrip(ctx, customer, driver, {
         paymentMethod: 'PAY_AT_DELIVERY',
         farePaise: 20_000,
@@ -682,7 +682,7 @@ describe('Drops of a booking priced per drop', () => {
   describe('historical bookings', () => {
     it('keep the engine-reported delivery and the whole-booking collection after it', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const legacy = await bookedTrip(ctx, customer, driver, {
         paymentMethod: 'PAY_AT_DELIVERY',
         farePaise: 50_000,

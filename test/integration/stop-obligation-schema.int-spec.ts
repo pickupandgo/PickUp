@@ -1,9 +1,9 @@
+import { createHistoricalEligibleDriver } from '../helpers/onboarding-fixtures';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../src/generated/prisma/client';
 import {
   createAdmin,
   createCustomer,
-  createDriver,
   createFeeRule,
   createLegacyBooking,
   type TestAdmin,
@@ -38,7 +38,7 @@ describe('Per-stop obligation schema', () => {
     await createFeeRule(ctx.prisma, { category, value: '10' });
     admin = await createAdmin(ctx);
     customer = await createCustomer(ctx);
-    driver = await createDriver(ctx);
+    driver = await createHistoricalEligibleDriver(ctx);
   });
 
   afterAll(async () => {

@@ -1,3 +1,4 @@
+import { createHistoricalEligibleDriver } from '../helpers/onboarding-fixtures';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { CollectionFinalizerService } from '../../src/collections/collection-finalizer.service';
@@ -6,7 +7,6 @@ import {
   bearer,
   createAdmin,
   createCustomer,
-  createDriver,
   createFeeRule,
   type TestAdmin,
   type TestCustomer,
@@ -72,7 +72,7 @@ describe('Collections for a booking paid drop by drop (PAY_AT_DELIVERY)', () => 
   async function atDrop(options: { drops?: number[]; walletPaise?: number } = {}): Promise<AtDrop> {
     const drops = options.drops ?? [20_000, 10_000, 20_000];
     const customer = await createCustomer(ctx);
-    const driver = await createDriver(ctx);
+    const driver = await createHistoricalEligibleDriver(ctx);
     const trip = await bookedTrip(ctx, customer, driver, {
       paymentMethod: 'PAY_AT_DELIVERY',
       farePaise: drops.reduce((sum, paise) => sum + paise, 0),
@@ -520,7 +520,7 @@ describe('Collections for a booking paid drop by drop (PAY_AT_DELIVERY)', () => 
 
     it('only the assigned driver collects; customers, admins and the engine cannot', async () => {
       const trip = await atDrop();
-      const other = await createDriver(ctx);
+      const other = await createHistoricalEligibleDriver(ctx);
       await fundWallet(ctx, admin, other.driverId, 10_000);
       expect(
         (
@@ -936,12 +936,17 @@ describe('Collections for a booking paid drop by drop (PAY_AT_DELIVERY)', () => 
 
     it('keeps the payment status and the drop in step with the money', async () => {
       const trip = await atDrop();
-      const pickup = await bookedTrip(ctx, await createCustomer(ctx), await createDriver(ctx), {
-        paymentMethod: 'PAY_AT_PICKUP',
-        farePaise: 30_000,
-        category,
-        model: 'QUOTE_PER_STOP',
-      });
+      const pickup = await bookedTrip(
+        ctx,
+        await createCustomer(ctx),
+        await createHistoricalEligibleDriver(ctx),
+        {
+          paymentMethod: 'PAY_AT_PICKUP',
+          farePaise: 30_000,
+          category,
+          model: 'QUOTE_PER_STOP',
+        },
+      );
       await expect(
         ctx.prisma
           .$executeRaw`UPDATE bookings SET payment_status = 'PAID' WHERE id = ${trip.bookingId}::uuid`,

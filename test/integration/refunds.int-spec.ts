@@ -1,3 +1,4 @@
+import { createHistoricalEligibleDriver } from '../helpers/onboarding-fixtures';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { Prisma } from '../../src/generated/prisma/client';
@@ -7,7 +8,6 @@ import {
   bearer,
   createAdmin,
   createCustomer,
-  createDriver,
   createFeeRule,
   createVerifiedBankAccount,
   idempotencyKey,
@@ -226,7 +226,7 @@ describe('Refunds (payment flow Phase 6)', () => {
     driver?: TestDriver,
   ): Promise<PaidTrip> {
     const customer = await createCustomer(app);
-    const owner = driver ?? (await createDriver(app));
+    const owner = driver ?? (await createHistoricalEligibleDriver(app));
     if (method === 'CASH') {
       await fundWallet(app, nextAdmin(app), owner.driverId, 100_000);
     }
@@ -279,7 +279,7 @@ describe('Refunds (payment flow Phase 6)', () => {
   }
 
   async function driverWithBank(): Promise<TestDriver> {
-    const driver = await createDriver(ctx);
+    const driver = await createHistoricalEligibleDriver(ctx);
     await createVerifiedBankAccount(ctx.prisma, driver.driverId, admin.userId);
     return driver;
   }
@@ -294,7 +294,7 @@ describe('Refunds (payment flow Phase 6)', () => {
 
   /** A PAY_AT_DELIVERY booking priced per drop, under way; drops are paid with payDrop. */
   async function deliveryUnderWay(drops: number[]) {
-    const driver = await createDriver(ctx);
+    const driver = await createHistoricalEligibleDriver(ctx);
     await fundWallet(ctx, nextAdmin(), driver.driverId, 100_000);
     const trip = await bookedTrip(ctx, await createCustomer(ctx), driver, {
       paymentMethod: 'PAY_AT_DELIVERY',
@@ -1433,7 +1433,7 @@ describe('Refunds (payment flow Phase 6)', () => {
   describe('historical bookings', () => {
     it('refunds a historical prepaid payment without changing the payment row', async () => {
       const customer = await createCustomer(ctx);
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       const { bookingId } = await bookedTrip(ctx, customer, driver, {
         paymentMethod: 'PREPAID_UPI',
         farePaise: 40_000,
@@ -1493,7 +1493,7 @@ describe('Refunds (payment flow Phase 6)', () => {
     });
 
     it('returns the cash of a historical whole-booking delivery collection', async () => {
-      const driver = await createDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx);
       await fundWallet(ctx, nextAdmin(), driver.driverId, 100_000);
       const { bookingId, tripId } = await bookedTrip(ctx, await createCustomer(ctx), driver, {
         paymentMethod: 'PAY_AT_DELIVERY',
