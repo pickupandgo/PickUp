@@ -69,7 +69,12 @@ export interface AppConfig {
     readonly requiredDocuments: readonly string[];
     readonly checklist: readonly string[];
   };
-  readonly onboarding: { readonly requiredVehicleDocuments: readonly string[] };
+  readonly onboarding: {
+    readonly requiredVehicleDocuments: readonly string[];
+    readonly requiredVehicleDocumentsByCategory?: Readonly<Record<string, readonly string[]>>;
+    readonly minimumAge?: number;
+    readonly identityEncryptionKey?: string;
+  };
   readonly collections: {
     /** Product used for new ONLINE_QR collections, or null when online collection is off. */
     readonly product: CollectionProductSetting | null;
@@ -311,7 +316,11 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       allowedContentTypes: parseCsv(env.DOCUMENT_ALLOWED_CONTENT_TYPES),
       scanner:
         env.DOCUMENT_SCANNER_PROVIDER === 'http'
-          ? { kind: 'http' as const, url: env.DOCUMENT_SCANNER_URL!, token: env.DOCUMENT_SCANNER_TOKEN! }
+          ? {
+              kind: 'http' as const,
+              url: env.DOCUMENT_SCANNER_URL!,
+              token: env.DOCUMENT_SCANNER_TOKEN!,
+            }
           : env.DOCUMENT_SCANNER_PROVIDER === 'guardduty'
             ? {
                 kind: 'guardduty' as const,
@@ -328,6 +337,9 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       checklist: parseCsv(env.MANUAL_KYC_CHECKLIST).map((v) => v.toUpperCase()),
     },
     onboarding: {
+      minimumAge: env.ONBOARDING_MINIMUM_AGE,
+      identityEncryptionKey: env.ONBOARDING_IDENTITY_ENCRYPTION_KEY,
+      requiredVehicleDocumentsByCategory: env.VEHICLE_REQUIRED_DOCUMENTS_BY_CATEGORY,
       requiredVehicleDocuments: parseCsv(env.VEHICLE_REQUIRED_DOCUMENTS).map((v) =>
         v.toUpperCase(),
       ),

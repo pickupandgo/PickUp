@@ -7,9 +7,11 @@ import {
   ParseEnumPipe,
   ParseUUIDPipe,
   Patch,
+  Post,
+  Header,
   Query,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AdminOnly, CurrentPrincipal, InternalOnly } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
 import {
@@ -19,6 +21,7 @@ import {
   KycReviewRequest,
   KycVerifyRequest,
   VehicleReviewRequest,
+  SensitiveAccessRequest,
 } from './onboarding.dto';
 import { OnboardingService } from './onboarding.service';
 
@@ -28,14 +31,27 @@ enum DocumentKind {
 }
 
 @ApiTags('admin')
+@ApiBearerAuth()
 @Controller({ path: 'admin/onboarding', version: '1' })
 export class AdminOnboardingController {
   constructor(private readonly onboarding: OnboardingService) {}
   @Get('drivers') @AdminOnly() queue(@Query() query: AdminReviewQuery) {
     return this.onboarding.adminReviewQueue(query.approvalStatus, query.limit);
   }
-  @Get('drivers/:id') @AdminOnly() driver(@Param('id', ParseUUIDPipe) id: string) {
+  @Get('drivers/:id') @AdminOnly() @Header('Cache-Control', 'no-store') driver(
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.onboarding.adminDriverReview(id);
+  }
+  @Post('drivers/:id/licence/reveal')
+  @AdminOnly()
+  @Header('Cache-Control', 'no-store')
+  revealLicence(
+    @CurrentPrincipal() principal: Principal,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: SensitiveAccessRequest,
+  ) {
+    return this.onboarding.revealLicence(principal, id, body.reason);
   }
   @Patch('kyc/:id/review') @AdminOnly() reviewKyc(
     @CurrentPrincipal() principal: Principal,
@@ -59,7 +75,7 @@ export class AdminOnboardingController {
   ) {
     return this.onboarding.reviewDocument(principal, kind, id, body.decision, body.reason);
   }
-  @Get('documents/:kind/:id/download') @AdminOnly() download(
+  @Get('documents/:kind/:id/download') @AdminOnly() @Header('Cache-Control', 'no-store') download(
     @CurrentPrincipal() principal: Principal,
     @Param('kind', new ParseEnumPipe(DocumentKind)) kind: DocumentKind,
     @Param('id', ParseUUIDPipe) id: string,

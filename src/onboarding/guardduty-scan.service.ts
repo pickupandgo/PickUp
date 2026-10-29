@@ -81,11 +81,14 @@ export class GuardDutyScanService {
 
     const existing = await this.prisma.documentScanEvent.findUnique({
       where: { eventId: event.id },
-      select: { id: true },
+      select: { id: true, outcome: true, detail: true },
     });
-    if (existing) return { duplicate: true };
+    if (existing && existing.outcome !== 'STALE_OR_UNKNOWN') return { duplicate: true };
+    if (existing && eventBinding(parseEvent(existing.detail)) !== eventBinding(event))
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 400, 'GuardDuty event identity was reused');
 
     const matched = await this.match(event);
+    if (existing && !matched) return { duplicate: true };
     const clean =
       event.detail.scanStatus === 'COMPLETED' &&
       event.detail.scanResultDetails.scanResultStatus === 'NO_THREATS_FOUND';
@@ -94,12 +97,25 @@ export class GuardDutyScanService {
       await this.storage.assertGuardDutyClean(matched.descriptor);
     }
     try {
-      await this.persist(event, matched, clean);
+      await this.persist(event, matched, clean, existing?.id);
     } catch (error) {
       if (isUniqueViolation(error)) return { duplicate: true };
       throw error;
     }
     return { duplicate: false };
+  }
+
+  /** EventBridge may report a scan before the mobile completion binds the S3 version. */
+  async reconcilePendingObject(objectKey: string, objectVersionId: string): Promise<void> {
+    const scanner = this.config.documents.scanner;
+    if (scanner?.kind !== 'guardduty') return;
+    const early = await this.prisma.documentScanEvent.findMany({
+      where: { objectKey, objectVersionId, outcome: 'STALE_OR_UNKNOWN' },
+      orderBy: { receivedAt: 'asc' },
+      take: 20,
+      select: { detail: true },
+    });
+    for (const row of early) await this.receive(scanner.eventToken, row.detail);
   }
 
   private async match(event: GuardDutyObjectScanEvent): Promise<DocumentMatch | null> {
@@ -122,29 +138,45 @@ export class GuardDutyScanService {
     event: GuardDutyObjectScanEvent,
     matched: DocumentMatch | null,
     clean: boolean,
+    existingAuditId?: string,
   ): Promise<void> {
     const object = event.detail.s3ObjectDetails;
     const result = event.detail.scanResultDetails.scanResultStatus;
     await this.prisma.$transaction(async (tx) => {
-      const audit = await tx.documentScanEvent.create({
-        data: {
-          eventId: event.id,
-          source: event.source,
-          awsAccountId: event.account,
-          region: event.region,
-          bucket: object.bucketName,
-          objectKey: object.objectKey,
-          objectVersionId: object.versionId,
-          objectETag: normalizeETag(object.eTag),
-          scanStatus: event.detail.scanStatus,
-          scanResult: result,
-          documentKind: matched?.kind ?? null,
-          documentId: matched?.id ?? null,
-          outcome: matched ? 'RECEIVED' : 'STALE_OR_UNKNOWN',
-          detail: event as unknown as Prisma.InputJsonValue,
-        },
-      });
+      if (existingAuditId) {
+        await tx.$queryRaw`SELECT id FROM document_scan_events WHERE id=${existingAuditId}::uuid FOR UPDATE`;
+        const current = await tx.documentScanEvent.findUnique({
+          where: { id: existingAuditId },
+          select: { outcome: true },
+        });
+        if (current?.outcome !== 'STALE_OR_UNKNOWN') return;
+      }
+      const audit = existingAuditId
+        ? { id: existingAuditId }
+        : await tx.documentScanEvent.create({
+            data: {
+              eventId: event.id,
+              source: event.source,
+              awsAccountId: event.account,
+              region: event.region,
+              bucket: object.bucketName,
+              objectKey: object.objectKey,
+              objectVersionId: object.versionId,
+              objectETag: normalizeETag(object.eTag),
+              scanStatus: event.detail.scanStatus,
+              scanResult: result,
+              documentKind: matched?.kind ?? null,
+              documentId: matched?.id ?? null,
+              outcome: matched ? 'RECEIVED' : 'STALE_OR_UNKNOWN',
+              detail: event as unknown as Prisma.InputJsonValue,
+            },
+          });
       if (!matched) return;
+      if (existingAuditId)
+        await tx.documentScanEvent.update({
+          where: { id: existingAuditId },
+          data: { documentKind: matched.kind, documentId: matched.id },
+        });
       const update = {
         guardDutyScanEventId: event.id,
         scannedAt: new Date(),
@@ -267,6 +299,23 @@ function parseEvent(value: unknown): GuardDutyObjectScanEvent {
 
 function valid(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= max;
+}
+function eventBinding(event: GuardDutyObjectScanEvent): string {
+  const object = event.detail.s3ObjectDetails;
+  return JSON.stringify([
+    event.id,
+    event.source,
+    event.account,
+    event.region,
+    event['detail-type'],
+    event.detail.resourceType,
+    event.detail.scanStatus,
+    object.bucketName,
+    object.objectKey,
+    object.versionId,
+    normalizeETag(object.eTag),
+    event.detail.scanResultDetails.scanResultStatus,
+  ]);
 }
 function normalizeETag(value: string): string {
   return value.replace(/^"|"$/g, '').trim();

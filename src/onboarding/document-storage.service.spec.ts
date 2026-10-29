@@ -16,7 +16,11 @@ const config = {
     downloadTtlSeconds: 60,
     maxBytes: 10_000_000,
     allowedContentTypes: ['image/jpeg'],
-    scanner: { kind: 'http', url: 'https://scanner.example.test', token: 'scanner-token-value-123456789' },
+    scanner: {
+      kind: 'http',
+      url: 'https://scanner.example.test',
+      token: 'scanner-token-value-123456789',
+    },
   },
 } as unknown as AppConfig;
 
@@ -31,33 +35,33 @@ describe('DocumentStorageService', () => {
     const service = new DocumentStorageService({
       ...config,
       documents: { ...config.documents, storage: null, scanner: null },
-    } as AppConfig);
+    });
     expect(() => service.assertOperational()).toThrow('not configured');
   });
 
   it('derives SHA-256 from the stored bytes instead of trusting the client', async () => {
     const service = new DocumentStorageService(config);
-    const bytes = Buffer.from('trusted-upload');
-    (service as any).client = {
-      send: jest.fn(async (command: unknown) => {
+    const bytes = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.from('synthetic-image')]);
+    Reflect.set(service, 'client', {
+      send: jest.fn((command: unknown) => {
         if (command instanceof HeadObjectCommand)
-          return {
+          return Promise.resolve({
             ContentLength: bytes.length,
             ContentType: 'image/jpeg',
             Metadata: { documentid: 'doc-1' },
             ServerSideEncryption: 'AES256',
             VersionId: 'version-1',
             ETag: 'etag-1',
-          };
+          });
         if (command instanceof GetObjectCommand)
-          return {
+          return Promise.resolve({
             Body: (async function* () {
-              yield bytes;
+              yield await Promise.resolve(bytes);
             })(),
-          };
+          });
         throw new Error('unexpected command');
       }),
-    };
+    });
     await expect(
       service.verifyUpload({
         key: 'private/key',
@@ -84,41 +88,48 @@ describe('DocumentStorageService', () => {
           region: 'test-1',
         },
       },
-    } as AppConfig);
-    (service as any).client = {
-      send: jest.fn(async (command: unknown) => {
+    });
+    Reflect.set(service, 'client', {
+      send: jest.fn((command: unknown) => {
         if (command instanceof HeadObjectCommand)
-          return {
+          return Promise.resolve({
             ContentLength: 10,
             ContentType: 'image/jpeg',
             Metadata: { documentid: 'doc-1' },
             ServerSideEncryption: 'AES256',
             VersionId: 'version-1',
             ETag: 'etag-1',
-          };
+          });
         if (command instanceof GetObjectTaggingCommand)
-          return { TagSet: [{ Key: 'GuardDutyMalwareScanStatus', Value: 'NO_THREATS_FOUND' }] };
+          return Promise.resolve({
+            TagSet: [{ Key: 'GuardDutyMalwareScanStatus', Value: 'NO_THREATS_FOUND' }],
+          });
         throw new Error('unexpected command');
       }),
-    };
-    await expect(service.assertGuardDutyClean({
-      key: 'private/key', contentType: 'image/jpeg', sizeBytes: 10, documentId: 'doc-1',
-      checksumSha256: 'a'.repeat(64), storageVersionId: 'version-1', storageETag: 'etag-1',
-    })).resolves.toBeUndefined();
+    });
+    await expect(
+      service.assertGuardDutyClean({
+        key: 'private/key',
+        contentType: 'image/jpeg',
+        sizeBytes: 10,
+        documentId: 'doc-1',
+        checksumSha256: 'a'.repeat(64),
+        storageVersionId: 'version-1',
+        storageETag: 'etag-1',
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it('rejects object metadata that does not match the signed upload request', async () => {
     const service = new DocumentStorageService(config);
-    (service as any).client = {
-      send: jest
-        .fn()
-        .mockResolvedValue({
-          ContentLength: 999,
-          ContentType: 'image/jpeg',
-          Metadata: { documentid: 'doc-1' },
-          ServerSideEncryption: 'AES256',
-        }),
-    };
+    Reflect.set(service, 'client', {
+      send: jest.fn().mockResolvedValue({
+        ContentLength: 999,
+        ContentType: 'image/jpeg',
+        Metadata: { documentid: 'doc-1' },
+        ServerSideEncryption: 'AES256',
+      }),
+    });
     await expect(
       service.verifyUpload({
         key: 'private/key',
@@ -127,5 +138,37 @@ describe('DocumentStorageService', () => {
         documentId: 'doc-1',
       }),
     ).rejects.toMatchObject({ status: 400 });
+  });
+  it('rejects spoofed file content even when the stored metadata matches', async () => {
+    const service = new DocumentStorageService(config);
+    const bytes = Buffer.from('<html>not-a-jpeg</html>');
+    Reflect.set(service, 'client', {
+      send: jest.fn((command: unknown) =>
+        Promise.resolve(
+          command instanceof HeadObjectCommand
+            ? {
+                ContentLength: bytes.length,
+                ContentType: 'image/jpeg',
+                Metadata: { documentid: 'doc-1' },
+                ServerSideEncryption: 'AES256',
+                VersionId: 'v1',
+                ETag: 'e1',
+              }
+            : {
+                Body: (async function* () {
+                  yield await Promise.resolve(bytes);
+                })(),
+              },
+        ),
+      ),
+    });
+    await expect(
+      service.verifyUpload({
+        key: 'private/key',
+        contentType: 'image/jpeg',
+        sizeBytes: bytes.length,
+        documentId: 'doc-1',
+      }),
+    ).rejects.toThrow('bytes do not match');
   });
 });

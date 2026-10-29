@@ -46,20 +46,30 @@ const kycDocument = {
 };
 
 function createPrisma() {
-  const prisma: any = {
-    documentScanEvent: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+  const prisma = {
+    documentScanEvent: {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
     kycDocument: { findFirst: jest.fn(), updateMany: jest.fn() },
     vehicleDocument: { findFirst: jest.fn(), updateMany: jest.fn() },
     adminAction: { create: jest.fn() },
+    $queryRaw: jest.fn(),
   };
-  prisma.$transaction = jest.fn(async (callback: (tx: any) => unknown) => callback(prisma));
   prisma.documentScanEvent.create.mockResolvedValue({ id: 'audit-1' });
   prisma.kycDocument.updateMany.mockResolvedValue({ count: 1 });
-  return prisma;
+  return {
+    ...prisma,
+    $transaction: jest.fn((callback: (tx: typeof prisma) => unknown) =>
+      Promise.resolve(callback(prisma)),
+    ),
+  };
 }
 
 describe('GuardDutyScanService', () => {
-  let prisma: any;
+  let prisma: ReturnType<typeof createPrisma>;
   let storage: jest.Mocked<Pick<DocumentStorageService, 'assertGuardDutyClean'>>;
   let service: GuardDutyScanService;
 
@@ -67,7 +77,7 @@ describe('GuardDutyScanService', () => {
     prisma = createPrisma();
     storage = { assertGuardDutyClean: jest.fn() };
     service = new GuardDutyScanService(
-      prisma as PrismaService,
+      prisma as unknown as PrismaService,
       storage as unknown as DocumentStorageService,
       config,
     );
@@ -128,5 +138,33 @@ describe('GuardDutyScanService', () => {
         data: expect.objectContaining({ outcome: 'STALE_OR_UNKNOWN' }),
       }),
     );
+  });
+  it('reconciles an authenticated early event only after independently checking the bound object', async () => {
+    prisma.documentScanEvent.findUnique.mockResolvedValue({
+      id: 'audit-1',
+      outcome: 'STALE_OR_UNKNOWN',
+      detail: event(),
+    });
+    prisma.kycDocument.findFirst.mockResolvedValue(kycDocument);
+    prisma.vehicleDocument.findFirst.mockResolvedValue(null);
+    await service.receive('x'.repeat(32), event());
+    expect(storage.assertGuardDutyClean).toHaveBeenCalledTimes(1);
+    expect(prisma.documentScanEvent.create).not.toHaveBeenCalled();
+    expect(prisma.kycDocument.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.documentScanEvent.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'audit-1' },
+        data: expect.objectContaining({ outcome: 'CLEAN_VERIFIED' }),
+      }),
+    );
+  });
+  it('rejects reuse of an early event id with a different result', async () => {
+    prisma.documentScanEvent.findUnique.mockResolvedValue({
+      id: 'audit-1',
+      outcome: 'STALE_OR_UNKNOWN',
+      detail: event('THREATS_FOUND'),
+    });
+    await expect(service.receive('x'.repeat(32), event())).rejects.toMatchObject({ status: 400 });
+    expect(prisma.kycDocument.updateMany).not.toHaveBeenCalled();
   });
 });

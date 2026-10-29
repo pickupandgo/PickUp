@@ -351,6 +351,18 @@ model Driver {
   approvedAt       DateTime?            @map("approved_at") @db.Timestamptz(6)
   approvedByUserId String?              @map("approved_by_user_id") @db.Uuid
   profileName String? @map("profile_name") @db.VarChar(120)
+  profileVersion Int @default(2) @map("profile_version")
+  dateOfBirth DateTime? @map("date_of_birth") @db.Date
+  gender String? @db.VarChar(30)
+  residentialAddress String? @map("residential_address") @db.VarChar(500)
+  city String? @db.VarChar(100)
+  state String? @db.VarChar(100)
+  pinCode String? @map("pin_code") @db.VarChar(6)
+  selectedVehicleCategory String? @map("selected_vehicle_category") @db.VarChar(30)
+  drivingLicenseCiphertext String? @map("driving_license_ciphertext") @db.Text
+  drivingLicenseLast4 String? @map("driving_license_last4") @db.VarChar(4)
+  licenceExpiresOn DateTime? @map("licence_expires_on") @db.Date
+  licenceVehicleClasses String[] @default([]) @map("licence_vehicle_classes")
   /// Name on the driver's approved KYC documents. Set by ops tooling (never by the API role) and
   /// compared with the account holder name the bank reports during bank-account validation.
   legalName                 String?              @map("legal_name") @db.VarChar(120)

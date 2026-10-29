@@ -171,3 +171,9 @@ GRANT UPDATE (category, registration_number, make_model, status, active, verifie
 GRANT UPDATE (status, rejection_reason, checksum_sha256, storage_version_id, storage_etag, guardduty_scan_event_id, uploaded_at, scanned_at, reviewed_at, reviewed_by_user_id) ON vehicle_documents TO mr_app;
 GRANT UPDATE (document_kind, document_id, outcome, processed_at) ON document_scan_events TO mr_app;
 GRANT UPDATE (status, resolved_at) ON vehicle_change_requests TO mr_app;
+
+-- Driver self-profile. Trusted legal_name/approval fields remain function-only.
+GRANT UPDATE (profile_name, profile_version, email, date_of_birth, gender,
+  residential_address, city, state, pin_code, selected_vehicle_category,
+  driving_license_ciphertext, driving_license_last4, licence_expires_on,
+  licence_vehicle_classes, updated_at) ON drivers TO mr_app;

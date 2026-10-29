@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Param,
+  ParseEnumPipe,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { DriverOnboardingResponse } from './onboarding.responses';
 import { CurrentPrincipal, DriverOnly } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
 import {
@@ -6,20 +18,48 @@ import {
   CreateVehicleRequest,
   ReplacementVehicleRequest,
   UpdateDriverProfileRequest,
+  SaveVehicleCategoryRequest,
 } from './onboarding.dto';
 import { OnboardingService } from './onboarding.service';
 
+enum DocumentKind {
+  KYC = 'KYC',
+  VEHICLE = 'VEHICLE',
+}
+
+@ApiTags('driver-onboarding')
+@ApiBearerAuth()
 @Controller({ path: 'drivers/me/onboarding', version: '1' })
 export class OnboardingController {
   constructor(private readonly onboarding: OnboardingService) {}
-  @Get() @DriverOnly() summary(@CurrentPrincipal() principal: Principal) {
+  @Get()
+  @DriverOnly()
+  @Header('Cache-Control', 'no-store')
+  @ApiOkResponse({ type: DriverOnboardingResponse })
+  summary(@CurrentPrincipal() principal: Principal) {
     return this.onboarding.summary(principal);
   }
   @Patch('profile') @DriverOnly() profile(
     @CurrentPrincipal() principal: Principal,
     @Body() body: UpdateDriverProfileRequest,
   ) {
-    return this.onboarding.updateProfile(principal, body.name);
+    return this.onboarding.updateProfile(principal, body);
+  }
+  @Patch('vehicle-category') @DriverOnly() category(
+    @CurrentPrincipal() principal: Principal,
+    @Body() body: SaveVehicleCategoryRequest,
+  ) {
+    return this.onboarding.saveVehicleCategory(principal, body.category);
+  }
+  @Get('documents/:kind/:documentId/preview')
+  @DriverOnly()
+  @Header('Cache-Control', 'no-store')
+  preview(
+    @CurrentPrincipal() principal: Principal,
+    @Param('kind', new ParseEnumPipe(DocumentKind)) kind: DocumentKind,
+    @Param('documentId', ParseUUIDPipe) documentId: string,
+  ) {
+    return this.onboarding.ownerDocumentPreview(principal, kind, documentId);
   }
   @Post('kyc') @DriverOnly() startKyc(@CurrentPrincipal() principal: Principal) {
     return this.onboarding.startKyc(principal);

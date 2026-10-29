@@ -131,7 +131,10 @@ export class DocumentStorageService {
       );
     const hash = createHash('sha256');
     let read = 0;
+    let prefix = Buffer.alloc(0);
     for await (const chunk of object.Body as AsyncIterable<Uint8Array>) {
+      if (prefix.length < 12)
+        prefix = Buffer.concat([prefix, Buffer.from(chunk).subarray(0, 12 - prefix.length)]);
       read += chunk.byteLength;
       if (read > input.sizeBytes)
         throw new AppError(
@@ -146,6 +149,19 @@ export class DocumentStorageService {
         ErrorCode.VALIDATION_FAILED,
         HttpStatus.BAD_REQUEST,
         'Uploaded document size does not match the upload request',
+      );
+    const detected = prefix.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))
+      ? 'image/jpeg'
+      : prefix.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+        ? 'image/png'
+        : prefix.subarray(0, 5).toString('ascii') === '%PDF-'
+          ? 'application/pdf'
+          : null;
+    if (detected !== input.contentType)
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        400,
+        'Document bytes do not match the declared file type',
       );
     return { checksumSha256: hash.digest('hex'), storageVersionId, storageETag };
   }
@@ -199,8 +215,20 @@ export class DocumentStorageService {
       );
     const { client, bucket } = this.ready();
     const [head, tags] = await Promise.all([
-      client.send(new HeadObjectCommand({ Bucket: bucket, Key: input.key, VersionId: input.storageVersionId })),
-      client.send(new GetObjectTaggingCommand({ Bucket: bucket, Key: input.key, VersionId: input.storageVersionId })),
+      client.send(
+        new HeadObjectCommand({
+          Bucket: bucket,
+          Key: input.key,
+          VersionId: input.storageVersionId,
+        }),
+      ),
+      client.send(
+        new GetObjectTaggingCommand({
+          Bucket: bucket,
+          Key: input.key,
+          VersionId: input.storageVersionId,
+        }),
+      ),
     ]);
     const clean = tags.TagSet?.some(
       (tag) => tag.Key === 'GuardDutyMalwareScanStatus' && tag.Value === 'NO_THREATS_FOUND',

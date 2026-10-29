@@ -103,7 +103,10 @@ export const envSchema = z
     DOCUMENT_SCANNER_TOKEN: z.string().min(24).optional(),
     /** EventBridge API Destination shared secret; never a GuardDuty result itself. */
     GUARDDUTY_EVENT_TOKEN: z.string().min(32).optional(),
-    GUARDDUTY_AWS_ACCOUNT_ID: z.string().regex(/^\d{12}$/).optional(),
+    GUARDDUTY_AWS_ACCOUNT_ID: z
+      .string()
+      .regex(/^\d{12}$/)
+      .optional(),
     GUARDDUTY_REGION: z.string().min(1).max(80).optional(),
     MANUAL_KYC_ENABLED: booleanString.default(false),
     MANUAL_KYC_POLICY_VERSION: z
@@ -113,6 +116,41 @@ export const envSchema = z
     MANUAL_KYC_REQUIRED_DOCUMENTS: z.string().optional(),
     MANUAL_KYC_CHECKLIST: z.string().optional(),
     VEHICLE_REQUIRED_DOCUMENTS: z.string().optional(),
+    ONBOARDING_MINIMUM_AGE: z.coerce.number().int().min(1).max(100).optional(),
+    ONBOARDING_IDENTITY_ENCRYPTION_KEY: z
+      .string()
+      .regex(/^[a-fA-F0-9]{64}$/, 'must be a 32-byte hex key')
+      .optional(),
+    VEHICLE_REQUIRED_DOCUMENTS_BY_CATEGORY: z
+      .string()
+      .transform((value, ctx) => {
+        try {
+          const parsed: unknown = JSON.parse(value);
+          const valid = z
+            .partialRecord(
+              z.enum([
+                'TWO_WHEELER',
+                'THREE_WHEELER',
+                'FOUR_WHEELER',
+                'MINI_TRUCK',
+                'PICKUP_TRUCK',
+              ]),
+              z
+                .array(z.string().regex(/^[A-Z][A-Z0-9_]{1,39}$/))
+                .min(1)
+                .max(20),
+            )
+            .parse(parsed);
+          return valid;
+        } catch {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'must map supported categories to non-empty document-code arrays',
+          });
+          return z.NEVER;
+        }
+      })
+      .optional(),
 
     // Pickup/delivery online collection (booking-linked QR). Live: razorpay_qr_code (a UPI QR any
     // UPI app can pay, D-47). razorpay_payment_link draws a QR of a payment link and is allowed
@@ -333,7 +371,8 @@ export const envSchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['GUARDDUTY_REGION'],
-        message: 'must match DOCUMENT_STORAGE_REGION because GuardDuty plans scan buckets only in their region',
+        message:
+          'must match DOCUMENT_STORAGE_REGION because GuardDuty plans scan buckets only in their region',
       });
     }
     if (

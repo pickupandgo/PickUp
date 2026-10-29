@@ -3,6 +3,7 @@ import type { Principal } from '../auth/principal';
 import type { AppConfig } from '../config/app-config';
 import { DocumentStorageService } from './document-storage.service';
 import { OnboardingService } from './onboarding.service';
+import type { PrismaService } from '../prisma/prisma.service';
 
 const driverPrincipal: Principal = {
   userId: 'user-1',
@@ -39,7 +40,7 @@ const config = {
 } as unknown as AppConfig;
 
 const createPrisma = () => {
-  const prisma: any = {
+  const prisma = {
     authIdentity: { findUnique: jest.fn() },
     driver: {
       findUnique: jest.fn(),
@@ -83,26 +84,36 @@ const createPrisma = () => {
     },
     vehicleChangeRequest: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     $queryRaw: jest.fn(),
+    $executeRaw: jest.fn(),
   };
-  prisma.$transaction = jest.fn(async (callback: (tx: any) => unknown) => callback(prisma));
-  return prisma;
+  return {
+    ...prisma,
+    $transaction: jest.fn((callback: (tx: typeof prisma) => unknown) =>
+      Promise.resolve(callback(prisma)),
+    ),
+  };
 };
+const createStorage = () => ({
+  assertInput: jest.fn(),
+  assertOperational: jest.fn(),
+  uploadUrl: jest.fn(),
+  verifyUpload: jest.fn(),
+  scan: jest.fn(),
+  downloadUrl: jest.fn(),
+});
 
 describe('OnboardingService', () => {
-  let prisma: any;
-  let storage: any;
+  let prisma: ReturnType<typeof createPrisma>;
+  let storage: ReturnType<typeof createStorage>;
   let service: OnboardingService;
   beforeEach(() => {
     prisma = createPrisma();
-    storage = {
-      assertInput: jest.fn(),
-      assertOperational: jest.fn(),
-      uploadUrl: jest.fn(),
-      verifyUpload: jest.fn(),
-      scan: jest.fn(),
-      downloadUrl: jest.fn(),
-    } as unknown as DocumentStorageService;
-    service = new OnboardingService(prisma, storage, config);
+    storage = createStorage();
+    service = new OnboardingService(
+      prisma as unknown as PrismaService,
+      storage as unknown as DocumentStorageService,
+      config,
+    );
   });
 
   it('rejects customer access before querying driver data', async () => {
@@ -110,6 +121,37 @@ describe('OnboardingService', () => {
       status: HttpStatus.FORBIDDEN,
     });
     expect(prisma.driver.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+  it('uses the current KYC application instead of falling back to older verified evidence', async () => {
+    prisma.driver.findUnique.mockResolvedValue({
+      approvalStatus: 'APPROVED',
+      approvedAt: new Date(),
+      user: { status: 'ACTIVE' },
+      kycApplications: [
+        { status: 'NEEDS_CORRECTION', verifiedAt: new Date(0), expiresAt: null },
+        { status: 'VERIFIED', verifiedAt: new Date(0), expiresAt: null },
+      ],
+      vehicles: [
+        {
+          id: 'v1',
+          category: 'MINI_TRUCK',
+          status: 'VERIFIED',
+          active: true,
+          verifiedAt: new Date(0),
+          documents: [
+            { documentType: 'RC', status: 'VERIFIED', version: 1 },
+            { documentType: 'INSURANCE', status: 'VERIFIED', version: 1 },
+          ],
+        },
+      ],
+    });
+    await expect(service.eligibility('driver-1')).resolves.toMatchObject({
+      eligible: false,
+      reasons: expect.arrayContaining(['KYC_NOT_VERIFIED']),
+    });
+    const query = prisma.driver.findUnique.mock.calls[0]?.[0];
+    expect(query.include.kycApplications.where).toBeUndefined();
+    expect(query.include.kycApplications.take).toBe(1);
   });
 
   it('returns an existing pending KYC application idempotently', async () => {
@@ -367,6 +409,7 @@ describe('OnboardingService', () => {
 
   it('atomically deactivates the old vehicle and activates an approved replacement', async () => {
     prisma.vehicle.findUnique
+      .mockResolvedValueOnce({ driverId: 'driver-1' })
       .mockResolvedValueOnce({
         id: 'new',
         driverId: 'driver-1',

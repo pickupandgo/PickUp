@@ -1,4 +1,5 @@
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Optional } from '@nestjs/common';
+import { GuardDutyScanService } from './guardduty-scan.service';
 import { randomUUID } from 'node:crypto';
 import type { Principal } from '../auth/principal';
 import { requireDriver } from '../auth/require-driver';
@@ -15,7 +16,17 @@ import type {
   CreateDocumentRequest,
   CreateVehicleRequest,
   ReplacementVehicleRequest,
+  UpdateDriverProfileRequest,
 } from './onboarding.dto';
+import { VEHICLE_CATEGORIES } from './onboarding.dto';
+import {
+  ageOn,
+  calendarDate,
+  decryptLicence,
+  encryptLicence,
+  PROFILE_FIELDS,
+  validBirthDate,
+} from './profile-policy';
 
 const OPEN_KYC = ['PENDING', 'IN_REVIEW', 'PROVIDER_UNAVAILABLE'] as const;
 const EDITABLE_VEHICLE = ['DRAFT', 'REJECTED'] as const;
@@ -26,12 +37,16 @@ export class OnboardingService {
     private readonly prisma: PrismaService,
     private readonly storage: DocumentStorageService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Optional() private readonly guardDuty?: GuardDutyScanService,
   ) {}
   private driver(principal: Principal): string {
     return requireDriver(principal).id;
   }
-  private async assertSubmissionAllowed(driverId: string): Promise<void> {
-    const driver = await this.prisma.driver.findUnique({
+  private async assertSubmissionAllowed(
+    driverId: string,
+    db: PrismaService | Tx = this.prisma,
+  ): Promise<void> {
+    const driver = await db.driver.findUnique({
       where: { id: driverId },
       include: { user: true },
     });
@@ -50,6 +65,70 @@ export class OnboardingService {
   private conflict(code: ErrorCodeValue, message: string): never {
     throw new AppError(code, HttpStatus.CONFLICT, message);
   }
+  private withOnboardingLock<T>(
+    principal: Principal,
+    kind: 'KYC' | 'VEHICLE',
+    id: string,
+    action: (db: Tx) => Promise<T>,
+  ): Promise<T> {
+    const driverId = this.driver(principal);
+    return this.prisma.$transaction(async (db) => {
+      await db.$queryRaw`SELECT id FROM drivers WHERE id=${driverId}::uuid FOR UPDATE`;
+      await this.assertSubmissionAllowed(driverId, db);
+      if (kind === 'KYC')
+        await db.$queryRaw`SELECT id FROM kyc_applications WHERE id=${id}::uuid AND driver_id=${driverId}::uuid FOR UPDATE`;
+      else
+        await db.$queryRaw`SELECT id FROM vehicles WHERE id=${id}::uuid AND driver_id=${driverId}::uuid FOR UPDATE`;
+      return action(db);
+    });
+  }
+  private vehicleRequirements(category: string): readonly string[] {
+    const configured = this.config.onboarding.requiredVehicleDocumentsByCategory;
+    return configured
+      ? (configured[category] ?? [])
+      : this.config.onboarding.requiredVehicleDocuments;
+  }
+  private profileDetails(driver: {
+    profileName: string | null;
+    email: string | null;
+    dateOfBirth: Date | null;
+    gender: string | null;
+    residentialAddress: string | null;
+    city: string | null;
+    state: string | null;
+    pinCode: string | null;
+    profileVersion: number;
+    drivingLicenseLast4: string | null;
+    licenceExpiresOn: Date | null;
+    licenceVehicleClasses: string[];
+  }) {
+    const age = driver.dateOfBirth ? ageOn(driver.dateOfBirth) : null;
+    const missing = PROFILE_FIELDS.filter(
+      (field) => !(field === 'name' ? driver.profileName : driver[field]),
+    );
+    return {
+      name: driver.profileName,
+      email: driver.email,
+      dateOfBirth: driver.dateOfBirth?.toISOString().slice(0, 10) ?? null,
+      gender: driver.gender,
+      residentialAddress: driver.residentialAddress,
+      city: driver.city,
+      state: driver.state,
+      pinCode: driver.pinCode,
+      version: driver.profileVersion,
+      detailsComplete: missing.length === 0,
+      missingFields: missing,
+      age,
+      minimumAge: this.config.onboarding.minimumAge ?? null,
+      ageEligible:
+        age === null || !this.config.onboarding.minimumAge
+          ? null
+          : age >= this.config.onboarding.minimumAge,
+      licenceLast4: driver.drivingLicenseLast4,
+      licenceExpiresOn: driver.licenceExpiresOn?.toISOString().slice(0, 10) ?? null,
+      licenceVehicleClasses: driver.licenceVehicleClasses,
+    };
+  }
   private requiredSatisfied(
     documents: readonly { documentType: string; status: string; version: number }[],
     required: readonly string[],
@@ -65,7 +144,12 @@ export class OnboardingService {
     return required.every((type) => latest.get(type)?.status === 'VERIFIED');
   }
   private requiredUploaded(
-    documents: readonly { documentType: string; status: string; version: number; scannedAt: Date | null }[],
+    documents: readonly {
+      documentType: string;
+      status: string;
+      version: number;
+      scannedAt: Date | null;
+    }[],
     required: readonly string[],
   ): boolean {
     if (required.length === 0) return false;
@@ -78,8 +162,10 @@ export class OnboardingService {
         latest.set(document.documentType, document);
     return required.every((type) => {
       const document = latest.get(type);
-      return document?.status === 'VERIFIED' ||
-        (document?.status === 'QUARANTINED' && document.scannedAt !== null);
+      return (
+        document?.status === 'VERIFIED' ||
+        (document?.status === 'QUARANTINED' && document.scannedAt !== null)
+      );
     });
   }
   private assertAllowedDocumentType(documentType: string, required: readonly string[]): void {
@@ -97,6 +183,9 @@ export class OnboardingService {
     status: string;
     rejectionReason: string | null;
     createdAt: Date;
+    uploadedAt?: Date | null;
+    scannedAt?: Date | null;
+    reviewedAt?: Date | null;
   }) {
     return {
       id: document.id,
@@ -105,6 +194,9 @@ export class OnboardingService {
       status: document.status,
       rejectionReason: document.rejectionReason,
       createdAt: document.createdAt,
+      uploadedAt: document.uploadedAt ?? null,
+      scannedAt: document.scannedAt ?? null,
+      reviewedAt: document.reviewedAt ?? null,
     };
   }
   private publicKyc(application: {
@@ -158,6 +250,9 @@ export class OnboardingService {
                 status: true,
                 rejectionReason: true,
                 createdAt: true,
+                uploadedAt: true,
+                scannedAt: true,
+                reviewedAt: true,
               },
             },
           },
@@ -183,6 +278,9 @@ export class OnboardingService {
                 status: true,
                 rejectionReason: true,
                 createdAt: true,
+                uploadedAt: true,
+                scannedAt: true,
+                reviewedAt: true,
               },
             },
           },
@@ -199,10 +297,14 @@ export class OnboardingService {
     const eligibility = await this.eligibility(driverId);
     const next = eligibility.eligible
       ? 'APPROVED'
-      : !driver.profileName
+      : !(driver.profileVersion === 2
+            ? this.profileDetails(driver).detailsComplete
+            : !!driver.profileName)
         ? 'PROFILE'
         : !kyc ||
-            ['REJECTED', 'NEEDS_CORRECTION', 'PROVIDER_UNAVAILABLE', 'EXPIRED'].includes(kyc.status)
+            ['PENDING', 'REJECTED', 'NEEDS_CORRECTION', 'PROVIDER_UNAVAILABLE', 'EXPIRED'].includes(
+              kyc.status,
+            )
           ? 'KYC'
           : kyc.status !== 'VERIFIED'
             ? 'KYC_REVIEW'
@@ -214,8 +316,21 @@ export class OnboardingService {
     return {
       driverId,
       approvalStatus: driver.approvalStatus,
-      profileComplete: !!driver.profileName,
+      profileComplete:
+        driver.profileVersion === 2
+          ? this.profileDetails(driver).detailsComplete
+          : !!driver.profileName,
       profileName: driver.profileName,
+      profile: { ...this.profileDetails(driver), phone: driver.user.phone },
+      availableVehicleCategories: VEHICLE_CATEGORIES,
+      selectedVehicleCategory: driver.selectedVehicleCategory,
+      capabilities: {
+        manualKycEnabled: this.config.manualKyc.enabled,
+        documentUploadsEnabled: !!this.config.documents.storage && !!this.config.documents.scanner,
+        maxDocumentBytes: this.config.documents.maxBytes,
+        allowedContentTypes: this.config.documents.allowedContentTypes,
+        licenceNumberEnabled: !!this.config.onboarding.identityEncryptionKey,
+      },
       kyc,
       vehicles: driver.vehicles,
       activeVehicle,
@@ -225,19 +340,116 @@ export class OnboardingService {
       requiredDocuments: {
         kyc: this.config.manualKyc.requiredDocuments,
         vehicle: this.config.onboarding.requiredVehicleDocuments,
+        vehicleByCategory: Object.fromEntries(
+          VEHICLE_CATEGORIES.map((category) => [category, this.vehicleRequirements(category)]),
+        ),
       },
       next,
     };
   }
 
-  async updateProfile(principal: Principal, name: string) {
-    await this.assertSubmissionAllowed(this.driver(principal));
-    const normalized = name.trim().replace(/\s+/g, ' ');
-    return this.prisma.driver.update({
-      where: { id: this.driver(principal) },
-      data: { profileName: normalized },
-      select: { id: true, profileName: true, updatedAt: true },
+  async updateProfile(principal: Principal, input: string | UpdateDriverProfileRequest) {
+    const driverId = this.driver(principal);
+    const body = typeof input === 'string' ? { name: input } : input;
+    const normalized = body.name.trim().replace(/\s+/g, ' ');
+    if (normalized.length < 2)
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 400, 'Enter your full name');
+    if (
+      body.profileVersion !== 2 &&
+      Object.entries(body).some(([key, value]) => key !== 'name' && value !== undefined)
+    )
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        400,
+        'Detailed profiles require profileVersion 2',
+      );
+    const dateOfBirth = body.dateOfBirth ? validBirthDate(body.dateOfBirth) : undefined;
+    if (body.profileVersion === 2 && PROFILE_FIELDS.some((field) => !body[field]?.trim()))
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 400, 'Complete all required profile fields');
+    if (
+      body.profileVersion === 2 &&
+      ((body.city?.trim().length ?? 0) < 2 ||
+        (body.state?.trim().length ?? 0) < 2 ||
+        (body.residentialAddress?.trim().length ?? 0) < 5)
+    )
+      throw new AppError(
+        ErrorCode.VALIDATION_FAILED,
+        400,
+        'Enter a complete residential address, city and state',
+      );
+    const licenceExpiresOn = body.licenceExpiresOn
+      ? calendarDate(body.licenceExpiresOn)
+      : undefined;
+    if (licenceExpiresOn && licenceExpiresOn <= new Date())
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 400, 'Licence expiry must be in the future');
+    if (body.drivingLicenseNumber && !this.config.onboarding.identityEncryptionKey)
+      throw new AppError(
+        ErrorCode.KYC_PROVIDER_UNAVAILABLE,
+        503,
+        'Protected licence collection is unavailable',
+      );
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM drivers WHERE id=${driverId}::uuid FOR UPDATE`;
+      await this.assertSubmissionAllowed(driverId);
+      const current = await tx.driver.findUniqueOrThrow({ where: { id: driverId } });
+      const kyc = await tx.kycApplication.findFirst({
+        where: { driverId },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (
+        current.approvalStatus === 'APPROVED' ||
+        ['IN_REVIEW', 'VERIFIED'].includes(kyc?.status ?? '')
+      )
+        return this.conflict(
+          ErrorCode.KYC_INVALID_STATE,
+          'Profile is locked during or after verification; request a correction',
+        );
+      const saved = await tx.driver.update({
+        where: { id: driverId },
+        data: {
+          profileName: normalized,
+          ...(body.profileVersion === 2
+            ? {
+                profileVersion: 2,
+                dateOfBirth,
+                email: body.email?.trim().toLowerCase(),
+                gender: body.gender,
+                residentialAddress: body.residentialAddress?.trim(),
+                city: body.city?.trim(),
+                state: body.state?.trim(),
+                pinCode: body.pinCode,
+                licenceExpiresOn,
+                licenceVehicleClasses: body.licenceVehicleClasses,
+                ...(body.drivingLicenseNumber
+                  ? {
+                      drivingLicenseCiphertext: encryptLicence(
+                        body.drivingLicenseNumber.trim().toUpperCase(),
+                        this.config.onboarding.identityEncryptionKey!,
+                        driverId,
+                      ),
+                      drivingLicenseLast4: body.drivingLicenseNumber.trim().slice(-4),
+                    }
+                  : {}),
+              }
+            : {}),
+        },
+        select: { id: true, profileName: true, updatedAt: true },
+      });
+      return { ...saved, saved: true };
     });
+  }
+
+  async saveVehicleCategory(principal: Principal, category: string) {
+    const driverId = this.driver(principal);
+    if (!(VEHICLE_CATEGORIES as readonly string[]).includes(category))
+      throw new AppError(ErrorCode.VALIDATION_FAILED, 400, 'Invalid vehicle category');
+    await this.assertSubmissionAllowed(driverId);
+    // A preference only: never mutates an existing/approved vehicle or eligibility.
+    await this.prisma.driver.update({
+      where: { id: driverId },
+      data: { selectedVehicleCategory: category },
+    });
+    return { selectedVehicleCategory: category };
   }
 
   async startKyc(principal: Principal) {
@@ -315,9 +527,20 @@ export class OnboardingService {
   }
 
   async submitKyc(principal: Principal, applicationId: string) {
+    return this.withOnboardingLock(principal, 'KYC', applicationId, (db) =>
+      this.submitKycIn(principal, applicationId, db),
+    );
+  }
+  private async submitKycIn(principal: Principal, applicationId: string, db: Tx) {
     const driverId = this.driver(principal);
-    await this.assertSubmissionAllowed(driverId);
-    const application = await this.prisma.kycApplication.findFirst({
+    await this.assertSubmissionAllowed(driverId, db);
+    if (!this.config.manualKyc.enabled)
+      throw new AppError(
+        ErrorCode.KYC_PROVIDER_UNAVAILABLE,
+        503,
+        'Manual identity verification is unavailable',
+      );
+    const application = await db.kycApplication.findFirst({
       where: { id: applicationId, driverId },
       include: { documents: true },
     });
@@ -335,7 +558,7 @@ export class OnboardingService {
         'All required KYC documents must be uploaded and scanned',
       );
     return this.publicKyc(
-      await this.prisma.kycApplication.update({
+      await db.kycApplication.update({
         where: { id: applicationId },
         data: { status: 'IN_REVIEW', rejectionReason: null },
       }),
@@ -346,13 +569,20 @@ export class OnboardingService {
     principal: Principal,
     applicationId: string,
     input: CreateDocumentRequest,
+    db: Tx,
   ) {
+    if (!this.config.manualKyc.enabled)
+      throw new AppError(
+        ErrorCode.KYC_PROVIDER_UNAVAILABLE,
+        503,
+        'Manual identity verification is unavailable',
+      );
     this.storage.assertInput(input.contentType, input.sizeBytes);
     this.storage.assertOperational();
     this.assertAllowedDocumentType(input.documentType, this.config.manualKyc.requiredDocuments);
     const driverId = this.driver(principal);
-    await this.assertSubmissionAllowed(driverId);
-    const application = await this.prisma.kycApplication.findFirst({
+    await this.assertSubmissionAllowed(driverId, db);
+    const application = await db.kycApplication.findFirst({
       where: { id: applicationId, driverId, status: { in: ['PENDING', 'NEEDS_CORRECTION'] } },
     });
     if (!application)
@@ -361,7 +591,7 @@ export class OnboardingService {
         HttpStatus.NOT_FOUND,
         'Editable KYC application not found',
       );
-    const latest = await this.prisma.kycDocument.findFirst({
+    const latest = await db.kycDocument.findFirst({
       where: { applicationId, documentType: input.documentType },
       orderBy: { version: 'desc' },
     });
@@ -374,7 +604,7 @@ export class OnboardingService {
       const document =
         latest.status === 'UPLOADING'
           ? latest
-          : await this.prisma.kycDocument.update({
+          : await db.kycDocument.update({
               where: { id: latest.id },
               data: {
                 status: 'UPLOADING',
@@ -399,7 +629,7 @@ export class OnboardingService {
     }
     const id = randomUUID();
     const key = `onboarding/kyc/${driverId}/${applicationId}/${id}`;
-    const document = await this.prisma.kycDocument.create({
+    const document = await db.kycDocument.create({
       data: {
         id,
         applicationId,
@@ -426,7 +656,12 @@ export class OnboardingService {
     applicationId: string,
     input: CreateDocumentRequest,
   ) {
-    const { document, descriptor } = await this.descriptorForKyc(principal, applicationId, input);
+    const { document, descriptor } = await this.withOnboardingLock(
+      principal,
+      'KYC',
+      applicationId,
+      (db) => this.descriptorForKyc(principal, applicationId, input, db),
+    );
     return {
       document: this.publicDocument(document),
       upload: await this.storage.uploadUrl(descriptor),
@@ -439,7 +674,13 @@ export class OnboardingService {
       where: { id: documentId, applicationId, application: { driverId } },
     });
     if (!row) throw new AppError(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, 'Document not found');
-    if (row.status !== 'UPLOADING') return this.publicDocument(row);
+    if (row.status !== 'UPLOADING') {
+      if (this.storage.isGuardDutyScanner() && row.storageVersionId)
+        await this.guardDuty?.reconcilePendingObject(row.storageKey, row.storageVersionId);
+      return this.publicDocument(
+        await this.prisma.kycDocument.findUniqueOrThrow({ where: { id: row.id } }),
+      );
+    }
     const descriptor = {
       key: row.storageKey,
       contentType: row.contentType,
@@ -448,20 +689,36 @@ export class OnboardingService {
     };
     const verified = await this.storage.verifyUpload(descriptor);
     const storedDescriptor: StoredDocumentDescriptor = { ...descriptor, ...verified };
-    await this.prisma.kycDocument.update({
-      where: { id: row.id },
-      data: {
-        status: 'QUARANTINED',
-        checksumSha256: verified.checksumSha256,
-        storageVersionId: verified.storageVersionId,
-        storageETag: verified.storageETag,
-        uploadedAt: new Date(),
-      },
+    const recorded = await this.withOnboardingLock(principal, 'KYC', applicationId, async (db) => {
+      const parent = await db.kycApplication.findFirst({
+        where: { id: applicationId, driverId, status: { in: ['PENDING', 'NEEDS_CORRECTION'] } },
+      });
+      if (!parent)
+        return this.conflict(ErrorCode.KYC_INVALID_STATE, 'KYC application is not editable');
+      const updated = await db.kycDocument.updateMany({
+        where: { id: row.id, status: 'UPLOADING' },
+        data: {
+          status: 'QUARANTINED',
+          checksumSha256: verified.checksumSha256,
+          storageVersionId: verified.storageVersionId,
+          storageETag: verified.storageETag,
+          uploadedAt: new Date(),
+        },
+      });
+      return updated.count === 1;
     });
+    if (!recorded)
+      return this.publicDocument(
+        await this.prisma.kycDocument.findUniqueOrThrow({ where: { id: row.id } }),
+      );
     // GuardDuty produces the authoritative scan result asynchronously through EventBridge. The
     // object remains quarantined here; it is never treated as uploaded-and-clean locally.
-    if (this.storage.isGuardDutyScanner())
-      return this.publicDocument(await this.prisma.kycDocument.findUniqueOrThrow({ where: { id: row.id } }));
+    if (this.storage.isGuardDutyScanner()) {
+      await this.guardDuty?.reconcilePendingObject(row.storageKey, verified.storageVersionId);
+      return this.publicDocument(
+        await this.prisma.kycDocument.findUniqueOrThrow({ where: { id: row.id } }),
+      );
+    }
     try {
       const scan = await this.storage.scan(storedDescriptor);
       return this.publicDocument(
@@ -491,6 +748,7 @@ export class OnboardingService {
     await this.assertSubmissionAllowed(driverId);
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM drivers WHERE id=${driverId}::uuid FOR UPDATE`;
+      await this.assertSubmissionAllowed(driverId, tx);
       const active = await tx.vehicle.findFirst({ where: { driverId, active: true } });
       if (active)
         return this.conflict(
@@ -516,9 +774,18 @@ export class OnboardingService {
     });
   }
   async updateVehicle(principal: Principal, vehicleId: string, input: CreateVehicleRequest) {
+    return this.withOnboardingLock(principal, 'VEHICLE', vehicleId, (db) =>
+      this.updateVehicleIn(principal, vehicleId, input, db),
+    );
+  }
+  private async updateVehicleIn(
+    principal: Principal,
+    vehicleId: string,
+    input: CreateVehicleRequest,
+    db: Tx,
+  ) {
     const driverId = this.driver(principal);
-    await this.assertSubmissionAllowed(driverId);
-    const vehicle = await this.prisma.vehicle.findFirst({ where: { id: vehicleId, driverId } });
+    const vehicle = await db.vehicle.findFirst({ where: { id: vehicleId, driverId } });
     if (!vehicle)
       throw new AppError(ErrorCode.VEHICLE_NOT_FOUND, HttpStatus.NOT_FOUND, 'Vehicle not found');
     if (vehicle.active || vehicle.status === 'VERIFIED')
@@ -529,7 +796,7 @@ export class OnboardingService {
       );
     if (!(EDITABLE_VEHICLE as readonly string[]).includes(vehicle.status))
       return this.conflict(ErrorCode.VEHICLE_INVALID_STATE, 'Vehicle cannot be edited now');
-    return this.prisma.vehicle.update({
+    return db.vehicle.update({
       where: { id: vehicleId },
       data: {
         category: input.category,
@@ -539,9 +806,14 @@ export class OnboardingService {
     });
   }
   async submitVehicle(principal: Principal, vehicleId: string) {
+    return this.withOnboardingLock(principal, 'VEHICLE', vehicleId, (db) =>
+      this.submitVehicleIn(principal, vehicleId, db),
+    );
+  }
+  private async submitVehicleIn(principal: Principal, vehicleId: string, db: Tx) {
     const driverId = this.driver(principal);
-    await this.assertSubmissionAllowed(driverId);
-    const vehicle = await this.prisma.vehicle.findFirst({
+    await this.assertSubmissionAllowed(driverId, db);
+    const vehicle = await db.vehicle.findFirst({
       where: { id: vehicleId, driverId },
       include: { documents: true },
     });
@@ -557,9 +829,10 @@ export class OnboardingService {
           scannedAt: document.scannedAt,
         });
     if (
-      this.config.onboarding.requiredVehicleDocuments.length === 0 ||
-      !this.config.onboarding.requiredVehicleDocuments.every((type) =>
-        latest.get(type)?.status === 'VERIFIED' ||
+      this.vehicleRequirements(vehicle.category).length === 0 ||
+      !this.vehicleRequirements(vehicle.category).every(
+        (type) =>
+          latest.get(type)?.status === 'VERIFIED' ||
           (latest.get(type)?.status === 'QUARANTINED' && latest.get(type)?.scannedAt !== null),
       )
     )
@@ -567,7 +840,7 @@ export class OnboardingService {
         ErrorCode.VEHICLE_INVALID_STATE,
         'All required vehicle documents must be uploaded and scanned',
       );
-    return this.prisma.vehicle.update({
+    return db.vehicle.update({
       where: { id: vehicleId },
       data: { status: 'SUBMITTED', rejectionReason: null },
     });
@@ -577,15 +850,21 @@ export class OnboardingService {
     vehicleId: string,
     input: CreateDocumentRequest,
   ) {
+    return this.withOnboardingLock(principal, 'VEHICLE', vehicleId, (db) =>
+      this.initiateVehicleDocumentIn(principal, vehicleId, input, db),
+    );
+  }
+  private async initiateVehicleDocumentIn(
+    principal: Principal,
+    vehicleId: string,
+    input: CreateDocumentRequest,
+    db: Tx,
+  ) {
     this.storage.assertInput(input.contentType, input.sizeBytes);
     this.storage.assertOperational();
-    this.assertAllowedDocumentType(
-      input.documentType,
-      this.config.onboarding.requiredVehicleDocuments,
-    );
     const driverId = this.driver(principal);
-    await this.assertSubmissionAllowed(driverId);
-    const vehicle = await this.prisma.vehicle.findFirst({
+    await this.assertSubmissionAllowed(driverId, db);
+    const vehicle = await db.vehicle.findFirst({
       where: { id: vehicleId, driverId, status: { in: ['DRAFT', 'REJECTED'] } },
     });
     if (!vehicle)
@@ -594,7 +873,8 @@ export class OnboardingService {
         HttpStatus.NOT_FOUND,
         'Editable vehicle not found',
       );
-    const latest = await this.prisma.vehicleDocument.findFirst({
+    this.assertAllowedDocumentType(input.documentType, this.vehicleRequirements(vehicle.category));
+    const latest = await db.vehicleDocument.findFirst({
       where: { vehicleId, documentType: input.documentType },
       orderBy: { version: 'desc' },
     });
@@ -610,7 +890,7 @@ export class OnboardingService {
       const document =
         latest.status === 'UPLOADING'
           ? latest
-          : await this.prisma.vehicleDocument.update({
+          : await db.vehicleDocument.update({
               where: { id: latest.id },
               data: {
                 status: 'UPLOADING',
@@ -635,7 +915,7 @@ export class OnboardingService {
     }
     const id = randomUUID();
     const key = `onboarding/vehicle/${driverId}/${vehicleId}/${id}`;
-    const document = await this.prisma.vehicleDocument.create({
+    const document = await db.vehicleDocument.create({
       data: {
         id,
         vehicleId,
@@ -665,7 +945,13 @@ export class OnboardingService {
     });
     if (!row || !row.storageKey || !row.contentType || !row.sizeBytes)
       throw new AppError(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, 'Document not found');
-    if (row.status !== 'UPLOADING') return this.publicDocument(row);
+    if (row.status !== 'UPLOADING') {
+      if (this.storage.isGuardDutyScanner() && row.storageVersionId)
+        await this.guardDuty?.reconcilePendingObject(row.storageKey, row.storageVersionId);
+      return this.publicDocument(
+        await this.prisma.vehicleDocument.findUniqueOrThrow({ where: { id: row.id } }),
+      );
+    }
     const descriptor = {
       key: row.storageKey,
       contentType: row.contentType,
@@ -674,18 +960,33 @@ export class OnboardingService {
     };
     const verified = await this.storage.verifyUpload(descriptor);
     const storedDescriptor: StoredDocumentDescriptor = { ...descriptor, ...verified };
-    await this.prisma.vehicleDocument.update({
-      where: { id: row.id },
-      data: {
-        status: 'QUARANTINED',
-        checksumSha256: verified.checksumSha256,
-        storageVersionId: verified.storageVersionId,
-        storageETag: verified.storageETag,
-        uploadedAt: new Date(),
-      },
+    const recorded = await this.withOnboardingLock(principal, 'VEHICLE', vehicleId, async (db) => {
+      const parent = await db.vehicle.findFirst({
+        where: { id: vehicleId, driverId, status: { in: ['DRAFT', 'REJECTED'] } },
+      });
+      if (!parent) return this.conflict(ErrorCode.VEHICLE_INVALID_STATE, 'Vehicle is not editable');
+      const updated = await db.vehicleDocument.updateMany({
+        where: { id: row.id, status: 'UPLOADING' },
+        data: {
+          status: 'QUARANTINED',
+          checksumSha256: verified.checksumSha256,
+          storageVersionId: verified.storageVersionId,
+          storageETag: verified.storageETag,
+          uploadedAt: new Date(),
+        },
+      });
+      return updated.count === 1;
     });
-    if (this.storage.isGuardDutyScanner())
-      return this.publicDocument(await this.prisma.vehicleDocument.findUniqueOrThrow({ where: { id: row.id } }));
+    if (!recorded)
+      return this.publicDocument(
+        await this.prisma.vehicleDocument.findUniqueOrThrow({ where: { id: row.id } }),
+      );
+    if (this.storage.isGuardDutyScanner()) {
+      await this.guardDuty?.reconcilePendingObject(row.storageKey, verified.storageVersionId);
+      return this.publicDocument(
+        await this.prisma.vehicleDocument.findUniqueOrThrow({ where: { id: row.id } }),
+      );
+    }
     try {
       const scan = await this.storage.scan(storedDescriptor);
       return this.publicDocument(
@@ -728,16 +1029,15 @@ export class OnboardingService {
         include: { documents: true },
       });
       const kyc = await tx.kycApplication.findFirst({
-        where: {
-          driverId,
-          status: 'VERIFIED',
-          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-        },
+        where: { driverId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       });
       if (
         !current ||
         !kyc ||
-        !this.requiredSatisfied(current.documents, this.config.onboarding.requiredVehicleDocuments)
+        kyc.status !== 'VERIFIED' ||
+        (kyc.expiresAt && kyc.expiresAt <= new Date()) ||
+        !this.requiredSatisfied(current.documents, this.vehicleRequirements(current.category))
       )
         return this.conflict(
           ErrorCode.DRIVER_NOT_ELIGIBLE,
@@ -785,8 +1085,7 @@ export class OnboardingService {
       include: {
         user: true,
         kycApplications: {
-          where: { status: 'VERIFIED' },
-          orderBy: { verifiedAt: 'desc' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           take: 1,
         },
         vehicles: { where: { active: true }, include: { documents: true } },
@@ -807,11 +1106,19 @@ export class OnboardingService {
       driver.approvedAt < vehicle.verifiedAt
     )
       reasons.push('DRIVER_NOT_APPROVED');
-    if (!kyc || (kyc.expiresAt && kyc.expiresAt <= now)) reasons.push('KYC_NOT_VERIFIED');
+    if (!kyc || kyc.status !== 'VERIFIED' || (kyc.expiresAt && kyc.expiresAt <= now))
+      reasons.push('KYC_NOT_VERIFIED');
     if (!vehicle || vehicle.status !== 'VERIFIED') reasons.push('ACTIVE_VEHICLE_NOT_VERIFIED');
     if (
+      driver.profileVersion === 2 &&
+      (!this.profileDetails(driver).detailsComplete ||
+        this.profileDetails(driver).ageEligible !== true ||
+        (driver.licenceExpiresOn && driver.licenceExpiresOn <= now))
+    )
+      reasons.push('PROFILE_REQUIREMENTS_NOT_MET');
+    if (
       !vehicle ||
-      !this.requiredSatisfied(vehicle.documents, this.config.onboarding.requiredVehicleDocuments)
+      !this.requiredSatisfied(vehicle.documents, this.vehicleRequirements(vehicle.category))
     )
       reasons.push('VEHICLE_DOCUMENTS_NOT_VERIFIED');
     return {
@@ -904,6 +1211,17 @@ export class OnboardingService {
       select: {
         id: true,
         profileName: true,
+        profileVersion: true,
+        email: true,
+        dateOfBirth: true,
+        gender: true,
+        residentialAddress: true,
+        city: true,
+        state: true,
+        pinCode: true,
+        drivingLicenseLast4: true,
+        licenceExpiresOn: true,
+        licenceVehicleClasses: true,
         legalName: true,
         approvalStatus: true,
         createdAt: true,
@@ -1009,7 +1327,20 @@ export class OnboardingService {
         createdAt: true,
       },
     });
-    return { ...driver, auditTrail: actions };
+    return {
+      ...driver,
+      profile: this.profileDetails(driver),
+      auditTrail: actions,
+      reviewPolicy: {
+        enabled: this.config.manualKyc.enabled,
+        version: this.config.manualKyc.policyVersion,
+        checklist: this.config.manualKyc.checklist,
+        requiredKycDocuments: this.config.manualKyc.requiredDocuments,
+        requiredVehicleDocumentsByCategory: Object.fromEntries(
+          VEHICLE_CATEGORIES.map((category) => [category, this.vehicleRequirements(category)]),
+        ),
+      },
+    };
   }
 
   async reviewKyc(
@@ -1019,8 +1350,14 @@ export class OnboardingService {
     reason: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
+      let application = await tx.kycApplication.findUnique({ where: { id: applicationId } });
+      if (!application)
+        return this.conflict(ErrorCode.KYC_INVALID_STATE, 'KYC application is not reviewable');
+      await tx.$queryRaw`SELECT id FROM drivers WHERE id=${application.driverId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM kyc_applications WHERE id=${applicationId}::uuid FOR UPDATE`;
+      application = await tx.kycApplication.findUniqueOrThrow({ where: { id: applicationId } });
       const updated = await tx.kycApplication.updateMany({
-        where: { id: applicationId, status: { in: ['PENDING', 'IN_REVIEW'] } },
+        where: { id: applicationId, status: { in: ['PENDING', 'IN_REVIEW', 'VERIFIED'] } },
         data: {
           status: decision,
           rejectionReason: reason,
@@ -1030,6 +1367,12 @@ export class OnboardingService {
       });
       if (updated.count !== 1)
         return this.conflict(ErrorCode.KYC_INVALID_STATE, 'KYC application is not reviewable');
+      const driver = await tx.driver.findUnique({
+        where: { id: application.driverId },
+        select: { approvalStatus: true },
+      });
+      if (driver?.approvalStatus === 'APPROVED')
+        await tx.$executeRaw`SELECT admin_set_driver_status(${application.driverId}::uuid,${'PENDING'},${admin.userId}::uuid,${reason})`;
       await tx.adminAction.create({
         data: {
           actorUserId: admin.userId,
@@ -1037,7 +1380,11 @@ export class OnboardingService {
           targetType: 'KYC_APPLICATION',
           targetId: applicationId,
           reason,
-          details: { policyVersion: this.config.manualKyc.policyVersion },
+          details: {
+            driverId: application.driverId,
+            previousStatus: application.status,
+            policyVersion: this.config.manualKyc.policyVersion,
+          },
         },
       });
       return tx.kycApplication.findUniqueOrThrow({ where: { id: applicationId } });
@@ -1144,6 +1491,13 @@ export class OnboardingService {
         'The approved verification checklist is incomplete or invalid',
       );
     return this.prisma.$transaction(async (tx) => {
+      const owner = await tx.kycApplication.findUnique({
+        where: { id: applicationId },
+        select: { driverId: true },
+      });
+      if (!owner)
+        return this.conflict(ErrorCode.KYC_INVALID_STATE, 'KYC application cannot be verified');
+      await tx.$queryRaw`SELECT id FROM drivers WHERE id=${owner.driverId}::uuid FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM kyc_applications WHERE id=${applicationId}::uuid FOR UPDATE`;
       const app = await tx.kycApplication.findUnique({
         where: { id: applicationId },
@@ -1170,7 +1524,7 @@ export class OnboardingService {
           verificationChecklist: checklist,
         },
       });
-      await tx.$queryRaw`SELECT admin_set_driver_legal_name_after_kyc(${app.driverId}::uuid,${applicationId}::uuid,${admin.userId}::uuid,${legalName.trim()})`;
+      await tx.$executeRaw`SELECT admin_set_driver_legal_name_after_kyc(${app.driverId}::uuid,${applicationId}::uuid,${admin.userId}::uuid,${legalName.trim()})`;
       await tx.adminAction.create({
         data: {
           actorUserId: admin.userId,
@@ -1191,6 +1545,13 @@ export class OnboardingService {
     reason: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
+      const owner = await tx.vehicle.findUnique({
+        where: { id: vehicleId },
+        select: { driverId: true },
+      });
+      if (!owner)
+        return this.conflict(ErrorCode.VEHICLE_INVALID_STATE, 'Vehicle is not reviewable');
+      await tx.$queryRaw`SELECT id FROM drivers WHERE id=${owner.driverId}::uuid FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM vehicles WHERE id=${vehicleId}::uuid FOR UPDATE`;
       const vehicle = await tx.vehicle.findUnique({
         where: { id: vehicleId },
@@ -1198,10 +1559,9 @@ export class OnboardingService {
       });
       if (!vehicle || !['SUBMITTED', 'IN_REVIEW'].includes(vehicle.status))
         return this.conflict(ErrorCode.VEHICLE_INVALID_STATE, 'Vehicle is not reviewable');
-      await tx.$queryRaw`SELECT id FROM drivers WHERE id=${vehicle.driverId}::uuid FOR UPDATE`;
       if (
         decision === 'VERIFIED' &&
-        !this.requiredSatisfied(vehicle.documents, this.config.onboarding.requiredVehicleDocuments)
+        !this.requiredSatisfied(vehicle.documents, this.vehicleRequirements(vehicle.category))
       )
         return this.conflict(
           ErrorCode.VEHICLE_INVALID_STATE,
@@ -1226,21 +1586,17 @@ export class OnboardingService {
             include: { documents: true },
           });
           const kyc = await tx.kycApplication.findFirst({
-            where: {
-              driverId: vehicle.driverId,
-              status: 'VERIFIED',
-              OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-            },
+            where: { driverId: vehicle.driverId },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           });
           if (
             !current ||
             !current.active ||
             current.status !== 'VERIFIED' ||
             !kyc ||
-            !this.requiredSatisfied(
-              current.documents,
-              this.config.onboarding.requiredVehicleDocuments,
-            )
+            kyc.status !== 'VERIFIED' ||
+            (kyc.expiresAt && kyc.expiresAt <= now) ||
+            !this.requiredSatisfied(current.documents, this.vehicleRequirements(current.category))
           )
             return this.conflict(
               ErrorCode.DRIVER_NOT_ELIGIBLE,
@@ -1325,8 +1681,7 @@ export class OnboardingService {
         include: {
           user: true,
           kycApplications: {
-            where: { status: 'VERIFIED' },
-            orderBy: { verifiedAt: 'desc' },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
             take: 1,
           },
           vehicles: { where: { active: true }, include: { documents: true } },
@@ -1340,14 +1695,16 @@ export class OnboardingService {
         if (
           driver.user.status !== 'ACTIVE' ||
           !driver.profileName ||
+          (driver.profileVersion === 2 &&
+            (!this.profileDetails(driver).detailsComplete ||
+              this.profileDetails(driver).ageEligible !== true ||
+              (driver.licenceExpiresOn && driver.licenceExpiresOn <= new Date()))) ||
           !kyc ||
+          kyc.status !== 'VERIFIED' ||
           (kyc.expiresAt && kyc.expiresAt <= new Date()) ||
           !vehicle ||
           vehicle.status !== 'VERIFIED' ||
-          !this.requiredSatisfied(
-            vehicle.documents,
-            this.config.onboarding.requiredVehicleDocuments,
-          )
+          !this.requiredSatisfied(vehicle.documents, this.vehicleRequirements(vehicle.category))
         )
           return this.conflict(
             ErrorCode.DRIVER_NOT_ELIGIBLE,
@@ -1399,7 +1756,11 @@ export class OnboardingService {
       !['QUARANTINED', 'VERIFIED'].includes(document.status)
     )
       throw new AppError(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, 'Document is unavailable');
-    const url = await this.storage.downloadUrl(document.storageKey, undefined, document.storageVersionId);
+    const url = await this.storage.downloadUrl(
+      document.storageKey,
+      undefined,
+      document.storageVersionId,
+    );
     await this.prisma.adminAction.create({
       data: {
         actorUserId: admin.userId,
@@ -1414,5 +1775,61 @@ export class OnboardingService {
       url,
       expiresInSeconds: this.config.documents.downloadTtlSeconds,
     };
+  }
+
+  async ownerDocumentPreview(principal: Principal, kind: 'KYC' | 'VEHICLE', documentId: string) {
+    const driverId = this.driver(principal);
+    const document =
+      kind === 'KYC'
+        ? await this.prisma.kycDocument.findFirst({
+            where: { id: documentId, application: { driverId } },
+          })
+        : await this.prisma.vehicleDocument.findFirst({
+            where: { id: documentId, vehicle: { driverId } },
+          });
+    if (
+      !document?.storageKey ||
+      !document.storageVersionId ||
+      !document.scannedAt ||
+      !['QUARANTINED', 'VERIFIED'].includes(document.status)
+    )
+      throw new AppError(ErrorCode.NOT_FOUND, 404, 'A safe document preview is not available');
+    return {
+      url: await this.storage.downloadUrl(
+        document.storageKey,
+        undefined,
+        document.storageVersionId,
+      ),
+      contentType: document.contentType,
+      expiresInSeconds: this.config.documents.downloadTtlSeconds,
+    };
+  }
+
+  async revealLicence(admin: Principal, driverId: string, reason: string) {
+    const key = this.config.onboarding.identityEncryptionKey;
+    if (!key)
+      throw new AppError(
+        ErrorCode.KYC_PROVIDER_UNAVAILABLE,
+        503,
+        'Protected identity access is unavailable',
+      );
+    const driver = await this.prisma.driver.findUnique({
+      where: { id: driverId },
+      select: { drivingLicenseCiphertext: true },
+    });
+    if (!driver?.drivingLicenseCiphertext)
+      throw new AppError(ErrorCode.NOT_FOUND, 404, 'Protected licence not found');
+    const number = decryptLicence(driver.drivingLicenseCiphertext, key, driverId);
+    await this.prisma.adminAction.create({
+      data: {
+        actorUserId: admin.userId,
+        action: 'DRIVER_LICENCE_ACCESSED',
+        targetType: 'DRIVER',
+        targetId: driverId,
+        reason,
+        details: { driverId },
+      },
+    });
+    return { drivingLicenseNumber: number };
   }
 }

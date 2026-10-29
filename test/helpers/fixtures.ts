@@ -55,6 +55,8 @@ export async function createDriver(
       authIdentities: { create: { provider: 'firebase', subject } },
       driver: {
         create: {
+          // Historical fixture; new real registration uses the schema's v2 default.
+          profileVersion: 1,
           approvalStatus: approved ? 'APPROVED' : 'PENDING',
           approvedAt: approved ? new Date() : null,
           legalName: options.legalName === undefined ? FIXTURE_DRIVER_NAME : options.legalName,

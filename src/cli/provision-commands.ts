@@ -196,6 +196,7 @@ async function createContractEligibleDriver(
       data: {
         userId: user.id,
         profileName: command.legalName,
+        profileVersion: 1, // Historical compliance fixture, gated to disposable *_e2e DBs above.
         legalName: command.legalName,
         approvalStatus: 'APPROVED',
         approvedAt,
