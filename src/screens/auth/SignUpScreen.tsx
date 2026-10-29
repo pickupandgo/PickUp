@@ -3,46 +3,36 @@ import {
   View,
   Text,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   Pressable,
-  TextInput,
   ActivityIndicator,
-  Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Button from '../../components/atoms/Button';
 import InputField from '../../components/atoms/InputField';
+import { KeyboardAwareScrollView } from '../../components/organisms';
 import {
   sendPhoneOTP,
-  signUpWithEmail,
   signInWithGoogle,
-  signInWithApple,
   formatToE164,
   mapFirebaseAuthError,
   getRemainingCooldown,
   hasActiveSession,
   usePhoneCooldown,
 } from '../../auth/authService';
-import { clearProfileComplete } from '../../state/session';
+
+const logoImage = require('../../../assets/images/assets_logo.png');
 
 export interface SignUpScreenProps {
   readonly navigation?: any;
 }
 
 export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
-  // Customer authentication is Firebase Phone Auth only.
-  const phoneOnlyAuthentication = true;
-  const [authMethod, setAuthMethod] = useState<'phone' | 'email'>('phone');
   const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<'google' | 'apple' | null>(null);
+  const [socialLoading, setSocialLoading] = useState<'google' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isSubmittingRef = useRef(false);
 
@@ -51,11 +41,6 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
   const isValidPhone = cleanPhone.length === 10;
   const { cooldownRemaining, isCoolingDown } = usePhoneCooldown(isValidPhone ? cleanPhone : '');
   const isGetOtpDisabled = !isValidPhone || loading || isCoolingDown || cooldownRemaining > 0;
-
-  // Email validation
-  const isValidEmail = email.includes('@') && email.includes('.') && email.trim().length > 5;
-  const isValidPassword = password.length >= 6;
-  const isEmailFormValid = isValidEmail && isValidPassword;
 
   const busy = loading || socialLoading !== null;
 
@@ -96,34 +81,6 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
     }
   }, [cleanPhone, isValidPhone, busy, isCoolingDown, cooldownRemaining, navigation]);
 
-  // Email Sign-Up
-  const handleEmailSignUp = useCallback(async () => {
-    if (isSubmittingRef.current || busy) return;
-    if (!isValidEmail) {
-      setError('Please enter a valid email address.');
-      return;
-    }
-    if (!isValidPassword) {
-      setError('Password must be at least 6 characters.');
-      return;
-    }
-
-    isSubmittingRef.current = true;
-    setLoading(true);
-    setError(null);
-
-    try {
-      await clearProfileComplete();
-      await signUpWithEmail(email, password);
-      // Auth state listener handles session and navigation to profile
-    } catch (e: any) {
-      setError(mapFirebaseAuthError(e));
-    } finally {
-      isSubmittingRef.current = false;
-      setLoading(false);
-    }
-  }, [busy, isValidEmail, isValidPassword, email, password]);
-
   // Google Sign-In
   const handleGoogleSignIn = useCallback(async () => {
     if (busy) return;
@@ -142,257 +99,128 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
     }
   }, [busy]);
 
-  // Apple Sign-In
-  const handleAppleSignIn = useCallback(async () => {
-    if (busy) return;
-    setSocialLoading('apple');
-    setError(null);
-
-    try {
-      await signInWithApple();
-      // Auth state listener handles session
-    } catch (e: any) {
-      if (e?.code !== 'auth/cancelled') {
-        setError(mapFirebaseAuthError(e));
-      }
-    } finally {
-      setSocialLoading(null);
-    }
-  }, [busy]);
-
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        style={styles.keyboardAvoid}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Logo & Header */}
-          <View style={styles.heroSection}>
-            <View style={styles.logoContainer}>
-              <View style={styles.logoInner}>
-                <Text style={styles.logoIcon}>📦</Text>
-              </View>
-            </View>
-            <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Sign up to start booking rides and package deliveries</Text>
-          </View>
-
-          {/* Flow Mode Switcher: Log In vs Sign Up */}
-          <View style={styles.entryModeContainer}>
-            <Pressable
-              style={styles.entryModeTab}
-              onPress={() => navigation?.navigate('LoginScreen')}
-              hitSlop={8}
-            >
-              <Text style={styles.entryModeInactiveText}>Log In</Text>
-            </Pressable>
-            <View style={[styles.entryModeTab, styles.entryModeActive]}>
-              <Text style={styles.entryModeActiveText}>Sign Up</Text>
-            </View>
-          </View>
-
-          {/* Auth Method Tabs */}
-          <View style={styles.tabContainer}>
-            <Pressable
-              style={[styles.tab, authMethod === 'phone' && styles.activeTab]}
-              onPress={() => {
-                setAuthMethod('phone');
-                setError(null);
-              }}
-            >
-              <Text style={[styles.tabText, authMethod === 'phone' && styles.activeTabText]}>
-                Mobile OTP
-              </Text>
-            </Pressable>
-            {!phoneOnlyAuthentication && <Pressable
-              style={[styles.tab, authMethod === 'email' && styles.activeTab]}
-              onPress={() => {
-                setAuthMethod('email');
-                setError(null);
-              }}
-            >
-              <Text style={[styles.tabText, authMethod === 'email' && styles.activeTabText]}>
-                Email & Password
-              </Text>
-            </Pressable>}
-          </View>
-
-          {error && (
-            <View style={styles.errorContainer}>
-              <Feather name="alert-circle" size={16} color={colors.error} />
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          )}
-
-          {/* Phone Form */}
-          {authMethod === 'phone' ? (
-            <View style={styles.formSection}>
-              <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
-              <View style={styles.phoneRow}>
-                <View style={styles.countryCode}>
-                  <Text style={styles.countryCodeText}>+91</Text>
-                </View>
-                <View style={styles.phoneInputWrapper}>
-                  <InputField
-                    placeholder="Enter 10-digit number"
-                    value={phone}
-                    onChangeText={(t) => {
-                      setPhone(t);
-                      if (error) setError(null);
-                    }}
-                    keyboardType="phone-pad"
-                    maxLength={10}
-                    editable={!busy}
-                  />
-                </View>
-              </View>
-
-              {isValidPhone && cooldownRemaining > 0 && (
-                <View style={styles.cooldownContainer}>
-                  <Text style={styles.cooldownText}>
-                    Request a new OTP in {cooldownRemaining} {cooldownRemaining === 1 ? 'second' : 'seconds'}
-                  </Text>
-                </View>
-              )}
-
-              <Button
-                label={loading ? 'Sending OTP...' : 'Get OTP'}
-                onPress={handleGetOtp}
-                variant="primary"
-                size="lg"
-                fullWidth
-                disabled={isGetOtpDisabled}
-                loading={loading}
-                style={styles.submitButton}
+        {/* 1. MultipleRide Logo & Create Account Header */}
+        <View style={styles.heroSection}>
+          <View style={styles.logoContainer}>
+            <View style={styles.logoInner}>
+              <Image
+                source={logoImage}
+                style={styles.logoImage}
+                resizeMode="contain"
+                accessibilityRole="image"
+                accessibilityLabel="MultipleRide App Logo"
               />
             </View>
-          ) : (
-            /* Email Form */
-            <View style={styles.formSection}>
-              <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
-              <View style={styles.inputWrapper}>
-                <InputField
-                  placeholder="name@example.com"
-                  value={email}
-                  onChangeText={(t) => {
-                    setEmail(t);
-                    if (error) setError(null);
-                  }}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  editable={!busy}
-                />
-              </View>
-
-              <Text style={[styles.inputLabel, { marginTop: spacing.md }]}>PASSWORD</Text>
-              <View style={styles.passwordRow}>
-                <TextInput
-                  style={styles.passwordInput}
-                  placeholder="At least 6 characters"
-                  placeholderTextColor={colors.onSurfaceVariant}
-                  value={password}
-                  onChangeText={(t) => {
-                    setPassword(t);
-                    if (error) setError(null);
-                  }}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  editable={!busy}
-                />
-                <Pressable
-                  style={styles.eyeIcon}
-                  onPress={() => setShowPassword(!showPassword)}
-                  hitSlop={8}
-                >
-                  <Feather
-                    name={showPassword ? 'eye-off' : 'eye'}
-                    size={20}
-                    color={colors.onSurfaceVariant}
-                  />
-                </Pressable>
-              </View>
-
-              <Button
-                label={loading ? 'Creating Account...' : 'Sign Up with Email'}
-                onPress={handleEmailSignUp}
-                variant="primary"
-                size="lg"
-                fullWidth
-                disabled={!isEmailFormValid || busy}
-                loading={loading}
-                style={styles.submitButton}
-              />
-            </View>
-          )}
-
-          {/* Legacy email/social UI is intentionally unreachable: customer auth is phone-only. */}
-          {!phoneOnlyAuthentication && <><View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Or continue with</Text>
-            <View style={styles.dividerLine} />
           </View>
+          <Text style={styles.title}>Create Account</Text>
+          <Text style={styles.subtitle}>Sign up to start booking rides and package deliveries</Text>
+        </View>
 
-          {/* Social Sign-In Buttons */}
-          <View style={styles.socialButtonsContainer}>
-            <Pressable
-              style={[styles.socialButton, busy && styles.buttonDisabled]}
-              onPress={handleGoogleSignIn}
-              disabled={busy}
-            >
-              {socialLoading === 'google' ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <>
-                  <Text style={styles.socialIconText}>G</Text>
-                  <Text style={styles.socialButtonText}>Continue with Google</Text>
-                </>
-              )}
-            </Pressable>
+        {error && (
+          <View style={styles.errorContainer}>
+            <Feather name="alert-circle" size={16} color={colors.error} />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
 
-            <Pressable
-              style={[styles.socialButton, busy && styles.buttonDisabled]}
-              onPress={handleAppleSignIn}
-              disabled={busy}
-            >
-              {socialLoading === 'apple' ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <>
-                  <Feather name="shield" size={18} color={colors.onSurface} style={styles.socialIcon} />
-                  <Text style={styles.socialButtonText}>Continue with Apple</Text>
-                </>
-              )}
-            </Pressable>
-          </View></>}
-
-          {/* Switch to Log In */}
-          <View style={styles.switchRow}>
-            <Text style={styles.switchPrompt}>
-              Already have an account?{' '}
-              <Text
-                style={styles.switchLink}
-                onPress={() => {
-                  navigation?.navigate('LoginScreen');
+        {/* 3. Mobile Number Field & Get OTP Button */}
+        <View style={styles.formSection}>
+          <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
+          <View style={styles.phoneRow}>
+            <View style={styles.countryCode}>
+              <Text style={styles.countryCodeText}>+91</Text>
+            </View>
+            <View style={styles.phoneInputWrapper}>
+              <InputField
+                placeholder="Enter 10-digit number"
+                value={phone}
+                onChangeText={(t) => {
+                  setPhone(t);
+                  if (error) setError(null);
                 }}
-              >
-                Log In
-              </Text>
-            </Text>
+                keyboardType="phone-pad"
+                maxLength={10}
+                editable={!busy}
+              />
+            </View>
           </View>
 
-          {/* Terms Footer */}
-          <Text style={styles.termsText}>
-            By signing up, you agree to our{' '}
-            <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
-            <Text style={styles.termsLink}>Privacy Policy</Text>.
+          {isValidPhone && cooldownRemaining > 0 && (
+            <View style={styles.cooldownContainer}>
+              <Text style={styles.cooldownText}>
+                Request a new OTP in {cooldownRemaining} {cooldownRemaining === 1 ? 'second' : 'seconds'}
+              </Text>
+            </View>
+          )}
+
+          <Button
+            label={loading ? 'Sending OTP...' : 'Get OTP'}
+            onPress={handleGetOtp}
+            variant="primary"
+            size="lg"
+            fullWidth
+            disabled={isGetOtpDisabled}
+            loading={loading}
+            style={styles.submitButton}
+          />
+        </View>
+
+        {/* 4. Social Divider */}
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>Or continue with</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        {/* 5. Social Sign-In: Continue with Google Only */}
+        <View style={styles.socialButtonsContainer}>
+          <Pressable
+            style={[styles.socialButton, busy && styles.buttonDisabled]}
+            onPress={handleGoogleSignIn}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel="Continue with Google"
+          >
+            {socialLoading === 'google' ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <Text style={styles.socialIconText}>G</Text>
+                <Text style={styles.socialButtonText}>Continue with Google</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+
+        {/* 6. Switch to Log In */}
+        <View style={styles.switchRow}>
+          <Text style={styles.switchPrompt}>
+            Already have an account?{' '}
+            <Text
+              style={styles.switchLink}
+              onPress={() => {
+                navigation?.navigate('LoginScreen');
+              }}
+            >
+              Log In
+            </Text>
           </Text>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
+
+        {/* 7. Terms & Privacy Policy Footer */}
+        <Text style={styles.termsText}>
+          By signing up, you agree to our{' '}
+          <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
+          <Text style={styles.termsLink}>Privacy Policy</Text>.
+        </Text>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };
@@ -401,9 +229,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
-  },
-  keyboardAvoid: {
-    flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
@@ -416,9 +241,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
   },
   logoContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: colors.surfaceContainerLowest,
     alignItems: 'center',
     justifyContent: 'center',
@@ -426,15 +251,16 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   logoInner: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: colors.surfaceContainerLow,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoIcon: {
-    fontSize: 26,
+  logoImage: {
+    width: 44,
+    height: 44,
   },
   title: {
     fontSize: typography.headlineMd.fontSize,
@@ -446,67 +272,6 @@ const styles = StyleSheet.create({
     fontSize: typography.bodyMd.fontSize,
     color: colors.onSurfaceVariant,
     textAlign: 'center',
-  },
-  entryModeContainer: {
-    flexDirection: 'row',
-    marginBottom: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.surfaceContainerLow,
-    padding: 3,
-  },
-  entryModeTab: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    borderRadius: borderRadius.sm,
-  },
-  entryModeActive: {
-    backgroundColor: colors.surface,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  entryModeActiveText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  entryModeInactiveText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    fontWeight: '500',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    marginBottom: spacing.lg,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.surfaceContainerLow,
-    padding: spacing.xs,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    borderRadius: borderRadius.sm,
-  },
-  activeTab: {
-    backgroundColor: colors.surface,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-  },
-  tabText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    fontWeight: '600',
-  },
-  activeTabText: {
-    color: colors.primary,
-    fontWeight: '700',
   },
   errorContainer: {
     flexDirection: 'row',
@@ -555,28 +320,6 @@ const styles = StyleSheet.create({
   phoneInputWrapper: {
     flex: 1,
   },
-  inputWrapper: {
-    marginBottom: spacing.xs,
-  },
-  passwordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 48,
-    borderWidth: 1,
-    borderColor: colors.outlineHairline,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-  },
-  passwordInput: {
-    flex: 1,
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurface,
-    paddingVertical: 0,
-  },
-  eyeIcon: {
-    padding: spacing.xs,
-  },
   cooldownContainer: {
     marginVertical: spacing.xs,
     alignItems: 'center',
@@ -605,7 +348,6 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceVariant,
   },
   socialButtonsContainer: {
-    gap: spacing.sm,
     marginBottom: spacing.xl,
   },
   socialButton: {
@@ -626,9 +368,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#4285F4',
-  },
-  socialIcon: {
-    marginRight: 2,
   },
   socialButtonText: {
     fontSize: typography.bodyMd.fontSize,

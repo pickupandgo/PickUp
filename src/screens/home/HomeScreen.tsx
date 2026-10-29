@@ -1,15 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import { strings, mockRecentLocations } from '../../data/mockData';
+import { strings } from '../../data/mockData';
 import { useBooking } from '../../state/BookingContext';
-import { getCurrentPlace, reverseGeocode } from '../../api/geocoding';
-import type { GeoPoint, NearbyDriver } from '../../api/types';
-import { getActiveTripForCustomer } from '../../api/engine';
+import { getCurrentPlace, reverseGeocode, type ResolvedPlace } from '../../api/geocoding';
+import type { GeoPoint } from '../../api/types';
+import { getActiveTripForCustomer, getDriver, getRide } from '../../api/engine';
 import { toApiError } from '../../api/http';
+import { useNearbyDrivers } from '../../hooks/useNearbyDrivers';
+import { useTripStatus } from '../../hooks/useTripStatus';
+import { useRecentLocations, saveRecentLocation, type RecentLocation } from '../../state/recentLocations';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
 import { DEFAULT_DELTA } from '../../components/map/MapCanvas.types';
+import { getVehicleImage } from '../../utils/vehicleAssets';
 import TopAppBar from '../../components/organisms/TopAppBar';
 import Card from '../../components/molecules/Card';
 import ListRow from '../../components/molecules/ListRow';
@@ -17,7 +22,8 @@ import Button from '../../components/atoms/Button';
 import Divider from '../../components/atoms/Divider';
 import DraggableBottomSheet from '../../components/organisms/DraggableBottomSheet';
 import Feather from 'react-native-vector-icons/Feather';
-import { setLoggedIn } from '../../state/session';
+import { setLoggedIn, setProfileComplete } from '../../state/session';
+import { SkeletonListItem, useSkeletonVisibility } from '../../components/skeleton';
 
 export interface HomeScreenProps {
   readonly onSearchPress?: () => void;
@@ -36,22 +42,74 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
   onRecentLocationPress,
   onActiveTripPress,
 }) => {
-  const { draft, setPickup, customerId, trip, setTrip, startNewBooking } = useBooking();
+  const {
+    draft,
+    setPickup,
+    setPendingDrop,
+    customerId,
+    trip,
+    setTrip,
+    startNewBooking,
+    assignedDriver,
+    setAssignedDriver,
+    setRide,
+  } = useBooking();
+  const {
+    locations: recentLocations,
+    isLoading: isRecentLoading,
+    refresh: refreshRecent,
+  } = useRecentLocations(customerId);
+  const showRecentSkeleton = useSkeletonVisibility({
+    isLoading: isRecentLoading,
+    hasData: recentLocations.length > 0,
+  });
+  const insets = useSafeAreaInsets();
+  const topSafeOffset = Math.max(insets.top, 36) + spacing.sm;
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string>();
   const blueDotRef = useRef<GeoPoint | undefined>(undefined);
   const [forceCenterKey, setForceCenterKey] = useState(1);
   const [deviceLocation, setDeviceLocation] = useState<any>();
   const deviceLocationRef = useRef<any>(null);
-  const handleUserLocationChange = useCallback((loc: any) => {
-    deviceLocationRef.current = loc;
-    setDeviceLocation(loc);
-  }, []);
+  const isResolvingLocationRef = useRef(false);
+
+  const handleUserLocationChange = useCallback(
+    async (loc: any) => {
+      if (!loc || !Number.isFinite(loc.latitude) || !Number.isFinite(loc.longitude)) return;
+      blueDotRef.current = loc;
+      deviceLocationRef.current = loc;
+      setDeviceLocation(loc);
+
+      // Automatically populate pickup location as soon as map detects user location
+      if (!draft.pickup && !isResolvingLocationRef.current) {
+        isResolvingLocationRef.current = true;
+        try {
+          const bp: GeoPoint = {
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+          };
+          const resolved = await reverseGeocode(bp).catch(() => '');
+          const address = resolved || `${bp.latitude.toFixed(5)}, ${bp.longitude.toFixed(5)}`;
+          setPickup({
+            latitude: bp.latitude,
+            longitude: bp.longitude,
+            address,
+          });
+        } catch {
+          // ignore background reverse geocode error
+        } finally {
+          isResolvingLocationRef.current = false;
+        }
+      }
+    },
+    [draft.pickup, setPickup]
+  );
 
   // Reaching Home means the user finished login/onboarding — persist the
   // session so the app reopens on Home until they explicitly log out.
   useEffect(() => {
     void setLoggedIn();
+    void setProfileComplete();
   }, []);
 
   /** Resolves the device position into the pickup point. */
@@ -60,18 +118,36 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
     setIsLocating(true);
     setLocationError(undefined);
     try {
-      let place = await getCurrentPlace().catch((err) => {
-        if (blueDotRef.current) {
-          return {
+      let place = await getCurrentPlace().catch(async (err) => {
+        if (
+          blueDotRef.current &&
+          typeof blueDotRef.current.latitude === 'number' &&
+          typeof blueDotRef.current.longitude === 'number' &&
+          Number.isFinite(blueDotRef.current.latitude) &&
+          Number.isFinite(blueDotRef.current.longitude)
+        ) {
+          const bp: GeoPoint = {
             latitude: blueDotRef.current.latitude,
             longitude: blueDotRef.current.longitude,
-            address: 'Current location'
+          };
+          const resolved = await reverseGeocode(bp).catch(() => '');
+          return {
+            ...bp,
+            address:
+              resolved ||
+              `${bp.latitude.toFixed(5)}, ${bp.longitude.toFixed(5)}`,
           };
         }
         throw err;
       });
       
-      if (blueDotRef.current) {
+      if (
+        blueDotRef.current &&
+        typeof blueDotRef.current.latitude === 'number' &&
+        typeof blueDotRef.current.longitude === 'number' &&
+        Number.isFinite(blueDotRef.current.latitude) &&
+        Number.isFinite(blueDotRef.current.longitude)
+      ) {
         place = {
           ...place,
           latitude: blueDotRef.current.latitude,
@@ -79,8 +155,10 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
         };
       }
       
-      setPickup(place);
-      setForceCenterKey(k => k + 1);
+      if (place && Number.isFinite(place.latitude) && Number.isFinite(place.longitude)) {
+        setPickup(place);
+        setForceCenterKey(k => k + 1);
+      }
     } catch (caught) {
       const apiErr = toApiError(caught);
       if (apiErr.kind === 'network' && caught && (caught as Error).message) {
@@ -93,16 +171,42 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
     }
   }, [setPickup]);
 
-  // Center on user on first mount without dropping a pickup pin.
+  // Center on user on first mount and initialize pickup with readable address.
   const centerOnUser = useCallback(async () => {
     try {
-      const place = await getCurrentPlace();
-      setDeviceLocation(place);
-      setForceCenterKey(k => k + 1);
+      const place = await getCurrentPlace().catch(async (err) => {
+        if (
+          blueDotRef.current &&
+          typeof blueDotRef.current.latitude === 'number' &&
+          typeof blueDotRef.current.longitude === 'number' &&
+          Number.isFinite(blueDotRef.current.latitude) &&
+          Number.isFinite(blueDotRef.current.longitude)
+        ) {
+          const bp: GeoPoint = {
+            latitude: blueDotRef.current.latitude,
+            longitude: blueDotRef.current.longitude,
+          };
+          const resolved = await reverseGeocode(bp).catch(() => '');
+          return {
+            ...bp,
+            address:
+              resolved ||
+              `${bp.latitude.toFixed(5)}, ${bp.longitude.toFixed(5)}`,
+          };
+        }
+        throw err;
+      });
+      if (place && Number.isFinite(place.latitude) && Number.isFinite(place.longitude)) {
+        setDeviceLocation(place);
+        if (!draft.pickup) {
+          setPickup(place);
+        }
+        setForceCenterKey(k => k + 1);
+      }
     } catch {
       // Ignore background errors
     }
-  }, []);
+  }, [draft.pickup, setPickup]);
 
   useEffect(() => {
     if (!draft.pickup) void centerOnUser();
@@ -114,81 +218,169 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
   // use — wider ranges just pull the camera out and clutter the view. `refresh`
   // fires an immediate fetch whenever Home regains focus so a driver that just
   // came back online is picked up without waiting for the interval.
-  // Driver availability and dispatch are owned by the engine. Home never queries driver presence.
-  const nearbyDrivers: readonly NearbyDriver[] = [];
-  const nearbyError = undefined;
-  const nearbyLoading = false;
-  const refreshNearby = () => undefined;
+  const {
+    drivers: nearbyDrivers,
+    error: nearbyError,
+    isLoading: nearbyLoading,
+    refresh: refreshNearby,
+  } = useNearbyDrivers(draft.pickup, { radiusKm: 8 });
+  const isTripActive = Boolean(
+    trip &&
+    trip.status !== 'DELIVERED' &&
+    trip.status !== 'COMPLETED' &&
+    trip.status !== 'CANCELLED'
+  );
+
+  // Poll trip status while active so pill updates and disappears immediately when completed/cancelled
+  const { trip: polledTrip } = useTripStatus(trip?.id, {
+    enabled: isTripActive,
+    intervalMs: 4_000,
+  });
+
+  useEffect(() => {
+    if (polledTrip) {
+      setTrip(polledTrip);
+    }
+  }, [polledTrip, setTrip]);
+
+  // Restore or refresh active trip and driver info from engine
+  const refreshActiveTrip = useCallback(async () => {
+    if (!customerId) return;
+    try {
+      const found = await getActiveTripForCustomer(customerId);
+      if (found) {
+        setTrip(found);
+        if (found.driverId) {
+          const d = await getDriver(found.driverId).catch(() => null);
+          if (d) setAssignedDriver(d);
+        }
+        if (found.rideId) {
+          const r = await getRide(found.rideId).catch(() => null);
+          if (r) setRide(r);
+        }
+      } else if (trip && isTripActive) {
+        // Server reports no active trip anymore
+        setTrip(undefined);
+      }
+    } catch {
+      // Offline or backend down: Home still works.
+    }
+  }, [customerId, trip, isTripActive, setTrip, setAssignedDriver, setRide]);
+
+  useEffect(() => {
+    void refreshActiveTrip();
+  }, [refreshActiveTrip]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshNearby();
+      refreshRecent();
+      void refreshActiveTrip();
+      if (!draft.pickup) {
+        void centerOnUser();
+      }
+    }, [refreshNearby, refreshRecent, refreshActiveTrip, draft.pickup, centerOnUser])
+  );
+
+  const handleRecentLocationSelect = useCallback(
+    (loc: RecentLocation) => {
+      startNewBooking();
+      const place: ResolvedPlace = {
+        address: loc.address,
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        placeId: loc.placeId,
+      };
+      setPendingDrop(place);
+      void saveRecentLocation(loc, customerId);
+      onRecentLocationPress?.(loc.address);
+      navigation?.navigate('BookingStack', { screen: 'SelectDropLocationScreen' });
+    },
+    [startNewBooking, setPendingDrop, customerId, onRecentLocationPress, navigation]
+  );
 
   const mapMarkers = useMemo<readonly MapMarker[]>(() => {
     const markers: MapMarker[] = [];
-    if (draft.pickup) {
+    if (
+      draft.pickup &&
+      typeof draft.pickup.latitude === 'number' &&
+      typeof draft.pickup.longitude === 'number' &&
+      Number.isFinite(draft.pickup.latitude) &&
+      Number.isFinite(draft.pickup.longitude)
+    ) {
       markers.push({
         id: 'pickup',
         kind: 'pickup',
         coordinate: draft.pickup,
         title: 'Pickup',
-        description: draft.pickup.address,
+        description: draft.pickup.address || 'Pickup location',
       });
     }
-    nearbyDrivers.forEach((driver) => {
-      markers.push({
-        id: `driver-${driver.id}`,
-        kind: 'nearby',
-        coordinate: { latitude: driver.latitude, longitude: driver.longitude },
-        title: driver.name,
-        description: `${driver.vehicleType} · ${driver.distanceKm.toFixed(1)} km away`,
+    if (Array.isArray(nearbyDrivers)) {
+      nearbyDrivers.forEach((driver, idx) => {
+        if (
+          !driver ||
+          typeof driver.latitude !== 'number' ||
+          typeof driver.longitude !== 'number' ||
+          !Number.isFinite(driver.latitude) ||
+          !Number.isFinite(driver.longitude)
+        ) {
+          return;
+        }
+        const distNum =
+          typeof driver.distanceKm === 'number'
+            ? driver.distanceKm
+            : Number(driver.distanceKm);
+        const distStr =
+          Number.isFinite(distNum) && distNum >= 0
+            ? `${distNum.toFixed(1)} km away`
+            : '';
+        const vehicle = driver.vehicleType || 'Vehicle';
+        const description = distStr ? `${vehicle} · ${distStr}` : vehicle;
+        markers.push({
+          id: `driver-${driver.id || idx}`,
+          kind: 'nearby',
+          coordinate: { latitude: driver.latitude, longitude: driver.longitude },
+          title: driver.name || 'Driver',
+          description,
+          vehicleType: driver.vehicleType,
+          bearing: driver.bearingDegrees,
+        });
       });
-    });
-    return markers;
-  }, [draft.pickup, nearbyDrivers]);
+    }
 
-  // Restore an in-flight trip so closing the app doesn't lose it.
-  useEffect(() => {
-    if (!customerId || trip) return;
-    let active = true;
-    getActiveTripForCustomer(customerId)
-      .then((found) => {
-        if (active && found) setTrip(found);
-      })
-      .catch(() => {
-        // Offline or backend down: Home still works.
+    if (
+      isTripActive &&
+      assignedDriver &&
+      typeof assignedDriver.latitude === 'number' &&
+      typeof assignedDriver.longitude === 'number' &&
+      Number.isFinite(assignedDriver.latitude) &&
+      Number.isFinite(assignedDriver.longitude)
+    ) {
+      markers.push({
+        id: `assigned-driver-${assignedDriver.id}`,
+        kind: 'driver',
+        coordinate: { latitude: assignedDriver.latitude, longitude: assignedDriver.longitude },
+        title: assignedDriver.name || 'Your Driver',
+        vehicleType:
+          assignedDriver.vehicleType ||
+          (trip as any)?.vehicleType ||
+          draft.vehicleType,
+        bearing: assignedDriver.bearingDegrees,
       });
-    return () => {
-      active = false;
-    };
-  }, [customerId, trip, setTrip]);
+    }
+    return markers;
+  }, [draft.pickup, nearbyDrivers, isTripActive, assignedDriver]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Header (Fixed on top) */}
-      <View style={styles.headerWrapper}>
-        <TopAppBar
-          title="Pick Up"
-          leadingIcon={
-            <View style={styles.avatar}>
-              <Feather name="user" size={16} color={colors.primary} />
-            </View>
-          }
-          trailingIcon={<Feather name="bell" size={22} color={colors.primary} />}
-          onLeadingPress={() => navigation?.navigate('ProfileScreen')}
-          onTrailingPress={() => navigation?.navigate('NotificationCenterScreen')}
-        />
-      </View>
-
-      {/* Live map with nearby drivers behind the sheet.
-          The camera stays anchored on the customer's pickup at a stable
-          neighbourhood zoom, just like Ola or Rapido. Drivers appear and
-          disappear as they come online, but the map does NOT refit — a
-          moving frame every time a driver joins or leaves would feel
-          jumpy in production. Users can pan freely to see drivers farther
-          out. */}
+      {/* Live map with nearby drivers behind the sheet. */}
       <MapCanvas
           style={styles.mapBackground}
           center={draft.pickup || deviceLocation}
         markers={mapMarkers}
         showsUserLocation
-        onUserLocationChange={(loc) => { blueDotRef.current = loc; }}
+        onUserLocationChange={handleUserLocationChange}
         zoomDelta={DEFAULT_DELTA}
         forceCenterKey={forceCenterKey}
       >
@@ -216,61 +408,82 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
             just come online and the customer doesn't want to wait for the
             8 s poll. Also surfaces any polling error so a broken API call
             doesn't look identical to "no drivers online". */}
-        <Pressable
-          style={styles.driverCountPill}
-          onPress={refreshNearby}
-          accessibilityRole="button"
-          accessibilityLabel="Refresh nearby drivers"
-        >
-          <Feather
-            name={nearbyError ? 'alert-circle' : 'truck'}
-            size={12}
-            color={
-              nearbyError
-                ? colors.error
-                : nearbyDrivers.length
-                ? colors.primary
-                : colors.onSurfaceVariant
-            }
-          />
-          <Text
-            style={[styles.driverCountText, nearbyError && { color: colors.error }]}
-            numberOfLines={1}
+        {!isTripActive && (
+          <Pressable
+            style={[styles.driverCountPill, { top: topSafeOffset }]}
+            onPress={refreshNearby}
+            accessibilityRole="button"
+            accessibilityLabel="Refresh nearby drivers"
           >
-            {nearbyError
-              ? 'Cannot reach server · tap to retry'
-              : nearbyLoading && !nearbyDrivers.length
-              ? 'Looking for drivers…'
-              : nearbyDrivers.length
-              ? `${nearbyDrivers.length} driver${nearbyDrivers.length === 1 ? '' : 's'} nearby`
-              : 'No drivers nearby · tap to refresh'}
-          </Text>
-        </Pressable>
+            {nearbyError ? (
+              <Feather name="alert-circle" size={12} color={colors.error} />
+            ) : (
+              <Image
+                source={getVehicleImage(nearbyDrivers[0]?.vehicleType)}
+                style={{ width: 16, height: 16, resizeMode: 'contain' }}
+              />
+            )}
+            <Text
+              style={[styles.driverCountText, nearbyError && { color: colors.error }]}
+              numberOfLines={1}
+            >
+              {nearbyError
+                ? 'Cannot reach server · tap to retry'
+                : nearbyLoading && !nearbyDrivers.length
+                ? 'Looking for drivers…'
+                : nearbyDrivers.length
+                ? `${nearbyDrivers.length} driver${nearbyDrivers.length === 1 ? '' : 's'} nearby`
+                : 'No drivers nearby · tap to refresh'}
+            </Text>
+          </Pressable>
+        )}
       </MapCanvas>
 
       {/* Active Trip Overlay Pill — only shown when the engine reports a live
           trip for this customer. Never hardcoded mock data. */}
-      {trip && trip.status !== 'DELIVERED' && trip.status !== 'COMPLETED' && trip.status !== 'CANCELLED' && (
-        <View style={styles.activeTripOverlay}>
+      {isTripActive && (
+        <View style={[styles.activeTripOverlay, { top: topSafeOffset }]}>
           <Card
             variant="elevated"
             padding="sm"
-            onPress={() =>
-              onActiveTripPress ? onActiveTripPress() : navigation?.navigate('ActiveTripStack', { screen: 'CustomerLiveTrackingScreen' })
-            }
+            onPress={() => {
+              if (onActiveTripPress) {
+                onActiveTripPress();
+              } else {
+                navigation?.navigate('ActiveTripStack', {
+                  screen: 'CustomerLiveTrackingScreen',
+                });
+              }
+            }}
             style={styles.activeTripCard}
           >
             <View style={styles.tripContent}>
               <View style={styles.tripIcon}>
-                <Feather name="truck" size={18} color={colors.primary} />
+                <Image
+                  source={getVehicleImage(assignedDriver?.vehicleType || (trip as any)?.vehicleType)}
+                  style={styles.tripVehicleImage}
+                  resizeMode="contain"
+                />
               </View>
               <View style={styles.tripInfo}>
                 <View style={styles.tripStatusRow}>
                   <View style={styles.greenDot} />
-                  <Text style={styles.tripStatusText}>TRIP IN PROGRESS</Text>
+                  <Text style={styles.tripStatusText}>
+                    {trip?.status === 'DRIVER_ARRIVED'
+                      ? 'DRIVER ARRIVED'
+                      : trip?.status === 'PICKUP_VERIFIED'
+                      ? 'PICKUP CONFIRMED'
+                      : trip?.status === 'IN_TRANSIT'
+                      ? 'ON THE WAY'
+                      : trip?.status === 'DROP_PROGRESS'
+                      ? 'DELIVERING'
+                      : 'TRIP IN PROGRESS'}
+                  </Text>
                 </View>
                 <Text style={styles.tripDriverText} numberOfLines={1}>
-                  Tap to open live tracking
+                  {assignedDriver?.name
+                    ? `${assignedDriver.name} · Tap to open live tracking`
+                    : 'Tap to open live tracking'}
                 </Text>
               </View>
               <Feather name="chevron-right" size={20} color={colors.onSurfaceVariant} />
@@ -305,7 +518,10 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                       <Pressable
                         onPress={() => {
                           startNewBooking();
-                          navigation?.navigate('BookingStack', { screen: 'SelectLocationScreen' });
+                          navigation?.navigate('BookingStack', {
+                            screen: 'AddressSearchScreen',
+                            params: { mode: 'pickup' },
+                          });
                         }}
                         hitSlop={8}
                         accessibilityRole="button"
@@ -374,23 +590,35 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
           {/* Recent Locations */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{strings.home.recentLocations}</Text>
-            <Card variant="outlined" padding="none">
-              {mockRecentLocations.map((loc, index) => (
-                <React.Fragment key={loc.id}>
-                  {index > 0 && <Divider />}
-                  <ListRow
-                    title={loc.name}
-                    subtitle={loc.address}
-                    leading={<Feather name="clock" size={18} color={colors.onSurfaceVariant} />}
-                    onPress={() => {
-                      startNewBooking();
-                      onRecentLocationPress?.(loc.address);
-                      navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
-                    }}
-                  />
-                </React.Fragment>
-              ))}
-            </Card>
+            {showRecentSkeleton ? (
+              <Card variant="outlined" padding="none">
+                <SkeletonListItem count={3} hasAvatar={true} hasSubtitle={true} />
+              </Card>
+            ) : recentLocations.length > 0 ? (
+              <Card variant="outlined" padding="none">
+                {recentLocations.slice(0, 5).map((loc, index) => (
+                  <React.Fragment key={loc.id}>
+                    {index > 0 && <Divider />}
+                    <ListRow
+                      title={loc.name}
+                      subtitle={loc.address}
+                      leading={<Feather name="clock" size={18} color={colors.onSurfaceVariant} />}
+                      onPress={() => handleRecentLocationSelect(loc)}
+                    />
+                  </React.Fragment>
+                ))}
+              </Card>
+            ) : (
+              <Card variant="outlined" padding="lg" style={styles.emptyRecentCard}>
+                <View style={styles.emptyRecentIconWrapper}>
+                  <Feather name="map-pin" size={20} color={colors.onSurfaceVariant} />
+                </View>
+                <Text style={styles.emptyRecentTitle}>No recent searches yet.</Text>
+                <Text style={styles.emptyRecentSubtitle}>
+                  Your recently searched locations will appear here.
+                </Text>
+              </Card>
+            )}
           </View>
 
           {/* Quick Actions */}
@@ -458,7 +686,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#F3F4F1',
     zIndex: 0,
-    top: 60, // below header
+    top: 0, // full screen map
     bottom: 80, // above tabs
   },
   mapPin: {
@@ -506,9 +734,10 @@ const styles = StyleSheet.create({
   },
   
   activeTripOverlay: {
-    paddingHorizontal: spacing.marginMobile,
-    paddingTop: spacing.md,
-    zIndex: 10,
+    position: 'absolute',
+    left: spacing.marginMobile,
+    right: spacing.marginMobile,
+    zIndex: 20,
   },
   activeTripCard: {
     borderRadius: borderRadius.lg,
@@ -519,12 +748,19 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   tripIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceContainerLow,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.surfaceContainerHighest,
+    ...shadows.elevated,
+  },
+  tripVehicleImage: {
+    width: 38,
+    height: 38,
   },
   tripInfo: {
     flex: 1,
@@ -624,16 +860,17 @@ const styles = StyleSheet.create({
   },
   driverCountPill: {
     position: 'absolute',
-    top: spacing.md,
     left: spacing.marginMobile,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingVertical: 8,
     borderRadius: borderRadius.full,
-    ...shadows.card,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.06)',
+    ...shadows.elevated,
   },
 
   driverCountText: {
@@ -694,6 +931,40 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  loadingRecentCard: {
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyRecentCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+  },
+  emptyRecentIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceContainerHighest,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  emptyRecentTitle: {
+    fontSize: typography.bodyMd.fontSize,
+    fontWeight: '600',
+    color: colors.onSurface,
+    fontFamily: typography.bodyMd.fontFamily,
+    marginBottom: spacing.xs,
+    textAlign: 'center',
+  },
+  emptyRecentSubtitle: {
+    fontSize: typography.labelSm.fontSize,
+    color: colors.onSurfaceVariant,
+    fontFamily: typography.labelSm.fontFamily,
+    textAlign: 'center',
   },
 
   quickActionsGrid: {
