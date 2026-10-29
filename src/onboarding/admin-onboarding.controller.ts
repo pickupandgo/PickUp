@@ -9,6 +9,7 @@ import {
   Patch,
   Query,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { AdminOnly, CurrentPrincipal, InternalOnly } from '../auth/decorators';
 import type { Principal } from '../auth/principal';
 import {
@@ -26,6 +27,7 @@ enum DocumentKind {
   VEHICLE = 'VEHICLE',
 }
 
+@ApiTags('admin')
 @Controller({ path: 'admin/onboarding', version: '1' })
 export class AdminOnboardingController {
   constructor(private readonly onboarding: OnboardingService) {}

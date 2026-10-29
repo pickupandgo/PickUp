@@ -6,7 +6,7 @@ import {
 } from '../fare/pricing-versions';
 import { createFeeRuleRecord } from '../fees/fee-rules';
 import type { PrismaClient } from '../generated/prisma/client';
-import type { DriverApprovalStatus, UserRole } from '../generated/prisma/enums';
+import type { DriverApprovalStatus, UserRole, UserStatus } from '../generated/prisma/enums';
 import { type ProvisionCommand, ProvisionUsageError } from './provision-args';
 
 export interface AccountResult {
@@ -15,6 +15,7 @@ export interface AccountResult {
   readonly driverId: string | null;
   readonly approvalStatus: DriverApprovalStatus | null;
   readonly customerId: string | null;
+  readonly accountStatus?: UserStatus;
 }
 
 export interface FeeRuleResult {
@@ -84,6 +85,8 @@ export async function runProvisionCommand(
     case 'create-admin':
     case 'create-customer':
       return createAccount(prisma, provider, command);
+    case 'suspend-admin':
+      return suspendAdmin(prisma, command.phone, command.reason);
     case 'create-contract-eligible-driver':
       assertContractFixtureEnvironment();
       return createContractEligibleDriver(prisma, provider, command);
@@ -148,7 +151,9 @@ function requiredFixtureValues(name: string): string[] {
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean);
   if (values.length === 0 || new Set(values).size !== values.length) {
-    throw new ProvisionUsageError(`${name} must define a non-empty unique document/checklist policy`);
+    throw new ProvisionUsageError(
+      `${name} must define a non-empty unique document/checklist policy`,
+    );
   }
   return values;
 }
@@ -360,14 +365,36 @@ async function createAccount(
   const approve = command.kind === 'create-driver' && command.approve;
 
   return prisma.$transaction(async (tx) => {
-    if (await tx.user.findUnique({ where: { phone: command.phone }, select: { id: true } })) {
+    const userWithPhone = await tx.user.findUnique({
+      where: { phone: command.phone },
+      include: { driver: true, customer: true },
+    });
+    const identity = await tx.authIdentity.findUnique({
+      where: { provider_subject: { provider, subject: command.subject } },
+      select: { userId: true },
+    });
+    if (command.kind === 'create-admin' && userWithPhone && identity?.userId === userWithPhone.id) {
+      if (userWithPhone.role !== 'ADMIN') {
+        throw new ProvisionUsageError(
+          'The selected identity is already linked to a non-admin account',
+        );
+      }
+      if (userWithPhone.status !== 'ACTIVE') {
+        throw new ProvisionUsageError('The selected admin account is suspended or deleted');
+      }
+      return {
+        userId: userWithPhone.id,
+        role: userWithPhone.role,
+        driverId: null,
+        approvalStatus: null,
+        customerId: null,
+        accountStatus: userWithPhone.status,
+      };
+    }
+    if (userWithPhone) {
       throw new ProvisionUsageError('A user with this phone number already exists');
     }
-    const identityTaken = await tx.authIdentity.findUnique({
-      where: { provider_subject: { provider, subject: command.subject } },
-      select: { id: true },
-    });
-    if (identityTaken) {
+    if (identity) {
       throw new ProvisionUsageError('This subject is already linked to another user');
     }
 
@@ -384,6 +411,24 @@ async function createAccount(
         driverId: null,
         approvalStatus: null,
         customerId: customer.id,
+      };
+    }
+    if (command.kind === 'create-admin') {
+      await recordAdminAction(tx, {
+        actorUserId: null,
+        action: 'ADMIN_PROVISIONED',
+        targetType: 'USER',
+        targetId: user.id,
+        reason: command.reason,
+        details: { provider },
+      });
+      return {
+        userId: user.id,
+        role: user.role,
+        driverId: null,
+        approvalStatus: null,
+        customerId: null,
+        accountStatus: user.status,
       };
     }
     if (role !== 'DRIVER') {
@@ -403,6 +448,60 @@ async function createAccount(
       driverId: driver.id,
       approvalStatus: driver.approvalStatus,
       customerId: null,
+    };
+  });
+}
+
+/**
+ * Revokes an administrator's backend access without deleting financial or audit evidence. The
+ * global PrincipalService checks User.status on every authenticated request, so suspension takes
+ * effect on the next request even if Firebase still has a valid ID token.
+ */
+async function suspendAdmin(
+  prisma: PrismaClient,
+  phone: string,
+  reason: string,
+): Promise<AccountResult> {
+  return prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({
+      where: { phone },
+      include: { driver: true, customer: true },
+    });
+    if (!user || user.role !== 'ADMIN') {
+      throw new ProvisionUsageError('No administrator exists with this phone number');
+    }
+    if (user.status === 'DELETED') {
+      throw new ProvisionUsageError('A deleted administrator cannot be suspended');
+    }
+    if (user.status === 'SUSPENDED') {
+      return {
+        userId: user.id,
+        role: user.role,
+        driverId: null,
+        approvalStatus: null,
+        customerId: null,
+        accountStatus: user.status,
+      };
+    }
+    const suspended = await tx.user.update({
+      where: { id: user.id },
+      data: { status: 'SUSPENDED' },
+    });
+    await recordAdminAction(tx, {
+      actorUserId: null,
+      action: 'ADMIN_SUSPENDED',
+      targetType: 'USER',
+      targetId: user.id,
+      reason,
+      details: { via: 'ops_cli' },
+    });
+    return {
+      userId: suspended.id,
+      role: suspended.role,
+      driverId: null,
+      approvalStatus: null,
+      customerId: null,
+      accountStatus: suspended.status,
     };
   });
 }

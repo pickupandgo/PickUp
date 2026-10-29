@@ -66,13 +66,35 @@ describe('parseProvisionArgs', () => {
     ).toMatchObject({ approve: false, legalName: null });
   });
 
-  it('parses create-admin, approve-driver and set-legal-name', () => {
+  it('parses audited admin provisioning/revocation and driver maintenance commands', () => {
     expect(
-      parseProvisionArgs(['create-admin', '--phone', '+919876543210', '--subject', 'uid_9']),
+      parseProvisionArgs([
+        'create-admin',
+        '--phone',
+        '+919876543210',
+        '--subject',
+        'uid_9',
+        '--reason',
+        'Approved staging administrator access ticket ADM-42',
+      ]),
     ).toEqual({
       kind: 'create-admin',
       phone: '+919876543210',
       subject: 'uid_9',
+      reason: 'Approved staging administrator access ticket ADM-42',
+    });
+    expect(
+      parseProvisionArgs([
+        'suspend-admin',
+        '--phone',
+        '+919876543210',
+        '--reason',
+        'Approved incident response ticket INC-42',
+      ]),
+    ).toEqual({
+      kind: 'suspend-admin',
+      phone: '+919876543210',
+      reason: 'Approved incident response ticket INC-42',
     });
     expect(parseProvisionArgs(['approve-driver', '--phone', '+919876543210'])).toEqual({
       kind: 'approve-driver',
@@ -249,8 +271,51 @@ describe('parseProvisionArgs', () => {
       ['create-driver', '--phone', '+919876543210', '--subject', 'uid; DROP TABLE users'],
       /--subject/,
     ],
-    [['create-admin', '--phone', '+919876543210', '--subject', 'uid', '--approve'], /--approve/],
-    [['create-admin', '--phone', '+919876543210', '--subject', 'uid', '--name', 'Ravi'], /--name/],
+    [['create-admin', '--phone', '+919876543210', '--subject', 'uid'], /--reason/],
+    [
+      ['create-admin', '--phone', '+919876543210', '--subject', 'uid', '--reason', 'short'],
+      /--reason/,
+    ],
+    [
+      [
+        'create-admin',
+        '--phone',
+        '+919876543210',
+        '--subject',
+        'uid',
+        '--reason',
+        'approved ticket',
+        '--approve',
+      ],
+      /--approve/,
+    ],
+    [
+      [
+        'create-admin',
+        '--phone',
+        '+919876543210',
+        '--subject',
+        'uid',
+        '--reason',
+        'approved ticket',
+        '--name',
+        'Ravi',
+      ],
+      /--name/,
+    ],
+    [['suspend-admin', '--phone', '+919876543210'], /--reason/],
+    [
+      [
+        'suspend-admin',
+        '--phone',
+        '+919876543210',
+        '--reason',
+        'approved ticket',
+        '--subject',
+        'uid',
+      ],
+      /--subject/,
+    ],
     [['approve-driver', '--phone', '+919876543210', '--subject', 'uid'], /--subject/],
     [['create-driver', '--phone', '+919876543210', '--subject', 'uid', '--role', 'ADMIN'], /role/],
     [['set-legal-name', '--phone', '+919876543210'], /--name/],

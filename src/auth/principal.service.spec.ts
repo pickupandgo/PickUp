@@ -83,6 +83,23 @@ describe('PrincipalService', () => {
     });
   });
 
+  it('denies a suspended ADMIN identity on every backend request', async () => {
+    mockPrisma.authIdentity.findUnique.mockResolvedValueOnce({
+      user: {
+        id: 'user-uuid-suspended-admin',
+        role: 'ADMIN',
+        status: 'SUSPENDED',
+        driver: null,
+        customer: null,
+      },
+    });
+
+    await expect(service.resolve(verified)).rejects.toMatchObject({
+      code: ErrorCode.ACCOUNT_DISABLED,
+      status: HttpStatus.FORBIDDEN,
+    });
+  });
+
   describe('resolve', () => {
     it('throws USER_NOT_PROVISIONED (403) when identity is unregistered', async () => {
       mockPrisma.authIdentity.findUnique.mockResolvedValueOnce(null);

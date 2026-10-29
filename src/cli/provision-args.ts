@@ -26,7 +26,20 @@ export type ProvisionCommand =
       readonly subject: string;
       readonly legalName: string;
     }
-  | { readonly kind: 'create-admin'; readonly phone: string; readonly subject: string }
+  | {
+      readonly kind: 'create-admin';
+      readonly phone: string;
+      readonly subject: string;
+      /** Approved change/ticket reference; recorded in the immutable admin-action trail. */
+      readonly reason: string;
+    }
+  | {
+      /** Immediately prevents the mapped Firebase identity from using any backend endpoint. */
+      readonly kind: 'suspend-admin';
+      readonly phone: string;
+      /** Approved incident/change reference; recorded in the immutable admin-action trail. */
+      readonly reason: string;
+    }
   | { readonly kind: 'create-customer'; readonly phone: string; readonly subject: string }
   | { readonly kind: 'approve-driver'; readonly phone: string }
   | { readonly kind: 'set-legal-name'; readonly phone: string; readonly legalName: string }
@@ -60,6 +73,9 @@ export const PROVISION_USAGE = `Usage:
   node dist/cli/provision.js create-contract-eligible-driver --phone <E.164> --subject <firebase-uid>
                                              --name "<KYC legal name>"
   node dist/cli/provision.js create-admin    --phone <E.164> --subject <firebase-uid>
+                                             --reason "<approved access ticket/reference>"
+  node dist/cli/provision.js suspend-admin   --phone <E.164>
+                                             --reason "<approved revocation ticket/reference>"
   node dist/cli/provision.js create-customer --phone <E.164> --subject <firebase-uid>
   node dist/cli/provision.js approve-driver  --phone <E.164>
   node dist/cli/provision.js set-legal-name  --phone <E.164> --name "<KYC legal name>"
@@ -169,6 +185,28 @@ export function parseProvisionArgs(argv: readonly string[]): ProvisionCommand {
         legalName: requireLegalName(values.name),
       };
     case 'create-admin':
+      rejectFlags(
+        values,
+        ['approve', 'name', 'type', 'value', 'rounding', 'category', ...PRICING_FLAGS],
+        command,
+      );
+      return {
+        kind: command,
+        phone: requirePhone(values.phone),
+        subject: requireSubject(values.subject),
+        reason: requireReason(values.reason),
+      };
+    case 'suspend-admin':
+      rejectFlags(
+        values,
+        ['subject', 'approve', 'name', 'type', 'value', 'rounding', 'category', ...PRICING_FLAGS],
+        command,
+      );
+      return {
+        kind: command,
+        phone: requirePhone(values.phone),
+        reason: requireReason(values.reason),
+      };
     case 'create-customer':
       rejectFlags(values, ['approve', 'name', ...FEE_FLAGS, ...PRICING_FLAGS], command);
       return {

@@ -38,6 +38,10 @@ Driver routes are under `/v1/drivers/me/onboarding`; they derive ownership from 
 Firebase identity. Admin routes are under `/v1/admin/onboarding` and require an authoritative
 `ADMIN` account. Document retrieval returns only short-lived private URLs to admins.
 
+The admin-panel integration contract, including the exact review sequence, temporary document-link
+rules, staging policy requirements, and the audited ops-only administrator provisioning/revocation
+procedure, is in [`admin-api-batch1.md`](admin-api-batch1.md).
+
 The engine-facing eligibility endpoints are:
 
 ```text

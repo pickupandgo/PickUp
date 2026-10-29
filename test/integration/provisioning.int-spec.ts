@@ -79,6 +79,7 @@ describe('Provisioning CLI commands', () => {
       kind: 'create-admin',
       phone: uniquePhone(),
       subject,
+      reason: 'Isolated integration test administrator provisioning',
     });
     const token = ctx.tokens.sign(subject);
     await request(ctx.server)
@@ -104,6 +105,7 @@ describe('Provisioning CLI commands', () => {
         kind: 'create-admin',
         phone,
         subject: uniqueSubject('cli'),
+        reason: 'Isolated integration test conflicting administrator provisioning',
       }),
     ).rejects.toBeInstanceOf(ProvisionUsageError);
 
