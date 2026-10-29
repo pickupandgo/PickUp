@@ -1,13 +1,11 @@
 import { useState, useCallback, useRef } from 'react';
-import type { DriverProfile } from '../types/user';
 import { AuthService } from '../services/auth/AuthService';
 
-export type AuthState = 'unauthenticated' | 'otp_sent' | 'authenticated' | 'onboarding';
+export type AuthState = 'unauthenticated' | 'otp_sent' | 'authenticated';
 
 export interface UseAuthResult {
   readonly authState: AuthState;
   readonly phone: string;
-  readonly driver: DriverProfile | null;
   readonly isLoading: boolean;
   readonly error: string | null;
   readonly setPhone: (phone: string) => void;
@@ -16,7 +14,6 @@ export interface UseAuthResult {
   readonly loginWithEmail: (email: string, password: string) => Promise<boolean>;
   readonly signUpWithEmail: (email: string, password: string) => Promise<boolean>;
   readonly resendOtp: (phoneOverride?: string) => Promise<void>;
-  readonly completeOnboarding: (vehicleId: string, language: string) => Promise<void>;
   readonly logout: () => Promise<void>;
 }
 
@@ -27,7 +24,6 @@ export function useAuth(): UseAuthResult {
   const isRequestingOtp = useRef<boolean>(false);
   const [authState, setAuthState] = useState<AuthState>('unauthenticated');
   const [phone, setPhone] = useState('');
-  const [driver, setDriver] = useState<DriverProfile | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,7 +63,7 @@ export function useAuth(): UseAuthResult {
     setError(null);
     try {
       await AuthService.getInstance().verifyOtp(phone, otp);
-      setAuthState('onboarding');
+      setAuthState('authenticated');
       return true;
     } catch (e: any) {
       const msg = e?.message || 'Verification failed. Please try again.';
@@ -131,20 +127,6 @@ export function useAuth(): UseAuthResult {
     }
   }, [phone]);
 
-  const completeOnboarding = useCallback(async (vehicleId: string, language: string) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const { driver } = await AuthService.getInstance().completeOnboarding(vehicleId, language);
-      setDriver(driver);
-      setAuthState('authenticated');
-    } catch (e) {
-      setError('Failed to complete onboarding.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
   const logout = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -152,7 +134,6 @@ export function useAuth(): UseAuthResult {
       await AuthService.getInstance().logout();
       setAuthState('unauthenticated');
       setPhone('');
-      setDriver(null);
     } catch (e) {
       setError('Logout failed.');
     } finally {
@@ -163,7 +144,6 @@ export function useAuth(): UseAuthResult {
   return {
     authState,
     phone,
-    driver,
     isLoading,
     error,
     setPhone,
@@ -172,7 +152,6 @@ export function useAuth(): UseAuthResult {
     loginWithEmail,
     signUpWithEmail,
     resendOtp,
-    completeOnboarding,
     logout,
   };
 }

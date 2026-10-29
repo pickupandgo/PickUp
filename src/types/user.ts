@@ -6,8 +6,6 @@ export type DocumentStatus = 'pending' | 'under_review' | 'approved' | 'rejected
 
 export type SubscriptionStatus = 'active' | 'expired' | 'inactive' | 'processing';
 
-export type DriverStatus = 'offline' | 'live' | 'on_trip' | 'restricted';
-
 export type KycDocumentType =
   | 'driving_license'
   | 'aadhaar_card'
@@ -15,17 +13,6 @@ export type KycDocumentType =
   | 'vehicle_rc'
   | 'insurance_policy'
   | 'vehicle_photos';
-
-export interface DriverProfile {
-  readonly id: string;
-  readonly name: string;
-  readonly phone: string;
-  readonly avatarUrl?: string;
-  readonly location: string;
-  readonly profileCompletionPercent: number;
-  readonly status: DriverStatus;
-  readonly language: string;
-}
 
 export interface Vehicle {
   readonly id: string;

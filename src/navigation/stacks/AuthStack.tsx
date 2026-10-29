@@ -3,19 +3,16 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../types/navigation';
 import { UnifiedAuthScreen } from '../../screens/auth/UnifiedAuthScreen';
 import { OTPVerificationScreen } from '../../screens/auth/OTPVerificationScreen';
-import { VehicleSelectionScreen } from '../../screens/auth/VehicleSelectionScreen';
-import { LanguageSelectionScreen } from '../../screens/auth/LanguageSelectionScreen';
 import { useAuth } from '../../hooks/useAuth';
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
 
 export interface AuthStackProps {
-  readonly onAuthComplete: () => void;
   readonly initialRouteName?: keyof AuthStackParamList;
 }
 
-export const AuthStack: React.FC<AuthStackProps> = ({ onAuthComplete, initialRouteName }) => {
-  const { sendOtp, verifyOtp, loginWithEmail, signUpWithEmail, resendOtp, completeOnboarding, isLoading, error } = useAuth();
+export const AuthStack: React.FC<AuthStackProps> = ({ initialRouteName }) => {
+  const { sendOtp, verifyOtp, loginWithEmail, signUpWithEmail, resendOtp, isLoading, error } = useAuth();
 
   return (
     <Stack.Navigator
@@ -46,25 +43,6 @@ export const AuthStack: React.FC<AuthStackProps> = ({ onAuthComplete, initialRou
             onResendOtp={() => resendOtp(route.params.phone)}
             isLoading={isLoading}
             error={error}
-          />
-        )}
-      </Stack.Screen>
-      <Stack.Screen name="LanguageSelection">
-        {({ navigation }) => (
-          <LanguageSelectionScreen
-            navigation={navigation}
-          />
-        )}
-      </Stack.Screen>
-      <Stack.Screen name="VehicleSelection">
-        {({ navigation, route }) => (
-          <VehicleSelectionScreen
-            navigation={navigation}
-            route={route}
-            onComplete={(vehicleId, language) => {
-              completeOnboarding(vehicleId, language);
-              onAuthComplete();
-            }}
           />
         )}
       </Stack.Screen>

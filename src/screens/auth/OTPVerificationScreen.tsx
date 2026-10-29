@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing } from '../../theme';
 import { authData } from '../../data/mockData';
 import { AuthService, RESEND_COOLDOWN_SECONDS, usePhoneCooldown } from '../../services/auth/AuthService';
-import { clearOnboardingComplete } from '../../state/onboarding';
 import { OTPInput } from '../../components/atoms/OTPInput';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { AppHeader } from '../../components/molecules/AppHeader';
@@ -52,9 +51,6 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
     setIsVerifying(true);
     
     try {
-      if (isSignUp) {
-        await clearOnboardingComplete();
-      }
       const success = await onVerifyOtp(value);
       if (!success) {
         setHasError(true);
@@ -66,7 +62,7 @@ export const OTPVerificationScreen: React.FC<OTPVerificationScreenProps> = ({
       isVerifyingRef.current = false;
       setIsVerifying(false);
     }
-  }, [onVerifyOtp, isVerifying, isLoading, isSignUp]);
+  }, [onVerifyOtp, isVerifying, isLoading]);
 
   const handleVerify = useCallback(async () => {
     if (otp.length < 6 || isVerifying || isLoading) return;

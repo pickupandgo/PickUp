@@ -1,5 +1,5 @@
 import { ApiClient } from '../api/ApiClient';
-import type { DriverProfile } from '../../types/user';
+import { env } from '../../config/env';
 import {
   getAuth,
   signInWithPhoneNumber,
@@ -10,18 +10,36 @@ import {
   type User,
   type ConfirmationResult,
 } from '@react-native-firebase/auth';
-import { OtpCooldownManager, usePhoneCooldown, DEFAULT_COOLDOWN_SECONDS } from './OtpCooldownManager';
+import {
+  OtpCooldownManager,
+  usePhoneCooldown,
+  DEFAULT_COOLDOWN_SECONDS,
+} from './OtpCooldownManager';
+import {
+  DriverOnboardingService,
+  type DriverOnboardingSummary,
+} from '../onboarding/DriverOnboardingService';
 
 export type { User, ConfirmationResult };
+export type { DriverOnboardingSummary } from '../onboarding/DriverOnboardingService';
 export { OtpCooldownManager, usePhoneCooldown };
 
 export interface IAuthService {
   requestOtp(phone: string, forceResend?: boolean): Promise<void>;
-  verifyOtp(phone: string, otp: string): Promise<{ token: string; isNewUser: boolean }>;
-  loginWithEmail(email: string, password: string): Promise<{ token: string; isNewUser: boolean }>;
-  signUpWithEmail(email: string, password: string): Promise<{ token: string; isNewUser: boolean }>;
-  completeOnboarding(vehicleId: string, language: string): Promise<{ driver: DriverProfile }>;
-  getProfile(): Promise<DriverProfile>;
+  verifyOtp(
+    phone: string,
+    otp: string,
+  ): Promise<{ token: string; isNewUser: boolean }>;
+  loginWithEmail(
+    email: string,
+    password: string,
+  ): Promise<{ token: string; isNewUser: boolean }>;
+  signUpWithEmail(
+    email: string,
+    password: string,
+  ): Promise<{ token: string; isNewUser: boolean }>;
+  bootstrapDriver(): Promise<DriverAccount>;
+  getOnboarding(): Promise<DriverOnboardingSummary>;
   logout(): Promise<void>;
   observeAuthState?(callback: (user: User | null) => void): () => void;
   getConfirmation?(): ConfirmationResult | null;
@@ -31,9 +49,39 @@ export interface IAuthService {
 
 export const RESEND_COOLDOWN_SECONDS = DEFAULT_COOLDOWN_SECONDS;
 
-function delay(ms: number): Promise<void> {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+export type DriverApprovalStatus =
+  | 'PENDING'
+  | 'UNDER_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'SUSPENDED';
+
+/** The backend-owned account state returned by POST /v1/drivers/me. */
+export interface DriverAccount {
+  readonly driverId: string;
+  readonly userId: string;
+  readonly phone: string;
+  readonly approvalStatus: DriverApprovalStatus;
+  readonly legalName: string | null;
+  readonly email: string | null;
+  readonly vehicleType: string | null;
+  readonly vehicleMakeModel: string | null;
+  readonly vehicleRegistrationNumber: string | null;
+  readonly drivingLicenseNumber: string | null;
+  readonly walletBalancePaise: number;
+  readonly createdAt: string;
 }
+const isDriverAccount = (value: unknown): value is DriverAccount => {
+  if (!value || typeof value !== 'object') return false;
+  const account = value as Record<string, unknown>;
+  return (
+    typeof account.driverId === 'string' &&
+    typeof account.userId === 'string' &&
+    typeof account.phone === 'string' &&
+    typeof account.approvalStatus === 'string' &&
+    typeof account.createdAt === 'string'
+  );
+};
 
 /** Normalizes and validates Indian phone numbers into E.164 (+91XXXXXXXXXX) format */
 export const formatToE164 = (phoneNumber: string): string => {
@@ -46,7 +94,11 @@ export const formatToE164 = (phoneNumber: string): string => {
   if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) {
     return `+${digitsOnly}`;
   }
-  if (trimmed.startsWith('+') && digitsOnly.length >= 10 && digitsOnly.length <= 15) {
+  if (
+    trimmed.startsWith('+') &&
+    digitsOnly.length >= 10 &&
+    digitsOnly.length <= 15
+  ) {
     return `+${digitsOnly}`;
   }
   throw new Error('Please enter a valid 10-digit mobile number.');
@@ -140,21 +192,39 @@ export class FirebaseAuthService implements IAuthService {
     console.log('[AUTH] Phone number validation passed');
 
     const remaining = this.getRemainingCooldown(formattedPhone);
-    if (remaining > 0 && !forceResend && this.hasActiveSession(formattedPhone)) {
-      console.log(`[AUTH] Active session exists within cooldown (${remaining}s remaining), reusing session`);
+    if (
+      remaining > 0 &&
+      !forceResend &&
+      this.hasActiveSession(formattedPhone)
+    ) {
+      console.log(
+        `[AUTH] Active session exists within cooldown (${remaining}s remaining), reusing session`,
+      );
       return;
     }
 
     if (remaining > 0 && !forceResend) {
-      console.log(`[AUTH] Request blocked by cooldown (${remaining}s remaining)`);
-      throw new Error(`Please wait ${remaining} seconds before requesting another code.`);
+      console.log(
+        `[AUTH] Request blocked by cooldown (${remaining}s remaining)`,
+      );
+      throw new Error(
+        `Please wait ${remaining} seconds before requesting another code.`,
+      );
     }
 
     this.isRequesting = true;
     if (forceResend) {
-      console.log(`[AUTH] Firebase resend request started for ${maskPhoneNumber(formattedPhone)}`);
+      console.log(
+        `[AUTH] Firebase resend request started for ${maskPhoneNumber(
+          formattedPhone,
+        )}`,
+      );
     } else {
-      console.log(`[AUTH] Firebase SMS request started for ${maskPhoneNumber(formattedPhone)}`);
+      console.log(
+        `[AUTH] Firebase SMS request started for ${maskPhoneNumber(
+          formattedPhone,
+        )}`,
+      );
     }
 
     try {
@@ -162,13 +232,15 @@ export class FirebaseAuthService implements IAuthService {
       // On React Native Firebase Android, calling (authInstance as any).signInWithPhoneNumber(phone, forceResend)
       // forwards forceResend directly to NativeRNFBTurboAuth.java:
       // PhoneAuthProvider.getInstance(firebaseAuth).verifyPhoneNumber(..., mForceResendingToken)
-      const confirmationResult = await (authInstance as any).signInWithPhoneNumber(
-        formattedPhone,
-        forceResend,
-      );
+      const confirmationResult = await (
+        authInstance as any
+      ).signInWithPhoneNumber(formattedPhone, forceResend);
       this.confirmation = confirmationResult;
       this.activePhone = formattedPhone;
-      OtpCooldownManager.getInstance().setCooldown(formattedPhone, RESEND_COOLDOWN_SECONDS);
+      OtpCooldownManager.getInstance().setCooldown(
+        formattedPhone,
+        RESEND_COOLDOWN_SECONDS,
+      );
 
       if (forceResend) {
         console.log('[AUTH] Firebase resend request succeeded');
@@ -180,7 +252,10 @@ export class FirebaseAuthService implements IAuthService {
       const errorCode = e?.code || e?.message || 'unknown';
       if (errorCode === 'auth/too-many-requests') {
         // Enforce local cooldown lock to prevent repeated requests
-        OtpCooldownManager.getInstance().setCooldown(formattedPhone, RESEND_COOLDOWN_SECONDS);
+        OtpCooldownManager.getInstance().setCooldown(
+          formattedPhone,
+          RESEND_COOLDOWN_SECONDS,
+        );
       }
       if (forceResend) {
         console.warn(`[AUTH] Firebase resend request failed: ${errorCode}`);
@@ -193,20 +268,27 @@ export class FirebaseAuthService implements IAuthService {
     }
   }
 
-  async verifyOtp(phone: string, otp: string): Promise<{ token: string; isNewUser: boolean }> {
+  async verifyOtp(
+    phone: string,
+    otp: string,
+  ): Promise<{ token: string; isNewUser: boolean }> {
     const cleanOtp = otp.trim();
     if (cleanOtp.length !== 6) {
       throw new Error('Please enter a complete 6-digit OTP.');
     }
     if (!this.confirmation) {
-      throw new Error('No active verification session. Please request a new OTP.');
+      throw new Error(
+        'No active verification session. Please request a new OTP.',
+      );
     }
 
     if (phone) {
       try {
         const formatted = formatToE164(phone);
         if (this.activePhone && this.activePhone !== formatted) {
-          throw new Error('Verification session does not match this phone number. Please request a new OTP.');
+          throw new Error(
+            'Verification session does not match this phone number. Please request a new OTP.',
+          );
         }
       } catch (err: any) {
         if (err?.message?.includes('Verification session')) {
@@ -232,14 +314,24 @@ export class FirebaseAuthService implements IAuthService {
         isNewUser: userCredential?.additionalUserInfo?.isNewUser ?? false,
       };
     } catch (e: any) {
-      console.warn('[AUTH] Firebase authentication failed:', e?.code || e?.message);
+      console.warn(
+        '[AUTH] Firebase authentication failed:',
+        e?.code || e?.message,
+      );
       throw new Error(mapFirebaseAuthError(e));
     }
   }
 
-  async loginWithEmail(email: string, password: string): Promise<{ token: string; isNewUser: boolean }> {
+  async loginWithEmail(
+    email: string,
+    password: string,
+  ): Promise<{ token: string; isNewUser: boolean }> {
     try {
-      const userCredential = await signInWithEmailAndPassword(getAuth(), email.trim(), password);
+      const userCredential = await signInWithEmailAndPassword(
+        getAuth(),
+        email.trim(),
+        password,
+      );
       console.log('[AUTH] Firebase email authentication succeeded');
 
       const token = (await userCredential.user.getIdToken()) || '';
@@ -249,14 +341,24 @@ export class FirebaseAuthService implements IAuthService {
 
       return { token, isNewUser: false };
     } catch (e: any) {
-      console.warn('[AUTH] Firebase email login failed:', e?.code || e?.message);
+      console.warn(
+        '[AUTH] Firebase email login failed:',
+        e?.code || e?.message,
+      );
       throw new Error(mapFirebaseAuthError(e));
     }
   }
 
-  async signUpWithEmail(email: string, password: string): Promise<{ token: string; isNewUser: boolean }> {
+  async signUpWithEmail(
+    email: string,
+    password: string,
+  ): Promise<{ token: string; isNewUser: boolean }> {
     try {
-      const userCredential = await createUserWithEmailAndPassword(getAuth(), email.trim(), password);
+      const userCredential = await createUserWithEmailAndPassword(
+        getAuth(),
+        email.trim(),
+        password,
+      );
       console.log('[AUTH] Firebase email sign-up succeeded');
 
       const token = (await userCredential.user.getIdToken()) || '';
@@ -266,39 +368,82 @@ export class FirebaseAuthService implements IAuthService {
 
       return { token, isNewUser: true };
     } catch (e: any) {
-      console.warn('[AUTH] Firebase email signup failed:', e?.code || e?.message);
+      console.warn(
+        '[AUTH] Firebase email signup failed:',
+        e?.code || e?.message,
+      );
       throw new Error(mapFirebaseAuthError(e));
     }
   }
 
-  async completeOnboarding(vehicleId: string, language: string): Promise<{ driver: DriverProfile }> {
-    await delay(500);
+  async bootstrapDriver(): Promise<DriverAccount> {
     const currentUser = getAuth().currentUser;
-    return {
-      driver: {
-        id: currentUser?.uid || 'DRV-001',
-        name: 'Rajesh Kumar',
-        phone: currentUser?.phoneNumber || '+91 9876543210',
-        location: 'Mumbai, Maharashtra',
-        profileCompletionPercent: 100,
-        status: 'offline',
-        language,
-      },
-    };
+    if (!currentUser) {
+      throw new Error(
+        'Your sign-in session has expired. Please sign in again.',
+      );
+    }
+    if (!env.PAYMENTS_API_BASE_URL) {
+      throw new Error(
+        'Account service is not configured. Please contact support.',
+      );
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), env.REQUEST_TIMEOUT_MS);
+    try {
+      const token = await currentUser.getIdToken();
+      ApiClient.getInstance().setToken(token);
+      const response = await fetch(
+        `${env.PAYMENTS_API_BASE_URL}/v1/drivers/me`,
+        {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          signal: controller.signal,
+        },
+      );
+      const raw = await response.text();
+      let payload: unknown = null;
+      if (raw) {
+        try {
+          payload = JSON.parse(raw);
+        } catch {
+          throw new Error('Account service returned an invalid response.');
+        }
+      }
+      if (!response.ok) {
+        const error = payload as {
+          error?: { message?: unknown };
+          message?: unknown;
+        } | null;
+        const message = error?.error?.message ?? error?.message;
+        throw new Error(
+          typeof message === 'string'
+            ? message
+            : 'Could not verify your driver account.',
+        );
+      }
+      if (!isDriverAccount(payload)) {
+        throw new Error(
+          'Account service returned an incomplete account response.',
+        );
+      }
+      return payload;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Account verification timed out. Please try again.');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
-  async getProfile(): Promise<DriverProfile> {
-    await delay(500);
-    const currentUser = getAuth().currentUser;
-    return {
-      id: currentUser?.uid || 'DRV-001',
-      name: 'Rajesh Kumar',
-      phone: currentUser?.phoneNumber || '+91 9876543210',
-      location: 'Mumbai, Maharashtra',
-      profileCompletionPercent: 0,
-      status: 'offline',
-      language: 'en',
-    };
+  async getOnboarding(): Promise<DriverOnboardingSummary> {
+    return DriverOnboardingService.getInstance().getSummary();
   }
 
   async logout(): Promise<void> {

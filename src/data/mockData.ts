@@ -1,6 +1,5 @@
 import type { TripOffer, ActiveTrip, TripStop, HistoricalTrip, TripEarnings } from '../types/trip';
 import type {
-  DriverProfile,
   Vehicle,
   KycDocument,
   Subscription,
@@ -47,17 +46,6 @@ export const vehicleCategories = [
 ] as const;
 
 // ───  ───
-
-export const mockDriverProfile: DriverProfile = {
-  id: 'DRV-001',
-  name: 'Rajesh Kumar',
-  phone: '+91 98765 43210',
-  avatarUrl: undefined,
-  location: 'Mumbai, Maharashtra',
-  profileCompletionPercent: 85,
-  status: 'offline',
-  language: 'English',
-};
 
 // ───  ───
 

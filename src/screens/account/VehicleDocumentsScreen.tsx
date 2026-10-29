@@ -1,132 +1,100 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { mockVehicle, mockKycDocuments, kycLabels } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
-import { VehicleCard } from '../../components/molecules/VehicleCard';
-import { DocumentCard } from '../../components/molecules/DocumentCard';
-import { StatusBadge } from '../../components/atoms/StatusBadge';
-import type { DocumentStatus } from '../../types/user';
-import type { BadgeVariant } from '../../components/atoms/StatusBadge';
+import { useDriverOnboarding } from '../../hooks/useDriverOnboarding';
+import { borderRadius, colors, spacing, typography } from '../../theme';
 import type { AccountScreenProps } from '../../types/navigation';
-
-const mapDocStatus = (status: DocumentStatus): BadgeVariant => {
-  const map: Record<DocumentStatus, BadgeVariant> = {
-    pending: 'pending',
-    under_review: 'under_review',
-    approved: 'approved',
-    rejected: 'rejected',
-    expired: 'expired',
-  };
-  return map[status];
-};
-
-const statusLabel = (status: DocumentStatus): string => {
-  const map: Record<DocumentStatus, string> = {
-    pending: 'Not Uploaded',
-    under_review: 'Under Review',
-    approved: 'Verified',
-    rejected: 'Rejected',
-    expired: 'Expired',
-  };
-  return map[status];
-};
 
 export interface VehicleDocumentsScreenProps {
   readonly navigation: AccountScreenProps<'VehicleDocuments'>['navigation'];
   readonly testID?: string;
 }
-
 export const VehicleDocumentsScreen: React.FC<VehicleDocumentsScreenProps> = ({
   navigation,
   testID,
 }) => {
-  const vehicle = mockVehicle;
-  // Filter vehicle-related docs
-  const vehicleDocs = mockKycDocuments.filter(
-    (d) => d.type === 'vehicle_rc' || d.type === 'insurance_policy' || d.type === 'vehicle_photos',
-  );
-
+  const { summary, loading, error, refresh } = useDriverOnboarding();
+  const vehicle = summary?.activeVehicle ?? summary?.vehicles[0] ?? null;
   return (
-    <SafeAreaView style={styles.safeArea} testID={testID}>
+    <SafeAreaView style={styles.safe} testID={testID}>
       <AppHeader
-        title="Vehicle Details"
+        title="Vehicle documents"
         onBackPress={() => navigation.goBack()}
         showBackButton
       />
-
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Vehicle info */}
-        <View style={styles.vehicleSection}>
-          <VehicleCard
-            name={vehicle.name}
-            registration={vehicle.registration}
-            iconName={vehicle.iconName}
-            status={mapDocStatus(vehicle.status)}
-            statusLabel={vehicle.status === 'approved' ? 'Approved' : vehicle.status}
-          />
-          <View style={styles.statusRow}>
-            <Text style={styles.statusLabel}>{kycLabels.vehicleStatusTitle}</Text>
-            <StatusBadge label={vehicle.status} variant={mapDocStatus(vehicle.status)} />
-          </View>
-        </View>
-
-        {/* Vehicle documents */}
-        <Text style={styles.sectionLabel}>VEHICLE DOCUMENTS</Text>
-
-        {vehicleDocs.map((doc) => (
-          <DocumentCard
-            key={doc.id}
-            label={doc.label}
-            status={mapDocStatus(doc.status)}
-            statusLabel={statusLabel(doc.status)}
-            rejectionReason={doc.rejectionReason}
-            onActionPress={
-              doc.status === 'rejected' ? () => {} : undefined
-            }
-            actionLabel={doc.status === 'rejected' ? 'RESUBMIT' : undefined}
-          />
-        ))}
+      <ScrollView contentContainerStyle={styles.content}>
+        {loading ? <ActivityIndicator color={colors.primary} /> : null}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {vehicle ? (
+          <>
+            <View style={styles.card}>
+              <Text style={styles.title}>{vehicle.makeModel}</Text>
+              <Text style={styles.body}>
+                {vehicle.registrationNumber} ·{' '}
+                {vehicle.category.replace(/_/g, ' ')}
+              </Text>
+              <Text style={styles.status}>
+                {vehicle.status.replace(/_/g, ' ')}
+              </Text>
+            </View>
+            {vehicle.documents.map(document => (
+              <View key={document.id} style={styles.card}>
+                <Text style={styles.title}>
+                  {document.documentType.replace(/_/g, ' ')}
+                </Text>
+                <Text style={styles.body}>
+                  {document.status.replace(/_/g, ' ')}
+                </Text>
+                {document.rejectionReason ? (
+                  <Text style={styles.error}>{document.rejectionReason}</Text>
+                ) : null}
+              </View>
+            ))}
+          </>
+        ) : !loading ? (
+          <Text style={styles.body}>No vehicle is registered.</Text>
+        ) : null}
+        <Pressable style={styles.button} onPress={() => void refresh()}>
+          <Text style={styles.buttonText}>Refresh</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
 };
-
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.containerPadding,
-    paddingBottom: spacing.lg,
-    gap: spacing.containerPadding,
-  },
-  vehicleSection: {
+  safe: { flex: 1, backgroundColor: colors.surface },
+  content: { gap: spacing.gutter, padding: spacing.containerPadding },
+  card: {
     backgroundColor: colors.surfaceContainerLowest,
+    borderColor: colors.outlineVariant,
     borderRadius: borderRadius.md,
+    borderWidth: 1,
+    gap: spacing.xs,
     padding: spacing.containerPadding,
-    gap: spacing.containerPadding,
-    ...shadows.sm,
   },
-  statusRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  title: { ...typography.bodyMd, color: colors.onSurface, fontWeight: '700' },
+  body: { ...typography.bodyMd, color: colors.onSurfaceVariant },
+  status: { ...typography.bodyMd, color: colors.success },
+  error: { ...typography.bodyMd, color: colors.error },
+  button: {
     alignItems: 'center',
+    borderColor: colors.primary,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    padding: spacing.gutter,
   },
-  statusLabel: {
-    ...typography.labelSm,
-    color: colors.onSurfaceVariant,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  sectionLabel: {
-    ...typography.labelSm,
+  buttonText: {
+    ...typography.bodyMd,
     color: colors.primary,
     fontWeight: '700',
-    letterSpacing: 0.5,
   },
 });
-
 export default VehicleDocumentsScreen;

@@ -1,13 +1,29 @@
 ﻿import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable, Image, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  Pressable,
+  Image,
+  Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { launchImageLibrary } from 'react-native-image-picker';
+import { getAuth } from '@react-native-firebase/auth';
 import Icon from '../../components/atoms/Icon';
-import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import {
+  colors,
+  typography,
+  spacing,
+  borderRadius,
+  shadows,
+} from '../../theme';
 import type { AccountScreenProps } from '../../types/navigation';
 import { useAuth } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n';
+import { useDriverOnboarding } from '../../hooks/useDriverOnboarding';
 
 export interface ProfileScreenProps {
   readonly navigation: AccountScreenProps<'Profile'>['navigation'];
@@ -16,35 +32,54 @@ export interface ProfileScreenProps {
 
 const AVATAR_KEY = 'driver.avatarUri';
 
-type DocStatus = 'verified' | 'pending';
-
 interface DocItem {
   readonly key: string;
   readonly labelKey: string;
   readonly icon: string;
-  readonly status: DocStatus;
   readonly route: 'KYCDocuments' | 'VehicleDocuments';
 }
 
 const DOCUMENTS: readonly DocItem[] = [
-  { key: 'aadhaar', labelKey: 'doc.aadhaar', icon: 'badge', status: 'verified', route: 'KYCDocuments' },
-  { key: 'dl', labelKey: 'doc.dl', icon: 'contact_mail', status: 'verified', route: 'KYCDocuments' },
-  { key: 'rc', labelKey: 'doc.rc', icon: 'directions_car', status: 'pending', route: 'VehicleDocuments' },
+  {
+    key: 'identity',
+    labelKey: 'doc.aadhaar',
+    icon: 'badge',
+    route: 'KYCDocuments',
+  },
+  {
+    key: 'license',
+    labelKey: 'doc.dl',
+    icon: 'contact_mail',
+    route: 'KYCDocuments',
+  },
+  {
+    key: 'vehicle',
+    labelKey: 'doc.rc',
+    icon: 'directions_car',
+    route: 'VehicleDocuments',
+  },
 ];
 
-export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID }) => {
-  const { driver, logout } = useAuth();
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({
+  navigation,
+  testID,
+}) => {
+  const { logout } = useAuth();
   const { t, locale } = useI18n();
+  const { summary } = useDriverOnboarding();
   const [avatarUri, setAvatarUri] = useState<string | undefined>(undefined);
 
-  const name = driver?.name ?? 'Raj Kumar';
-  const location = driver?.location ?? 'Jodhpur, RJ';
-  const completion = driver?.profileCompletionPercent ?? 85;
+  const firebaseUser = getAuth().currentUser;
+  const name =
+    summary?.profileName ||
+    firebaseUser?.displayName ||
+    firebaseUser?.phoneNumber ||
+    'Driver';
 
   // Restore a previously chosen avatar so it survives app restarts.
   useEffect(() => {
     AsyncStorage.getItem(AVATAR_KEY)
-      .then((uri) => {
+      .then(uri => {
         if (uri) setAvatarUri(uri);
       })
       .catch(() => {});
@@ -52,7 +87,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
 
   const handlePickAvatar = useCallback(async () => {
     try {
-      const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, selectionLimit: 1 });
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        quality: 0.8,
+        selectionLimit: 1,
+      });
       if (result.didCancel) return;
       const uri = result.assets?.[0]?.uri;
       if (uri) {
@@ -64,10 +103,22 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
     }
   }, []);
 
-  const handleManage = useCallback(() => navigation.navigate('Subscription'), [navigation]);
-  const handleLanguage = useCallback(() => navigation.navigate('LanguageSelection'), [navigation]);
-  const handleSettings = useCallback(() => navigation.navigate('Settings'), [navigation]);
-  const handleNotifications = useCallback(() => navigation.navigate('Settings'), [navigation]);
+  const handleManage = useCallback(
+    () => navigation.navigate('Subscription'),
+    [navigation],
+  );
+  const handleLanguage = useCallback(
+    () => navigation.navigate('LanguageSelection'),
+    [navigation],
+  );
+  const handleSettings = useCallback(
+    () => navigation.navigate('Settings'),
+    [navigation],
+  );
+  const handleNotifications = useCallback(
+    () => navigation.navigate('Settings'),
+    [navigation],
+  );
   const handleDoc = useCallback(
     (route: DocItem['route']) => navigation.navigate(route),
     [navigation],
@@ -76,11 +127,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
   const handleLogout = useCallback(() => {
     Alert.alert(t('profile.logoutTitle'), t('profile.logoutMsg'), [
       { text: t('common.cancel'), style: 'cancel' },
-      { text: t('profile.logout'), style: 'destructive', onPress: () => void logout() },
+      {
+        text: t('profile.logout'),
+        style: 'destructive',
+        onPress: () => void logout(),
+      },
     ]);
   }, [logout, t]);
 
-  const resolvedAvatar = avatarUri ?? driver?.avatarUrl;
+  const resolvedAvatar = avatarUri;
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID} edges={['top']}>
@@ -95,12 +150,22 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Hero */}
         <View style={styles.hero}>
-          <Pressable style={styles.avatarWrap} onPress={handlePickAvatar} accessibilityRole="button">
+          <Pressable
+            style={styles.avatarWrap}
+            onPress={handlePickAvatar}
+            accessibilityRole="button"
+          >
             {resolvedAvatar ? (
-              <Image source={{ uri: resolvedAvatar }} style={styles.avatarImg} />
+              <Image
+                source={{ uri: resolvedAvatar }}
+                style={styles.avatarImg}
+              />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Icon name="person" size={44} color={colors.onSurfaceVariant} />
@@ -111,22 +176,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
             </View>
           </Pressable>
           <Text style={styles.name}>{name}</Text>
-          <View style={styles.locationRow}>
-            <Icon name="location_on" size={16} color={colors.onSurfaceVariant} />
-            <Text style={styles.locationText}>{location}</Text>
-          </View>
-        </View>
-
-        {/* Profile completion */}
-        <View style={styles.card}>
-          <View style={styles.completionHeader}>
-            <Text style={styles.completionLabel}>{t('profile.completion')}</Text>
-            <Text style={styles.completionPct}>{completion}%</Text>
-          </View>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${completion}%` }]} />
-          </View>
-          <Text style={styles.completionHint}>{t('profile.completionHint')}</Text>
         </View>
 
         {/* Subscription */}
@@ -134,11 +183,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
           <View style={styles.subRow}>
             <View style={styles.subLeft}>
               <View style={styles.subIcon}>
-                <Icon name="workspace_premium" size={20} color={colors.onPrimaryFixed} />
+                <Icon
+                  name="workspace_premium"
+                  size={20}
+                  color={colors.onPrimaryFixed}
+                />
               </View>
               <View>
                 <Text style={styles.subPlan}>{t('profile.proPlan')}</Text>
-                <Text style={styles.subValidity}>{t('profile.activeUntil')}</Text>
+                <Text style={styles.subValidity}>
+                  {t('profile.activeUntil')}
+                </Text>
               </View>
             </View>
             <Pressable onPress={handleManage} accessibilityRole="button">
@@ -154,22 +209,41 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
             {DOCUMENTS.map((doc, i) => (
               <Pressable
                 key={doc.key}
-                style={[styles.row, i < DOCUMENTS.length - 1 && styles.rowBorder]}
+                style={[
+                  styles.row,
+                  i < DOCUMENTS.length - 1 && styles.rowBorder,
+                ]}
                 onPress={() => handleDoc(doc.route)}
               >
                 <View style={styles.rowLeft}>
                   <Icon name={doc.icon} size={20} color={colors.outline} />
                   <Text style={styles.rowLabel}>{t(doc.labelKey)}</Text>
                 </View>
-                {doc.status === 'verified' ? (
+                {(
+                  doc.route === 'KYCDocuments'
+                    ? summary?.kyc?.status === 'VERIFIED'
+                    : summary?.activeVehicle?.status === 'VERIFIED'
+                ) ? (
                   <View style={styles.badgeVerified}>
-                    <Icon name="check_circle" size={12} color={colors.onSurface} />
-                    <Text style={styles.badgeVerifiedText}>{t('profile.verified')}</Text>
+                    <Icon
+                      name="check_circle"
+                      size={12}
+                      color={colors.onSurface}
+                    />
+                    <Text style={styles.badgeVerifiedText}>
+                      {t('profile.verified')}
+                    </Text>
                   </View>
                 ) : (
                   <View style={styles.badgePending}>
-                    <Icon name="pending" size={12} color={colors.onSurfaceVariant} />
-                    <Text style={styles.badgePendingText}>{t('profile.pending')}</Text>
+                    <Icon
+                      name="pending"
+                      size={12}
+                      color={colors.onSurfaceVariant}
+                    />
+                    <Text style={styles.badgePendingText}>
+                      {t('profile.pending')}
+                    </Text>
                   </View>
                 )}
               </Pressable>
@@ -181,22 +255,40 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
         <View>
           <Text style={styles.sectionHeading}>{t('profile.account')}</Text>
           <View style={styles.listCard}>
-            <Pressable style={[styles.row, styles.rowBorder]} onPress={handleLanguage}>
+            <Pressable
+              style={[styles.row, styles.rowBorder]}
+              onPress={handleLanguage}
+            >
               <View style={styles.rowLeft}>
                 <Icon name="language" size={20} color={colors.outline} />
                 <Text style={styles.rowLabel}>{t('profile.language')}</Text>
               </View>
               <View style={styles.rowRight}>
                 <Text style={styles.rowValue}>
-                  {locale === 'hi' ? t('language.hindi') : t('language.english')}
+                  {locale === 'hi'
+                    ? t('language.hindi')
+                    : t('language.english')}
                 </Text>
-                <Icon name="chevron_right" size={18} color={colors.onSurfaceVariant} />
+                <Icon
+                  name="chevron_right"
+                  size={18}
+                  color={colors.onSurfaceVariant}
+                />
               </View>
             </Pressable>
-            <Pressable style={[styles.row, styles.rowBorder]} onPress={handleNotifications}>
+            <Pressable
+              style={[styles.row, styles.rowBorder]}
+              onPress={handleNotifications}
+            >
               <View style={styles.rowLeft}>
-                <Icon name="notifications_active" size={20} color={colors.outline} />
-                <Text style={styles.rowLabel}>{t('profile.notifications')}</Text>
+                <Icon
+                  name="notifications_active"
+                  size={20}
+                  color={colors.outline}
+                />
+                <Text style={styles.rowLabel}>
+                  {t('profile.notifications')}
+                </Text>
               </View>
               <Icon name="chevron_right" size={18} color={colors.outline} />
             </Pressable>
@@ -211,7 +303,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation, testID
         </View>
 
         {/* Logout */}
-        <Pressable style={styles.logoutBtn} onPress={handleLogout} accessibilityRole="button">
+        <Pressable
+          style={styles.logoutBtn}
+          onPress={handleLogout}
+          accessibilityRole="button"
+        >
           <Icon name="logout" size={18} color={colors.onSurfaceVariant} />
           <Text style={styles.logoutText}>{t('profile.logout')}</Text>
         </Pressable>
