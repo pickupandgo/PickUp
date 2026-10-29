@@ -9,7 +9,6 @@ import { getCurrentPlace, reverseGeocode, type ResolvedPlace } from '../../api/g
 import type { GeoPoint } from '../../api/types';
 import { getActiveTripForCustomer, getDriver, getRide } from '../../api/engine';
 import { toApiError } from '../../api/http';
-import { useNearbyDrivers } from '../../hooks/useNearbyDrivers';
 import { useTripStatus } from '../../hooks/useTripStatus';
 import { useRecentLocations, saveRecentLocation, type RecentLocation } from '../../state/recentLocations';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
@@ -213,17 +212,6 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Available drivers around the pickup point, refreshed on an interval.
-  // 8 km radius keeps the map focused on drivers the customer can realistically
-  // use — wider ranges just pull the camera out and clutter the view. `refresh`
-  // fires an immediate fetch whenever Home regains focus so a driver that just
-  // came back online is picked up without waiting for the interval.
-  const {
-    drivers: nearbyDrivers,
-    error: nearbyError,
-    isLoading: nearbyLoading,
-    refresh: refreshNearby,
-  } = useNearbyDrivers(draft.pickup, { radiusKm: 8 });
   const isTripActive = Boolean(
     trip &&
     trip.status !== 'DELIVERED' &&
@@ -273,13 +261,12 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
 
   useFocusEffect(
     useCallback(() => {
-      refreshNearby();
       refreshRecent();
       void refreshActiveTrip();
       if (!draft.pickup) {
         void centerOnUser();
       }
-    }, [refreshNearby, refreshRecent, refreshActiveTrip, draft.pickup, centerOnUser])
+    }, [refreshRecent, refreshActiveTrip, draft.pickup, centerOnUser])
   );
 
   const handleRecentLocationSelect = useCallback(
@@ -316,39 +303,6 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
         description: draft.pickup.address || 'Pickup location',
       });
     }
-    if (Array.isArray(nearbyDrivers)) {
-      nearbyDrivers.forEach((driver, idx) => {
-        if (
-          !driver ||
-          typeof driver.latitude !== 'number' ||
-          typeof driver.longitude !== 'number' ||
-          !Number.isFinite(driver.latitude) ||
-          !Number.isFinite(driver.longitude)
-        ) {
-          return;
-        }
-        const distNum =
-          typeof driver.distanceKm === 'number'
-            ? driver.distanceKm
-            : Number(driver.distanceKm);
-        const distStr =
-          Number.isFinite(distNum) && distNum >= 0
-            ? `${distNum.toFixed(1)} km away`
-            : '';
-        const vehicle = driver.vehicleType || 'Vehicle';
-        const description = distStr ? `${vehicle} · ${distStr}` : vehicle;
-        markers.push({
-          id: `driver-${driver.id || idx}`,
-          kind: 'nearby',
-          coordinate: { latitude: driver.latitude, longitude: driver.longitude },
-          title: driver.name || 'Driver',
-          description,
-          vehicleType: driver.vehicleType,
-          bearing: driver.bearingDegrees,
-        });
-      });
-    }
-
     if (
       isTripActive &&
       assignedDriver &&
@@ -370,7 +324,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
       });
     }
     return markers;
-  }, [draft.pickup, nearbyDrivers, isTripActive, assignedDriver]);
+  }, [draft.pickup, isTripActive, assignedDriver]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -403,39 +357,17 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
           )}
         </Pressable>
 
-        {/* Driver availability readout, so an empty map is explained.
-            Tappable to force an immediate refresh — useful when a driver has
-            just come online and the customer doesn't want to wait for the
-            8 s poll. Also surfaces any polling error so a broken API call
-            doesn't look identical to "no drivers online". */}
+        {/* Driver assignment remains engine-owned. Availability is confirmed
+            after the customer requests a ride, not by client-side discovery. */}
         {!isTripActive && (
-          <Pressable
+          <View
             style={[styles.driverCountPill, { top: topSafeOffset }]}
-            onPress={refreshNearby}
-            accessibilityRole="button"
-            accessibilityLabel="Refresh nearby drivers"
           >
-            {nearbyError ? (
-              <Feather name="alert-circle" size={12} color={colors.error} />
-            ) : (
-              <Image
-                source={getVehicleImage(nearbyDrivers[0]?.vehicleType)}
-                style={{ width: 16, height: 16, resizeMode: 'contain' }}
-              />
-            )}
-            <Text
-              style={[styles.driverCountText, nearbyError && { color: colors.error }]}
-              numberOfLines={1}
-            >
-              {nearbyError
-                ? 'Cannot reach server · tap to retry'
-                : nearbyLoading && !nearbyDrivers.length
-                ? 'Looking for drivers…'
-                : nearbyDrivers.length
-                ? `${nearbyDrivers.length} driver${nearbyDrivers.length === 1 ? '' : 's'} nearby`
-                : 'No drivers nearby · tap to refresh'}
+            <Feather name="truck" size={12} color={colors.primary} />
+            <Text style={styles.driverCountText} numberOfLines={1}>
+              Driver availability is confirmed after your ride request
             </Text>
-          </Pressable>
+          </View>
         )}
       </MapCanvas>
 

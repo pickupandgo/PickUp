@@ -14,8 +14,14 @@ if (localPropertiesFile.exists()) {
     }
 }
 
-// Prefer the Google Maps key from `.env`; fall back to local.properties, then a dummy.
-def mapsApiKey = project.env.get("GOOGLE_MAPS_API_KEY") ?: localProperties.getProperty('MAPS_API_KEY', "DUMMY_API_KEY")
+// Prefer the Android Maps key from `.env`; both supported environment names are
+// accepted so the value embedded in the manifest matches the app configuration.
+def mapsApiKey = (project.env.get("GOOGLE_MAPS_API_KEY") ?:
+    project.env.get("EXPO_PUBLIC_GOOGLE_MAPS_API_KEY") ?:
+    localProperties.getProperty('MAPS_API_KEY'))?.trim()
+if (!mapsApiKey || mapsApiKey == 'DUMMY_API_KEY') {
+    throw new GradleException("Configure GOOGLE_MAPS_API_KEY or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY in .env, or MAPS_API_KEY in local.properties, before building Android.")
+}
 
 /**
  * This is the configuration block to customize your React Native Android app.
