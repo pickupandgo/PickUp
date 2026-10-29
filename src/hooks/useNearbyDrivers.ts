@@ -30,4 +30,3 @@ export const useNearbyDrivers = (
   const refresh = useCallback(() => undefined, []);
   return { drivers: [], error: undefined, isLoading: false, refresh };
 };
-

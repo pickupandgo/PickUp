@@ -380,4 +380,3 @@ const styles = StyleSheet.create({
 
 export * from './MapCanvas.types';
 export default MapCanvas;
-
