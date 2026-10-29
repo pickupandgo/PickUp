@@ -223,13 +223,16 @@ describe('Engine outbox (e2e)', () => {
   });
 
   it('sends each record once when several senders run at the same time', async () => {
-    const rides = await Promise.all(
-      [0, 1, 2].map(async (index) => {
-        const who = people(`ob-race-${index}`);
-        const trip = await acceptTrip(ctx, who);
-        return { who, trip };
-      }),
-    );
+    // Dispatch is engine-selected, so accept sequentially: each assigned driver is removed from
+    // presence before the next booking chooses a different eligible driver.
+    const rides = [] as Array<{
+      who: ReturnType<typeof people>;
+      trip: Awaited<ReturnType<typeof acceptTrip>>;
+    }>;
+    for (const index of [0, 1, 2]) {
+      const who = people(`ob-race-${index}`);
+      rides.push({ who, trip: await acceptTrip(ctx, who) });
+    }
     ctx.backend.fail({
       match: (r) => TRIP_STATUS.test(r.path),
       mode: 'STATUS_503',

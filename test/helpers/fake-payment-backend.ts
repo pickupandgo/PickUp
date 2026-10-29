@@ -142,8 +142,12 @@ const rank = (status: TripStatus) =>
 
 export class FakePaymentBackend {
   internalKey: string;
+  private readonly configuredInternalKey: string;
   readonly customers = new Set<string>();
-  readonly drivers = new Map<string, { approved: boolean }>();
+  readonly drivers = new Map<
+    string,
+    { approved: boolean; driverId: string; vehicleId: string }
+  >();
   readonly quotes = new Map<string, FakeQuote>();
   readonly bookings = new Map<string, FakeBooking>();
   readonly requests: FakeRequest[] = [];
@@ -156,6 +160,7 @@ export class FakePaymentBackend {
     internalKey: string,
   ) {
     this.internalKey = internalKey;
+    this.configuredInternalKey = internalKey;
   }
 
   static async start(internalKey: string): Promise<FakePaymentBackend> {
@@ -188,6 +193,7 @@ export class FakePaymentBackend {
   }
 
   reset(): void {
+    this.internalKey = this.configuredInternalKey;
     this.customers.clear();
     this.drivers.clear();
     this.quotes.clear();
@@ -203,7 +209,21 @@ export class FakePaymentBackend {
   }
 
   addDriver(subject: string, approved = true): void {
-    this.drivers.set(subject, { approved });
+    const existing = this.drivers.get(subject);
+    this.drivers.set(subject, {
+      approved,
+      driverId: existing?.driverId ?? randomUUID(),
+      vehicleId: existing?.vehicleId ?? randomUUID(),
+    });
+  }
+
+  /** Models an administrative suspension/revocation without changing an active engine trip. */
+  setDriverEligibility(subject: string, eligible: boolean): void {
+    const driver = this.drivers.get(subject);
+    if (!driver) {
+      throw new Error(`driver ${subject} is not provisioned`);
+    }
+    driver.approved = eligible;
   }
 
   createQuote(input: {
@@ -415,6 +435,29 @@ export class FakePaymentBackend {
     body: Record<string, unknown> | null,
   ): Result {
     let match: RegExpExecArray | null;
+    if (
+      method === 'GET' &&
+      (match = /^\/v1\/internal\/drivers\/by-subject\/([^/]+)\/eligibility$/.exec(path))
+    ) {
+      let subject: string;
+      try {
+        subject = decodeURIComponent(match[1] ?? '');
+      } catch {
+        return notFound('DRIVER_NOT_FOUND', 'Driver not found');
+      }
+      const driver = this.drivers.get(subject);
+      if (!driver) {
+        return notFound('DRIVER_NOT_FOUND', 'Driver not found');
+      }
+      return ok({
+        driverId: driver.driverId,
+        subject,
+        eligible: driver.approved,
+        reasons: driver.approved ? [] : ['DRIVER_NOT_APPROVED'],
+        vehicleId: driver.approved ? driver.vehicleId : null,
+        checkedAt: new Date().toISOString(),
+      });
+    }
     if (
       method === 'GET' &&
       (match = /^\/v1\/internal\/fare-quotes\/([^/]+)$/.exec(path))

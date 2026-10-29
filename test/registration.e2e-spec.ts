@@ -474,7 +474,9 @@ describe('Booking registration with the payment backend (e2e)', () => {
       const who = people('reg-key');
       const alerts = jest.spyOn(Logger.prototype, 'error');
       ctx.backend.internalKey = 'a_different_internal_key_0123456789abcdef';
-      const refused = await requestRide(ctx, who);
+      // Eligibility is checked before ONLINE. Keep the driver offline here so this test isolates
+      // the registration client's invalid internal key rather than attempting a new-work check.
+      const refused = await requestRide(ctx, { ...who, online: false });
 
       // A 401 is a configuration problem, not an answer about the booking: retryable, alerted.
       expect(refused.response.status).toBe(503);
@@ -490,7 +492,11 @@ describe('Booking registration with the payment backend (e2e)', () => {
       expect(await ctx.prisma.engineBooking.count()).toBe(0);
 
       ctx.backend.internalKey = TEST_INTERNAL_API_KEY;
-      const fixed = await requestRide(ctx, { ...who, quote: refused.quote });
+      const fixed = await requestRide(ctx, {
+        ...who,
+        quote: refused.quote,
+        online: false,
+      });
       expect(fixed.response.status).toBe(201);
       expect(ctx.backend.bookings.size).toBe(1);
     });

@@ -24,16 +24,18 @@ const pickupDetailSchema = z.strictObject({
 
 /**
  * POST /rides. The customer confirms a fare quote of the payment backend (POST /v1/fare/quotes
- * there) and the driver to offer it to. There is no fare, weight, vehicle or route here: all of
- * them come from the quote. The customer is the signed-in user, never a body field.
+ * there). There is no fare, weight, vehicle or route here: all of them come from the quote. The
+ * customer is the signed-in user, never a body field. Driver selection is exclusively the
+ * engine's dispatch responsibility; a legacy `driverId`, if supplied by an older client, is
+ * deliberately ignored by the service.
  */
 export const createRideSchema = z.strictObject({
   quoteId: z.uuid({
     message: 'quoteId must be the payment backend fare quote id',
   }),
   paymentMethod: z.enum(['PAY_AT_PICKUP', 'PAY_AT_DELIVERY']),
-  /** The driver the booking is offered to (the prototype dispatches to a chosen driver). */
-  driverId: z.string().min(1).max(128),
+  /** Legacy compatibility only. The engine never reads this value for dispatch. */
+  driverId: z.string().min(1).max(128).optional(),
   /** Compatibility only: if sent, it must be the signed-in customer. */
   customerId: z.string().max(128).optional(),
   pickup: pickupDetailSchema.optional(),

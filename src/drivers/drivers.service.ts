@@ -1,4 +1,5 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, HttpStatus, Logger } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   Driver,
   NearbyDriverResult,
@@ -7,6 +8,13 @@ import {
 import { MOCK_DRIVERS } from '../data/mock-drivers';
 import { haversineDistance } from '../utils/distance';
 import { PrismaService } from '../prisma/prisma.service';
+import { engineError } from '../common/errors';
+import { PaymentBackendClient } from '../payment-backend/payment-backend.client';
+
+export type DriverEligibilityResult =
+  | { readonly kind: 'ELIGIBLE' }
+  | { readonly kind: 'INELIGIBLE' }
+  | { readonly kind: 'UNAVAILABLE' };
 
 /**
  * Driver presence (online, location, vehicle) stays in memory: it is live state that drivers
@@ -16,8 +24,12 @@ import { PrismaService } from '../prisma/prisma.service';
 @Injectable()
 export class DriversService {
   private drivers: Driver[] = [...MOCK_DRIVERS];
+  private readonly logger = new Logger(DriversService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly backend: PaymentBackendClient,
+  ) {}
 
   findAll(): Driver[] {
     return this.drivers;
@@ -44,16 +56,79 @@ export class DriversService {
     return driver;
   }
 
-  updateAvailability(id: string, isAvailable: boolean): Driver {
+  async updateAvailability(id: string, isAvailable: boolean): Promise<Driver> {
+    if (isAvailable) {
+      await this.requireEligibleForNewWork(id);
+    }
+    return this.setAvailability(id, isAvailable);
+  }
+
+  /** A post-trip local presence update never authorizes work; offers re-check the backend. */
+  markAvailable(id: string): void {
+    this.setAvailability(id, true);
+  }
+
+  /** Remove a driver from local dispatch without touching an in-progress trip. */
+  markUnavailable(id: string): void {
+    this.setAvailability(id, false);
+  }
+
+  private setAvailability(id: string, isAvailable: boolean): Driver {
     const driver = this.findById(id);
     driver.isAvailable = isAvailable;
     driver.lastSeen = Date.now();
     return driver;
   }
 
-  /** After a trip ends (completed, cancelled, or its assignment refused). */
-  markAvailable(id: string): void {
-    this.updateAvailability(id, true);
+  /**
+   * The only eligibility decision used by the engine for new work. It deliberately has no cache:
+   * a suspension, KYC expiry or vehicle revocation takes effect on the next offer/assignment.
+   */
+  async checkEligibility(id: string): Promise<DriverEligibilityResult> {
+    const outcome = await this.backend.getDriverEligibilityForSubject(
+      id,
+      `eng-elig-${randomUUID()}`,
+    );
+    if (outcome.kind === 'OK') {
+      if (outcome.value.eligible) {
+        return { kind: 'ELIGIBLE' };
+      }
+      this.markUnavailable(id);
+      return { kind: 'INELIGIBLE' };
+    }
+
+    // A refused identity lookup is not evidence of eligibility. A bad key, timeout, network
+    // failure and an unreadable response are all unavailable and also fail closed.
+    this.markUnavailable(id);
+    if (outcome.kind === 'UNAVAILABLE') {
+      this.logger.error({
+        alert: 'DRIVER_ELIGIBILITY_UNAVAILABLE',
+        msg: 'The backend eligibility check failed closed',
+        status: outcome.status,
+        code: outcome.code,
+      });
+      return { kind: 'UNAVAILABLE' };
+    }
+    return { kind: 'INELIGIBLE' };
+  }
+
+  async requireEligibleForNewWork(id: string): Promise<void> {
+    const eligibility = await this.checkEligibility(id);
+    if (eligibility.kind === 'ELIGIBLE') {
+      return;
+    }
+    if (eligibility.kind === 'UNAVAILABLE') {
+      throw engineError(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        'DRIVER_ELIGIBILITY_UNAVAILABLE',
+        'Driver eligibility could not be confirmed. Try again shortly.',
+      );
+    }
+    throw engineError(
+      HttpStatus.FORBIDDEN,
+      'DRIVER_NOT_ELIGIBLE',
+      'This driver is not currently eligible for new trips.',
+    );
   }
 
   /** True while the driver has a trip that is neither completed nor cancelled. */

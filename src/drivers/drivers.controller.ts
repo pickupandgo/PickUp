@@ -73,7 +73,7 @@ export class DriversController {
   }
 
   @Patch(':id/availability')
-  updateAvailability(
+  async updateAvailability(
     @CurrentSubject() subject: string,
     @Param('id') id: string,
     @Body('isAvailable') isAvailable: boolean,
@@ -83,7 +83,7 @@ export class DriversController {
       throw new BadRequestException('isAvailable must be a boolean');
     }
 
-    const driver = this.driversService.updateAvailability(id, isAvailable);
+    const driver = await this.driversService.updateAvailability(id, isAvailable);
     return {
       success: true,
       driver: {

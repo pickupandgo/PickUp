@@ -119,16 +119,12 @@ export class RidesService {
           `This booking is ${booking.status}`,
         );
       case 'ASSIGNED': {
-        const bundle = await this.bundle(booking.id);
-        if (bundle.trip?.driverSubject === request.driverId) {
-          return rideView(bundle, new Date()); // the same confirmation again
-        }
-        throw new ConflictException('Ride is already ACCEPTED.');
+        return rideView(await this.bundle(booking.id), new Date());
       }
       default:
         break;
     }
-    await this.offer(booking, request.driverId);
+    await this.dispatch(booking);
     return rideView(await this.bundle(booking.id), new Date());
   }
 
@@ -334,6 +330,10 @@ export class RidesService {
         if (busy) {
           throw new ConflictException('Driver is no longer available.');
         }
+        // This synchronous check runs while the booking is locked, immediately before the
+        // assignment is persisted. It is intentionally not cached: the backend owns all KYC,
+        // vehicle, approval and suspension decisions.
+        await this.drivers.requireEligibleForNewWork(subject);
         await tx.engineOffer.update({
           where: { id: current.id },
           data: { status: 'ACCEPTED', respondedAt: now },
@@ -362,7 +362,7 @@ export class RidesService {
         throw error;
       });
 
-    this.drivers.updateAvailability(subject, false);
+    this.drivers.markUnavailable(subject);
     const record =
       outcome.assignId === null
         ? null
@@ -415,6 +415,8 @@ export class RidesService {
         data: { status: 'REJECTED', respondedAt: now },
       });
     });
+    // A declining driver must not require the customer app to choose the next one.
+    await this.dispatch(await this.requireBooking(rideId));
     return rideView(await this.bundle(rideId), new Date());
   }
 
@@ -664,7 +666,50 @@ export class RidesService {
     return this.requireBooking(booking.id);
   }
 
-  /** Offers an open booking to a driver; the same offer again is a no-op. */
+  /**
+   * Selects the nearest eligible driver for an open booking. This is deliberately inside the
+   * engine: mobile clients must never see a candidate list or decide who receives a trip.
+   * A booking with no eligible candidate remains OPEN and is reported as REJECTED until a later
+   * POST retry can dispatch it after a driver comes online.
+   */
+  private async dispatch(booking: EngineBooking): Promise<void> {
+    const candidates = await this.drivers.findNearby({
+      latitude: booking.pickupLatitude,
+      longitude: booking.pickupLongitude,
+      radiusKm: 20,
+    });
+    // Do not immediately re-offer a booking to a driver who explicitly declined it or whose
+    // payment assignment was refused. Expired offers remain eligible for a later retry.
+    const attempted = new Set(
+      (
+        await this.prisma.engineOffer.findMany({
+          where: {
+            bookingId: booking.id,
+            status: { in: ['REJECTED', 'FAILED'] },
+          },
+          select: { driverSubject: true },
+        })
+      ).map((offer) => offer.driverSubject),
+    );
+    for (const driver of candidates) {
+      if (attempted.has(driver.id)) {
+        continue;
+      }
+      try {
+        // offer() independently re-checks eligibility, so every dispatch entry point has the
+        // same guard and no stale ONLINE state can authorize an offer.
+        await this.offer(booking, driver.id);
+        return;
+      } catch (error: unknown) {
+        if (isDispatchCandidateUnavailable(error)) {
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
+  /** Offers an open booking to the engine-selected driver; the same offer again is a no-op. */
   private async offer(booking: EngineBooking, driverId: string): Promise<void> {
     const driver = this.drivers.findById(driverId);
     if (!driver.isAvailable || (await this.drivers.hasActiveTrip(driverId))) {
@@ -674,6 +719,7 @@ export class RidesService {
         'Driver is no longer available.',
       );
     }
+    await this.drivers.requireEligibleForNewWork(driverId);
     const ttlMs = this.config.dispatch.offerTtlSeconds * 1000;
     await this.prisma
       .runInTransaction(async (tx) => {
@@ -828,6 +874,23 @@ function registrationRefused(
     resolved,
     code,
     message || 'The payment backend refused the booking: it is not dispatched',
+  );
+}
+
+/** Only per-driver eligibility/presence failures may make dispatch try the next candidate. */
+function isDispatchCandidateUnavailable(error: unknown): boolean {
+  if (!(error instanceof HttpException)) {
+    return false;
+  }
+  const response = error.getResponse();
+  if (typeof response !== 'object' || response === null || !('code' in response)) {
+    return false;
+  }
+  const { code } = response as { code?: unknown };
+  return (
+    code === 'DRIVER_NOT_ELIGIBLE' ||
+    code === 'DRIVER_ELIGIBILITY_UNAVAILABLE' ||
+    code === 'DRIVER_NOT_AVAILABLE'
   );
 }
 

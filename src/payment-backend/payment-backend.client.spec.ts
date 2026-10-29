@@ -3,7 +3,10 @@ import type { AddressInfo } from 'node:net';
 import { Logger } from '@nestjs/common';
 import { loadConfig } from '../config/engine-config';
 import { PaymentBackendClient } from './payment-backend.client';
-import { internalBookingSchema } from './payment-backend.types';
+import {
+  internalBookingSchema,
+  internalDriverEligibilitySchema,
+} from './payment-backend.types';
 
 const KEY = 'engine_unit_test_internal_key_0123456789ab';
 
@@ -179,5 +182,49 @@ describe('PaymentBackendClient', () => {
     expect(alert).toHaveBeenCalledWith(
       expect.objectContaining({ alert: 'PAYMENT_BACKEND_CONTRACT_MISMATCH' }),
     );
+  });
+
+  it('requires a complete, matching identity-resolved eligibility response', async () => {
+    const subject = 'firebase-driver-1';
+    const driverId = 'ebf83833-73f2-4461-b20f-98fcae95ae1a';
+    answers.set(
+      `/v1/internal/drivers/by-subject/${subject}/eligibility`,
+      [
+        200,
+        JSON.stringify({
+          driverId,
+          subject,
+          eligible: true,
+          reasons: [],
+          vehicleId: 'da1a9b76-2611-4bad-8552-24798e6ca4b7',
+          checkedAt: '2026-10-27T10:00:00.000Z',
+        }),
+      ],
+    );
+    await expect(
+      client.getDriverEligibilityForSubject(subject, 'eng-elig-unit-0001'),
+    ).resolves.toMatchObject({ kind: 'OK', value: { driverId, subject, eligible: true } });
+
+    answers.set(
+      `/v1/internal/drivers/by-subject/${subject}/eligibility`,
+      [
+        200,
+        JSON.stringify({
+          driverId,
+          subject: 'other-subject',
+          eligible: true,
+          reasons: [],
+          vehicleId: null,
+          checkedAt: '2026-10-27T10:00:00.000Z',
+        }),
+      ],
+    );
+    await expect(
+      client.getDriverEligibilityForSubject(subject, 'eng-elig-unit-0002'),
+    ).resolves.toMatchObject({ kind: 'UNAVAILABLE', code: 'UNEXPECTED_RESPONSE' });
+
+    expect(
+      internalDriverEligibilitySchema.safeParse({ driverId, subject }).success,
+    ).toBe(false);
   });
 });

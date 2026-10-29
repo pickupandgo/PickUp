@@ -52,11 +52,21 @@ const ISSUER = 'https://securetoken.google.com/multipleride-contract';
 const AUDIENCE = 'multipleride-contract';
 const WALLET_FLOAT_PAISE = 200_000;
 const KEEP = process.argv.includes('--keep');
+// The fixture command below is accepted only by a separate NODE_ENV=test process and only
+// against the disposable *_e2e database recreated by this harness. It never enables a runtime
+// onboarding bypass or object-storage bypass in the backend service.
+const CONTRACT_COMPLIANCE_POLICY = {
+  MANUAL_KYC_POLICY_VERSION: 'CONTRACT_E2E_POLICY_V1',
+  MANUAL_KYC_REQUIRED_DOCUMENTS: 'IDENTITY,LICENSE',
+  MANUAL_KYC_CHECKLIST: 'FACE_MATCH,NAME_MATCH',
+  VEHICLE_REQUIRED_DOCUMENTS: 'RC,INSURANCE',
+};
 
 const report = { startedAt: new Date().toISOString(), steps: [], checks: 0, ids: {} };
 const children = { backend: null, engine: null };
 const servers = [];
 let engineDb;
+let backendDb;
 let engineEnv;
 let logs;
 
@@ -124,11 +134,22 @@ async function recreateDatabases(setup) {
     [BACKEND_ROOT, setup.backendUrl],
     [ENGINE_ROOT, setup.engineUrl],
   ]) {
-    execFileSync(process.execPath, [path.join(root, 'node_modules', 'prisma', 'build', 'index.js'), 'migrate', 'deploy'], {
-      cwd: root,
-      env: { ...process.env, DATABASE_URL: url },
-      stdio: 'pipe',
-    });
+    try {
+      execFileSync(process.execPath, [path.join(root, 'node_modules', 'prisma', 'build', 'index.js'), 'migrate', 'deploy'], {
+        cwd: root,
+        env: { ...process.env, DATABASE_URL: url },
+        stdio: 'pipe',
+      });
+    } catch (error) {
+      // execFileSync otherwise drops Prisma's useful migration diagnostic and reports an empty
+      // message, which makes an isolated integration failure impossible to repair.
+      const detail = Buffer.isBuffer(error?.stderr)
+        ? error.stderr.toString('utf8').trim()
+        : Buffer.isBuffer(error?.stdout)
+          ? error.stdout.toString('utf8').trim()
+          : '';
+      throw new Error(`Migration failed for ${path.basename(root)}${detail ? `: ${detail}` : ''}`);
+    }
   }
 }
 
@@ -258,7 +279,14 @@ async function startProxy(target) {
 function provision(setup, args) {
   const output = execFileSync(process.execPath, [path.join(BACKEND_ROOT, 'dist', 'cli', 'provision.js'), ...args], {
     cwd: BACKEND_ROOT,
-    env: { ...process.env, DATABASE_URL: setup.backendUrl, AUTH_PROVIDER: 'firebase', NODE_ENV: 'development' },
+    env: {
+      ...process.env,
+      ...CONTRACT_COMPLIANCE_POLICY,
+      DATABASE_URL: setup.backendUrl,
+      AUTH_PROVIDER: 'firebase',
+      NODE_ENV: 'test',
+      CONTRACT_E2E_FIXTURE: 'true',
+    },
     encoding: 'utf8',
   });
   return JSON.parse(output);
@@ -392,9 +420,14 @@ async function main() {
   const setup = loadSetup();
   console.log(`Databases ${BACKEND_DATABASE} (backend) and ${ENGINE_DATABASE} (engine): recreating and migrating`);
   await recreateDatabases(setup);
+  console.log('Isolated migrations applied');
+  backendDb = new pg.Client({ connectionString: setup.backendUrl });
+  await backendDb.connect();
   engineDb = new pg.Client({ connectionString: setup.engineUrl });
   await engineDb.connect();
+  console.log('Isolated engine database connected');
   const idp = await startJwks();
+  console.log('Local JWKS started');
 
   const tag = () => randomBytes(5).toString('hex');
   const subjects = {
@@ -402,19 +435,28 @@ async function main() {
     driverA: `drv_ct_a_${tag()}`,
     driverB: `drv_ct_b_${tag()}`,
     driverPending: `drv_ct_pending_${tag()}`,
+    driverRace: `drv_ct_race_${tag()}`,
+    driverExpired: `drv_ct_expired_${tag()}`,
+    driverVehicleRevoked: `drv_ct_vehicle_${tag()}`,
+    driverBackendUnavailable: `drv_ct_unavailable_${tag()}`,
     customerA: `cus_ct_a_${tag()}`,
     customerB: `cus_ct_b_${tag()}`,
     // Valid Firebase tokens, never provisioned at the payment backend.
     fakeCustomer: `cus_ct_fake_${tag()}`,
     fakeDriver: `drv_ct_fake_${tag()}`,
   };
-  console.log('Provisioning at the backend: admin, two approved drivers, one unapproved driver, two customers, fee rule, pricing');
+  console.log('Provisioning at the backend: admin, two compliance-complete fixture drivers, one unapproved driver, two customers, fee rule, pricing');
   provision(setup, ['create-admin', '--phone', phone(), '--subject', subjects.admin]);
-  for (const [subject, name] of [
-    [subjects.driverA, 'Ramesh Kumar'],
-    [subjects.driverB, 'Suresh Singh'],
+  const fixtureDrivers = {};
+  for (const [key, subject, name] of [
+    ['driverA', subjects.driverA, 'Ramesh Kumar'],
+    ['driverB', subjects.driverB, 'Suresh Singh'],
+    ['driverRace', subjects.driverRace, 'Race Driver'],
+    ['driverExpired', subjects.driverExpired, 'Expired Kyc Driver'],
+    ['driverVehicleRevoked', subjects.driverVehicleRevoked, 'Revoked Vehicle Driver'],
+    ['driverBackendUnavailable', subjects.driverBackendUnavailable, 'Unavailable Backend Driver'],
   ]) {
-    provision(setup, ['create-driver', '--phone', phone(), '--subject', subject, '--approve', '--name', name]);
+    fixtureDrivers[key] = provision(setup, ['create-contract-eligible-driver', '--phone', phone(), '--subject', subject, '--name', name]);
   }
   provision(setup, ['create-driver', '--phone', phone(), '--subject', subjects.driverPending, '--name', 'Pending Driver']);
   for (const subject of [subjects.customerA, subjects.customerB]) {
@@ -463,6 +505,10 @@ async function main() {
     PAYOUT_SCHEDULE_ENABLED: 'false',
     PAYOUT_AUTO_EXECUTE: 'false',
     TDS_ENABLED: 'false',
+    // The service stays fail-closed for live onboarding; the verified historical evidence above
+    // exists only in the disposable database and is consumed solely by eligibility checks.
+    MANUAL_KYC_ENABLED: 'false',
+    ...CONTRACT_COMPLIANCE_POLICY,
     SWAGGER_ENABLED: 'false',
   }, `${BACKEND}/health/ready`);
   const proxy = await startProxy(BACKEND);
@@ -512,12 +558,14 @@ async function main() {
       vehicleCategory: 'MINI_TRUCK',
       weightKg: 12.5,
     }, [201])).body;
-  const online = (driver) => engine('PATCH', `/drivers/${subjects[driver]}/availability`, driver, { isAvailable: true }, [200]);
+  const online = (driver, expect = [200]) =>
+    engine('PATCH', `/drivers/${subjects[driver]}/availability`, driver, { isAvailable: true }, expect);
   const book = (customer, driver, quoteId, paymentMethod, expect = [201]) =>
     engine('POST', '/rides', customer, { quoteId, paymentMethod, driverId: subjects[driver] }, expect);
   const collect = (driver, paymentTripId, body, expect = [201], key = randomUUID()) =>
     backend('POST', `/v1/trips/${paymentTripId}/collections`, driver, body, expect, { 'idempotency-key': key });
   const engineRow = async (sql, params) => (await engineDb.query(sql, params)).rows;
+  const backendQuery = (sql, params) => backendDb.query(sql, params);
   const storedOtps = async (rideId) => {
     const [booking] = await engineRow('SELECT pickup_otp FROM engine_bookings WHERE id = $1', [rideId]);
     const stops = await engineRow('SELECT otp FROM engine_stops WHERE booking_id = $1 ORDER BY sequence', [rideId]);
@@ -742,11 +790,15 @@ async function main() {
     proxy.clear();
     check((await remote(B.paymentBookingId)).trip.status === 'DRIVER_ASSIGNED', 'the backend does not know yet');
     await startEngine();
-    await waitFor('the restarted engine delivers the arrival', async () => (await remote(B.paymentBookingId)).trip.status === 'DRIVER_ARRIVED');
-    const [record] = await engineRow(
-      `SELECT status, attempts FROM engine_outbox WHERE booking_id = $1 AND payload->>'status' = 'DRIVER_ARRIVED'`,
-      [B.rideId],
-    );
+    const [record] = await waitFor('the restarted engine delivers its durable arrival outbox record', async () => {
+      const rows = await engineRow(
+        `SELECT status, attempts FROM engine_outbox WHERE booking_id = $1 AND payload->>'status' = 'DRIVER_ARRIVED'`,
+        [B.rideId],
+      );
+      return rows[0]?.status === 'DELIVERED' ? rows : null;
+    });
+    await waitFor('the restarted engine delivers the arrival to the backend', async () =>
+      (await remote(B.paymentBookingId)).trip.status === 'DRIVER_ARRIVED');
     // At least the refused first attempt and the delivery (an attempt cut by the crash may not
     // have been recorded).
     check(record.status === 'DELIVERED' && record.attempts >= 2, 'the same outbox record, retried until delivered');
@@ -827,6 +879,10 @@ async function main() {
   await step('C1', 'Fake customer refused by the backend (nothing dispatched); concurrent confirmations: one booking', async () => {
     const priced = await quote('customerB', [[26.2967, 73.0351], [26.3067, 73.0451], [26.3167, 73.0551]]);
     C.quote = priced;
+    // Dispatch now selects its own nearby eligible driver and intentionally ignores the legacy
+    // client-provided driverId. Make this scenario deterministic without changing production
+    // matching by taking the completed Flow A/B driver offline.
+    await engine('PATCH', `/drivers/${subjects.driverA}/availability`, 'driverA', { isAvailable: false }, [200]);
     await online('driverB');
     const fake = await book('fakeCustomer', 'driverB', priced.quoteId, 'PAY_AT_DELIVERY', [422]);
     check(['CUSTOMER_NOT_FOUND', 'QUOTE_NOT_FOUND'].includes(fake.body.code), `fake customer refused (${fake.body.code})`);
@@ -845,22 +901,16 @@ async function main() {
     return { rideId: C.rideId, fakeCustomerCode: fake.body.code };
   });
 
-  await step('C2', 'Fake and unapproved drivers refused by the backend: trip closed, driver freed, booking offered again', async () => {
-    await engine('POST', `/rides/${C.rideId}/reject`, 'driverB', {}, [201]);
-    for (const [driver, status, code] of [
-      ['fakeDriver', 422, 'DRIVER_NOT_FOUND'],
-      ['driverPending', 422, 'DRIVER_NOT_APPROVED'],
-    ]) {
-      await online(driver);
-      await book('customerB', driver, C.quote.quoteId, 'PAY_AT_DELIVERY');
-      const refused = await engine('POST', `/rides/${C.rideId}/accept`, driver, {}, [status]);
-      check(refused.body.code === code, `${driver}: ${code}`);
-      const ride = (await engine('GET', `/rides/${C.rideId}`, 'customerB', undefined, [200])).body.ride;
-      check(ride.bookingStatus === 'OPEN' && ride.tripId === null, 'booking open again, no live trip');
+  await step('C2', 'Unverified or unknown drivers cannot go ONLINE and receive no offer', async () => {
+    for (const driver of ['fakeDriver', 'driverPending']) {
+      const refused = await online(driver, [403]);
+      check(refused.body.code === 'DRIVER_NOT_ELIGIBLE', `${driver}: eligibility is enforced before ONLINE`);
     }
-    check((await remote(C.paymentBookingId)).trip === null, 'no trip at the backend');
-    const cancelled = await engineRow(`SELECT cancelled_by FROM engine_trips WHERE booking_id = $1`, [C.rideId]);
-    check(cancelled.length === 2 && cancelled.every((row) => row.cancelled_by === 'SYSTEM'), 'both refused trips closed by the system');
+    const fakeOffers = (await engine('GET', `/ride-requests/${subjects.fakeDriver}`, 'fakeDriver', undefined, [200])).body.requests;
+    const pendingOffers = (await engine('GET', `/ride-requests/${subjects.driverPending}`, 'driverPending', undefined, [200])).body.requests;
+    check(fakeOffers.length === 0 && pendingOffers.length === 0, 'ineligible drivers receive no dispatch offer');
+    const offered = (await engine('GET', `/ride-requests/${subjects.driverB}`, 'driverB', undefined, [200])).body.requests;
+    check(offered.length === 1 && offered[0].rideId === C.rideId, 'eligible driver keeps the valid offer');
   });
 
   await step('C3', 'Concurrent acceptances by the approved driver: one trip at the backend', async () => {
@@ -964,6 +1014,74 @@ async function main() {
     return { paymentStatus: atBackend.paymentStatus, paidWith: atBackend.paidWith };
   });
 
+  // ── Phase 2B eligibility revocation and recovery ─────────────────────────────────────────
+  await step('D1', 'Expired KYC, revoked vehicle and an unavailable backend deny new ONLINE authorization', async () => {
+    // These are isolated historical-fixture state changes, not application bypasses: the real
+    // backend is still the service deciding eligibility through its internal API.
+    await backendQuery(
+      "UPDATE kyc_applications SET expires_at = NOW() - INTERVAL '1 minute' WHERE driver_id = $1",
+      [fixtureDrivers.driverExpired.driverId],
+    );
+    await backendQuery(
+      "UPDATE vehicles SET status = 'REJECTED' WHERE driver_id = $1 AND active = true",
+      [fixtureDrivers.driverVehicleRevoked.driverId],
+    );
+    for (const driver of ['driverExpired', 'driverVehicleRevoked']) {
+      const refused = await online(driver, [403]);
+      check(refused.body.code === 'DRIVER_NOT_ELIGIBLE', `${driver}: revoked compliance blocks ONLINE`);
+    }
+    proxy.fail({
+      match: (entry) =>
+        entry.method === 'GET' &&
+        entry.path === `/v1/internal/drivers/by-subject/${subjects.driverBackendUnavailable}/eligibility`,
+      mode: 'STATUS_503',
+    });
+    const unavailable = await online('driverBackendUnavailable', [503]);
+    check(unavailable.body.code === 'DRIVER_ELIGIBILITY_UNAVAILABLE', 'backend failure denies ONLINE fail-closed');
+  });
+
+  await step('D2', 'Suspension racing a pending assignment is finally denied by the backend and the outbox recovers safely', async () => {
+    // No prior completed driver may be selected for this deliberately single-candidate dispatch.
+    await engine('PATCH', `/drivers/${subjects.driverB}/availability`, 'driverB', { isAvailable: false }, [200]);
+    await online('driverRace');
+    const priced = await quote('customerA', [[26.2967, 73.0351]]);
+    const created = await book('customerA', 'driverRace', priced.quoteId, 'PAY_AT_PICKUP');
+    const ride = created.body.ride;
+    const offers = (await engine('GET', `/ride-requests/${subjects.driverRace}`, 'driverRace', undefined, [200])).body.requests;
+    check(offers.length === 1 && offers[0].rideId === ride.id, 'eligible driver receives the assignment offer');
+
+    // First attempt is unavailable. The real admin decision wins before the durable outbox retry,
+    // so the backend's transactional final authorization must refuse that retry.
+    proxy.fail({
+      match: (entry) => entry.method === 'POST' && entry.path === `/v1/internal/bookings/${ride.paymentBookingId}/assign`,
+      mode: 'STATUS_503',
+    });
+    const accepted = await engine('POST', `/rides/${ride.id}/accept`, 'driverRace', {}, [201]);
+    check(accepted.body.paymentSync === 'PENDING', 'assignment is held pending while backend is unavailable');
+    await backend(
+      'PATCH',
+      `/v1/admin/onboarding/drivers/${fixtureDrivers.driverRace.driverId}/decision`,
+      'admin',
+      { decision: 'SUSPEND', reason: 'Contract E2E suspension before assignment retry' },
+      [200],
+    );
+    const reopened = await waitFor('assignment refusal recovery', async () => {
+      const view = (await engine('GET', `/rides/${ride.id}`, 'customerA', undefined, [200])).body.ride;
+      return view.bookingStatus === 'OPEN' && view.tripId === null ? view : null;
+    });
+    const assignmentCalls = callsTo(
+      new RegExp(`^POST /v1/internal/bookings/${ride.paymentBookingId}/assign$`),
+    );
+    check(assignmentCalls.some((entry) => entry.status === 422), 'backend final assignment authorization rejected suspended driver');
+    check((await remote(ride.paymentBookingId)).trip === null, 'backend never created an assignment for the suspended driver');
+    const [outbox] = await engineRow(
+      "SELECT status, last_error_code FROM engine_outbox WHERE booking_id = $1 AND kind = 'ASSIGN' ORDER BY created_at DESC LIMIT 1",
+      [ride.id],
+    );
+    check(outbox.status === 'REFUSED' && outbox.last_error_code === 'DRIVER_NOT_ELIGIBLE', 'outbox records refusal and releases the booking');
+    return { rideId: ride.id, recoveredBookingStatus: reopened.bookingStatus };
+  });
+
   // ── Security sweep ────────────────────────────────────────────────────────────────────────
   await step('S1', 'Security: removed bypass routes, other drivers, and every call the engine made', async () => {
     await engine('POST', `/trips/${C.tripId}/pickup/confirm`, 'driverB', {}, [404]);
@@ -975,6 +1093,9 @@ async function main() {
 
     const allowed = [
       /^GET \/v1\/internal\/fare-quotes\/[0-9a-f-]{36}$/,
+      // Backend-owned compliance lookup. The engine sends only the Firebase subject obtained
+      // from a verified token; it never sends a client-supplied driver UUID or compliance state.
+      /^GET \/v1\/internal\/drivers\/by-subject\/[A-Za-z0-9_-]{1,128}\/eligibility$/,
       /^POST \/v1\/internal\/bookings$/,
       /^GET \/v1\/internal\/bookings\/[0-9a-f-]{36}$/,
       /^POST \/v1\/internal\/bookings\/[0-9a-f-]{36}\/(searching|assign|cancel)$/,
@@ -1017,6 +1138,9 @@ async function shutdown() {
   if (engineDb) {
     await engineDb.end().catch(() => undefined);
   }
+  if (backendDb) {
+    await backendDb.end().catch(() => undefined);
+  }
 }
 
 const reportFile = path.join(tmpdir(), 'multipleride-contract-e2e-report.json');
@@ -1037,10 +1161,11 @@ main()
   })
   .catch(async (error) => {
     await shutdown();
+    const detail = error instanceof Error ? error.message || error.stack || error.name : String(error);
     report.result = 'FAIL';
-    report.error = error.message;
+    report.error = detail;
     report.logs = logs;
     writeFileSync(reportFile, JSON.stringify(report, null, 2));
-    console.error(`\nContract E2E FAILED: ${error.message}\nReport: ${reportFile}; logs and databases kept for diagnosis.`);
+    console.error(`\nContract E2E FAILED: ${detail}\nReport: ${reportFile}; logs and databases kept for diagnosis.`);
     process.exitCode = 1;
   });

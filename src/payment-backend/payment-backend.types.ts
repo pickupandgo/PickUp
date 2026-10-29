@@ -73,6 +73,22 @@ export const internalFareQuoteSchema = z.looseObject({
 });
 export type InternalFareQuote = z.infer<typeof internalFareQuoteSchema>;
 
+/**
+ * The backend's authoritative answer for an engine driver's Firebase subject. The engine never
+ * recreates the KYC, vehicle or approval rules represented by this result.
+ */
+export const internalDriverEligibilitySchema = z.looseObject({
+  driverId: z.uuid(),
+  subject: z.string().min(1).max(128),
+  eligible: z.boolean(),
+  reasons: z.array(z.string().min(1).max(80)).max(32),
+  vehicleId: z.uuid().nullable(),
+  checkedAt: z.iso.datetime(),
+});
+export type InternalDriverEligibility = z.infer<
+  typeof internalDriverEligibilitySchema
+>;
+
 /** The payment backend's error envelope: { error: { code, message, details? } }. */
 export const errorEnvelopeSchema = z.looseObject({
   error: z.looseObject({

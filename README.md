@@ -23,6 +23,23 @@ Every call goes to `PAYMENT_BACKEND_URL` with `X-Internal-Api-Key` and an `X-Req
 contract is on branch `raj_backend`: `docs/RAZORPAY_INTEGRATION.md` §10, and contract F of
 `docs/PAYMENT_FLOW_FINAL_REVIEW.md`.
 
+### Driver eligibility (Phase 2B)
+
+The backend owns driver approval, KYC, vehicle verification and suspension. Before a driver can
+become available, before an offer is created, and again immediately before an assignment is
+persisted, the engine calls:
+
+```text
+GET /v1/internal/drivers/by-subject/:firebaseSubject/eligibility
+```
+
+The Firebase subject comes only from the engine's verified app token. The backend resolves it
+through `auth_identities`, returns the authoritative backend driver UUID and echoes the subject;
+the engine rejects a mismatched or malformed response. There is no eligibility cache. Network,
+timeout, backend authentication and response-contract failures are fail-closed, and remove the
+driver from local future dispatch. A later revocation never cancels or mutates an already assigned
+trip; it prevents future offers and assignments instead.
+
 | App action (engine route) | Backend call | How | The engine commits |
 |---|---|---|---|
 | Customer confirms (`POST /rides`) | `GET /v1/internal/fare-quotes/:quoteId`, then `POST /v1/internal/bookings` `{ externalRef, customerSubject, quoteId, paymentMethod }` | Synchronous | The booking is stored first (`PENDING_REGISTRATION`, `externalRef = ENG-<rideId>`), so a retry registers the same reference. It is offered to a driver only after a 201/200 that matches the quote. |

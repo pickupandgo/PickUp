@@ -141,8 +141,13 @@ describe('Persistence across engine restarts (e2e)', () => {
       paymentMethod: 'PAY_AT_PICKUP',
       driverId: who.driver,
     });
-    expect(offer.status).toBe(400);
-    expect(offer.body.code).toBe('DRIVER_NOT_AVAILABLE');
+    expect(offer.status).toBe(201);
+    expect(offer.body.ride.status).toBe('REJECTED');
+    expect(
+      await ctx.prisma.engineOffer.count({
+        where: { bookingId: offer.body.ride.id },
+      }),
+    ).toBe(0);
   });
 
   it('continues a pending registration after a restart with the same external reference', async () => {

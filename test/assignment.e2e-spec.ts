@@ -1,6 +1,7 @@
 import {
   acceptTrip,
   bookRide,
+  call,
   get,
   goOnline,
   outboxOf,
@@ -19,8 +20,8 @@ const ASSIGN = /^\/v1\/internal\/bookings\/[^/]+\/assign$/;
 /**
  * Driver accepts (review F): the engine trip and its ASSIGN are written in one transaction,
  * ASSIGN is delivered backend first, the payment backend's trip id is stored, and accepting
- * again never creates a second trip. A refusal (driver not provisioned or not approved) frees
- * the driver and reopens the booking.
+ * again never creates a second trip. Phase 2B denies unprovisioned or unapproved drivers before
+ * an offer or assignment is persisted.
  */
 describe('Offers and assignment (e2e)', () => {
   let ctx: TestContext;
@@ -148,6 +149,7 @@ describe('Offers and assignment (e2e)', () => {
     const who = people('assign-other');
     const ride = await bookRide(ctx, who);
     const intruder = people('assign-intruder');
+    ctx.backend.addDriver(intruder.driver);
     await goOnline(ctx, intruder.driver);
 
     const response = await post(
@@ -240,68 +242,36 @@ describe('Offers and assignment (e2e)', () => {
   });
 
   it.each([
-    [
-      'not provisioned at the payment backend',
-      { driverKnown: false },
-      422,
-      'DRIVER_NOT_FOUND',
-    ],
-    ['not approved', { driverApproved: false }, 422, 'DRIVER_NOT_APPROVED'],
+    ['not provisioned at the backend', false],
+    ['not approved', true],
   ] as const)(
-    'refuses a driver %s: the trip is closed, the driver freed, the booking reopened',
-    async (_label, driver, status, code) => {
-      const who = people('assign-refused');
-      const ride = await bookRide(ctx, { ...who, ...driver });
-      const response = await post(
+    'blocks a driver %s before dispatch or assignment',
+    async (_label, provisionUnapproved) => {
+      const who = people('assign-ineligible');
+      ctx.backend.addCustomer(who.customer);
+      if (provisionUnapproved) {
+        ctx.backend.addDriver(who.driver, false);
+      }
+
+      const online = await call(
         ctx,
-        `/rides/${ride.rideId}/accept`,
+        'patch',
+        `/drivers/${who.driver}/availability`,
         who.driver,
+        { isAvailable: true },
       );
+      expect(online.status).toBe(403);
+      expect(online.body.code).toBe('DRIVER_NOT_ELIGIBLE');
 
-      expect(response.status).toBe(status);
-      expect(response.body.code).toBe(code);
-      const trip = await ctx.prisma.engineTrip.findFirstOrThrow({
-        where: { bookingId: ride.rideId },
-      });
-      expect(trip).toMatchObject({
-        status: 'CANCELLED',
-        cancelledBy: 'SYSTEM',
-        paymentTripId: null,
-      });
-      const booking = await ctx.prisma.engineBooking.findUniqueOrThrow({
-        where: { id: ride.rideId },
-        include: { offers: true },
-      });
-      expect(booking.status).toBe('OPEN');
-      expect(booking.offers[0]).toMatchObject({
-        status: 'FAILED',
-        failureCode: code,
-      });
-      expect(ctx.drivers.findById(who.driver).isAvailable).toBe(true);
-      expect(ctx.backend.bookings.get(ride.paymentBookingId)?.trip).toBeNull();
-      // Expected, no divergence: the refused command is recorded, not retried.
-      const assign = await ctx.prisma.engineOutbox.findFirstOrThrow({
-        where: { kind: 'ASSIGN' },
-      });
-      expect(assign).toMatchObject({ status: 'REFUSED', lastErrorCode: code });
-
-      // The customer offers the same booking to an approved driver.
-      const next = people('assign-after-refusal');
-      ctx.backend.addDriver(next.driver);
-      await goOnline(ctx, next.driver);
-      await post(ctx, '/rides', who.customer, {
-        quoteId: ride.quote.quoteId,
+      const quote = ctx.backend.createQuote({ customerSubject: who.customer });
+      const created = await post(ctx, '/rides', who.customer, {
+        quoteId: quote.quoteId,
         paymentMethod: 'PAY_AT_PICKUP',
-        driverId: next.driver,
       }).expect(201);
-      const accepted = await post(
-        ctx,
-        `/rides/${ride.rideId}/accept`,
-        next.driver,
-      ).expect(201);
-      expect(accepted.body.trip.paymentTripId).toBe(
-        ctx.backend.bookings.get(ride.paymentBookingId)?.trip?.tripId,
-      );
+      expect(created.body.ride.status).toBe('REJECTED');
+      expect(await ctx.prisma.engineOffer.count()).toBe(0);
+      expect(await ctx.prisma.engineTrip.count()).toBe(0);
+      expect(ctx.backend.calls(ASSIGN)).toEqual([]);
     },
   );
 
@@ -319,8 +289,13 @@ describe('Offers and assignment (e2e)', () => {
       paymentMethod: 'PAY_AT_PICKUP',
       driverId: who.driver,
     });
-    expect(response.status).toBe(400);
-    expect(response.body.code).toBe('DRIVER_NOT_AVAILABLE');
+    expect(response.status).toBe(201);
+    expect(response.body.ride.status).toBe('REJECTED');
+    expect(
+      await ctx.prisma.engineOffer.count({
+        where: { bookingId: response.body.ride.id },
+      }),
+    ).toBe(0);
     const nearby = await get(
       ctx,
       '/drivers/nearby?lat=26.2389&lng=73.0243&radius=50',

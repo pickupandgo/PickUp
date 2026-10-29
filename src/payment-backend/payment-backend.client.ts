@@ -4,7 +4,9 @@ import { describeError } from '../common/errors';
 import { ENGINE_CONFIG, type EngineConfig } from '../config/engine-config';
 import {
   errorEnvelopeSchema,
+  internalDriverEligibilitySchema,
   type InternalBooking,
+  type InternalDriverEligibility,
   internalBookingSchema,
   type InternalFareQuote,
   internalFareQuoteSchema,
@@ -179,6 +181,36 @@ export class PaymentBackendClient {
       path: `/v1/internal/bookings/${encodeURIComponent(paymentBookingId)}`,
       requestId,
     });
+  }
+
+  /**
+   * Resolves the backend driver record from the verified Firebase subject held by the engine.
+   * A mobile client never supplies the backend UUID, and the response must echo the requested
+   * subject so a malformed or mismatched internal response cannot authorize a driver.
+   */
+  async getDriverEligibilityForSubject(
+    subject: string,
+    requestId: string,
+  ): Promise<TypedOutcome<InternalDriverEligibility>> {
+    const path = `/v1/internal/drivers/by-subject/${encodeURIComponent(subject)}/eligibility`;
+    const outcome = await this.typed(internalDriverEligibilitySchema, {
+      method: 'GET',
+      path,
+      requestId,
+    });
+    if (outcome.kind === 'OK' && outcome.value.subject !== subject) {
+      this.logger.error({
+        alert: 'PAYMENT_BACKEND_CONTRACT_MISMATCH',
+        msg: 'The eligibility response subject did not match the engine request',
+        path,
+      });
+      return unavailable(
+        outcome.status,
+        'UNEXPECTED_RESPONSE',
+        'eligibility response subject mismatch',
+      );
+    }
+    return outcome;
   }
 
   /** Validates an OK answer; an unexpected shape is treated as no answer (nothing applied). */
