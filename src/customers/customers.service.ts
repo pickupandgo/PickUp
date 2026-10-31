@@ -1,10 +1,11 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import type { Principal, SignedInIdentity } from '../auth/principal';
 import { requireCustomer } from '../auth/require-driver';
-import { AppError } from '../common/errors/app-error';
+import { AppError, forbidden } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
-import type { CustomerAccountResponse } from './customers.dto';
+import type { Prisma } from '../generated/prisma/client';
+import type { CustomerAccountResponse, UpdateCustomerProfileRequest } from './customers.dto';
 
 /** E.164, as Firebase puts it in the `phone_number` claim. */
 const E164_PHONE = /^\+[1-9][0-9]{6,14}$/;
@@ -35,9 +36,7 @@ export class CustomersService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async register(
-    identity: SignedInIdentity,
-  ): Promise<RegistrationResult> {
+  async register(identity: SignedInIdentity): Promise<RegistrationResult> {
     const phone = identity.phoneNumber;
     if (phone === null || !E164_PHONE.test(phone)) {
       throw new AppError(
@@ -114,8 +113,41 @@ export class CustomersService {
     return this.load(requireCustomer(principal).id);
   }
 
-  private async load(customerId: string): Promise<CustomerAccountResponse> {
-    const customer = await this.prisma.customer.findUniqueOrThrow({
+  async update(
+    principal: Principal,
+    profile: UpdateCustomerProfileRequest,
+  ): Promise<CustomerAccountResponse> {
+    if (principal.role !== 'CUSTOMER') throw forbidden('This action requires a customer account');
+    const customerId = requireCustomer(principal).id;
+    // Explicit allowlist: never spread client input into a database mutation.
+    const data = {
+      ...(profile.name !== undefined ? { name: profile.name } : {}),
+      ...(profile.email !== undefined ? { email: profile.email } : {}),
+      ...(profile.age !== undefined ? { age: profile.age } : {}),
+      ...(profile.address !== undefined ? { address: profile.address } : {}),
+    };
+    return this.prisma.$transaction(async (tx) => {
+      const ownCustomer = {
+        id: customerId,
+        userId: principal.userId,
+        user: { role: 'CUSTOMER' as const, status: 'ACTIVE' as const },
+      };
+      // Recheck ownership and account status in the write itself, as well as in AuthGuard.
+      if (Object.keys(data).length) {
+        const updated = await tx.customer.updateMany({ where: ownCustomer, data });
+        if (updated.count !== 1) throw forbidden('The customer account is unavailable');
+      } else if (!(await tx.customer.findFirst({ where: ownCustomer, select: { id: true } }))) {
+        throw forbidden('The customer account is unavailable');
+      }
+      return this.load(customerId, tx);
+    });
+  }
+
+  private async load(
+    customerId: string,
+    db: PrismaService | Prisma.TransactionClient = this.prisma,
+  ): Promise<CustomerAccountResponse> {
+    const customer = await db.customer.findUniqueOrThrow({
       where: { id: customerId },
       include: { user: { select: { phone: true, status: true } } },
     });
@@ -125,6 +157,8 @@ export class CustomersService {
       status: customer.user.status,
       name: customer.name ?? null,
       email: customer.email ?? null,
+      age: customer.age ?? null,
+      address: customer.address ?? null,
       createdAt: customer.createdAt.toISOString(),
     };
   }

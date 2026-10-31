@@ -29,9 +29,10 @@ GRANT UPDATE (status, razorpay_order_id, razorpay_payment_id, payment_method, up
 GRANT SELECT, INSERT ON payment_events TO mr_app;
 GRANT UPDATE (payment_id, outcome, attempts, processed_at, processing_error) ON payment_events TO mr_app;
 
--- Customers: read-only for the API. Self-registration goes through register_customer(), a
+-- Customers: only editable profile columns may change. Self-registration goes through register_customer(), a
 -- SECURITY DEFINER function that can only create CUSTOMER accounts and never re-links a phone.
 GRANT SELECT ON customers TO mr_app;
+GRANT UPDATE (name, email, age, address, updated_at) ON customers TO mr_app;
 GRANT EXECUTE ON FUNCTION register_customer(TEXT, TEXT, TEXT, TEXT, TEXT) TO mr_app;
 
 -- Drivers: self-registration goes through register_driver(), a SECURITY DEFINER function

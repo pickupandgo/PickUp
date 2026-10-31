@@ -1,10 +1,16 @@
-import { Controller, Get, HttpStatus, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpStatus, Patch, Post, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
-import { CurrentIdentity, CurrentPrincipal, CustomerOnly, Public, SignedIn } from '../auth/decorators';
+import {
+  CurrentIdentity,
+  CurrentPrincipal,
+  CustomerOnly,
+  Public,
+  SignedIn,
+} from '../auth/decorators';
 import type { Principal, SignedInIdentity } from '../auth/principal';
-import { CustomerAccountResponse } from './customers.dto';
+import { CustomerAccountResponse, UpdateCustomerProfileRequest } from './customers.dto';
 import { CustomersService } from './customers.service';
 
 /** The signed-in customer's own account. */
@@ -45,5 +51,15 @@ export class CustomersController {
   @CustomerOnly()
   get(@CurrentPrincipal() principal: Principal): Promise<CustomerAccountResponse> {
     return this.customers.get(principal);
+  }
+
+  /** Edits only the verified caller's profile; registration remains body-free. */
+  @Patch('me')
+  @CustomerOnly()
+  update(
+    @CurrentPrincipal() principal: Principal,
+    @Body() body: UpdateCustomerProfileRequest,
+  ): Promise<CustomerAccountResponse> {
+    return this.customers.update(principal, body);
   }
 }

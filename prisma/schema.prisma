@@ -670,12 +670,14 @@ model PaymentEvent {
   @@map("payment_events")
 }
 
-/// Customer profile (M5 ER: customers.user_id). Minimal until M2 is supplied (D-09).
+/// Customer-owned editable profile. Identity and account status remain on User.
 model Customer {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId    String   @unique(map: "uq_customers_user") @map("user_id") @db.Uuid
   name      String?  @map("name") @db.VarChar(120)
   email     String?  @map("email") @db.VarChar(255)
+  age       Int?
+  address   String?  @db.VarChar(500)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

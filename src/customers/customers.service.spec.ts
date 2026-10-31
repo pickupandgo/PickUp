@@ -1,21 +1,20 @@
 import { HttpStatus } from '@nestjs/common';
 import type { SignedInIdentity, Principal } from '../auth/principal';
-import { AppError } from '../common/errors/app-error';
+import type { PrismaService } from '../prisma/prisma.service';
 import { ErrorCode } from '../common/errors/error-codes';
 import { CustomersService } from './customers.service';
 
 describe('CustomersService', () => {
+  const createPrismaMock = () => ({
+    $queryRaw: jest.fn(),
+    customer: { findUniqueOrThrow: jest.fn(), findFirst: jest.fn() },
+  });
   let service: CustomersService;
-  let mockPrisma: any;
+  let mockPrisma: ReturnType<typeof createPrismaMock>;
 
   beforeEach(() => {
-    mockPrisma = {
-      $queryRaw: jest.fn(),
-      customer: {
-        findUniqueOrThrow: jest.fn(),
-      },
-    };
-    service = new CustomersService(mockPrisma);
+    mockPrisma = createPrismaMock();
+    service = new CustomersService(mockPrisma as unknown as PrismaService);
   });
 
   const validIdentity: SignedInIdentity = {
@@ -84,6 +83,8 @@ describe('CustomersService', () => {
         status: 'ACTIVE',
         name: 'Aarav Patel',
         email: 'aarav.patel@example.com',
+        age: null,
+        address: null,
         createdAt: '2026-10-21T10:00:00.000Z',
       });
     });
@@ -165,10 +166,10 @@ describe('CustomersService', () => {
       const mockPrincipal: Principal = {
         userId: 'user-uuid-1',
         role: 'CUSTOMER',
-        status: 'ACTIVE',
-        phone: '+919876543210',
+        driver: null,
+        session: { authenticatedAt: null, signInProvider: 'phone', phoneNumber: null },
         customer: { id: 'cust-uuid-1' },
-      } as any;
+      };
 
       mockPrisma.customer.findUniqueOrThrow.mockResolvedValueOnce({
         id: 'cust-uuid-1',
@@ -191,16 +192,13 @@ describe('CustomersService', () => {
 
   describe('checkPhone', () => {
     it('returns { exists: false } when phone is empty or invalid', async () => {
-      mockPrisma.customer = { findFirst: jest.fn() };
       expect(await service.checkPhone('')).toEqual({ exists: false });
-      expect(await service.checkPhone(null as any)).toEqual({ exists: false });
+      expect(await service.checkPhone(null as unknown as string)).toEqual({ exists: false });
       expect(mockPrisma.customer.findFirst).not.toHaveBeenCalled();
     });
 
     it('returns { exists: true } when customer exists', async () => {
-      mockPrisma.customer = {
-        findFirst: jest.fn().mockResolvedValueOnce({ id: 'cust-1' }),
-      };
+      mockPrisma.customer.findFirst.mockResolvedValueOnce({ id: 'cust-1' });
 
       const result = await service.checkPhone('9876543210');
       expect(result).toEqual({ exists: true });
@@ -216,9 +214,7 @@ describe('CustomersService', () => {
     });
 
     it('returns { exists: false } when customer does not exist', async () => {
-      mockPrisma.customer = {
-        findFirst: jest.fn().mockResolvedValueOnce(null),
-      };
+      mockPrisma.customer.findFirst.mockResolvedValueOnce(null);
 
       const result = await service.checkPhone('+919876543210');
       expect(result).toEqual({ exists: false });
