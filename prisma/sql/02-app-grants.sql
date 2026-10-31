@@ -178,3 +178,13 @@ GRANT UPDATE (profile_name, profile_version, email, date_of_birth, gender,
   residential_address, city, state, pin_code, selected_vehicle_category,
   driving_license_ciphertext, driving_license_last4, licence_expires_on,
   licence_vehicle_classes, updated_at) ON drivers TO mr_app;
+
+-- Chat and push storage (apply after migration 20261031210000).
+GRANT SELECT, INSERT ON chat_messages, device_tokens, notification_preferences TO mr_app;
+GRANT UPDATE(status, read_at, updated_at) ON chat_messages TO mr_app;
+GRANT UPDATE(token, role, platform, language, is_active, last_seen_at, updated_at) ON device_tokens TO mr_app;
+GRANT UPDATE(push_enabled, sound_enabled, language, updated_at) ON notification_preferences TO mr_app;
+
+-- Persisted notification inbox (after 20261031220000).
+GRANT SELECT, INSERT ON inbox_notifications TO mr_app;
+GRANT UPDATE(read_at) ON inbox_notifications TO mr_app;

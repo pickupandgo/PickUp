@@ -9,7 +9,12 @@ describe('ChatService', () => {
   let mockPrisma: {
     booking: { findUnique: jest.Mock };
     trip: { findUnique: jest.Mock };
-    chatMessage: { findMany: jest.Mock; create: jest.Mock; updateMany: jest.Mock };
+    chatMessage: {
+      findMany: jest.Mock;
+      create: jest.Mock;
+      updateMany: jest.Mock;
+      findFirst: jest.Mock;
+    };
   };
   let mockNotifications: {
     sendNotification: jest.Mock;
@@ -35,6 +40,7 @@ describe('ChatService', () => {
       chatMessage: {
         findMany: jest.fn(),
         create: jest.fn(),
+        findFirst: jest.fn(),
         updateMany: jest.fn(),
       },
     };
@@ -148,5 +154,65 @@ describe('ChatService', () => {
         }),
       );
     });
+  });
+  it('never acknowledges DB create failure or sends a push for an unsaved message', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue(mockBooking);
+    mockPrisma.chatMessage.create.mockRejectedValue(new Error('DB unavailable'));
+    await expect(
+      service.sendMessage('b-123', makePrincipal('cust-user-1', 'CUSTOMER'), { text: 'Hello' }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(mockNotifications.sendNotification).not.toHaveBeenCalled();
+  });
+  it('reports read/ack storage failures rather than empty success', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue(mockBooking);
+    mockPrisma.chatMessage.findMany.mockRejectedValue(new Error('DB unavailable'));
+    mockPrisma.chatMessage.updateMany.mockRejectedValue(new Error('DB unavailable'));
+    const principal = makePrincipal('cust-user-1', 'CUSTOMER');
+    await expect(service.getMessages('b-123', principal)).rejects.toMatchObject({ status: 503 });
+    await expect(service.markAsRead('b-123', principal)).rejects.toMatchObject({ status: 503 });
+  });
+  it('replays an identical client message reference and refuses different content', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue(mockBooking);
+    mockPrisma.chatMessage.create.mockRejectedValue({ code: 'P2002' });
+    mockPrisma.chatMessage.findFirst.mockResolvedValue({
+      id: 'saved',
+      bookingId: 'b-123',
+      senderUserId: 'cust-user-1',
+      senderRole: 'CUSTOMER',
+      text: 'Hello',
+      imageUrl: null,
+      clientMessageId: 'client_key_123456789',
+      status: 'SENT',
+      createdAt: new Date(),
+    });
+    const principal = makePrincipal('cust-user-1', 'CUSTOMER');
+    await expect(
+      service.sendMessage('b-123', principal, {
+        text: 'Hello',
+        clientMessageId: 'client_key_123456789',
+      }),
+    ).resolves.toMatchObject({ id: 'saved', clientMessageId: 'client_key_123456789' });
+    await expect(
+      service.sendMessage('b-123', principal, {
+        text: 'Changed',
+        clientMessageId: 'client_key_123456789',
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(mockNotifications.sendNotification).not.toHaveBeenCalled();
+  });
+  it('keeps a durable send successful when push notification fails', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue(mockBooking);
+    mockPrisma.chatMessage.create.mockResolvedValue({
+      id: 'saved',
+      bookingId: 'b-123',
+      senderRole: 'CUSTOMER',
+      text: 'Hello',
+      status: 'SENT',
+      createdAt: new Date(),
+    });
+    mockNotifications.sendNotification.mockRejectedValue(new Error('Push unavailable'));
+    await expect(
+      service.sendMessage('b-123', makePrincipal('cust-user-1', 'CUSTOMER'), { text: 'Hello' }),
+    ).resolves.toMatchObject({ id: 'saved', status: 'sent' });
   });
 });

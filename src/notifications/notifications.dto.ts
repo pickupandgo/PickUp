@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsUUID, IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class RegisterDeviceTokenDto {
   @IsString()
@@ -50,4 +50,10 @@ export interface NotificationPreferencesResponse {
   pushEnabled: boolean;
   soundEnabled: boolean;
   language: string;
+}
+
+export class NotificationInboxQuery {
+  @IsOptional()
+  @IsUUID()
+  cursor?: string;
 }

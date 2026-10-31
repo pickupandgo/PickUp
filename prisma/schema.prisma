@@ -292,6 +292,7 @@ enum PayoutItemStatus {
 
 /// Base identity (M3 users). One row per phone number.
 model User {
+  inboxNotifications InboxNotification[]
   id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// E.164 format, e.g. +919876543210.
   phone     String     @unique(map: "uq_users_phone") @db.VarChar(20)
@@ -1599,6 +1600,7 @@ model FareQuoteStop {
 
 /// Customer–Driver Chat Messages scoped to a booking/trip.
 model ChatMessage {
+  clientMessageId String? @map("client_message_id") @db.VarChar(100)
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   bookingId    String    @map("booking_id") @db.Uuid
   senderUserId String    @map("sender_user_id") @db.Uuid
@@ -1613,6 +1615,7 @@ model ChatMessage {
   booking    Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   senderUser User    @relation(fields: [senderUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
+  @@unique([bookingId, senderUserId, clientMessageId], map: "uq_chat_message_client")
   @@index([bookingId, createdAt], map: "idx_chat_messages_booking_created")
   @@map("chat_messages")
 }
@@ -1651,3 +1654,19 @@ model NotificationPreference {
   @@map("notification_preferences")
 }
 
+
+
+model InboxNotification {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  role UserRole
+  type String @db.VarChar(80)
+  title String @db.VarChar(200)
+  body String @db.Text
+  data Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  readAt DateTime? @map("read_at") @db.Timestamptz(6)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  @@index([userId, role, createdAt, id], map: "idx_inbox_notifications_owner")
+  @@map("inbox_notifications")
+}

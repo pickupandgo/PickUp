@@ -8,6 +8,7 @@ import { ChatMessageDto, SendChatMessageDto } from './chat.dto';
 
 interface ChatRecord {
   id: string;
+  clientMessageId?: string | null;
   bookingId: string;
   senderUserId: string;
   senderRole: string;
@@ -99,10 +100,12 @@ export class ChatService {
       });
 
       return records.map(this.toDto);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`Could not read ChatMessage table: ${message}`);
-      return [];
+    } catch {
+      throw new AppError(
+        ErrorCode.SERVICE_UNAVAILABLE,
+        HttpStatus.SERVICE_UNAVAILABLE,
+        'Chat history is temporarily unavailable',
+      );
     }
   }
 
@@ -123,6 +126,7 @@ export class ChatService {
       savedMessage = await this.prisma.chatMessage.create({
         data: {
           bookingId,
+          clientMessageId: dto.clientMessageId ?? null,
           senderUserId: principal.userId,
           senderRole: principal.role,
           text: dto.text,
@@ -132,55 +136,72 @@ export class ChatService {
           updatedAt: now,
         },
       });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`Fallback in-memory chat message: ${message}`);
-      savedMessage = {
-        id: `msg-${Date.now()}`,
-        bookingId,
-        senderUserId: principal.userId,
-        senderRole: principal.role,
-        text: dto.text,
-        imageUrl: dto.imageUrl ?? null,
-        status: 'SENT',
-        readAt: null,
-        createdAt: now,
-      };
-    }
-
-    // Determine recipient for push notification
-    if (context.isCustomer && context.driverUserId) {
-      // Customer sent to Driver
-      await this.notifications.sendNotification(
-        context.driverUserId,
-        'DRIVER',
-        'NEW_CHAT_MESSAGE',
-        {
-          senderName: 'Customer',
-          text: dto.text,
-        },
-        {
-          bookingId,
-          tripId: context.trip?.id || '',
-        },
-      );
-    } else if (context.isDriver) {
-      // Driver sent to Customer
-      await this.notifications.sendNotification(
-        context.customerUserId,
-        'CUSTOMER',
-        'NEW_CHAT_MESSAGE',
-        {
-          senderName: 'Driver',
-          text: dto.text,
-        },
-        {
-          bookingId,
-          tripId: context.trip?.id || '',
-        },
+    } catch (error: unknown) {
+      if (dto.clientMessageId && (error as { code?: string })?.code === 'P2002') {
+        const existing = await this.prisma.chatMessage.findFirst({
+          where: {
+            bookingId,
+            senderUserId: principal.userId,
+            clientMessageId: dto.clientMessageId,
+          },
+        });
+        if (existing) {
+          if (
+            existing.text !== dto.text ||
+            (existing.imageUrl ?? null) !== (dto.imageUrl ?? null)
+          ) {
+            throw new AppError(
+              ErrorCode.IDEMPOTENCY_KEY_REUSED,
+              HttpStatus.CONFLICT,
+              'This message reference was already used for different content',
+            );
+          }
+          return this.toDto(existing);
+        }
+      }
+      throw new AppError(
+        ErrorCode.SERVICE_UNAVAILABLE,
+        HttpStatus.SERVICE_UNAVAILABLE,
+        'Message was not confirmed. Retry with the same message reference.',
       );
     }
 
+    try {
+      // Determine recipient for push notification
+      if (context.isCustomer && context.driverUserId) {
+        // Customer sent to Driver
+        await this.notifications.sendNotification(
+          context.driverUserId,
+          'DRIVER',
+          'NEW_CHAT_MESSAGE',
+          {
+            senderName: 'Customer',
+            text: dto.text,
+          },
+          {
+            bookingId,
+            tripId: context.trip?.id || '',
+          },
+        );
+      } else if (context.isDriver) {
+        // Driver sent to Customer
+        await this.notifications.sendNotification(
+          context.customerUserId,
+          'CUSTOMER',
+          'NEW_CHAT_MESSAGE',
+          {
+            senderName: 'Driver',
+            text: dto.text,
+          },
+          {
+            bookingId,
+            tripId: context.trip?.id || '',
+          },
+        );
+      }
+    } catch {
+      this.logger.warn('Chat saved; push notification failed');
+    }
     return this.toDto(savedMessage);
   }
 
@@ -205,7 +226,11 @@ export class ChatService {
 
       return { updatedCount: result.count };
     } catch {
-      return { updatedCount: 0 };
+      throw new AppError(
+        ErrorCode.SERVICE_UNAVAILABLE,
+        HttpStatus.SERVICE_UNAVAILABLE,
+        'Read acknowledgement could not be saved',
+      );
     }
   }
 
@@ -224,6 +249,7 @@ export class ChatService {
 
     return {
       id: record.id,
+      clientMessageId: record.clientMessageId,
       bookingId: record.bookingId,
       senderUserId: record.senderUserId,
       senderRole: record.senderRole as 'CUSTOMER' | 'DRIVER' | 'SYSTEM',

@@ -257,6 +257,7 @@ describe('OnboardingService', () => {
       vehicles: [
         {
           id: 'vehicle-1',
+          category: 'MINI_TRUCK',
           active: true,
           status: 'VERIFIED',
           verifiedAt: new Date('2026-01-02T00:00:00Z'),
@@ -271,6 +272,7 @@ describe('OnboardingService', () => {
       eligible: true,
       reasons: [],
       vehicleId: 'vehicle-1',
+      vehicleCategory: 'MINI_TRUCK',
     });
   });
 

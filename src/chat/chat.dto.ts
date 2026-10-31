@@ -1,6 +1,13 @@
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsNotEmpty, IsOptional, IsString, MaxLength, Matches } from 'class-validator';
 
 export class SendChatMessageDto {
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{16,100}$/)
+  clientMessageId?: string;
+
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @IsNotEmpty()
   @MaxLength(2000)
@@ -13,6 +20,7 @@ export class SendChatMessageDto {
 }
 
 export class ChatMessageDto {
+  clientMessageId?: string | null;
   id!: string;
   bookingId!: string;
   senderUserId!: string;

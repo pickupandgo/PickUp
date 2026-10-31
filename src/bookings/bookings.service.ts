@@ -256,6 +256,14 @@ export class BookingsService {
           { reasons: eligibility.reasons },
         );
       }
+      if (!booking.vehicleCategory || eligibility.vehicleCategory !== booking.vehicleCategory) {
+        throw new AppError(
+          ErrorCode.DRIVER_NOT_ELIGIBLE,
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          'Verified driver vehicle does not match the booking category',
+          { reasons: ['VEHICLE_CATEGORY_MISMATCH'] },
+        );
+      }
       const trip = await tx.trip.create({ data: { bookingId, driverId: driver.id } });
       const updated = await tx.booking.update({
         where: { id: bookingId },

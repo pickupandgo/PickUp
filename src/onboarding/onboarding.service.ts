@@ -1126,6 +1126,7 @@ export class OnboardingService {
       eligible: reasons.length === 0,
       reasons,
       vehicleId: vehicle?.id ?? null,
+      vehicleCategory: vehicle?.status === 'VERIFIED' ? vehicle.category : null,
       checkedAt: now.toISOString(),
     };
   }

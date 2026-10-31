@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { applicationDefault, getApps, initializeApp } from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
+import { AppError } from '../common/errors/app-error';
+import { ErrorCode } from '../common/errors/error-codes';
+import type { UserRole } from '../generated/prisma/client';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DeviceTokenResponse,
@@ -71,6 +76,47 @@ export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  async getInbox(userId: string, role: UserRole, cursor?: string) {
+    if (
+      cursor &&
+      !(await this.prisma.inboxNotification.findFirst({ where: { id: cursor, userId, role } }))
+    ) {
+      throw new AppError(
+        ErrorCode.NOT_FOUND,
+        HttpStatus.NOT_FOUND,
+        'Notification cursor not found',
+      );
+    }
+    const rows = await this.prisma.inboxNotification.findMany({
+      where: { userId, role },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 51,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      select: {
+        id: true,
+        type: true,
+        title: true,
+        body: true,
+        data: true,
+        createdAt: true,
+        readAt: true,
+      },
+    });
+    const items = rows.slice(0, 50);
+    return { items, nextCursor: rows.length > 50 ? (items[items.length - 1]?.id ?? null) : null };
+  }
+
+  async readInbox(userId: string, role: UserRole, id: string) {
+    const item = await this.prisma.inboxNotification.findFirst({ where: { id, userId, role } });
+    if (!item)
+      throw new AppError(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND, 'Notification not found');
+    await this.prisma.inboxNotification.updateMany({
+      where: { id, userId, role, readAt: null },
+      data: { readAt: new Date() },
+    });
+    return { success: true };
+  }
 
   private get notificationPrisma(): NotificationPrismaClient {
     return this.prisma as unknown as NotificationPrismaClient;
@@ -230,35 +276,39 @@ export class NotificationsService {
           language: token.language,
         };
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`DeviceToken table fallback in memory: ${message}`);
+    } catch {
+      throw new AppError(
+        ErrorCode.SERVICE_UNAVAILABLE,
+        HttpStatus.SERVICE_UNAVAILABLE,
+        'Device registration could not be saved',
+      );
     }
-    return {
-      token: dto.token,
-      userId,
-      role: dto.role,
-      platform: dto.platform,
-      language: dto.language,
-    };
+    throw new AppError(
+      ErrorCode.SERVICE_UNAVAILABLE,
+      HttpStatus.SERVICE_UNAVAILABLE,
+      'Device storage unavailable',
+    );
   }
 
-  /**
-   * Unregisters an FCM device token on logout.
-   */
-  async unregisterToken(token: string): Promise<{ success: boolean }> {
+  async unregisterToken(token: string, userId?: string): Promise<{ success: boolean }> {
+    const delegate = this.notificationPrisma.deviceToken;
+    if (!delegate)
+      throw new AppError(
+        ErrorCode.SERVICE_UNAVAILABLE,
+        HttpStatus.SERVICE_UNAVAILABLE,
+        'Device storage unavailable',
+      );
     try {
-      const tokenDelegate = this.notificationPrisma.deviceToken;
-      if (tokenDelegate) {
-        await tokenDelegate.updateMany({
-          where: { token },
-          data: { isActive: false },
-        });
-      }
-      this.logger.log(`Unregistered device token: ${token.slice(0, 10)}...`);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`Could not unregister token in DB: ${message}`);
+      await delegate.updateMany({
+        where: { token, ...(userId ? { userId } : {}) },
+        data: { isActive: false },
+      });
+    } catch {
+      throw new AppError(
+        ErrorCode.SERVICE_UNAVAILABLE,
+        HttpStatus.SERVICE_UNAVAILABLE,
+        'Device revocation could not be saved',
+      );
     }
     return { success: true };
   }
@@ -408,6 +458,20 @@ export class NotificationsService {
     customData: Record<string, string> = {},
   ): Promise<number> {
     const userId = await this.resolveUserId(targetId, role);
+    const inboxTemplate = this.templates[type];
+    if (!inboxTemplate) return 0;
+    const inboxCopy = inboxTemplate.en(variables);
+    // Inbox persists independently of device tokens and push opt-out.
+    await this.prisma.inboxNotification.create({
+      data: {
+        userId,
+        role,
+        type,
+        title: inboxCopy.title,
+        body: inboxCopy.body,
+        data: customData,
+      },
+    });
     const prefs = await this.getPreferences(userId);
     if (!prefs.pushEnabled) {
       this.logger.log(`Push notifications disabled by user preferences for ${userId}`);
@@ -436,10 +500,10 @@ export class NotificationsService {
         body: copy.body,
         channelId: template.channelId,
         data: {
+          ...customData,
           notificationType: type,
           recipientId: userId,
           role,
-          ...customData,
         },
       };
 
@@ -454,51 +518,49 @@ export class NotificationsService {
    * Dispatches payload to FCM endpoint.
    */
   private async dispatchFcm(token: string, payload: NotificationPayload): Promise<boolean> {
-    const serverKey = process.env.FIREBASE_SERVER_KEY || process.env.FCM_SERVER_KEY;
-
-    if (serverKey) {
-      try {
-        const res = await fetch('https://fcm.googleapis.com/fcm/send', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `key=${serverKey}`,
+    if (process.env.FCM_ENABLED !== 'true' || !process.env.FCM_PROJECT_ID) return false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const app =
+        getApps().find((item) => item.name === 'pickup-push') ??
+        initializeApp(
+          {
+            credential: applicationDefault(),
+            projectId: process.env.FCM_PROJECT_ID,
           },
-          body: JSON.stringify({
-            to: token,
-            notification: {
-              title: payload.title,
-              body: payload.body,
-              android_channel_id: payload.channelId,
-              sound: 'default',
-            },
-            data: payload.data,
-            priority: 'high',
-          }),
-        });
-
-        if (res.ok) {
-          this.logger.log(`FCM delivered to ${token.slice(0, 10)}...`);
-          return true;
-        } else {
-          const body = await res.text();
-          this.logger.warn(`FCM delivery failed: ${body}`);
-          if (body.includes('NotRegistered') || body.includes('InvalidRegistration')) {
-            await this.unregisterToken(token);
-          }
-          return false;
-        }
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        this.logger.error(`Failed to send FCM: ${message}`);
-        return false;
+          'pickup-push',
+        );
+      // Lock-screen text is generic; private details are fetched from the authenticated inbox.
+      const sending = getMessaging(app).send({
+        token,
+        notification: { title: 'PICKUP update', body: 'Open PICKUP to view your update.' },
+        data: payload.data,
+        android: {
+          priority: 'high',
+          notification: { channelId: payload.channelId, sound: 'default' },
+        },
+      });
+      await Promise.race([
+        sending,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('FCM timeout')), 15000);
+        }),
+      ]);
+      return true; // Accepted by FCM; not a device-delivery/read acknowledgement.
+    } catch (error: unknown) {
+      const code = (error as { code?: string })?.code;
+      if (
+        code === 'messaging/registration-token-not-registered' ||
+        code === 'messaging/invalid-registration-token'
+      ) {
+        await this.unregisterToken(token, payload.data.recipientId).catch(() => {});
       }
+      this.logger.warn(
+        'FCM send was not accepted; check provider configuration or device registration',
+      );
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
-
-    // Dev/Test simulation mode
-    this.logger.log(
-      `[SIMULATED PUSH] To: ${token.slice(0, 10)}... | Title: "${payload.title}" | Body: "${payload.body}" | Channel: ${payload.channelId} | Data: ${JSON.stringify(payload.data)}`,
-    );
-    return true;
   }
 }

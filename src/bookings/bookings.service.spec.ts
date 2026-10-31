@@ -13,8 +13,14 @@ describe('BookingsService assignment authorization', () => {
     };
   }
 
-  function setup(options: { existing?: { id: string; driverId: string } | null; eligible?: boolean } = {}) {
-    const booking = { id: BOOKING_ID, status: 'SEARCHING_DRIVER' };
+  function setup(
+    options: {
+      existing?: { id: string; driverId: string } | null;
+      eligible?: boolean;
+      category?: string | null;
+    } = {},
+  ) {
+    const booking = { id: BOOKING_ID, status: 'SEARCHING_DRIVER', vehicleCategory: 'MINI_TRUCK' };
     const tx = {
       // lockBooking then lockTripOfBooking; the raw SQL itself is not under test here.
       $queryRaw: jest
@@ -27,7 +33,9 @@ describe('BookingsService assignment authorization', () => {
       },
       trip: {
         findUniqueOrThrow: jest.fn().mockResolvedValue(options.existing ?? null),
-        create: jest.fn().mockResolvedValue({ id: 'trip-1', bookingId: BOOKING_ID, driverId: DRIVER_ID }),
+        create: jest
+          .fn()
+          .mockResolvedValue({ id: 'trip-1', bookingId: BOOKING_ID, driverId: DRIVER_ID }),
       },
     };
     const prisma = {
@@ -40,6 +48,7 @@ describe('BookingsService assignment authorization', () => {
         eligible: options.eligible ?? false,
         reasons: ['KYC_NOT_VERIFIED'],
         vehicleId: null,
+        vehicleCategory: options.category === undefined ? 'MINI_TRUCK' : options.category,
         checkedAt: new Date().toISOString(),
       }),
     };
@@ -78,8 +87,22 @@ describe('BookingsService assignment authorization', () => {
     });
 
     expect(onboarding.eligibilityIn).toHaveBeenCalledWith(DRIVER_ID, tx);
-    expect(tx.trip.create).toHaveBeenCalledWith({ data: { bookingId: BOOKING_ID, driverId: DRIVER_ID } });
+    expect(tx.trip.create).toHaveBeenCalledWith({
+      data: { bookingId: BOOKING_ID, driverId: DRIVER_ID },
+    });
   });
+
+  it.each(['TWO_WHEELER', null])(
+    'rejects mismatched or missing verified vehicle category %s',
+    async (category) => {
+      const { service, tx } = setup({ eligible: true, category });
+      await expect(service.assignDriver(BOOKING_ID, 'firebase-driver')).rejects.toMatchObject({
+        code: ErrorCode.DRIVER_NOT_ELIGIBLE,
+        details: { reasons: ['VEHICLE_CATEGORY_MISMATCH'] },
+      });
+      expect(tx.trip.create).not.toHaveBeenCalled();
+    },
+  );
 
   it('preserves an existing trip for the same driver without reauthorizing new work', async () => {
     const existing = { id: 'trip-existing', driverId: DRIVER_ID };
