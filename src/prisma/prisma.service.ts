@@ -1,5 +1,8 @@
 import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { performance } from 'node:perf_hooks';
+import type { Pool } from 'pg';
+import { databaseFailure, type ReadinessObservation } from './database-diagnostics';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import { Prisma, PrismaClient } from '../generated/prisma/client';
 
@@ -15,6 +18,9 @@ export interface TransactionOptions {
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleDestroy {
+  private readonly observedPool: () => Pool | undefined;
+  private readonly connectedCount: () => number;
+
   constructor(@Inject(APP_CONFIG) config: AppConfig) {
     const adapter = new PrismaPg(
       {
@@ -29,12 +35,55 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
       },
       {
         // Dropped connections (failover, restarts) are retired by the pool; make them visible.
-        onPoolError: (error) => logger.error({ err: error }, 'Idle database connection failed'),
-        onConnectionError: (error) => logger.warn({ err: error }, 'Database connection failed'),
+        onPoolError: (error) =>
+          logger.error(databaseFailure(error), 'Idle database connection failed'),
+        onConnectionError: (error) =>
+          logger.warn(databaseFailure(error), 'Database connection failed'),
       },
     );
+    // Observe the existing adapter-owned pool; no second pool or setting changes.
+    let pool: Pool | undefined;
+    let connections = 0;
+    const connect = adapter.connect.bind(adapter);
+    adapter.connect = async () => {
+      const driver = await connect();
+      pool = driver.underlyingDriver();
+      pool.on('connect', () => {
+        connections++;
+      });
+      return driver;
+    };
     // Minimal messages keep query arguments (phone numbers, ids) out of error logs.
     super({ adapter, errorFormat: 'minimal' });
+    this.observedPool = () => pool;
+    this.connectedCount = () => connections;
+  }
+
+  /** Same lazy connect + SELECT as before; the caller's existing deadline covers both. */
+  async observeReadiness(observation: ReadinessObservation): Promise<void> {
+    const initializeStarted = performance.now();
+    observation.phase = 'initialize';
+    await this.$connect();
+    observation.initializeMs = Math.round(performance.now() - initializeStarted);
+    observation.phase = 'query';
+    const queryStarted = performance.now();
+    try {
+      await this.$queryRaw`SELECT 1`;
+    } finally {
+      observation.queryMs = Math.round(performance.now() - queryStarted);
+    }
+    observation.phase = 'complete';
+  }
+
+  poolSnapshot() {
+    const pool = this.observedPool();
+    return {
+      initialized: !!pool,
+      total: pool?.totalCount ?? 0,
+      idle: pool?.idleCount ?? 0,
+      waiting: pool?.waitingCount ?? 0,
+      connectionsEstablished: this.connectedCount(),
+    };
   }
 
   /**
