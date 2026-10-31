@@ -18,7 +18,10 @@ describe('Readiness diagnostics preserve the health contract and deadline', () =
       return Promise.resolve();
     });
     controller = new HealthController({
-      observeReadiness,
+      readiness: () => {
+        const observation: ReadinessObservation = { phase: 'initialize' };
+        return { work: observeReadiness(observation), observation };
+      },
       poolSnapshot: () => snapshot,
     } as unknown as PrismaService);
   });

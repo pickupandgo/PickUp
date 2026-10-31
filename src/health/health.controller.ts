@@ -8,7 +8,7 @@ import { withTimeout, TimeoutError } from '../common/async';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
 import { PrismaService } from '../prisma/prisma.service';
-import { databaseFailure, type ReadinessObservation } from '../prisma/database-diagnostics';
+import { databaseFailure } from '../prisma/database-diagnostics';
 
 export class HealthStatusResponse {
   /** Always "ok" when the check passes. */
@@ -32,7 +32,7 @@ export class HealthController {
   @Get('ready')
   async ready(@Req() request: Request): Promise<HealthStatusResponse> {
     const started = performance.now();
-    const observation: ReadinessObservation = { phase: 'initialize' };
+    const { work: query, observation } = this.prisma.readiness();
     let expired = false;
     const details = () => ({
       requestId: request.id,
@@ -40,9 +40,8 @@ export class HealthController {
       ...observation,
       pool: this.prisma.poolSnapshot(),
     });
-    const query = this.prisma.observeReadiness(observation);
     // Observe late completion rather than losing the cause behind a generic 503.
-    // This diagnostic release intentionally keeps the pre-existing timeout behavior.
+    // The shared probe remains registered until the underlying work settles.
     void query.then(
       () => {
         if (expired)

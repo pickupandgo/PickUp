@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { performance } from 'node:perf_hooks';
 import type { Pool } from 'pg';
@@ -17,9 +17,10 @@ export interface TransactionOptions {
 }
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleDestroy {
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly observedPool: () => Pool | undefined;
   private readonly connectedCount: () => number;
+  private readinessCheck?: { work: Promise<void>; observation: ReadinessObservation };
 
   constructor(@Inject(APP_CONFIG) config: AppConfig) {
     const adapter = new PrismaPg(
@@ -59,8 +60,56 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
     this.connectedCount = () => connections;
   }
 
-  /** Same lazy connect + SELECT as before; the caller's existing deadline covers both. */
-  async observeReadiness(observation: ReadinessObservation): Promise<void> {
+  /** Nest awaits this before listen(): a live process must have initialized its real DB path. */
+  async onModuleInit(): Promise<void> {
+    const started = performance.now();
+    const check = this.readiness();
+    try {
+      await check.work;
+      logger.log(
+        {
+          event: 'database_initialized',
+          durationMs: Math.round(performance.now() - started),
+          ...check.observation,
+          pool: this.poolSnapshot(),
+        },
+        'Database initialized before accepting requests',
+      );
+    } catch (error) {
+      logger.error(
+        {
+          event: 'database_initialization_failed',
+          durationMs: Math.round(performance.now() - started),
+          ...check.observation,
+          ...databaseFailure(error),
+        },
+        'Database initialization failed',
+      );
+      // The bootstrap handler logs startup errors; never give it a raw driver error.
+      // eslint-disable-next-line preserve-caught-error -- Bootstrap logs causes; retain only safe classified driver details.
+      throw new Error('Database initialization failed', { cause: databaseFailure(error) });
+    }
+  }
+
+  /**
+   * Share one real probe until its underlying work settles, including after HTTP deadlines.
+   * Promise.race cannot cancel Prisma work. Retaining this flight prevents repeated probes
+   * from consuming more pool slots while a slow/failed connection or statement is retiring.
+   * The adapter's existing connection and statement timeouts remain the cleanup bounds.
+   */
+  readiness() {
+    if (this.readinessCheck) return this.readinessCheck;
+    const observation: ReadinessObservation = { phase: 'initialize' };
+    const check = { work: this.observeReadiness(observation), observation };
+    this.readinessCheck = check;
+    const settled = () => {
+      if (this.readinessCheck === check) this.readinessCheck = undefined;
+    };
+    void check.work.then(settled, settled);
+    return check;
+  }
+
+  private async observeReadiness(observation: ReadinessObservation): Promise<void> {
     const initializeStarted = performance.now();
     observation.phase = 'initialize';
     await this.$connect();
