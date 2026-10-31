@@ -17,6 +17,7 @@ class MainApplication : Application(), ReactApplication {
         PackageList(this).packages.apply {
           // Manually linked packages:
           add(LocationPackage())
+          add(OnboardingFilesPackage())
         },
     )
   }

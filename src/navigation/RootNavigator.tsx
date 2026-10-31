@@ -9,7 +9,7 @@ import {
   type DriverAccount,
   type DriverOnboardingSummary,
 } from '../services/auth/AuthService';
-import { DriverOnboardingScreen } from '../screens/auth/DriverOnboardingScreen';
+import { DriverOnboardingScreen } from '../screens/onboarding/DriverOnboardingFlow';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -42,6 +42,14 @@ export const RootNavigator: React.FC = () => {
     } finally {
       setInitializing(false);
     }
+  }, []);
+
+  const refreshOnboarding = useCallback(async () => {
+    const state = await AuthService.getInstance().getOnboarding();
+    setOnboarding(state);
+    setAccount(current =>
+      current ? { ...current, approvalStatus: state.approvalStatus } : current,
+    );
   }, []);
 
   useEffect(() => {
@@ -110,7 +118,7 @@ export const RootNavigator: React.FC = () => {
     return (
       <DriverOnboardingScreen
         summary={onboarding}
-        onRefresh={bootstrap}
+        onRefresh={refreshOnboarding}
         onSignOut={() => AuthService.getInstance().logout()}
       />
     );

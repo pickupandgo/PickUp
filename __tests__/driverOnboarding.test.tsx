@@ -30,6 +30,11 @@ const text = (renderer: ReactTestRenderer.ReactTestRenderer) =>
     .join(' ');
 
 describe('DriverOnboardingScreen', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  });
   it('renders the resumable profile step from backend state', async () => {
     let renderer!: ReactTestRenderer.ReactTestRenderer;
     await ReactTestRenderer.act(() => {
@@ -42,7 +47,7 @@ describe('DriverOnboardingScreen', () => {
       );
     });
     expect(text(renderer)).toContain('Personal profile');
-    expect(text(renderer)).toContain('Save profile');
+    expect(text(renderer)).toContain('Save and Continue');
   });
   it('does not offer onboarding mutations to a suspended driver', async () => {
     let renderer!: ReactTestRenderer.ReactTestRenderer;
@@ -83,5 +88,34 @@ describe('DriverOnboardingScreen', () => {
     });
     expect(text(renderer)).toContain('securely disabled');
     expect(text(renderer)).not.toContain('Identity verified');
+  });
+  it('does not allow KYC submission when the backend has no required document policy', async () => {
+    const state = summary({
+      profileComplete: true,
+      profileName: 'Test Driver',
+      next: 'KYC',
+      kyc: {
+        id: 'kyc-1',
+        provider: 'MANUAL_ADMIN_VERIFICATION',
+        status: 'PENDING',
+        rejectionReason: null,
+        documents: [],
+      },
+      requiredDocuments: { kyc: [], vehicle: ['RC'] },
+    });
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <DriverOnboardingScreen
+          summary={state}
+          onRefresh={async () => undefined}
+          onSignOut={async () => undefined}
+        />,
+      );
+    });
+    expect(text(renderer)).toContain(
+      'required document policy is not configured',
+    );
+    expect(text(renderer)).not.toContain('Submit KYC for admin review');
   });
 });

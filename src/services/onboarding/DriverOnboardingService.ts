@@ -23,6 +23,9 @@ export interface OnboardingDocument {
   readonly status: DocumentStatus;
   readonly rejectionReason?: string | null;
   readonly createdAt: string;
+  readonly uploadedAt?: string | null;
+  readonly scannedAt?: string | null;
+  readonly reviewedAt?: string | null;
 }
 
 export interface KycApplication {
@@ -69,6 +72,16 @@ export interface DriverOnboardingSummary {
   readonly approvalStatus: DriverApprovalStatus;
   readonly profileComplete: boolean;
   readonly profileName: string | null;
+  readonly profile?: DriverProfile;
+  readonly availableVehicleCategories?: readonly VehicleCategory[];
+  readonly selectedVehicleCategory?: VehicleCategory | null;
+  readonly capabilities?: {
+    readonly manualKycEnabled: boolean;
+    readonly documentUploadsEnabled: boolean;
+    readonly maxDocumentBytes: number;
+    readonly allowedContentTypes: readonly string[];
+    readonly licenceNumberEnabled: boolean;
+  };
   readonly eligible: boolean;
   readonly eligibilityReasons: readonly string[];
   readonly next:
@@ -85,12 +98,52 @@ export interface DriverOnboardingSummary {
   readonly requiredDocuments: {
     readonly kyc: readonly string[];
     readonly vehicle: readonly string[];
+    readonly vehicleByCategory?: Readonly<
+      Partial<Record<VehicleCategory, readonly string[]>>
+    >;
   };
   readonly latestDecision: {
     readonly action: string;
     readonly reason: string | null;
     readonly createdAt: string;
   } | null;
+}
+
+export interface DriverProfile {
+  readonly name: string | null;
+  readonly phone: string;
+  readonly dateOfBirth: string | null;
+  readonly email: string | null;
+  readonly gender: string | null;
+  readonly residentialAddress: string | null;
+  readonly city: string | null;
+  readonly state: string | null;
+  readonly pinCode: string | null;
+  readonly detailsComplete: boolean;
+  readonly age: number | null;
+  readonly ageEligible: boolean | null;
+  readonly minimumAge: number | null;
+  readonly licenceLast4: string | null;
+  readonly licenceExpiresOn: string | null;
+  readonly licenceVehicleClasses: readonly string[];
+}
+export interface ProfileInput {
+  readonly profileVersion: 2;
+  readonly name: string;
+  readonly dateOfBirth: string;
+  readonly email: string;
+  readonly gender?: string;
+  readonly residentialAddress: string;
+  readonly city: string;
+  readonly state: string;
+  readonly pinCode: string;
+  readonly drivingLicenseNumber?: string;
+  readonly licenceExpiresOn?: string;
+  readonly licenceVehicleClasses?: readonly string[];
+}
+export interface UploadProgress {
+  readonly phase: 'PREPARING' | 'UPLOADING' | 'CONFIRMING';
+  readonly percent: number | null;
 }
 
 interface UploadInitiation {
@@ -102,7 +155,7 @@ interface UploadInitiation {
   };
 }
 
-interface VehicleInput {
+export interface VehicleInput {
   readonly category: VehicleCategory;
   readonly registrationNumber: string;
   readonly makeModel: string;
@@ -177,11 +230,40 @@ export class DriverOnboardingService {
   getSummary(): Promise<DriverOnboardingSummary> {
     return this.request('/v1/drivers/me/onboarding');
   }
-  updateProfile(name: string): Promise<unknown> {
-    return this.request('/v1/drivers/me/onboarding/profile', 'PATCH', { name });
+  updateProfile(input: string | ProfileInput): Promise<unknown> {
+    return this.request(
+      '/v1/drivers/me/onboarding/profile',
+      'PATCH',
+      typeof input === 'string' ? { name: input } : input,
+    );
+  }
+  saveVehicleCategory(category: VehicleCategory): Promise<unknown> {
+    return this.request('/v1/drivers/me/onboarding/vehicle-category', 'PATCH', {
+      category,
+    });
+  }
+  previewDocument(
+    kind: 'KYC' | 'VEHICLE',
+    id: string,
+  ): Promise<{ url: string; contentType: string; expiresInSeconds: number }> {
+    return this.request(
+      `/v1/drivers/me/onboarding/documents/${kind}/${id}/preview`,
+    );
   }
   startKyc(): Promise<KycApplication> {
     return this.request('/v1/drivers/me/onboarding/kyc', 'POST');
+  }
+  retryDocumentCompletion(
+    kind: 'KYC' | 'VEHICLE',
+    ownerId: string,
+    documentId: string,
+  ): Promise<unknown> {
+    return this.request(
+      `/v1/drivers/me/onboarding/${
+        kind === 'KYC' ? 'kyc' : 'vehicles'
+      }/${ownerId}/documents/${documentId}/complete`,
+      'POST',
+    );
   }
   submitKyc(applicationId: string): Promise<unknown> {
     return this.request(
@@ -222,6 +304,8 @@ export class DriverOnboardingService {
     applicationId: string,
     documentType: string,
     asset: Asset,
+    onProgress?: (progress: UploadProgress) => void,
+    limits?: { maxBytes: number; allowedContentTypes: readonly string[] },
   ): Promise<void> {
     await this.upload(
       `/v1/drivers/me/onboarding/kyc/${applicationId}/documents`,
@@ -229,6 +313,8 @@ export class DriverOnboardingService {
         `/v1/drivers/me/onboarding/kyc/${applicationId}/documents/${documentId}/complete`,
       documentType,
       asset,
+      onProgress,
+      limits,
     );
   }
 
@@ -236,6 +322,8 @@ export class DriverOnboardingService {
     vehicleId: string,
     documentType: string,
     asset: Asset,
+    onProgress?: (progress: UploadProgress) => void,
+    limits?: { maxBytes: number; allowedContentTypes: readonly string[] },
   ): Promise<void> {
     await this.upload(
       `/v1/drivers/me/onboarding/vehicles/${vehicleId}/documents`,
@@ -243,6 +331,8 @@ export class DriverOnboardingService {
         `/v1/drivers/me/onboarding/vehicles/${vehicleId}/documents/${documentId}/complete`,
       documentType,
       asset,
+      onProgress,
+      limits,
     );
   }
 
@@ -251,28 +341,82 @@ export class DriverOnboardingService {
     completePath: (documentId: string) => string,
     documentType: string,
     asset: Asset,
+    onProgress?: (progress: UploadProgress) => void,
+    limits?: { maxBytes: number; allowedContentTypes: readonly string[] },
   ): Promise<void> {
     if (!asset.uri) throw new Error('The selected document could not be read.');
-    const contentType = asset.type === 'image/png' ? 'image/png' : 'image/jpeg';
+    if (!/^(file|content):\/\//.test(asset.uri))
+      throw new Error('Select a photograph from the camera or device gallery.');
+    if (!asset.type || !['image/png', 'image/jpeg'].includes(asset.type))
+      throw new Error('Select a JPEG or PNG photograph.');
+    const contentType = asset.type;
+    if (limits && !limits.allowedContentTypes.includes(contentType))
+      throw new Error('This file type is not accepted by the document policy.');
+    const maxBytes = limits?.maxBytes ?? 20_000_000;
+    if (asset.fileSize && asset.fileSize > maxBytes)
+      throw new Error('This file exceeds the allowed document size.');
+    onProgress?.({ phase: 'PREPARING', percent: null });
     const fileResponse = await fetch(asset.uri);
     if (!fileResponse.ok)
       throw new Error('The selected document could not be opened.');
     const blob = await fileResponse.blob();
-    const sizeBytes = asset.fileSize ?? blob.size;
-    if (!Number.isInteger(sizeBytes) || sizeBytes < 1)
-      throw new Error('The selected document is empty.');
-    const initiation = await this.request<UploadInitiation>(initPath, 'POST', {
-      documentType,
-      contentType,
-      sizeBytes,
-    });
-    const uploadResponse = await fetch(initiation.upload.url, {
-      method: 'PUT',
-      headers: { ...initiation.upload.headers },
-      body: blob,
-    });
-    if (!uploadResponse.ok)
-      throw new Error('Secure document upload failed. Please try again.');
-    await this.request(completePath(initiation.document.id), 'POST');
+    try {
+      const sizeBytes = blob.size;
+      if (!Number.isInteger(sizeBytes) || sizeBytes < 1)
+        throw new Error('The selected document is empty.');
+      if (sizeBytes > maxBytes)
+        throw new Error('This file exceeds the allowed document size.');
+      const initiation = await this.request<UploadInitiation>(
+        initPath,
+        'POST',
+        {
+          documentType,
+          contentType,
+          sizeBytes,
+        },
+      );
+      const uploadUrl = new URL(initiation.upload.url);
+      if (
+        uploadUrl.protocol !== 'https:' ||
+        uploadUrl.username ||
+        uploadUrl.password
+      )
+        throw new Error('Secure document upload is unavailable.');
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', initiation.upload.url);
+        xhr.timeout = 120_000;
+        for (const [header, value] of Object.entries(
+          initiation.upload.headers,
+        )) {
+          // Native transport calculates Content-Length from the actual Blob.
+          if (header.toLowerCase() !== 'content-length')
+            xhr.setRequestHeader(header, value);
+        }
+        xhr.upload.onprogress = event =>
+          onProgress?.({
+            phase: 'UPLOADING',
+            percent: event.lengthComputable
+              ? Math.min(100, Math.round((event.loaded / event.total) * 100))
+              : null,
+          });
+        xhr.onload = () =>
+          xhr.status >= 200 && xhr.status < 300
+            ? resolve()
+            : reject(new Error('Secure document upload failed. Please retry.'));
+        xhr.onerror = () =>
+          reject(new Error('Upload connection failed. Please retry.'));
+        xhr.ontimeout = () =>
+          reject(new Error('Document upload timed out. Please retry.'));
+        xhr.onabort = () => reject(new Error('Document upload was cancelled.'));
+        onProgress?.({ phase: 'UPLOADING', percent: 0 });
+        xhr.send(blob);
+      });
+      onProgress?.({ phase: 'CONFIRMING', percent: null });
+      await this.request(completePath(initiation.document.id), 'POST');
+    } finally {
+      // Release React Native's native Blob allocation, including on upload/init errors.
+      (blob as Blob & { close?: () => void }).close?.();
+    }
   }
 }
