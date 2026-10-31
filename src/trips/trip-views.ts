@@ -26,6 +26,7 @@ export function stopView(stop: EngineStop) {
       longitude: stop.longitude,
       address: stop.address ?? undefined,
     },
+    instructions: stop.instructions ?? undefined,
     receiver:
       stop.receiverName || stop.receiverPhone
         ? {
@@ -79,6 +80,7 @@ export function tripView({ trip, booking, stops }: TripBundle) {
     rideId: booking.id,
     customerId: booking.customerSubject,
     driverId: trip.driverSubject,
+    metadata: booking.metadata ?? undefined,
     externalRef: booking.externalRef,
     paymentBookingId: booking.paymentBookingId,
     paymentTripId: trip.paymentTripId,

@@ -5,6 +5,19 @@ const receiverSchema = z.strictObject({
   phone: z.string().trim().max(20).optional(),
 });
 
+/** Informational only: never changes price, identity or insurance coverage. */
+export const bookingMetadataSchema = z.strictObject({
+  goodsType: z.string().trim().min(1).max(100).optional(),
+  goodsDescription: z.string().trim().max(1000).optional(),
+  declaredValue: z
+    .string()
+    .regex(/^\d{1,12}(\.\d{1,2})?$/)
+    .optional(),
+  specialInstructions: z.string().trim().max(1000).optional(),
+  sender: receiverSchema.optional(),
+  pickupInstructions: z.string().trim().max(1000).optional(),
+});
+
 /**
  * Details of a drop the customer adds to the priced route: who receives it and where exactly.
  * Coordinates are optional; when sent they must be the quote's (the route itself is the quote).
@@ -14,6 +27,7 @@ const dropDetailSchema = z.strictObject({
   longitude: z.number().min(-180).max(180).optional(),
   address: z.string().trim().max(300).optional(),
   receiver: receiverSchema.optional(),
+  instructions: z.string().trim().max(1000).optional(),
 });
 
 const pickupDetailSchema = z.strictObject({
@@ -38,6 +52,7 @@ export const createRideSchema = z.strictObject({
   driverId: z.string().min(1).max(128).optional(),
   /** Compatibility only: if sent, it must be the signed-in customer. */
   customerId: z.string().max(128).optional(),
+  metadata: bookingMetadataSchema.optional(),
   pickup: pickupDetailSchema.optional(),
   drops: z.array(dropDetailSchema).min(1).max(25).optional(),
   /** Single drop (older apps). */

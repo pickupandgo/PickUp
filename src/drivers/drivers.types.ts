@@ -19,5 +19,6 @@ export interface NearbySearchParams {
   latitude: number;
   longitude: number;
   radiusKm: number;
+  vehicleCategory?: string; // canonical verified category for dispatch
   vehicleType?: string; // optional filter — only return drivers of this vehicle type
 }

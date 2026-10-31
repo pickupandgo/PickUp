@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, HttpStatus, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import {
   Driver,
@@ -12,7 +17,7 @@ import { engineError } from '../common/errors';
 import { PaymentBackendClient } from '../payment-backend/payment-backend.client';
 
 export type DriverEligibilityResult =
-  | { readonly kind: 'ELIGIBLE' }
+  | { readonly kind: 'ELIGIBLE'; readonly vehicleCategory: string | null }
   | { readonly kind: 'INELIGIBLE' }
   | { readonly kind: 'UNAVAILABLE' };
 
@@ -90,8 +95,18 @@ export class DriversService {
       `eng-elig-${randomUUID()}`,
     );
     if (outcome.kind === 'OK') {
+      if (outcome.value.eligible && !outcome.value.vehicleCategory) {
+        this.logger.error({
+          alert: 'DRIVER_ELIGIBILITY_CONTRACT_INCOMPLETE',
+          msg: 'Eligible driver has no verified vehicle category',
+        });
+        return { kind: 'UNAVAILABLE' };
+      }
       if (outcome.value.eligible) {
-        return { kind: 'ELIGIBLE' };
+        return {
+          kind: 'ELIGIBLE',
+          vehicleCategory: outcome.value.vehicleCategory,
+        };
       }
       this.markUnavailable(id);
       return { kind: 'INELIGIBLE' };
@@ -99,7 +114,6 @@ export class DriversService {
 
     // A refused identity lookup is not evidence of eligibility. A bad key, timeout, network
     // failure and an unreadable response are all unavailable and also fail closed.
-    this.markUnavailable(id);
     if (outcome.kind === 'UNAVAILABLE') {
       this.logger.error({
         alert: 'DRIVER_ELIGIBILITY_UNAVAILABLE',
@@ -109,12 +123,19 @@ export class DriversService {
       });
       return { kind: 'UNAVAILABLE' };
     }
+    this.markUnavailable(id);
     return { kind: 'INELIGIBLE' };
   }
 
-  async requireEligibleForNewWork(id: string): Promise<void> {
+  async requireEligibleForNewWork(
+    id: string,
+    vehicleCategory?: string,
+  ): Promise<void> {
     const eligibility = await this.checkEligibility(id);
-    if (eligibility.kind === 'ELIGIBLE') {
+    if (
+      eligibility.kind === 'ELIGIBLE' &&
+      (!vehicleCategory || eligibility.vehicleCategory === vehicleCategory)
+    ) {
       return;
     }
     if (eligibility.kind === 'UNAVAILABLE') {
@@ -227,7 +248,26 @@ export class DriversService {
     // 4. Sort Nearest → Farthest
     nearbyDrivers.sort((a, b) => a.distanceKm - b.distanceKm);
 
-    return nearbyDrivers;
+    if (!params.vehicleCategory) return nearbyDrivers;
+    const verified: NearbyDriverResult[] = [];
+    let unavailable = false;
+    for (const candidate of nearbyDrivers) {
+      const eligibility = await this.checkEligibility(candidate.id);
+      if (eligibility.kind === 'UNAVAILABLE') unavailable = true;
+      if (
+        eligibility.kind === 'ELIGIBLE' &&
+        eligibility.vehicleCategory === params.vehicleCategory
+      ) {
+        verified.push(candidate);
+      }
+    }
+    if (!verified.length && unavailable)
+      throw engineError(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        'DRIVER_ELIGIBILITY_UNAVAILABLE',
+        'Driver eligibility is temporarily unavailable.',
+      );
+    return verified;
   }
 
   rateDriver(driverId: string, rating: number): Driver {

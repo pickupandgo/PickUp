@@ -26,6 +26,7 @@ export function buildTestConfig(
     PAYMENT_BACKEND_INTERNAL_API_KEY: TEST_INTERNAL_API_KEY,
     PAYMENT_BACKEND_TIMEOUT_MS: '1000',
     OUTBOX_POLL_INTERVAL_MS: '0',
+    DISPATCH_POLL_INTERVAL_MS: '0',
     OUTBOX_LEASE_SECONDS: '5',
     // Long enough that a retried record is never due again by accident during a test; tests
     // make records due explicitly (flows.makeDue) when they want the next attempt.

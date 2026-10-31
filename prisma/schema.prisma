@@ -130,6 +130,8 @@ model EngineBooking {
   pickupLatitude     Float               @map("pickup_latitude")
   pickupLongitude    Float               @map("pickup_longitude")
   pickupAddress      String?             @map("pickup_address") @db.VarChar(300)
+  searchExhaustedAt  DateTime?           @map("search_exhausted_at") @db.Timestamptz(6)
+  metadata           Json?
   pickupOtp          String              @map("pickup_otp") @db.VarChar(4)
   distanceMeters     Int                 @map("distance_meters")
   /// Display copy of the quote's payable amount; never sent anywhere.
@@ -149,6 +151,7 @@ model EngineBooking {
 
   @@unique([quoteId, customerSubject], map: "uq_engine_bookings_quote_customer")
   @@index([customerSubject, createdAt(sort: Desc)], map: "idx_engine_bookings_customer")
+  @@index([updatedAt, id], map: "idx_engine_dispatch_pending", where: raw("((status = 'OPEN'::engine_booking_status) AND (search_exhausted_at IS NULL))"))
   @@map("engine_bookings")
 }
 
@@ -160,6 +163,7 @@ model EngineStop {
   latitude         Float
   longitude        Float
   address          String?          @db.VarChar(300)
+  instructions     String?          @db.VarChar(1000)
   receiverName     String?          @map("receiver_name") @db.VarChar(100)
   receiverPhone    String?          @map("receiver_phone") @db.VarChar(20)
   distanceMeters   Int              @map("distance_meters")

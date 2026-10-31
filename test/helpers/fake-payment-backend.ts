@@ -146,7 +146,12 @@ export class FakePaymentBackend {
   readonly customers = new Set<string>();
   readonly drivers = new Map<
     string,
-    { approved: boolean; driverId: string; vehicleId: string }
+    {
+      approved: boolean;
+      driverId: string;
+      vehicleId: string;
+      vehicleCategory: string;
+    }
   >();
   readonly quotes = new Map<string, FakeQuote>();
   readonly bookings = new Map<string, FakeBooking>();
@@ -208,12 +213,17 @@ export class FakePaymentBackend {
     this.customers.add(subject);
   }
 
-  addDriver(subject: string, approved = true): void {
+  addDriver(
+    subject: string,
+    approved = true,
+    vehicleCategory = 'MINI_TRUCK',
+  ): void {
     const existing = this.drivers.get(subject);
     this.drivers.set(subject, {
       approved,
       driverId: existing?.driverId ?? randomUUID(),
       vehicleId: existing?.vehicleId ?? randomUUID(),
+      vehicleCategory,
     });
   }
 
@@ -437,7 +447,10 @@ export class FakePaymentBackend {
     let match: RegExpExecArray | null;
     if (
       method === 'GET' &&
-      (match = /^\/v1\/internal\/drivers\/by-subject\/([^/]+)\/eligibility$/.exec(path))
+      (match =
+        /^\/v1\/internal\/drivers\/by-subject\/([^/]+)\/eligibility$/.exec(
+          path,
+        ))
     ) {
       let subject: string;
       try {
@@ -455,6 +468,7 @@ export class FakePaymentBackend {
         eligible: driver.approved,
         reasons: driver.approved ? [] : ['DRIVER_NOT_APPROVED'],
         vehicleId: driver.approved ? driver.vehicleId : null,
+        vehicleCategory: driver.approved ? driver.vehicleCategory : null,
         checkedAt: new Date().toISOString(),
       });
     }

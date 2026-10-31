@@ -8,6 +8,8 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  type OnApplicationBootstrap,
+  type OnModuleDestroy,
 } from '@nestjs/common';
 import { assertSameIdentity } from '../auth/identity';
 import { engineError, paymentBackendUnavailable } from '../common/errors';
@@ -63,7 +65,76 @@ const CONFLICT_CODES: ReadonlySet<string> = new Set([
  *   4. Only a registered booking is offered to a driver.
  */
 @Injectable()
-export class RidesService {
+export class RidesService implements OnApplicationBootstrap, OnModuleDestroy {
+  private stopping = false;
+  private dispatchTimer: NodeJS.Timeout | null = null;
+  private dispatchFlight: Promise<void> | null = null;
+
+  onApplicationBootstrap(): void {
+    this.stopping = false;
+    const interval = this.config.dispatch.pollIntervalMs ?? 1000;
+    if (interval <= 0) return;
+    this.dispatchTimer = setInterval(() => {
+      void this.progressDispatch();
+    }, interval);
+    this.dispatchTimer.unref();
+    void this.progressDispatch();
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    this.stopping = true;
+    if (this.dispatchTimer) clearInterval(this.dispatchTimer);
+    if (this.dispatchFlight) await this.dispatchFlight;
+  }
+
+  /** Durable DB scan: resumes expired/open searches after restart, with no customer repost. */
+  progressDispatch(): Promise<void> {
+    if (this.stopping) return Promise.resolve();
+    if (this.dispatchFlight) return this.dispatchFlight;
+    const flight = this.sweepDispatch().catch((error: unknown) => {
+      this.logger.error({
+        msg: 'Dispatch sweep failed; will retry',
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
+    });
+    this.dispatchFlight = flight;
+    void flight.finally(() => {
+      if (this.dispatchFlight === flight) this.dispatchFlight = null;
+    });
+    return flight;
+  }
+
+  private async sweepDispatch(): Promise<void> {
+    const bookings = await this.prisma.engineBooking.findMany({
+      where: {
+        status: 'OPEN',
+        searchExhaustedAt: null,
+        offers: {
+          none: { status: 'REQUESTED', expiresAt: { gt: new Date() } },
+        },
+      },
+      orderBy: { updatedAt: 'asc' },
+      take: 25,
+    });
+    for (const booking of bookings) {
+      if (this.stopping) break;
+      try {
+        await this.dispatch(booking);
+      } catch (error: unknown) {
+        this.logger.warn({
+          msg: 'Search progression failed; will retry',
+          bookingId: booking.id,
+          error: error instanceof Error ? error.name : 'UnknownError',
+        });
+        // Move failed searches to the back of the bounded scan so one outage cannot starve newer bookings.
+        await this.prisma.engineBooking.updateMany({
+          where: { id: booking.id, status: 'OPEN', searchExhaustedAt: null },
+          data: { updatedAt: new Date() },
+        });
+      }
+    }
+  }
+
   private readonly logger = new Logger(RidesService.name);
 
   constructor(
@@ -129,6 +200,28 @@ export class RidesService {
   }
 
   // ──── READS ────
+
+  async recoverRide(subject: string, quoteId?: string) {
+    if (quoteId !== undefined && !UUID.test(quoteId)) {
+      throw engineError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_QUOTE_ID',
+        'A valid quote ID is required',
+      );
+    }
+    const booking = await this.prisma.engineBooking.findFirst({
+      where: {
+        customerSubject: subject,
+        ...(quoteId
+          ? { quoteId }
+          : {
+              status: { in: ['PENDING_REGISTRATION', 'OPEN', 'ASSIGNED'] },
+            }),
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return booking ? rideView(await this.bundle(booking.id), new Date()) : null;
+  }
 
   async getRide(subject: string, rideId: string) {
     const bundle = await this.bundle(rideId);
@@ -267,6 +360,11 @@ export class RidesService {
     if (!offer) {
       return [];
     }
+    // Do not surface an offer whose current backend vehicle/compliance was revoked.
+    await this.drivers.requireEligibleForNewWork(
+      subject,
+      offer.booking.vehicleCategory,
+    );
     const { booking, ...offerRow } = offer;
     const { stops, ...bookingRow } = booking;
     return [offerView(bookingRow, stops, offerRow)];
@@ -333,7 +431,10 @@ export class RidesService {
         // This synchronous check runs while the booking is locked, immediately before the
         // assignment is persisted. It is intentionally not cached: the backend owns all KYC,
         // vehicle, approval and suspension decisions.
-        await this.drivers.requireEligibleForNewWork(subject);
+        await this.drivers.requireEligibleForNewWork(
+          subject,
+          bundle.booking.vehicleCategory,
+        );
         await tx.engineOffer.update({
           where: { id: current.id },
           data: { status: 'ACCEPTED', respondedAt: now },
@@ -577,6 +678,7 @@ export class RidesService {
             pickupLatitude: quote.pickup.latitude,
             pickupLongitude: quote.pickup.longitude,
             pickupAddress: request.pickup?.address ?? null,
+            metadata: request.metadata,
             pickupOtp: generateOtp(),
             distanceMeters: quote.distanceMeters,
             payablePaise: BigInt(quote.payablePaise),
@@ -669,23 +771,37 @@ export class RidesService {
   /**
    * Selects the nearest eligible driver for an open booking. This is deliberately inside the
    * engine: mobile clients must never see a candidate list or decide who receives a trip.
-   * A booking with no eligible candidate remains OPEN and is reported as REJECTED until a later
+   * A booking with no eligible candidate remains OPEN, marked exhausted, until a later
    * POST retry can dispatch it after a driver comes online.
    */
   private async dispatch(booking: EngineBooking): Promise<void> {
+    const open = await this.prisma.runInTransaction(async (tx) => {
+      await lockBooking(tx, booking.id);
+      const current = await tx.engineBooking.findUniqueOrThrow({
+        where: { id: booking.id },
+      });
+      if (current.status !== 'OPEN') return false;
+      await this.expireOffers(tx, booking.id, new Date());
+      const live = await tx.engineOffer.findFirst({
+        where: { bookingId: booking.id, status: 'REQUESTED' },
+      });
+      return !live;
+    });
+    if (!open) return;
     const candidates = await this.drivers.findNearby({
       latitude: booking.pickupLatitude,
       longitude: booking.pickupLongitude,
       radiusKm: 20,
+      vehicleCategory: booking.vehicleCategory,
     });
     // Do not immediately re-offer a booking to a driver who explicitly declined it or whose
-    // payment assignment was refused. Expired offers remain eligible for a later retry.
+    // payment assignment was refused. Expired offers are excluded too, so the next candidate gets a turn.
     const attempted = new Set(
       (
         await this.prisma.engineOffer.findMany({
           where: {
             bookingId: booking.id,
-            status: { in: ['REJECTED', 'FAILED'] },
+            status: { in: ['REJECTED', 'FAILED', 'EXPIRED'] },
           },
           select: { driverSubject: true },
         })
@@ -707,6 +823,22 @@ export class RidesService {
         throw error;
       }
     }
+    await this.prisma.runInTransaction(async (tx) => {
+      await lockBooking(tx, booking.id);
+      const current = await tx.engineBooking.findUniqueOrThrow({
+        where: { id: booking.id },
+      });
+      if (current.status !== 'OPEN') return;
+      await this.expireOffers(tx, booking.id, new Date());
+      const live = await tx.engineOffer.findFirst({
+        where: { bookingId: booking.id, status: 'REQUESTED' },
+      });
+      if (!live)
+        await tx.engineBooking.update({
+          where: { id: booking.id },
+          data: { searchExhaustedAt: new Date() },
+        });
+    });
   }
 
   /** Offers an open booking to the engine-selected driver; the same offer again is a no-op. */
@@ -719,7 +851,10 @@ export class RidesService {
         'Driver is no longer available.',
       );
     }
-    await this.drivers.requireEligibleForNewWork(driverId);
+    await this.drivers.requireEligibleForNewWork(
+      driverId,
+      booking.vehicleCategory,
+    );
     const ttlMs = this.config.dispatch.offerTtlSeconds * 1000;
     await this.prisma
       .runInTransaction(async (tx) => {
@@ -739,12 +874,12 @@ export class RidesService {
           if (live.driverSubject === driverId) {
             return; // the same request again
           }
-          throw engineError(
-            HttpStatus.CONFLICT,
-            'RIDE_ALREADY_REQUESTED',
-            'This ride is already offered to another driver; wait for the answer or cancel it',
-          );
+          return; // another dispatcher already created the current offer
         }
+        await tx.engineBooking.update({
+          where: { id: booking.id },
+          data: { searchExhaustedAt: null },
+        });
         const earlier = await tx.engineOffer.count({
           where: { bookingId: booking.id },
         });
@@ -845,6 +980,7 @@ function stopRow(
     latitude: drop.latitude,
     longitude: drop.longitude,
     address: detail?.address ?? null,
+    instructions: detail?.instructions ?? null,
     receiverName: detail?.receiver?.name ?? null,
     receiverPhone: detail?.receiver?.phone ?? null,
     distanceMeters: drop.distanceMeters,
@@ -883,15 +1019,15 @@ function isDispatchCandidateUnavailable(error: unknown): boolean {
     return false;
   }
   const response = error.getResponse();
-  if (typeof response !== 'object' || response === null || !('code' in response)) {
+  if (
+    typeof response !== 'object' ||
+    response === null ||
+    !('code' in response)
+  ) {
     return false;
   }
   const { code } = response as { code?: unknown };
-  return (
-    code === 'DRIVER_NOT_ELIGIBLE' ||
-    code === 'DRIVER_ELIGIBILITY_UNAVAILABLE' ||
-    code === 'DRIVER_NOT_AVAILABLE'
-  );
+  return code === 'DRIVER_NOT_ELIGIBLE' || code === 'DRIVER_NOT_AVAILABLE';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

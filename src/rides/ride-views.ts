@@ -42,7 +42,9 @@ export function rideStatus(bundle: RideBundle, now: Date): RideStatus {
       const latest = bundle.offers[0];
       return latest && effectiveOfferStatus(latest, now) === 'REQUESTED'
         ? 'REQUESTED'
-        : 'REJECTED';
+        : bundle.booking.searchExhaustedAt
+          ? 'REJECTED'
+          : 'REQUESTED';
     }
   }
 }
@@ -60,6 +62,7 @@ export function rideView(bundle: RideBundle, now: Date) {
       longitude: view.location.longitude,
       address: view.location.address,
       receiver: view.receiver,
+      instructions: view.instructions,
       payablePaise: view.payablePaise,
     };
   });
@@ -67,6 +70,14 @@ export function rideView(bundle: RideBundle, now: Date) {
     id: booking.id,
     status: rideStatus(bundle, now),
     bookingStatus: booking.status,
+    searchStatus:
+      booking.status !== 'OPEN'
+        ? null
+        : booking.searchExhaustedAt
+          ? 'EXHAUSTED'
+          : latest && effectiveOfferStatus(latest, now) === 'REQUESTED'
+            ? 'OFFERED'
+            : 'SEARCHING',
     offerStatus: latest ? effectiveOfferStatus(latest, now) : null,
     offerExpiresAt: latest?.expiresAt.toISOString() ?? null,
     requestedDriverId: latest?.driverSubject ?? null,
@@ -75,6 +86,7 @@ export function rideView(bundle: RideBundle, now: Date) {
     quoteId: booking.quoteId,
     paymentBookingId: booking.paymentBookingId,
     paymentMethod: booking.paymentMethod,
+    metadata: booking.metadata ?? undefined,
     registrationError: booking.registrationError,
     /** INR, display copy of the payment backend quote. */
     fare: paiseToRupees(booking.payablePaise),
@@ -112,6 +124,7 @@ export function offerView(
       longitude: view.location.longitude,
       address: view.location.address,
       receiver: view.receiver,
+      instructions: view.instructions,
     };
   });
   return {
@@ -129,6 +142,7 @@ export function offerView(
     fare: paiseToRupees(booking.payablePaise),
     payablePaise: Number(booking.payablePaise),
     paymentMethod: booking.paymentMethod,
+    metadata: booking.metadata ?? undefined,
     status: offer.status,
     createdAt: offer.createdAt.toISOString(),
     expiresAt: offer.expiresAt.toISOString(),

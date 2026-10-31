@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CurrentSubject } from '../auth/decorators';
 import { RidesService } from './rides.service';
 
@@ -20,6 +20,18 @@ export class RidesController {
     return {
       success: true,
       ride: await this.ridesService.createRide(subject, body),
+    };
+  }
+
+  /** Read-only recovery; identity always comes from the verified token. */
+  @Get('rides/recovery')
+  async recoverRide(
+    @CurrentSubject() subject: string,
+    @Query('quoteId') quoteId?: string,
+  ) {
+    return {
+      success: true,
+      ride: await this.ridesService.recoverRide(subject, quoteId),
     };
   }
 

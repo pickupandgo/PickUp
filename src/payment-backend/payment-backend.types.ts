@@ -83,6 +83,18 @@ export const internalDriverEligibilitySchema = z.looseObject({
   eligible: z.boolean(),
   reasons: z.array(z.string().min(1).max(80)).max(32),
   vehicleId: z.uuid().nullable(),
+  // Missing on older backends: never infer it from the driver's self-reported label.
+  vehicleCategory: z
+    .enum([
+      'TWO_WHEELER',
+      'THREE_WHEELER',
+      'FOUR_WHEELER',
+      'MINI_TRUCK',
+      'PICKUP_TRUCK',
+    ])
+    .nullable()
+    .optional()
+    .default(null),
   checkedAt: z.iso.datetime(),
 });
 export type InternalDriverEligibility = z.infer<

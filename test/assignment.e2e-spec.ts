@@ -1,3 +1,4 @@
+import { RidesService } from '../src/rides/rides.service';
 import {
   acceptTrip,
   bookRide,
@@ -7,7 +8,6 @@ import {
   outboxOf,
   people,
   post,
-  requestRide,
 } from './helpers/flows';
 import {
   createTestApp,
@@ -173,32 +173,39 @@ describe('Offers and assignment (e2e)', () => {
     expect(ctx.backend.calls(ASSIGN)).toEqual([]);
   });
 
-  it('refuses an expired offer, then lets the customer offer the same booking again', async () => {
+  it('refuses late acceptance and advances an expired offer without a customer repost', async () => {
     const who = people('assign-expired');
     const ride = await bookRide(ctx, who);
+    const next = people('assign-next');
+    ctx.backend.addDriver(next.driver);
+    await goOnline(ctx, next.driver);
     await ctx.prisma.engineOffer.updateMany({
       where: { bookingId: ride.rideId },
-      data: { expiresAt: new Date(Date.now() - 1_000) },
+      data: { expiresAt: new Date(Date.now() - 1000) },
     });
-
-    const late = await post(ctx, `/rides/${ride.rideId}/accept`, who.driver);
-    expect(late.status).toBe(409);
-    const view = await get(ctx, `/rides/${ride.rideId}`, who.customer).expect(
-      200,
-    );
-    expect(view.body.ride).toMatchObject({
-      status: 'REJECTED',
+    await post(ctx, `/rides/${ride.rideId}/accept`, who.driver).expect(409);
+    const waiting = await get(
+      ctx,
+      `/rides/${ride.rideId}`,
+      who.customer,
+    ).expect(200);
+    expect(waiting.body.ride).toMatchObject({
+      status: 'REQUESTED',
+      searchStatus: 'SEARCHING',
       offerStatus: 'EXPIRED',
     });
-
-    const again = await requestRide(ctx, { ...who, quote: ride.quote });
-    expect(again.response.status).toBe(201);
-    expect(again.response.body.ride).toMatchObject({
+    await ctx.app.get(RidesService).progressDispatch();
+    const progressed = await get(
+      ctx,
+      `/rides/${ride.rideId}`,
+      who.customer,
+    ).expect(200);
+    expect(progressed.body.ride).toMatchObject({
       id: ride.rideId,
-      externalRef: ride.externalRef,
+      requestedDriverId: next.driver,
       status: 'REQUESTED',
+      searchStatus: 'OFFERED',
     });
-    // Registered once; SEARCHING reported once.
     expect(ctx.backend.calls(/^\/v1\/internal\/bookings$/)).toHaveLength(1);
     expect(
       await ctx.prisma.engineOutbox.count({ where: { kind: 'SEARCHING' } }),

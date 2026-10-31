@@ -80,6 +80,12 @@ export const envSchema = z
       .default(8),
 
     // How long a driver has to answer an offer (technical default; dispatch rules are D-30).
+    DISPATCH_POLL_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(60000)
+      .default(1000),
     OFFER_TTL_SECONDS: z.coerce.number().int().min(5).max(600).default(15),
   })
   .superRefine((env, context) => {
@@ -141,7 +147,10 @@ export interface EngineConfig {
     readonly maxBackoffMs: number;
     readonly alertAfterAttempts: number;
   };
-  readonly dispatch: { readonly offerTtlSeconds: number };
+  readonly dispatch: {
+    readonly offerTtlSeconds: number;
+    readonly pollIntervalMs?: number;
+  };
 }
 
 export const ENGINE_CONFIG = Symbol('ENGINE_CONFIG');
@@ -186,6 +195,9 @@ export function loadConfig(
       maxBackoffMs: env.OUTBOX_MAX_BACKOFF_MS,
       alertAfterAttempts: env.OUTBOX_ALERT_AFTER_ATTEMPTS,
     },
-    dispatch: { offerTtlSeconds: env.OFFER_TTL_SECONDS },
+    dispatch: {
+      offerTtlSeconds: env.OFFER_TTL_SECONDS,
+      pollIntervalMs: env.DISPATCH_POLL_INTERVAL_MS,
+    },
   };
 }
