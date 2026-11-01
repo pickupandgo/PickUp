@@ -46,6 +46,7 @@ describe('GoodsDetailsScreen — Unit & Integration Tests', () => {
             setReceiver: jest.fn(),
             setQuote: jest.fn(),
             setPaymentMethod: jest.fn(),
+      setCollectionPreference: jest.fn(),
             resetDraft: jest.fn(),
             startNewBooking: jest.fn(),
             ride: undefined,

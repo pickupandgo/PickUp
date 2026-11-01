@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Pressable,
   Image,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -67,6 +68,7 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
     if (polled) setTrip(polled);
   }, [polled, setTrip]);
 
+  const [panelHeight, setPanelHeight] = useState(0);
   const current = polled ?? trip;
   const status = current?.status;
 
@@ -136,7 +138,7 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
       current.stops.forEach((stop, index) => {
         built.push({
           id: `drop-${index}`,
-          kind: 'drop',
+          kind: 'drop', stopNumber: index + 1,
           coordinate: stop.location,
           title: `Drop ${index + 1}`,
           description: stop.location.address,
@@ -173,7 +175,8 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
       <MapCanvas
         style={StyleSheet.absoluteFill as any}
         markers={markers}
-        fitToMarkers={markers.length > 1}
+        fitToMarkers={markers.length > 0}
+        contentInsets={{ top: spacing.xxxl * 3, bottom: panelHeight + spacing.lg }}
         polyline={road.polyline}
         routeStatus={road.status}
         onRetryRoute={road.retry}
@@ -198,7 +201,8 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
 
       {/* Driver Info Bottom Card (Using DraggableBottomSheet for consistent feel, or a static view) */}
       {/* We will use a static positioned view to match the design closely as a fixed bottom card. */}
-      <View style={styles.bottomSheetContainer}>
+      <View style={styles.bottomSheetContainer} onLayout={e => setPanelHeight(e.nativeEvent.layout.height)}>
+        <ScrollView showsVerticalScrollIndicator={false}>
         {showSkeleton ? (
           <DriverAssignedPanelSkeleton testID="driver-assigned-panel-skeleton" />
         ) : (
@@ -265,6 +269,7 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
             </View>
           </>
         )}
+        </ScrollView>
       </View>
     </View>
   );
@@ -382,18 +387,19 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   bottomSheetContainer: {
+    maxHeight: '55%',
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: colors.surfaceContainerLowest + 'E6', // 90% opacity
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     borderTopWidth: 1,
     borderTopColor: colors.surfaceContainerLow,
     paddingHorizontal: spacing.marginMobile,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.xxxl,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
     zIndex: 40,
     ...shadows.elevated,
   },

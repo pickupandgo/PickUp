@@ -48,7 +48,7 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
           <View style={styles.bottomBar}>
             <Pressable
               style={styles.confirmButton}
-              onPress={() => navigation?.navigate('BookingConfirmedScreen')}
+              onPress={() => navigation?.navigate('ReviewBookingScreen')}
               accessibilityRole="button"
               accessibilityLabel="Confirm and book"
             >

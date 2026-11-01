@@ -20,6 +20,7 @@ export interface ButtonProps {
   readonly fullWidth?: boolean;
   readonly accessibilityHint?: string;
   readonly icon?: React.ReactNode;
+  readonly trailing?: React.ReactNode;
   readonly style?: ViewStyle;
   readonly disabledStyle?: ViewStyle;
   readonly disabledTextStyle?: TextStyle;
@@ -35,6 +36,7 @@ const Button: React.FC<ButtonProps> = ({
   fullWidth = false,
   accessibilityHint,
   icon,
+  trailing,
   style: customStyle,
   disabledStyle,
   disabledTextStyle,
@@ -45,6 +47,7 @@ const Button: React.FC<ButtonProps> = ({
     styles[`size_${size}`],
     fullWidth && styles.fullWidth,
     disabled && styles.disabled,
+    trailing && styles.withTrailing,
     customStyle,
     disabled && disabledStyle,
   ].filter(Boolean) as ViewStyle[];
@@ -78,6 +81,7 @@ const Button: React.FC<ButtonProps> = ({
         <>
           {icon && <View style={styles.iconContainer}>{icon}</View>}
           <Text style={textStyle}>{label}</Text>
+          {trailing}
         </>
       )}
     </Pressable>
@@ -85,6 +89,7 @@ const Button: React.FC<ButtonProps> = ({
 };
 
 const styles = StyleSheet.create({
+  withTrailing: { justifyContent: 'space-between' },
   base: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -13,7 +13,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 // Driver screens live outside src/screens but are registered in the same stack.
-const scanDirs = [path.join(root, 'src', 'screens'), path.join(root, 'src', 'driver')];
+const scanDirs = [path.join(root, 'src', 'screens'), path.join(root, 'src', 'driver'), path.join(root, 'src', 'hooks'), path.join(root, 'src', 'services')];
 
 const walk = (dir) =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
@@ -30,7 +30,7 @@ const registered = new Set(
 const files = scanDirs
   .filter((dir) => fs.existsSync(dir))
   .flatMap((dir) => walk(dir))
-  .filter((f) => f.endsWith('.tsx'));
+  .filter((f) => /\.tsx?$/.test(f));
 const used = new Map(); // route -> Set(file)
 const unknown = [];
 const deadHandlers = [];
@@ -95,6 +95,8 @@ const GALLERY_ONLY = new Set([
 ]);
 // Audited compatibility destinations. Keep reasons explicit; do not silently count them as reachable.
 const compatibility = {
+  NoDriversAvailableScreen: 'Legacy recovery entry rechecks server state through shared Review finding/result UI; normal search renders result in place.',
+  DriverFoundScreen: 'Legacy assignment alias opens Trip Details directly; current search replaces with DriverAssignedExpandedScreen.',
   DropCompletedStateScreen: 'Legacy route projects real trip state; live tracking already displays stop outcomes.',
   ReceiverDetailsScreen: 'Legacy form retained; the current location flow edits receiver fields inline.',
   WrittenReviewScreen: 'M11 compatibility route explicitly says submission unavailable.',

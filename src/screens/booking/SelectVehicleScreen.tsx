@@ -1,7 +1,6 @@
-import { Alert } from 'react-native';
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
+import { View, Text, ScrollView, StyleSheet, Pressable, Modal, useWindowDimensions } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getAuth, onAuthStateChanged } from '@react-native-firebase/auth';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { strings, mockVehicleTypes, type VehicleType } from '../../data/mockData';
@@ -9,9 +8,11 @@ import { useBooking, toGeoPoint } from '../../state/BookingContext';
 import { getCustomerProfile } from '../../state/session';
 import { createFareQuote, isQuoteBookable } from '../../api/payments';
 import type { FareQuote } from '../../api/types';
+import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
+import { useRoadRoute } from '../../hooks/useRoute';
 import { useNearbyDrivers } from '../../hooks/useNearbyDrivers';
 import Feather from 'react-native-vector-icons/Feather';
-import TopAppBar from '../../components/organisms/TopAppBar';
+import { useVehiclePreview } from '../../hooks/useVehiclePreview';
 import VehicleOptionCard from '../../components/molecules/VehicleOptionCard';
 import { VehicleSelectionSkeleton, useSkeletonVisibility } from '../../components/skeleton';
 
@@ -85,6 +86,17 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
     hasData: false,
   });
   const { draft, setVehicleType, setSender, setQuote } = useBooking();
+  const [fullRouteOpen, setFullRouteOpen] = useState(false);
+  const safeInsets = useSafeAreaInsets();
+  const { height: windowHeight, fontScale } = useWindowDimensions();
+  const addressRowHeight = Math.max(spacing.rowHeightSm + spacing.sm, Math.ceil((spacing.rowHeightSm + spacing.sm) * fontScale));
+  const addressScroll = useRef<ScrollView>(null);
+  const road = useRoadRoute(draft.pickup, draft.drops[draft.drops.length - 1], draft.drops.slice(0, -1));
+  const routeMarkers = useMemo<readonly MapMarker[]>(() => [
+    ...(draft.pickup ? [{ id: 'pickup', kind: 'pickup' as const, coordinate: draft.pickup, title: 'Pickup' }] : []),
+    ...draft.drops.map((drop, index) => ({ id: `drop-${index}`, kind: 'drop' as const, coordinate: drop, stopNumber: index + 1, title: `Drop ${index + 1}`, description: drop.address })),
+  ], [draft.pickup, draft.drops]);
+  useEffect(() => { addressScroll.current?.scrollTo({ y: 0, animated: false }); }, [draft.drops.length]);
   const [selectedId, setSelectedId] = useState<string>(() => {
     if (draft.vehicleType) {
       const match = mockVehicleTypes.find(
@@ -300,6 +312,8 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
 
   // ─── 4. Selection & Proceed Validation ──────────────────────────────────────
   const selectedVehicle = mockVehicleTypes.find((v) => v.id === selectedId);
+  const preview = useVehiclePreview(draft.pickup, selectedVehicle?.category);
+  const previewMarkers = useMemo<readonly MapMarker[]>(() => preview.vehicles.map(vehicle => ({ id: `preview-${selectedId}-${vehicle.key}`, kind: 'nearby', coordinate: vehicle, vehicleType: vehicle.vehicleCategory, title: selectedVehicle?.name.split(' /')[0], preview: true })), [preview.vehicles, selectedId, selectedVehicle?.name]);
   const selectedQuoteState = quotes[selectedId];
   const selectedQuote = selectedQuoteState?.quote;
   const isSelectedQuoteValid =
@@ -313,83 +327,64 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <TopAppBar
-        title={strings.booking.selectVehicle}
-        leadingIcon={<Text style={styles.backIcon}>←</Text>}
-        onLeadingPress={() => (onBack ? onBack() : navigation?.goBack())}
-        trailingIcon={<Text style={styles.helpText}>Help</Text>}
-        onTrailingPress={() => (onHelp ? onHelp() : Alert.alert('Booking help', 'Check your pickup, drops and goods details. Retry if prices could not load. Driver chat becomes available after assignment.'))}
-      />
 
       {showSkeleton ? (
         <VehicleSelectionSkeleton testID="select-vehicle-skeleton-loading" />
       ) : (
         <>
+          <MapCanvas style={{ height: Math.max(spacing.rowHeightStandard * 3, Math.min(300, windowHeight * (windowHeight < 720 ? 0.28 : 0.34))) }} appearance="home"
+            markers={[...routeMarkers, ...previewMarkers]} fitToMarkers={routeMarkers.length > 0} fitRouteOnly
+            contentInsets={{ top: spacing.rowHeightStandard + spacing.sm, bottom: spacing.xxl }}
+            polyline={road.polyline} routeStatus={road.status} onRetryRoute={road.retry}>
+            {preview.status === 'error' && <Pressable style={styles.previewNotice} accessibilityRole="button" accessibilityLabel="Retry nearby vehicle preview" onPress={preview.refresh}><Text style={styles.previewNoticeText}>Nearby vehicles unavailable. Retry</Text></Pressable>}
+          </MapCanvas>
+          <View style={styles.selectionSheet}>
+          <View style={styles.sheetHandle} />
           <ScrollView
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
+            nestedScrollEnabled
           >
-        {/* Route Summary Card */}
-        <View style={styles.routeSummaryCard}>
-          <View style={styles.routeRow}>
-            <View style={styles.routeTimeline}>
-              <View style={styles.dotGreen} />
-              <View style={styles.timelineLine} />
-            </View>
-            <View style={styles.routeItem}>
-              <Text style={styles.routeItemTitle}>
-                {draft.senderName || 'Sender'} · {displaySenderPhone}
-              </Text>
-              <Text style={styles.routeItemAddress} numberOfLines={1}>
-                {draft.pickup?.address || 'Pickup Location'}
-              </Text>
-            </View>
-          </View>
-
-          {draft.drops.map((drop, index) => {
-            const isLast = index === draft.drops.length - 1;
-            return (
-              <View key={`drop-${index}`} style={styles.routeRow}>
-                <View style={styles.routeTimeline}>
-                  <View style={styles.dotRed} />
-                  {!isLast && <View style={styles.timelineLine} />}
-                </View>
-                <View style={styles.routeItem}>
-                  <Text style={styles.routeItemTitle}>
-                    {drop.receiverName || 'Receiver'} · {drop.receiverPhone || 'No Number'}
-                  </Text>
-                  <Text style={styles.routeItemAddress} numberOfLines={1}>
-                    {drop.address || 'Drop Location'}
-                  </Text>
-                </View>
+        <View style={styles.routeCardHeader}>
+          <Pressable style={styles.fullRouteAction} accessibilityRole="button" accessibilityLabel="View All" onPress={() => setFullRouteOpen(true)}>
+            <Text style={styles.fullRouteActionText}>View All</Text><Feather name="chevron-right" size={spacing.lg} color={colors.primary} />
+          </Pressable>
+        </View>
+        <View style={styles.routeSummaryCard} testID="vehicle-route-summary">
+          <ScrollView ref={addressScroll} testID="vehicle-locations-scroll"
+            style={{ height: addressRowHeight * Math.min(2, draft.drops.length + 1) }}
+            contentContainerStyle={styles.addressScrollContent} nestedScrollEnabled
+            scrollEnabled={draft.drops.length > 0} showsVerticalScrollIndicator persistentScrollbar>
+            <View style={[styles.routeRow, { minHeight: addressRowHeight }]}>
+              <View style={styles.routeTimeline}><View style={styles.dotGreen} /><View style={styles.timelineLine} /></View>
+              <View style={styles.routeItem}>
+                <Text style={[styles.routeItemTitle, styles.pickupLabel]}>PICKUP</Text>
+                <Text style={styles.routeItemAddress} numberOfLines={1} ellipsizeMode="tail" accessibilityLabel={draft.pickup?.address}>{draft.pickup?.address || 'Pickup location'}</Text>
               </View>
-            );
-          })}
-
+            </View>
+            {draft.drops.map((drop, index) => <View key={`drop-${index}`} style={[styles.routeRow, { minHeight: addressRowHeight }]}>
+              <View style={styles.routeTimeline}><View style={styles.dropNumber}><Text style={styles.dropNumberText}>{index + 1}</Text></View>{index < draft.drops.length - 1 && <View style={styles.timelineLine} />}</View>
+              <View style={styles.routeItem}>
+                <Text style={styles.routeItemTitle}>DROP {index + 1} OF {draft.drops.length}</Text>
+                <Text style={styles.routeItemAddress} numberOfLines={1} ellipsizeMode="tail" accessibilityLabel={drop.address}>{drop.address || 'Drop location'}</Text>
+              </View>
+            </View>)}
+          </ScrollView>
           <View style={styles.routeActions}>
-            <Pressable
-              style={styles.routeActionBtn}
-              onPress={() => navigation?.navigate('SelectDropLocationScreen', { mode: 'stop' })}
-            >
-              <Feather name="plus-circle" size={16} color={colors.primary} />
-              <Text style={styles.routeActionText}>Add Stop</Text>
+            <Pressable style={styles.routeActionBtn} accessibilityRole="button" accessibilityLabel="Add stop" disabled={draft.drops.length >= 5} onPress={() => navigation?.navigate('SelectDropLocationScreen', { mode: 'stop' })}>
+              <Feather name="plus-circle" size={spacing.lg} color={colors.primary} /><Text style={styles.routeActionText}>Add stop</Text>
             </Pressable>
             <View style={styles.routeActionDivider} />
-            <Pressable
-              style={styles.routeActionBtn}
-              onPress={() => navigation?.navigate('MultiDropOverviewScreen')}
-            >
-              <Feather name="edit-2" size={16} color={colors.primary} />
-              <Text style={styles.routeActionText}>Edit Locations</Text>
+            <Pressable style={styles.routeActionBtn} accessibilityRole="button" accessibilityLabel="Edit route" onPress={() => navigation?.navigate('MultiDropOverviewScreen')}>
+              <Feather name="edit-2" size={spacing.lg} color={colors.primary} /><Text style={styles.routeActionText}>Edit route</Text>
             </Pressable>
           </View>
         </View>
-
         <View style={styles.subtitleContainer}>
-          <Text style={styles.subtitle}>Choose the right vehicle for your load.</Text>
+          <Text style={styles.subtitle}>Choose your vehicle</Text>
+          <Text style={styles.typeCount}>{mockVehicleTypes.length} types</Text>
         </View>
-
         {pricingError && (
           <View style={styles.pricingErrorBanner} testID="pricing-error-banner">
             <Feather name="alert-circle" size={18} color={colors.onErrorContainer} />
@@ -424,6 +419,7 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
 
             return (
               <VehicleOptionCard
+                compact
                 key={vehicle.id}
                 testID={`vehicle-card-${vehicle.id}`}
                 name={vehicle.name}
@@ -443,9 +439,14 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
           })}
         </View>
       </ScrollView>
+      </View>
 
       {/* Bottom CTA */}
       <View style={styles.footer}>
+        <View style={styles.fareSummary}>
+          <Text style={styles.selectedName} numberOfLines={1}>{selectedVehicle?.name.split(' /')[0] ?? 'Choose a vehicle'}</Text>
+          <Text style={styles.selectedFare}>{selectedQuoteState?.isLoading ? 'Calculating...' : selectedQuote && isSelectedQuoteValid ? formatFare(selectedQuote.payablePaise) : isSelectedQuoteOnRequest ? 'Quote on request' : 'Fare unavailable'}</Text>
+        </View>
         <Pressable
           style={[styles.footerContent, !canProceed && styles.footerDisabled]}
           disabled={!canProceed}
@@ -457,21 +458,74 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
             setVehicleType(selectedVehicle?.name ?? selectedId);
             setQuote(selectedQuote);
             onContinue?.(selectedId);
-            navigation?.navigate('GoodsDetailsScreen');
+            if (route?.params?.returnToReview) {
+              if (navigation?.replace) navigation.replace('ReviewBookingScreen');
+              else navigation?.navigate('ReviewBookingScreen');
+            } else navigation?.navigate('GoodsDetailsScreen');
           }}
         >
           <Text style={styles.ctaLabel}>
-            {`Proceed With ${selectedVehicle?.name?.split(' /')[0] ?? 'Vehicle'}`}
+            Continue
           </Text>
+          <Feather name="arrow-right" size={spacing.xl} color={colors.onPrimary} />
         </Pressable>
       </View>
         </>
       )}
+      <Pressable style={[styles.floatingBack, { top: safeInsets.top + spacing.sm }]} accessibilityRole="button" accessibilityLabel="Navigate back" onPress={() => onBack ? onBack() : navigation?.goBack()}><Feather name="arrow-left" size={spacing.xl} color={colors.primary} /></Pressable>
+      <Modal visible={fullRouteOpen} transparent animationType="slide" onRequestClose={() => setFullRouteOpen(false)} testID="full-route-modal">
+        <View style={styles.modalContainer}>
+          <Pressable style={styles.routeBackdrop} accessibilityRole="button" accessibilityLabel="Close full route" onPress={() => setFullRouteOpen(false)} />
+          <View style={[styles.fullRouteSheet, { paddingBottom: Math.max(safeInsets.bottom, spacing.lg) }]} accessibilityViewIsModal>
+            <View style={styles.sheetHandle} />
+            <View style={styles.fullRouteHeader}>
+              <View><Text style={styles.fullRouteTitle} accessibilityRole="header">Full route</Text><Text style={styles.typeCount}>Pickup to {draft.drops.length} {draft.drops.length === 1 ? 'drop' : 'drops'}</Text></View>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close route details" onPress={() => setFullRouteOpen(false)} style={styles.closeRoute}><Feather name="x" size={spacing.xl} color={colors.primary} /></Pressable>
+            </View>
+            <ScrollView style={styles.fullRouteScroll} contentContainerStyle={styles.fullRouteContent} showsVerticalScrollIndicator>
+              <View style={styles.fullRouteRow}>
+                <View style={styles.routeTimeline}><View style={styles.dotGreen} />{draft.drops.length > 0 && <View style={styles.timelineLine} />}</View>
+                <View style={styles.fullAddressText}><Text style={[styles.routeItemTitle, styles.pickupLabel]}>PICKUP</Text><Text style={styles.fullAddress} testID="full-pickup-address">{draft.pickup?.address || 'Pickup location not selected'}</Text></View>
+              </View>
+              {draft.drops.map((drop, index) => <View style={styles.fullRouteRow} key={`full-drop-${index}`}>
+                <View style={styles.routeTimeline}><View style={styles.dropNumber}><Text style={styles.dropNumberText}>{index + 1}</Text></View>{index < draft.drops.length - 1 && <View style={styles.timelineLine} />}</View>
+                <View style={styles.fullAddressText}><Text style={styles.routeItemTitle}>DROP {index + 1}</Text><Text style={styles.fullAddress} testID={`full-drop-address-${index}`}>{drop.address}</Text></View>
+              </View>)}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  pickupLabel: { color: colors.statusGreen },
+  routeCardHeader: { flexDirection: 'row', justifyContent: 'flex-end' },
+  floatingBack: { position: 'absolute', left: spacing.lg, zIndex: 50, width: spacing.rowHeightSm + spacing.xs, height: spacing.rowHeightSm + spacing.xs, borderRadius: borderRadius.full, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', ...shadows.card },
+  previewNotice: { position: 'absolute', bottom: spacing.sm, left: spacing.md, backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.sm },
+  previewNoticeText: { ...typography.labelSm, color: colors.onSurfaceVariant },
+  fullRouteAction: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, minHeight: spacing.xxxl, paddingLeft: spacing.md },
+  fullRouteActionText: { ...typography.labelSm, color: colors.homeAction, fontWeight: '600' },
+  modalContainer: { flex: 1, justifyContent: 'flex-end' },
+  routeBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.black + '66' },
+  fullRouteSheet: { maxHeight: '80%', backgroundColor: colors.surface, borderTopLeftRadius: borderRadius.xxl, borderTopRightRadius: borderRadius.xxl, paddingHorizontal: spacing.lg },
+  fullRouteHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.lg },
+  fullRouteTitle: { ...typography.headlineMd, color: colors.primary },
+  closeRoute: { width: spacing.rowHeightSm + spacing.xs, height: spacing.rowHeightSm + spacing.xs, alignItems: 'center', justifyContent: 'center' },
+  fullRouteScroll: { flexShrink: 1 },
+  fullRouteContent: { paddingBottom: spacing.lg },
+  fullRouteRow: { flexDirection: 'row', minHeight: spacing.rowHeightStandard },
+  fullAddressText: { flex: 1, minWidth: 0, paddingVertical: spacing.sm },
+  fullAddress: { ...typography.bodyMd, color: colors.primary, marginTop: spacing.xs },
+  selectionSheet: { flex: 1, backgroundColor: colors.surface, borderTopLeftRadius: borderRadius.xxl, borderTopRightRadius: borderRadius.xxl },
+  sheetHandle: { width: spacing.xxxl, height: spacing.xs, borderRadius: borderRadius.full, backgroundColor: colors.outlineVariant, alignSelf: 'center', marginTop: spacing.sm },
+  dropNumber: { marginTop: spacing.sm, width: spacing.xl, height: spacing.xl, borderRadius: borderRadius.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  dropNumberText: { ...typography.labelSm, color: colors.onPrimary },
+  typeCount: { ...typography.labelSm, color: colors.statusGreen, backgroundColor: colors.selectionTint, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: borderRadius.full },
+  fareSummary: { flex: 1, minWidth: 0 },
+  selectedName: { ...typography.labelSm, color: colors.onSurfaceVariant },
+  selectedFare: { ...typography.headlineSm, color: colors.onSuccessContainer },
   container: {
     flex: 1,
     backgroundColor: colors.surfaceContainerLow,
@@ -481,7 +535,7 @@ const styles = StyleSheet.create({
     color: colors.onSurface,
   },
   helpText: {
-    fontSize: typography.bodyMd.fontSize,
+    fontSize: typography.labelSm.fontSize,
     fontWeight: '500',
     color: colors.onSurfaceVariant,
     fontFamily: typography.bodyMd.fontFamily,
@@ -490,13 +544,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: spacing.marginMobile,
-    paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.marginMobile,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.lg,
   },
+  addressScrollContent: { paddingRight: spacing.sm },
   routeSummaryCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceBright,
     borderRadius: borderRadius.lg,
-    padding: spacing.md,
+    padding: spacing.sm,
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.outlineHairline,
@@ -514,7 +570,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.statusGreen,
+    backgroundColor: colors.homePickup,
     marginTop: 16,
   },
   dotRed: {
@@ -534,27 +590,29 @@ const styles = StyleSheet.create({
   },
   routeItem: {
     flex: 1,
+    minWidth: 0,
+    paddingRight: spacing.lg,
     justifyContent: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs,
   },
   routeItemTitle: {
+    ...typography.labelCaps,
     fontSize: typography.labelSm.fontSize,
     color: colors.onSurfaceVariant,
     fontFamily: typography.labelSm.fontFamily,
   },
   routeItemAddress: {
-    fontSize: typography.bodyMd.fontSize,
+    ...typography.bodyMd,
     color: colors.onSurface,
-    fontFamily: typography.bodyMd.fontFamily,
     fontWeight: '500',
-    marginTop: 2,
+    marginTop: spacing.xs,
   },
   routeActions: {
     flexDirection: 'row',
     borderTopWidth: 1,
     borderTopColor: colors.outlineHairline,
     marginTop: spacing.sm,
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
   },
   routeActionBtn: {
     flex: 1,
@@ -562,10 +620,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
+    minHeight: spacing.xxxl,
   },
   routeActionText: {
     fontSize: typography.labelSm.fontSize,
-    color: colors.primary,
+    color: colors.homeAction,
     fontFamily: typography.labelSm.fontFamily,
     fontWeight: '600',
   },
@@ -574,17 +633,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.outlineHairline,
   },
   subtitleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingBottom: spacing.md,
     paddingTop: spacing.xs,
   },
   subtitle: {
-    fontSize: typography.bodyLg.fontSize,
-    lineHeight: typography.bodyLg.lineHeight,
-    color: colors.onSurfaceVariant,
+    ...typography.headlineSm,
+    color: colors.primary,
     fontFamily: typography.bodyLg.fontFamily,
   },
   vehicleList: {
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   pricingErrorBanner: {
     flexDirection: 'row',
@@ -615,6 +676,9 @@ const styles = StyleSheet.create({
     fontFamily: typography.labelSm.fontFamily,
   },
   footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.outlineHairline,
     backgroundColor: colors.surface,
@@ -622,13 +686,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   footerContent: {
+    flex: 1,
+    gap: spacing.md,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
+    backgroundColor: colors.homeAction,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
   footerDisabled: {
     backgroundColor: colors.outlineVariant,

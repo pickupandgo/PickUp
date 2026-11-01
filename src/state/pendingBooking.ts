@@ -21,11 +21,17 @@ export const readPendingBooking = async (uid: string): Promise<PendingBooking | 
   return value;
 };
 /** Serialize writes/clears so a late earlier write cannot resurrect a cleared journal. */
-export const writePendingBooking = (uid: string, value: PendingBooking | null, expectedRevision?: number): Promise<void> => {
+export const writePendingBooking = (uid: string, value: PendingBooking | null, expectedRevision?: number, expectedSnapshot?: { readonly value: PendingBooking | null }): Promise<void> => {
   if (expectedRevision !== undefined && expectedRevision !== bookingRevision(uid)) return Promise.reject(new Error('Booking recovery changed; retry from Home.'));
   if (!value) revisions.set(uid, bookingRevision(uid) + 1);
-  const next = (flights.get(uid) ?? Promise.resolve()).catch(() => {}).then(() =>
-    value ? AsyncStorage.setItem(key(uid), JSON.stringify(value)) : AsyncStorage.removeItem(key(uid)));
+  const next = (flights.get(uid) ?? Promise.resolve()).catch(() => {}).then(async () => {
+    if (expectedSnapshot) {
+      const actual = await readPendingBooking(uid);
+      if (JSON.stringify(actual) !== JSON.stringify(expectedSnapshot.value)) throw new Error('Booking changed while leaving. Resume the current booking before retrying.');
+    }
+    if (value) await AsyncStorage.setItem(key(uid), JSON.stringify(value));
+    else await AsyncStorage.removeItem(key(uid));
+  });
   flights.set(uid, next);
   void next.finally(() => { if (flights.get(uid) === next) flights.delete(uid); }).catch(() => {});
   return next;

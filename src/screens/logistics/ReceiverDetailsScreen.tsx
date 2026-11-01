@@ -46,7 +46,7 @@ const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?
     if (!name.trim() || !/^\+?[0-9]{10,15}$/.test(phone.trim()) || !drop) return;
     replaceDrop(index, { ...drop, receiverName: name.trim(), receiverPhone: phone.trim(), instructions: instructions.trim() });
     if (onContinue) onContinue({ name: name.trim(), phone: phone.trim(), instructions: instructions.trim() });
-    else navigation?.navigate('FareEstimateScreen');
+    else navigation?.navigate('ReviewBookingScreen');
   };
 
   const isContinueDisabled = !drop || !name.trim() || !/^\+?[0-9]{10,15}$/.test(phone.trim());

@@ -6,7 +6,7 @@ import {
   BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { CommonActions } from '@react-navigation/native';
+import { CommonActions, useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Feather from 'react-native-vector-icons/Feather';
@@ -96,7 +96,7 @@ const CancellationResultScreen: React.FC<
   }, [onHome, clearActiveRide, navigation]);
 
   // Handle hardware Back button to trigger instant home navigation
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (BackHandler && typeof BackHandler.addEventListener === 'function') {
       const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
         handleGoHome();
@@ -104,7 +104,7 @@ const CancellationResultScreen: React.FC<
       });
       return () => backHandler?.remove?.();
     }
-  }, [handleGoHome]);
+  }, [handleGoHome]));
 
   // Countdown timer: 10s down to 0
   useEffect(() => {

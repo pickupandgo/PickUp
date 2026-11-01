@@ -1,21 +1,16 @@
-import React, { useMemo } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
-  StyleSheet,
-  Image,
-  Linking,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, borderRadius, typography } from '../../theme';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, ScrollView, Pressable, StyleSheet, Image, Modal, useWindowDimensions } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
+import { colors, spacing, borderRadius, typography } from '../../theme';
 import { useBooking } from '../../state/BookingContext';
+import { useTripStatus } from '../../hooks/useTripStatus';
+import { useAssignedDriverLocation } from '../../hooks/useAssignedDriverLocation';
+import { getRideTrip } from '../../api/engine';
 import { getVehicleImage } from '../../utils/vehicleAssets';
+import { getVehicleCategoryDisplayName } from '../../utils/vehicleMapIcons';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
 import { useRoadRoute } from '../../hooks/useRoute';
-import type { GeoPoint } from '../../api/types';
 
 export interface DriverAssignedExpandedScreenProps {
   readonly onBack?: () => void;
@@ -24,674 +19,138 @@ export interface DriverAssignedExpandedScreenProps {
   readonly onChatDriver?: () => void;
   readonly onCancelBooking?: () => void;
 }
-
-const DriverAssignedExpandedScreen: React.FC<
-  DriverAssignedExpandedScreenProps & { navigation?: any; route?: any }
-> = ({
-  onBack,
-  onTrackDriver,
-  onCallDriver,
-  onChatDriver,
-  onCancelBooking,
-  navigation,
-  route,
-}) => {
-  const { assignedDriver, trip, ride, draft } = useBooking();
-
-  const driverName =
-    route?.params?.driverName ||
-    assignedDriver?.name ||
-    (trip as any)?.driverName ||
-    (trip as any)?.driver?.name ||
-    'Driver';
-
-  const vehicleType =
-    route?.params?.vehicleType ||
-    assignedDriver?.vehicleType ||
-    (trip as any)?.vehicleType ||
-    ride?.vehicleType ||
-    draft?.vehicleType ||
-    'Vehicle unavailable';
-
-  const vehicleNumber =
-    route?.params?.vehicleNumber ||
-    (assignedDriver as any)?.vehicleNumber ||
-    (assignedDriver as any)?.vehicleRegistrationNumber ||
-    (trip as any)?.vehicleRegistration ||
-    (ride as any)?.vehicleRegistration ||
-    'Registration unavailable';
-
-  const driverRating =
-    (assignedDriver as any)?.rating != null
-      ? Number((assignedDriver as any).rating).toFixed(1)
-      : 'Unavailable';
-
-  const tripReference =
-    trip?.id ||
-    ride?.id ||
-    trip?.paymentBookingId ||
-    ride?.paymentBookingId ||
-    'Unavailable';
-
-  const shortTripId =
-    tripReference.length > 8 ? tripReference.slice(0, 8) : tripReference;
-
-  // Real geographic points
-  const pickupPoint: GeoPoint | undefined =
-    trip?.pickup || ride?.pickup || draft?.pickup;
-
-  const dropPoint: GeoPoint | undefined =
-    trip?.drop ||
-    ride?.drop ||
-    (draft?.drops && draft.drops.length > 0 ? draft.drops[0] : undefined);
-
-  const driverPoint: GeoPoint | undefined =
-    assignedDriver?.latitude != null && assignedDriver?.longitude != null
-      ? {
-          latitude: assignedDriver.latitude,
-          longitude: assignedDriver.longitude,
-        }
-      : undefined;
-
-  // Real Road Route
-  const routeOrigin = driverPoint ?? pickupPoint;
-  const routeDestination = trip?.startedAt ? trip.currentStop?.location ?? dropPoint : pickupPoint ?? dropPoint;
-  const road = useRoadRoute(routeOrigin, routeDestination);
-
-  // Markers for MapCanvas
-  const mapMarkers = useMemo(() => {
-    const list: MapMarker[] = [];
-    if (pickupPoint) {
-      list.push({
-        id: 'pickup',
-        kind: 'pickup',
-        coordinate: pickupPoint,
-        title: 'Pickup Location',
-      });
-    }
-    if (dropPoint) {
-      list.push({
-        id: 'drop',
-        kind: 'drop',
-        coordinate: dropPoint,
-        title: 'Drop Location',
-      });
-    }
-    if (driverPoint) {
-      list.push({
-        id: 'driver',
-        kind: 'driver',
-        coordinate: driverPoint,
-        title: driverName,
-        vehicleType,
-        bearing: assignedDriver?.bearingDegrees,
-      });
-    }
-    return list;
-  }, [pickupPoint, dropPoint, driverPoint, driverName, vehicleType, assignedDriver]);
-
-  // Real ETA and status calculation
-  const etaData = useMemo(() => {
-    if (trip?.status === 'DRIVER_ARRIVED' || (trip as any)?.arrivedAt) {
-      return {
-        arrived: true,
-        title: 'Driver has arrived',
-        subtitle: 'Driver is waiting at your pickup location.',
-      };
-    }
-    if (driverPoint && pickupPoint) {
-      const R = 6371e3; // metres
-      const phi1 = (driverPoint.latitude * Math.PI) / 180;
-      const phi2 = (pickupPoint.latitude * Math.PI) / 180;
-      const dPhi = ((pickupPoint.latitude - driverPoint.latitude) * Math.PI) / 180;
-      const dLam = ((pickupPoint.longitude - driverPoint.longitude) * Math.PI) / 180;
-      const a =
-        Math.sin(dPhi / 2) * Math.sin(dPhi / 2) +
-        Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLam / 2) * Math.sin(dLam / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      const distanceMeters = R * c;
-      const km = (distanceMeters / 1000).toFixed(1);
-
-      // Estimate ~25 km/h in city traffic (~416 m/min) with 1.3 road factor
-      const minutes = Math.max(1, Math.round((distanceMeters * 1.3) / 416));
-      return {
-        arrived: false,
-        title: `Arriving in ${minutes} mins`,
-        subtitle: `Driver is ~${km} km away, heading to your pickup location.`,
-      };
-    }
-    return {
-      arrived: false,
-      title: 'Driver on the way',
-      subtitle: 'Driver is en route to your pickup location.',
+export default function DriverAssignedExpandedScreen({ onBack, onTrackDriver, onCallDriver, onChatDriver, onCancelBooking, navigation }: DriverAssignedExpandedScreenProps & { navigation?: any; route?: any }) {
+  const { trip, setTrip, ride, assignedDriver, setAssignedDriver, draft } = useBooking();
+  const { height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const [locationsOpen, setLocationsOpen] = useState(false);
+  const { trip: polled } = useTripStatus(trip?.id ?? ride?.tripId ?? undefined, { intervalMs: 3_000 });
+  useEffect(() => { if (polled) setTrip(polled); }, [polled, setTrip]);
+  useEffect(() => {
+    if (trip || !ride?.id) return;
+    const controller = new AbortController();
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const restore = async () => {
+      try {
+        const found = await getRideTrip(ride.id, controller.signal);
+        if (active && found) { setTrip(found); return; }
+      } catch { /* Keep the confirmed assignment while trip recovery retries. */ }
+      if (active) timer = setTimeout(restore, 5_000);
     };
-  }, [trip?.status, (trip as any)?.arrivedAt, driverPoint, pickupPoint]);
-
-  const statusTitle = etaData.title;
-  const statusSubtitle = etaData.subtitle;
-
-  const pickupAddress =
-    draft?.pickup?.address ||
-    trip?.pickup?.address ||
-    ride?.pickup?.address ||
-    '228, Mansarover Colony, Jodhpur, Pal, Rajasthan';
-
-  const dropsList = useMemo(() => {
-    if (trip?.stops && trip.stops.length > 0) {
-      return trip.stops.map((s, idx) => ({
-        id: s.id || `stop-${idx}`,
-        address: s.location?.address || `Drop Location ${idx + 1}`,
-      }));
-    }
-    if (draft?.drops && draft.drops.length > 0) {
-      return draft.drops.map((d, idx) => ({
-        id: `draft-drop-${idx}`,
-        address: d.address || `Drop Location ${idx + 1}`,
-      }));
-    }
-    if (trip?.drop?.address) {
-      return [{ id: 'trip-drop', address: trip.drop.address }];
-    }
-    return [{ id: 'default-drop', address: '6RX8+45 Kishan Nagar, Rajasthan, India' }];
-  }, [trip, draft]);
-
-  const handleTrackDriver = () => {
-    if (onTrackDriver) {
-      onTrackDriver();
-      return;
-    }
-    navigation?.navigate('CustomerLiveTrackingScreen');
-  };
-
-  const handleCall = () => {
-    if (onCallDriver) {
-      onCallDriver();
-      return;
-    }
-    const phone = (assignedDriver as any)?.phone || '+919876543210';
-    Linking.openURL(`tel:${phone}`).catch(() => {
-      navigation?.navigate('CallDriverScreen');
-    });
-  };
-
-  const handleChat = () => {
-    if (onChatDriver) {
-      onChatDriver();
-      return;
-    }
-    navigation?.navigate('ActiveTripChatScreen', {
-      tripId: trip?.id,
-      bookingId: trip?.paymentBookingId || ride?.paymentBookingId,
-      driverName,
-      vehicleType,
-    });
-  };
-
-  const handleCancel = () => {
-    if (onCancelBooking) {
-      onCancelBooking();
-      return;
-    }
-    navigation?.navigate('CancellationReasonScreen');
-  };
-
-  return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Top App Bar */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Pressable
-            style={styles.iconButton}
-            onPress={() => (onBack ? onBack() : navigation?.goBack())}
-            accessibilityRole="button"
-          >
-            <Feather name="arrow-left" size={22} color={colors.onSurfaceVariant} />
-          </Pressable>
-          <Text style={styles.headerTitle}>Trip Details</Text>
+    void restore();
+    return () => { active = false; controller.abort(); if (timer) clearTimeout(timer); };
+  }, [trip, ride?.id, setTrip]);
+  const current = polled ?? trip;
+  const status = current?.status ?? ride?.tripStatus;
+  useEffect(() => {
+    const next = status === 'DRIVER_ARRIVED' ? 'PickupOtpVerificationScreen'
+      : ['PICKUP_VERIFIED', 'IN_TRANSIT', 'DROP_PROGRESS'].includes(status ?? '') ? 'CustomerLiveTrackingScreen'
+      : status === 'DELIVERED' || status === 'COMPLETED' ? 'TripCompletedScreen'
+      : status === 'CANCELLED' ? 'TripCancelledStatusScreen' : undefined;
+    if (next) navigation?.replace?.(next);
+  }, [status, navigation]);
+  const driverId = current?.driverId ?? ride?.assignedDriverId ?? undefined;
+  const location = useAssignedDriverLocation(current?.id ?? ride?.tripId ?? undefined, driverId, !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(status ?? ''));
+  useEffect(() => { if (location.driver) setAssignedDriver(location.driver); }, [location.driver, setAssignedDriver]);
+  const driver = location.driver ?? (assignedDriver?.id === driverId ? assignedDriver : undefined);
+  const vehicleType = current?.vehicleType ?? ride?.vehicleType ?? driver?.vehicleType ?? draft.vehicleType;
+  const vehicleName = vehicleType ? getVehicleCategoryDisplayName(vehicleType) : 'Assigned vehicle';
+  const driverName = driver?.name || 'Assigned driver';
+  const pickup = current?.pickup ?? ride?.pickup ?? draft.pickup;
+  const drops = current?.stops.length ? current.stops.map(stop => stop.location)
+    : ride?.drops?.length ? ride.drops : draft.drops.length ? draft.drops : current?.drop ? [current.drop] : [];
+  const road = useRoadRoute(location.point, pickup);
+  const markers = useMemo<readonly MapMarker[]>(() => [
+    ...(pickup ? [{ id: 'pickup', kind: 'pickup' as const, coordinate: pickup, title: 'Pickup' }] : []),
+    ...(location.point ? [{ id: `assigned-${driverId}`, kind: 'driver' as const, coordinate: location.point, title: 'Your driver', vehicleType, preview: true }] : []),
+  ], [pickup, location.point?.latitude, location.point?.longitude, driverId, vehicleType]);
+  const bookingId = current?.paymentBookingId ?? ride?.paymentBookingId;
+  const chat = () => onChatDriver ? onChatDriver() : navigation?.navigate('ActiveTripChatScreen', { tripId: current?.id, bookingId, driverName, vehicleType });
+  const call = () => onCallDriver ? onCallDriver() : navigation?.navigate('CallDriverScreen', { trip: current, tripId: current?.id, bookingId });
+  const track = () => onTrackDriver ? onTrackDriver() : navigation?.navigate('CustomerLiveTrackingScreen');
+  const cancel = () => onCancelBooking ? onCancelBooking() : navigation?.navigate('CancellationReasonScreen');
+  const live = location.status === 'live';
+  const locationText = live ? 'Heading to your pickup location'
+    : location.status === 'loading' || location.status === 'idle' ? 'Updating driver location...'
+    : location.status === 'auth_error' ? 'Unable to access driver location. Tap to retry.' : 'Driver location temporarily unavailable. Tap to retry.';
+  return <SafeAreaView style={styles.page} edges={['top', 'bottom']}>
+    <View style={styles.header}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Back" style={styles.iconButton} onPress={() => onBack ? onBack() : navigation?.goBack()}><Feather name="arrow-left" size={spacing.xl} color={colors.primary} /></Pressable>
+      <Text style={styles.headerTitle}>Trip details</Text>
+    </View>
+    <MapCanvas style={{ height: Math.max(180, Math.min(330, height * 0.38)) }} appearance="home" recenterOnLayout markers={markers} fitToMarkers={markers.length > 0} fitRouteOnly={false}
+      contentInsets={{ top: spacing.xxxl, bottom: spacing.xxxl }} polyline={road.polyline} routeStatus={road.status} onRetryRoute={road.retry} />
+    <ScrollView style={styles.sheet} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.handle} />
+      <Pressable style={styles.statusRow} onPress={location.refresh} accessibilityRole="button" accessibilityLabel="Refresh assigned driver location">
+        <View style={styles.clock}><Feather name="clock" size={spacing.xl} color={colors.statusGreen} /></View>
+        <View style={styles.flex}><Text style={styles.statusTitle}>Driver on the way</Text><Text style={styles.secondary}>{locationText}</Text></View>
+      </Pressable>
+      <View style={styles.card}>
+        <View style={styles.driverRow}>
+          <View style={styles.avatar}><Image source={getVehicleImage(vehicleType)} style={styles.vehicleImage} resizeMode="contain" /></View>
+          <View style={styles.flex}><Text style={styles.name} numberOfLines={1}>{driverName}</Text><Text style={styles.secondary}>{vehicleName}</Text></View>
+          <Text style={styles.assignedBadge}>Assigned</Text>
+        </View>
+        <View style={styles.actions}>
+          <Pressable style={styles.trackButton} accessibilityRole="button" accessibilityLabel="Track driver" onPress={track}><Feather name="map-pin" size={spacing.lg} color={colors.onPrimary} /><Text style={styles.trackText}>Track driver</Text></Pressable>
+          <Pressable style={styles.contactButton} accessibilityRole="button" accessibilityLabel="Call driver" onPress={call}><Feather name="phone" size={spacing.xl} color={colors.primary} /></Pressable>
+          <Pressable style={styles.contactButton} accessibilityRole="button" accessibilityLabel="Chat with driver" onPress={chat}><Feather name="message-circle" size={spacing.xl} color={colors.primary} /></Pressable>
         </View>
       </View>
-
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Real Interactive Map Header Area */}
-        <View style={styles.mapHeaderContainer}>
-          <MapCanvas
-            style={styles.mapCanvas}
-            center={driverPoint ?? pickupPoint}
-            markers={mapMarkers}
-            polyline={road.polyline}
-        routeStatus={road.status}
-        onRetryRoute={road.retry}
-            fitToMarkers={Boolean(pickupPoint && (dropPoint || driverPoint))}
-          />
-
-          {/* Floating Trip Subhead Pill over map */}
-          <View style={styles.mapSubheadBadge}>
-            <Text style={styles.mapSubheadText}>
-              Driver Assigned • Trip #{shortTripId}
-            </Text>
-          </View>
+      <View style={styles.card}>
+        <View style={styles.locationsHeading}><Text style={styles.name}>Locations</Text><Pressable accessibilityRole="button" accessibilityLabel="View all trip locations" onPress={() => setLocationsOpen(true)}><Text style={styles.viewAll}>View all</Text></Pressable></View>
+        <View style={styles.addressRow}><View style={styles.pickupDot} /><View style={styles.flex}><Text style={styles.label}>PICKUP</Text><Text style={styles.address} numberOfLines={2}>{pickup?.address || 'Pickup address unavailable'}</Text></View></View>
+        {drops[0] && <View style={styles.addressRow}><View style={styles.number}><Text style={styles.numberText}>1</Text></View><View style={styles.flex}><Text style={styles.label}>DROP {drops.length > 1 ? `1 OF ${drops.length}` : ''}</Text><Text style={styles.address} numberOfLines={2}>{drops[0].address || 'Drop address unavailable'}</Text></View></View>}
+      </View>
+      <Pressable style={styles.cancelButton} accessibilityRole="button" accessibilityLabel="Cancel booking" onPress={cancel}><Text style={styles.cancelText}>Cancel booking</Text></Pressable>
+    </ScrollView>
+    <Modal visible={locationsOpen} transparent animationType="slide" onRequestClose={() => setLocationsOpen(false)}>
+      <View style={styles.modalRoot}><Pressable style={styles.backdrop} accessibilityRole="button" accessibilityLabel="Close locations" onPress={() => setLocationsOpen(false)} />
+        <View style={[styles.modalSheet, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} accessibilityViewIsModal>
+          <View style={styles.locationsHeading}><Text style={styles.statusTitle}>All locations</Text><Pressable style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Close all locations" onPress={() => setLocationsOpen(false)}><Feather name="x" size={spacing.xl} color={colors.primary} /></Pressable></View>
+          <ScrollView style={{ flexShrink: 1 }}><Text style={styles.label}>PICKUP</Text><Text style={styles.fullAddress}>{pickup?.address || 'Pickup address unavailable'}</Text>{drops.map((drop, index) => <View key={index}><Text style={styles.label}>DROP {index + 1}</Text><Text style={styles.fullAddress}>{drop.address || 'Drop address unavailable'}</Text></View>)}</ScrollView>
         </View>
-
-        {/* Content Area */}
-        <View style={styles.contentContainer}>
-          {/* Status Banner */}
-          <View style={styles.statusBanner}>
-            <View style={styles.statusBannerHeader}>
-              <View style={styles.clockIconContainer}>
-                <Feather name="clock" size={14} color="#1E3A8A" />
-              </View>
-              <Text style={styles.statusTitle}>{statusTitle}</Text>
-            </View>
-            <Text style={styles.statusSubtitle}>{statusSubtitle}</Text>
-          </View>
-
-          {/* Driver Info Card */}
-          <View style={styles.driverCard}>
-            <View style={styles.driverCardHeader}>
-              <View style={styles.driverInfoLeft}>
-                <View style={styles.driverAvatarContainer}>
-                  <Image
-                    source={getVehicleImage(vehicleType)}
-                    style={{ width: 44, height: 44 }}
-                    resizeMode="contain"
-                  />
-                </View>
-                <View>
-                  <Text style={styles.driverName}>{driverName}</Text>
-                  <View style={styles.driverRatingPill}>
-                    <Feather name="star" size={12} color="#EAB308" />
-                    <Text style={styles.driverRatingText}>{driverRating}</Text>
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.driverInfoRight}>
-                <Text style={styles.vehicleName}>{vehicleType}</Text>
-                <Text style={styles.vehicleNumber}>{vehicleNumber}</Text>
-              </View>
-            </View>
-
-            {/* Communication Actions */}
-            <View style={styles.communicationActions}>
-              <Pressable
-                style={styles.trackButton}
-                onPress={handleTrackDriver}
-                accessibilityRole="button"
-              >
-                <Text style={styles.trackButtonText}>Track Driver</Text>
-              </Pressable>
-
-              <Pressable
-                style={styles.iconActionButton}
-                onPress={handleCall}
-                accessibilityRole="button"
-                accessibilityLabel="Call driver"
-              >
-                <Feather name="phone" size={20} color="#1E293B" />
-              </Pressable>
-
-              <Pressable
-                style={styles.iconActionButton}
-                onPress={handleChat}
-                accessibilityRole="button"
-                accessibilityLabel="Chat with driver"
-              >
-                <Feather name="message-circle" size={20} color="#1E293B" />
-              </Pressable>
-            </View>
-            <Text style={styles.privacyNote}>CALLS ARE MASKED FOR YOUR PRIVACY</Text>
-          </View>
-
-          {/* Logistics Details */}
-          <View style={styles.logisticsCard}>
-            <Text style={styles.logisticsTitle}>Logistics Details</Text>
-
-            <View style={styles.timelineList}>
-              <View style={styles.timelineLine} />
-
-              {/* Pickup */}
-              <View style={styles.timelineItem}>
-                <View style={styles.timelineDotPickup} />
-                <View style={styles.timelineContent}>
-                  <Text style={styles.timelineLabel}>PICKUP LOCATION</Text>
-                  <Text style={styles.timelineText}>{pickupAddress}</Text>
-                </View>
-              </View>
-
-              {/* Drops */}
-              <View style={styles.timelineItem}>
-                <View style={styles.timelineDotDrops} />
-                <View style={styles.timelineContent}>
-                  <View style={styles.dropsHeaderRow}>
-                    <Text style={styles.timelineLabel}>DROP LOCATION</Text>
-                    {dropsList.length > 1 && (
-                      <View style={styles.dropsBadge}>
-                        <Text style={styles.dropsBadgeText}>{dropsList.length} Locations</Text>
-                      </View>
-                    )}
-                  </View>
-                  {dropsList.map((drop, idx) => (
-                    <Text key={drop.id} style={styles.timelineTextSub}>
-                      {dropsList.length > 1 ? `${idx + 1}. ` : ''}
-                      {drop.address}
-                    </Text>
-                  ))}
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {/* Cancel Action */}
-          <Pressable
-            style={styles.cancelButton}
-            onPress={handleCancel}
-            accessibilityRole="button"
-          >
-            <Text style={styles.cancelButtonText}>Cancel Booking</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-};
-
+      </View>
+    </Modal>
+  </SafeAreaView>;
+}
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    height: 52,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    zIndex: 50,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  iconButton: {
-    padding: 6,
-    borderRadius: 20,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  scrollView: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  mapHeaderContainer: {
-    width: '100%',
-    height: 240,
-    backgroundColor: '#E2E8F0',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  mapCanvas: {
-    width: '100%',
-    height: '100%',
-  },
-  mapSubheadBadge: {
-    position: 'absolute',
-    top: 12,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  mapSubheadText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  contentContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 32,
-    gap: 14,
-  },
-  statusBanner: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: borderRadius.lg,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  statusBannerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  clockIconContainer: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statusTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  statusSubtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    lineHeight: 18,
-    marginLeft: 32,
-  },
-  driverCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: borderRadius.lg,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  driverCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  driverInfoLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  driverAvatarContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  driverName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  driverRatingPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FEF9C3',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    marginTop: 3,
-  },
-  driverRatingText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#854D0E',
-  },
-  driverInfoRight: {
-    alignItems: 'flex-end',
-  },
-  vehicleName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0F172A',
-  },
-  vehicleNumber: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  communicationActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 10,
-  },
-  trackButton: {
-    flex: 1,
-    backgroundColor: '#03071D',
-    borderRadius: 24,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  trackButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  iconActionButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  privacyNote: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#94A3B8',
-    textAlign: 'center',
-    letterSpacing: 0.5,
-  },
-  logisticsCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: borderRadius.lg,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  logisticsTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 16,
-  },
-  timelineList: {
-    position: 'relative',
-    paddingLeft: 4,
-  },
-  timelineLine: {
-    position: 'absolute',
-    left: 8,
-    top: 14,
-    bottom: 24,
-    width: 2,
-    backgroundColor: '#E2E8F0',
-  },
-  timelineItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
-    marginBottom: 18,
-  },
-  timelineDotPickup: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#16A34A',
-    marginTop: 4,
-    zIndex: 2,
-  },
-  timelineDotDrops: {
-    width: 10,
-    height: 10,
-    borderRadius: 2,
-    backgroundColor: '#DC2626',
-    marginTop: 4,
-    zIndex: 2,
-  },
-  timelineContent: {
-    flex: 1,
-  },
-  timelineLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#64748B',
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  timelineText: {
-    fontSize: 13,
-    color: '#0F172A',
-    lineHeight: 18,
-    fontWeight: '500',
-  },
-  dropsHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 2,
-  },
-  dropsBadge: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  dropsBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#2563EB',
-  },
-  timelineTextSub: {
-    fontSize: 13,
-    color: '#334155',
-    lineHeight: 18,
-    marginTop: 2,
-  },
-  cancelButton: {
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    marginTop: 4,
-  },
-  cancelButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
+  page: { flex: 1, backgroundColor: colors.surface },
+  header: { flexDirection: 'row', alignItems: 'center', minHeight: spacing.rowHeightSm + spacing.xs, paddingHorizontal: spacing.sm, gap: spacing.sm },
+  iconButton: { width: spacing.rowHeightSm + spacing.xs, height: spacing.rowHeightSm + spacing.xs, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { ...typography.headlineSm, color: colors.primary },
+  sheet: { flex: 1, backgroundColor: colors.surface, borderTopLeftRadius: borderRadius.xxl, borderTopRightRadius: borderRadius.xxl },
+  content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: spacing.md },
+  handle: { width: spacing.xxxl, height: spacing.xs, alignSelf: 'center', backgroundColor: colors.outlineVariant, borderRadius: borderRadius.full, marginTop: spacing.sm },
+  flex: { flex: 1, minWidth: 0 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xs },
+  clock: { width: spacing.rowHeightSm, height: spacing.rowHeightSm, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.successContainer },
+  statusTitle: { ...typography.headlineSm, color: colors.primary },
+  secondary: { ...typography.labelSm, color: colors.onSurfaceVariant, marginTop: spacing.xs },
+  card: { padding: spacing.md, borderWidth: 1, borderColor: colors.outlineHairline, borderRadius: borderRadius.xl, gap: spacing.md },
+  driverRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  avatar: { width: spacing.rowHeightStandard, height: spacing.rowHeightStandard, borderRadius: borderRadius.full, backgroundColor: colors.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' },
+  vehicleImage: { width: spacing.rowHeightSm + spacing.xs, height: spacing.rowHeightSm + spacing.xs },
+  name: { ...typography.bodyLg, fontWeight: '600', color: colors.primary },
+  assignedBadge: { ...typography.labelSm, color: colors.statusGreen, backgroundColor: colors.successContainer, borderRadius: borderRadius.full, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  trackButton: { flex: 1, minHeight: spacing.rowHeightSm + spacing.xs, flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center', borderRadius: borderRadius.full, backgroundColor: colors.primary },
+  trackText: { ...typography.bodyMd, color: colors.onPrimary, fontWeight: '600' },
+  contactButton: { width: spacing.rowHeightSm + spacing.xs, height: spacing.rowHeightSm + spacing.xs, borderRadius: borderRadius.full, backgroundColor: colors.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' },
+  locationsHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  viewAll: { ...typography.labelSm, fontWeight: '600', color: colors.primary, paddingVertical: spacing.sm },
+  addressRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  pickupDot: { width: spacing.sm, height: spacing.sm, backgroundColor: colors.statusGreen, borderRadius: borderRadius.full, marginTop: spacing.sm, marginHorizontal: spacing.xs },
+  number: { width: spacing.lg, height: spacing.lg, borderRadius: borderRadius.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: spacing.xs },
+  numberText: { ...typography.labelSm, color: colors.onPrimary },
+  label: { ...typography.labelCaps, color: colors.onSurfaceVariant },
+  address: { ...typography.bodyMd, color: colors.primary, marginTop: spacing.xs },
+  cancelButton: { minHeight: spacing.rowHeightSm + spacing.xs, borderWidth: 1, borderColor: colors.errorContainer, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center' },
+  cancelText: { ...typography.bodyMd, fontWeight: '600', color: colors.error },
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.black + '66' },
+  modalSheet: { maxHeight: '80%', padding: spacing.lg, borderTopLeftRadius: borderRadius.xxl, borderTopRightRadius: borderRadius.xxl, backgroundColor: colors.surface },
+  fullAddress: { ...typography.bodyMd, color: colors.primary, marginTop: spacing.xs, marginBottom: spacing.lg },
 });
-
-export default DriverAssignedExpandedScreen;

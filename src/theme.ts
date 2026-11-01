@@ -19,6 +19,15 @@ export const colors = {
   onPrimaryFixed: '#151A31',
   onPrimaryFixedVariant: '#40465E',
 
+  // Home booking surface accents.
+  homeAction: '#0C173B',
+  homePickup: '#009B50',
+  paymentOrange: '#F36E36',
+  paymentGreen: '#15915B',
+  reviewAction: '#082B54',
+  selectionTint: '#EFF8F3',
+  selectionOutline: '#B9D7C6',
+
   // Secondary
   secondary: '#525E79',
   secondaryContainer: '#D4DFFF',

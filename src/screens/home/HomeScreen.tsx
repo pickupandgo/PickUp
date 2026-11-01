@@ -4,6 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { strings } from '../../data/mockData';
+import { bookingOwner, bookingRevision } from '../../state/pendingBooking';
 import { useBooking } from '../../state/BookingContext';
 import { getCurrentPlace, reverseGeocode, type ResolvedPlace } from '../../api/geocoding';
 import type { GeoPoint } from '../../api/types';
@@ -14,13 +15,14 @@ import { useRecentLocations, saveRecentLocation, type RecentLocation } from '../
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
 import { DEFAULT_DELTA } from '../../components/map/MapCanvas.types';
 import { getVehicleImage } from '../../utils/vehicleAssets';
-import TopAppBar from '../../components/organisms/TopAppBar';
+
 import Card from '../../components/molecules/Card';
 import ListRow from '../../components/molecules/ListRow';
 import Button from '../../components/atoms/Button';
 import Divider from '../../components/atoms/Divider';
-import DraggableBottomSheet from '../../components/organisms/DraggableBottomSheet';
+
 import Feather from 'react-native-vector-icons/Feather';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { setLoggedIn, setProfileComplete } from '../../state/session';
 import { SkeletonListItem, useSkeletonVisibility } from '../../components/skeleton';
 
@@ -238,18 +240,20 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
   const refreshActiveTrip = useCallback(async () => {
     if (!customerId) return;
     const snapshot = latestTrip.current;
+    const revision = bookingRevision(customerId);
+    const valid = () => bookingOwner() === customerId && bookingRevision(customerId) === revision && latestTrip.current?.id === snapshot?.id;
     try {
       const found = await getActiveTripForCustomer(customerId);
-      if (latestTrip.current?.id !== snapshot?.id) return;
+      if (!valid()) return;
       if (found) {
         setTrip(found);
         if (found.driverId) {
           const d = await getDriver(found.driverId).catch(() => null);
-          if (d) setAssignedDriver(d);
+          if (d && bookingOwner() === customerId && bookingRevision(customerId) === revision) setAssignedDriver(d);
         }
         if (found.rideId) {
           const r = await getRide(found.rideId).catch(() => null);
-          if (r) setRide(r);
+          if (r && r.status !== 'CANCELLED' && r.bookingStatus !== 'COMPLETED' && bookingOwner() === customerId && bookingRevision(customerId) === revision) setRide(r);
         }
       } else if (snapshot && latestTrip.current?.id === snapshot.id) {
         // Server reports no active trip anymore
@@ -317,31 +321,21 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
         kind: 'pickup',
         coordinate: draft.pickup,
         title: 'Pickup',
+        label: 'Pickup Point',
         description: draft.pickup.address || 'Pickup location',
       });
     }
-    if (
-      isTripActive &&
-      assignedDriver &&
-      typeof assignedDriver.latitude === 'number' &&
-      typeof assignedDriver.longitude === 'number' &&
-      Number.isFinite(assignedDriver.latitude) &&
-      Number.isFinite(assignedDriver.longitude)
-    ) {
-      markers.push({
-        id: `assigned-driver-${assignedDriver.id}`,
-        kind: 'driver',
-        coordinate: { latitude: assignedDriver.latitude, longitude: assignedDriver.longitude },
-        title: assignedDriver.name || 'Your Driver',
-        vehicleType:
-          assignedDriver.vehicleType ||
-          (trip as any)?.vehicleType ||
-          draft.vehicleType,
-        bearing: assignedDriver.bearingDegrees,
-      });
-    }
     return markers;
-  }, [draft.pickup, isTripActive, assignedDriver]);
+  }, [draft.pickup]);
+
+  const pickupAddress = draft.pickup?.address ?? 'Set pickup location';
+  const pickupSummary = pickupAddress.split(',').map(part => part.trim()).filter(Boolean).slice(0, 2).join(', ');
+  const openDrop = () => {
+    if (resumePreviousBooking()) return;
+    startNewBooking();
+    if (onSearchPress) onSearchPress();
+    else navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -349,6 +343,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
       <MapCanvas
           style={styles.mapBackground}
           center={draft.pickup || deviceLocation}
+          appearance="home"
         markers={mapMarkers}
         showsUserLocation
         onUserLocationChange={handleUserLocationChange}
@@ -374,18 +369,9 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
           )}
         </Pressable>
 
-        {/* Driver assignment remains engine-owned. Availability is confirmed
-            after the customer requests a ride, not by client-side discovery. */}
-        {!isTripActive && (
-          <View
-            style={[styles.driverCountPill, { top: topSafeOffset }]}
-          >
-            <Feather name="truck" size={12} color={colors.primary} />
-            <Text style={styles.driverCountText} numberOfLines={1}>
-              Driver availability is confirmed after your ride request
-            </Text>
-          </View>
-        )}
+        <View style={styles.homeBrand} pointerEvents="none"><Text style={styles.homeBrandText}>PICKUP</Text><View style={styles.brandDot} /></View>
+
+
       </MapCanvas>
 
       {!isTripActive && (ride || pendingInput || bookingRecoveryError || recoveringBooking) && (
@@ -414,7 +400,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                 onActiveTripPress();
               } else {
                 navigation?.navigate('ActiveTripStack', {
-                  screen: 'CustomerLiveTrackingScreen',
+                  screen: trip?.status === 'DRIVER_ASSIGNED' ? 'DriverAssignedExpandedScreen' : 'CustomerLiveTrackingScreen',
                 });
               }
             }}
@@ -456,102 +442,38 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
       )}
 
       {/* Draggable Bottom Sheet */}
-      <DraggableBottomSheet>
+      <View style={styles.homeSheet}>
+        <View style={styles.sheetHandle} />
         <ScrollView contentContainerStyle={styles.sheetScrollContent} showsVerticalScrollIndicator={false}>
           {/* Booking Card */}
           <View style={styles.bookingCardWrapper}>
-            <Card variant="filled" padding="md">
-              <View style={styles.bookingInputsContainer}>
-                {/* Pickup */}
-                <View style={styles.inputRowContainer}>
-                  <View style={styles.dotLineWrapper}>
-                    <View style={[styles.dot, styles.pickupDot]} />
-                    <View style={styles.connectingLine} />
-                  </View>
-                  <View style={styles.inputContentWrapper}>
-                    <Text style={styles.inputLabel}>Pickup</Text>
-                    <View style={styles.inputFieldRow}>
-                      {/* `flex: 1` on the address so it truncates instead of
-                          shoving the Change action off the right edge. */}
-                      <Text style={styles.inputValue} numberOfLines={1}>
-                        {isLocating
-                          ? 'Finding your location…'
-                          : draft.pickup?.address ?? 'Set pickup location'}
-                      </Text>
-                      <Pressable
-                        onPress={() => {
-                          if (resumePreviousBooking()) return;
-                          startNewBooking();
-                          navigation?.navigate('BookingStack', {
-                            screen: 'AddressSearchScreen',
-                            params: { mode: 'pickup' },
-                          });
-                        }}
-                        hitSlop={8}
-                        accessibilityRole="button"
-                        style={styles.changeActionButton}
-                      >
-                        <Text style={styles.changeAction}>Change</Text>
-                      </Pressable>
-                    </View>
-                    {locationError && (
-                      <Pressable onPress={locatePickup} accessibilityRole="button">
-                        <Text style={styles.pickupError}>{locationError} Tap to retry.</Text>
-                      </Pressable>
-                    )}
-                  </View>
+            <Card variant="filled" padding="md" style={styles.bookingCard}>
+            <Text style={styles.bookingHeading}>Where are you sending?</Text>
+            <View style={styles.bookingInputsContainer}>
+              <View style={styles.inputRowContainer}>
+                <View style={styles.dotLineWrapper}><View style={[styles.dot, styles.pickupDot]} /><View style={styles.homeConnector}>{[0, 1, 2, 3, 4, 5].map(i => <View key={i} style={styles.connectorDash} />)}</View></View>
+                <View style={styles.inputContentWrapper}>
+                  <Text style={styles.inputLabel}>Pickup</Text>
+                  <Text style={styles.inputValue} numberOfLines={1} accessibilityLabel={pickupAddress}>
+                    {isLocating ? 'Finding your location...' : pickupSummary}
+                  </Text>
                 </View>
-
-                <Divider />
-
-                <View style={styles.inputRowContainer}>
-                  <Pressable style={styles.dotLineWrapper} onPress={() => {
-                          if (resumePreviousBooking()) return;
-                          startNewBooking();
-                    navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
-                  }}>
-                    <Text style={styles.dropPinIcon}>📍</Text>
-                    <View style={[styles.connectingLine, styles.connectingLineShort]} />
-                  </Pressable>
-                  <Pressable style={styles.inputContentWrapper} onPress={() => {
-                          if (resumePreviousBooking()) return;
-                          startNewBooking();
-                    navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
-                  }}>
-                    <View style={styles.inputFieldRow}>
-                      <Text style={styles.placeholderValue}>Enter drop location</Text>
-                      <View style={styles.arrowCircle}>
-                        <Feather name="arrow-right" size={12} color={colors.onSurfaceVariant} />
-                      </View>
-                    </View>
-                  </Pressable>
-                </View>
-                
-                {/* Add another drop */}
-                <Pressable
-                  style={styles.addDropRow}
-                  onPress={() => {
-                          if (resumePreviousBooking()) return;
-                          startNewBooking();
-                    navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
-                  }}
-                >
-                  <Feather name="plus" size={16} color={colors.onSurfaceVariant} />
-                  <Text style={styles.addDropText}>Add another drop</Text>
-                </Pressable>
-              </View>
-
-              <Button
-                label={strings.home.startBooking}
-                onPress={() => {
+                <Pressable onPress={() => {
                   if (resumePreviousBooking()) return;
                   startNewBooking();
-                  navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
-                }}
-                variant="primary"
-                size="lg"
-                fullWidth
-              />
+                  navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen', params: { mode: 'pickup' } });
+                }} hitSlop={spacing.sm} accessibilityRole="button" accessibilityLabel="Change pickup location" style={styles.changeActionButton}>
+                  <Text style={styles.changeAction}>Change</Text>
+                </Pressable>
+              </View>
+              {locationError && <Pressable onPress={locatePickup} accessibilityRole="button"><Text style={styles.pickupError}>{locationError} Tap to retry.</Text></Pressable>}
+              <Pressable style={styles.destinationInput} onPress={openDrop} accessibilityRole="button" accessibilityLabel="Enter drop location">
+                <View style={styles.destinationIcon}><MaterialIcons name="place" size={spacing.lg} color={colors.onPrimary} /></View>
+                <Text style={styles.destinationText}>Enter drop location</Text>
+                <Feather name="chevron-right" size={spacing.xl} color={colors.primary} />
+              </Pressable>
+            </View>
+            <Button label="Choose drop location" onPress={openDrop} variant="primary" size="md" fullWidth style={styles.bookingAction} />
             </Card>
           </View>
 
@@ -568,9 +490,9 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                   <React.Fragment key={loc.id}>
                     {index > 0 && <Divider />}
                     <ListRow
-                      title={loc.name}
+                      title={/^\d+$/.test(loc.name.trim()) ? loc.address.split(',').slice(0, 2).join(',') : loc.name}
                       subtitle={loc.address}
-                      leading={<Feather name="clock" size={18} color={colors.onSurfaceVariant} />}
+                      leading={<Feather name="clock" size={spacing.lg} color={colors.onSurfaceVariant} />}
                       onPress={() => handleRecentLocationSelect(loc)}
                     />
                   </React.Fragment>
@@ -624,7 +546,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
             </Card>
           </View>
         </ScrollView>
-      </DraggableBottomSheet>
+      </View>
 
 
     </SafeAreaView>
@@ -632,6 +554,23 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
 };
 
 const styles = StyleSheet.create({
+  homeSheet: { flex: 0.51, backgroundColor: colors.surface, borderTopLeftRadius: borderRadius.xl, borderTopRightRadius: borderRadius.xl, marginTop: -spacing.sm, overflow: 'hidden' },
+  homeConnector: { position: 'absolute', top: spacing.xl, alignItems: 'center', gap: spacing.xs / 2 },
+  connectorDash: { width: spacing.xs / 2, height: spacing.xs, borderRadius: borderRadius.full, backgroundColor: colors.outlineVariant },
+  bookingAction: { backgroundColor: colors.homeAction },
+  recentIcon: { width: spacing.xxxl, height: spacing.xxxl, borderRadius: borderRadius.full, backgroundColor: colors.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' },
+  sheetHandle: { width: spacing.xxxl, height: spacing.xs, backgroundColor: colors.outlineVariant, borderRadius: borderRadius.full, alignSelf: 'center', marginTop: spacing.md },
+  bookingCard: { padding: spacing.xl, borderRadius: borderRadius.xxl },
+  bookingHeading: { ...typography.headlineMd, color: colors.primary, fontWeight: '700', marginBottom: spacing.md },
+  homeBrand: { position: 'absolute', top: spacing.md, left: spacing.lg, flexDirection: 'row', alignItems: 'flex-start' },
+  homeBrandText: { ...typography.headlineMd, fontWeight: '800', color: colors.primary },
+  brandDot: { width: spacing.sm, height: spacing.sm, borderRadius: borderRadius.full, backgroundColor: colors.statusGreen, marginLeft: spacing.xs },
+  mapAddress: { position: 'absolute', bottom: spacing.lg, left: spacing.lg, right: spacing.xxxl * 2 + spacing.md, backgroundColor: colors.surface, borderRadius: borderRadius.full, padding: spacing.sm, minHeight: spacing.rowHeightSm, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, ...shadows.card },
+  addressDot: { width: spacing.md, height: spacing.md, borderRadius: borderRadius.full, borderWidth: spacing.xs, borderColor: colors.statusGreen },
+  mapAddressText: { ...typography.labelSm, color: colors.primary, flex: 1 },
+  destinationInput: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.sm, minHeight: spacing.rowHeightStandard, marginTop: spacing.md },
+  destinationIcon: { width: spacing.xxl + spacing.xs, height: spacing.xxl + spacing.xs, borderRadius: borderRadius.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  destinationText: { ...typography.bodyMd, color: colors.onSurfaceVariant, flex: 1 },
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
@@ -651,11 +590,8 @@ const styles = StyleSheet.create({
   
   // Map Section (Absolute)
   mapBackground: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#F3F4F1',
-    zIndex: 0,
-    top: 0, // full screen map
-    bottom: 80, // above tabs
+    flex: 0.49,
+    backgroundColor: colors.surfaceContainerLow,
   },
   mapPin: {
     alignItems: 'center',
@@ -684,7 +620,7 @@ const styles = StyleSheet.create({
   // "Recenter on my location" — pinned at mid-right of the visible map.
   mapGpsButton: {
     position: 'absolute',
-    top: '50%',
+    bottom: spacing.lg,
     right: spacing.marginMobile,
     width: 44,
     height: 44,
@@ -763,13 +699,14 @@ const styles = StyleSheet.create({
   },
   bookingCardWrapper: {
     paddingHorizontal: spacing.marginMobile,
-    marginBottom: spacing.xxl,
+    marginBottom: spacing.xl,
   },
   bookingInputsContainer: {
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
   inputRowContainer: {
     flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: spacing.sm,
   },
   dotLineWrapper: {
@@ -783,7 +720,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   pickupDot: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.homePickup,
   },
   dropPinIcon: {
     fontSize: 14,
@@ -817,9 +754,8 @@ const styles = StyleSheet.create({
   inputValue: {
     // Fill available width so long pickup addresses truncate with an ellipsis
     // instead of pushing the Change action off the right edge of the card.
-    flex: 1,
     minWidth: 0,
-    fontSize: typography.bodyLg.fontSize,
+    ...typography.bodyMd,
     color: colors.onSurface,
   },
   placeholderValue: {
@@ -858,7 +794,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.surfaceContainerHigh,
+    backgroundColor: colors.surfaceContainerLow,
     flexShrink: 0,
   },
   changeAction: {

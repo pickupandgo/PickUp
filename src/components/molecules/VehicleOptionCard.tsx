@@ -4,6 +4,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import { Skeleton } from '../skeleton';
 
 export interface VehicleOptionCardProps {
+  readonly compact?: boolean;
   readonly name: string;
   readonly description: string;
   readonly capacity: string;
@@ -23,6 +24,7 @@ export interface VehicleOptionCardProps {
 }
 
 const VehicleOptionCard: React.FC<VehicleOptionCardProps> = ({
+  compact = false,
   name,
   description,
   capacity,
@@ -58,8 +60,10 @@ const VehicleOptionCard: React.FC<VehicleOptionCardProps> = ({
       testID={testID}
       style={({ pressed }) => [
         styles.container,
+        compact && styles.compactContainer,
         isUnavailable && !isQuoteRequest && !selected && styles.cardUnavailable,
         selected && styles.selected,
+        compact && selected && styles.compactSelected,
         pressed && !disabled && styles.pressed,
       ]}
       onPress={disabled ? undefined : onPress}
@@ -67,7 +71,7 @@ const VehicleOptionCard: React.FC<VehicleOptionCardProps> = ({
       accessibilityLabel={`${name}, ${priceAccessibility}${etaAccessibility}`}
       accessibilityState={{ selected, disabled: Boolean(disabled) }}
     >
-      <View style={styles.imageContainer}>
+      <View style={[styles.imageContainer, compact && styles.compactImage]}>
         {image ? (
           <Image source={image} style={styles.image} resizeMode="contain" />
         ) : (
@@ -76,7 +80,7 @@ const VehicleOptionCard: React.FC<VehicleOptionCardProps> = ({
       </View>
       <View style={styles.textContainer}>
         <View style={styles.topRow}>
-          <Text style={styles.name}>{name}</Text>
+          <Text style={[styles.name, compact && styles.compactName, compact && selected && styles.selectedText]} numberOfLines={compact ? 1 : undefined}>{compact ? name.split(' /')[0] : name}</Text>
           {isLoading ? (
             <View testID={`loading-${name}`}>
               <Skeleton width={56} height={18} borderRadius={4} />
@@ -86,22 +90,33 @@ const VehicleOptionCard: React.FC<VehicleOptionCardProps> = ({
           ) : isUnavailable ? (
             <Text style={styles.priceUnavailable} numberOfLines={1}>{unavailableMessage}</Text>
           ) : (
-            <Text style={styles.price}>{displayPrice}</Text>
+            <Text style={[styles.price, compact && selected && styles.selectedPrice]}>{displayPrice}</Text>
           )}
         </View>
-        <Text style={styles.description} numberOfLines={1}>
+        {!compact && <Text style={styles.description} numberOfLines={1}>
           {description}
-        </Text>
+        </Text>}
         <View style={styles.bottomRow}>
-          <Text style={styles.capacity}>{capacity}</Text>
+          <Text style={[styles.capacity, compact && selected && styles.selectedCapacity]}>{capacity}</Text>
           {Boolean(eta) && <Text style={styles.eta}>{eta}</Text>}
         </View>
       </View>
+      {compact && <View style={[styles.radio, selected && styles.radioSelected]}>{selected && <View style={styles.radioDot} />}</View>}
     </Pressable>
   );
 };
 
 const styles = StyleSheet.create({
+  compactContainer: { padding: spacing.sm, minHeight: spacing.rowHeightStandard + spacing.sm, borderRadius: borderRadius.lg, gap: spacing.sm, elevation: 0, shadowOpacity: 0 },
+  compactSelected: { borderWidth: 1, borderColor: colors.homePickup, backgroundColor: colors.selectionTint },
+  selectedText: { color: colors.homeAction },
+  selectedPrice: { color: colors.onSuccessContainer },
+  selectedCapacity: { color: colors.statusGreen },
+  compactImage: { width: spacing.rowHeightStandard, height: spacing.rowHeightSm + spacing.sm },
+  compactName: { ...typography.bodyMd, fontWeight: '600', flex: 1, marginRight: spacing.xs },
+  radio: { width: spacing.xl, height: spacing.xl, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.outlineVariant, alignItems: 'center', justifyContent: 'center' },
+  radioSelected: { borderColor: colors.homePickup, backgroundColor: colors.homePickup },
+  radioDot: { width: spacing.sm, height: spacing.sm, borderRadius: borderRadius.full, backgroundColor: colors.onPrimary },
   container: {
     flexDirection: 'row',
     alignItems: 'center',

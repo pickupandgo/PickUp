@@ -24,21 +24,29 @@ export interface MapMarker {
   readonly vehicleType?: string;
   /** Heading in degrees (0-360) */
   readonly bearing?: number;
+  readonly stopNumber?: number;
+  readonly label?: string;
+  readonly preview?: boolean;
 }
 
 export interface MapCanvasProps {
   readonly style?: ViewStyle;
+  readonly appearance?: 'default' | 'home';
+  readonly recenterOnLayout?: boolean;
   /** Camera centre when `markers` is empty or fitting is disabled. */
   readonly center?: GeoPoint;
   /** Increment this to force the camera to re-center on the 'center' coordinate. */
   readonly forceCenterKey?: number;
   readonly markers?: readonly MapMarker[];
-  /** Straight line drawn through these points, in order. */
+  /** Provider road geometry, in order. */
   readonly routeStatus?: 'idle' | 'loading' | 'ready' | 'error';
   readonly onRetryRoute?: () => void;
   readonly polyline?: readonly GeoPoint[];
   /** Zoom the camera to include every marker. */
   readonly fitToMarkers?: boolean;
+  readonly fitRouteOnly?: boolean;
+  /** Space occupied by screen overlays, in logical pixels. */
+  readonly contentInsets?: { top: number; bottom: number };
   /** Show the OS "my location" dot. */
   readonly showsUserLocation?: boolean;
   /** Fired when the user finishes panning, for drag-to-pick flows. */

@@ -23,11 +23,11 @@ const ListRow: React.FC<ListRowProps> = ({
     <View style={[styles.container, compact && styles.compact]}>
       {leading && <View style={styles.leading}>{leading}</View>}
       <View style={styles.textContainer}>
-        <Text style={styles.title} numberOfLines={1}>
+        <Text style={[styles.title, compact && styles.compactTitle]} numberOfLines={1}>
           {title}
         </Text>
         {subtitle && (
-          <Text style={styles.subtitle} numberOfLines={1}>
+          <Text style={[styles.subtitle, compact && styles.compactSubtitle]} numberOfLines={1}>
             {subtitle}
           </Text>
         )}
@@ -61,6 +61,8 @@ const styles = StyleSheet.create({
     minHeight: spacing.rowHeightStandard,
     gap: spacing.md,
   },
+  compactTitle: { ...typography.bodyMd },
+  compactSubtitle: { ...typography.labelSm },
   compact: {
     paddingVertical: spacing.sm,
     minHeight: spacing.rowHeightSm,

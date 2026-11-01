@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, Image, Text, Pressable } from 'react-native';
+import PreviewVehicleMarker from './PreviewVehicleMarker.native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { colors, shadows, spacing, typography } from '../../theme';
+import { colors, shadows, spacing, typography, borderRadius } from '../../theme';
 import type { GeoPoint } from '../../api/types';
 import { getVehicleImage } from '../../utils/vehicleAssets';
 import {
@@ -37,15 +38,9 @@ const PIN_COLORS: Record<'pickup' | 'drop' | 'nearby', string> = {
 };
 
 /** Filled circle with a white ring, hanging from a thin stem. */
-const StopPin: React.FC<{ readonly color: string }> = ({ color }) => (
-  <View style={styles.pinContainer}>
-    <View style={styles.pinVisible}>
-      <View style={styles.pinHead}>
-        <View style={[styles.pinDot, { backgroundColor: color }]} />
-      </View>
-      <View style={[styles.pinStem, { backgroundColor: color }]} />
-    </View>
-    <View style={styles.pinGhost} />
+const StopPin: React.FC<{ readonly color: string; readonly label: string }> = ({ color, label }) => (
+  <View style={[styles.stopBadge, { backgroundColor: color }]}>
+    <Text style={styles.stopBadgeText}>{label}</Text>
   </View>
 );
 
@@ -53,6 +48,9 @@ import { VehicleMarkerBody } from './VehicleMapMarker';
 
 const renderMarkerBody = (marker: MapMarker): React.ReactElement => {
   switch (marker.kind) {
+    case 'pickup':
+      if (marker.label) return <View style={styles.pickupLabelMarker}><View style={styles.pickupLabel}><Text style={styles.pickupLabelText}>{marker.label}</Text></View><View style={styles.pickupLabelStem} /><View style={styles.pickupLabelDot} /></View>;
+      return <StopPin color={PIN_COLORS.pickup} label="P" />;
     case 'driver':
       return (
         <VehicleMarkerBody
@@ -72,18 +70,22 @@ const renderMarkerBody = (marker: MapMarker): React.ReactElement => {
         />
       );
     default:
-      return <StopPin color={PIN_COLORS[marker.kind]} />;
+      return <StopPin color={PIN_COLORS[marker.kind]} label={String(marker.stopNumber ?? 'D')} />;
   }
 };
 
 const MapCanvas: React.FC<MapCanvasProps> = ({
   style,
+  appearance = 'default',
+  recenterOnLayout = false,
   center,
   markers = [],
   polyline,
   routeStatus,
   onRetryRoute,
   fitToMarkers = false,
+  fitRouteOnly = false,
+  contentInsets,
   showsUserLocation = false,
     onRegionChangeComplete,
     onUserLocationChange,
@@ -94,6 +96,12 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
 }) => {
   const mapRef = useRef<MapView | null>(null);
   const delta = zoomDelta ?? DEFAULT_DELTA;
+  const [mapReady, setMapReady] = useState(false);
+  const [layoutHeight, setLayoutHeight] = useState(0);
+  const [overviewKey, setOverviewKey] = useState(0);
+  const paddingTop = contentInsets?.top ?? spacing.xxxl * 3;
+  const paddingBottom = contentInsets?.bottom ?? spacing.xxxl * 7;
+
 
   const validMarkers = useMemo<MapMarker[]>(() => {
     if (!Array.isArray(markers)) return [];
@@ -154,36 +162,37 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const fitMarkers = useMemo(() => fitRouteOnly ? validMarkers.filter(marker => marker.kind === 'pickup' || marker.kind === 'drop') : validMarkers, [validMarkers, fitRouteOnly]);
+
   // Fit the camera when the SET of markers changes (a new marker appears, or
   // one leaves), not when an existing marker's coordinate updates. Otherwise
   // the driver's 5s location poll would yank the camera back and destroy any
   // pan or zoom the user made. Sorted-ids as the key is stable across renders.
   const markerIdsKey = useMemo(
-    () => validMarkers.map((m) => m.id).sort().join('|'),
-    [validMarkers]
+    () => fitMarkers.map((m) => m.id).sort().join('|'),
+    [fitMarkers]
   );
 
+  // Fit once when geometry first arrives, on layout/overlay changes, or on
+  // explicit overview. GPS polls must not pull the camera away from user pans.
+  const routeAvailable = validPolyline.length > 1;
+  const fitted = useRef<{ key: string; road: boolean } | undefined>(undefined);
   useEffect(() => {
-    if (!fitToMarkers || !mapRef.current || validMarkers.length === 0) return;
-
+    if (!fitToMarkers || !mapReady || !layoutHeight || !mapRef.current) return;
+    const key = `${markerIdsKey}:${layoutHeight}:${paddingTop}:${paddingBottom}:${overviewKey}`;
+    if (fitted.current?.key === key && (fitted.current.road || !routeAvailable)) return;
+    const points = [...fitMarkers.map(m => m.coordinate), ...validPolyline];
+    if (!points.length) return;
     try {
-      if (validMarkers.length === 1) {
-        mapRef.current.animateToRegion(
-          { ...validMarkers[0].coordinate, latitudeDelta: delta, longitudeDelta: delta },
-          400
-        );
-        return;
-      }
-
-      mapRef.current.fitToCoordinates(
-        validMarkers.map((m) => ({ latitude: m.coordinate.latitude, longitude: m.coordinate.longitude })),
-        { edgePadding: { top: 90, right: 60, bottom: 240, left: 60 }, animated: true }
-      );
-    } catch (e) {
-      console.warn('[MapCanvas] fitToCoordinates failed safely:', e);
-    }
+      mapRef.current.fitToCoordinates(points, {
+        edgePadding: { top: paddingTop, bottom: paddingBottom, left: spacing.xxxl, right: spacing.xxxl },
+        animated: true,
+      });
+      fitted.current = { key, road: routeAvailable };
+    } catch { /* A later ready/layout event or overview can retry fitting. */ }
+    // Deliberately exclude changing GPS/route arrays: preserve manual pan/zoom.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fitToMarkers, markerIdsKey]);
+  }, [fitToMarkers, mapReady, layoutHeight, markerIdsKey, routeAvailable, paddingTop, paddingBottom, overviewKey]);
 
   useEffect(() => {
     if (
@@ -201,21 +210,24 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
     ) {
       return;
     }
+    const timer = setTimeout(() => {
     try {
-      mapRef.current.animateCamera(
+      mapRef.current?.animateCamera(
         {
           center: {
             latitude: center.latitude,
             longitude: center.longitude,
           },
-          zoom: 17,
+          zoom: appearance === 'home' ? 16 : 17,
         },
         { duration: 800 }
       );
     } catch (e) {
       console.warn('[MapCanvas] animateCamera failed safely:', e);
     }
-  }, [center?.latitude, center?.longitude, fitToMarkers, forceCenterKey]);
+    }, recenterOnLayout ? 120 : 0);
+    return () => clearTimeout(timer);
+  }, [center?.latitude, center?.longitude, fitToMarkers, forceCenterKey, mapReady, recenterOnLayout, recenterOnLayout ? layoutHeight : 0]);
 
   // Android has a first-mount rendering quirk where custom marker views appear
   // blank if `tracksViewChanges` is false at mount time. Toggling it on for
@@ -231,11 +243,18 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
   }, [markerIdsKey]);
 
   return (
-    <View style={[styles.container, style]}>
+    <View style={[styles.container, style]} onLayout={e => setLayoutHeight(e.nativeEvent.layout.height)}>
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         initialRegion={initialRegion}
+        onMapReady={() => setMapReady(true)}
+        rotateEnabled={false}
+        pitchEnabled={false}
+        showsPointsOfInterest={appearance === 'home'}
+        showsBuildings={false}
+        customMapStyle={appearance === 'home' ? HOME_MAP_STYLE : undefined}
+        mapPadding={appearance === 'home' && !recenterOnLayout ? { top: 0, left: 0, right: 0, bottom: fitRouteOnly ? spacing.sm : spacing.xxxl * 2 + spacing.sm } : undefined}
         showsUserLocation={showsUserLocation}
           onUserLocationChange={onUserLocationChange ? (e) => {
             if (e.nativeEvent.coordinate && Number.isFinite(e.nativeEvent.coordinate.latitude) && Number.isFinite(e.nativeEvent.coordinate.longitude)) {
@@ -259,31 +278,35 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
             : undefined
         }
       >
-        {validMarkers.map((marker) => (
+        {validMarkers.map((marker) => marker.preview ? <PreviewVehicleMarker key={marker.id} marker={marker} /> : (
           <Marker
             key={marker.id}
             coordinate={{
               latitude: marker.coordinate.latitude,
               longitude: marker.coordinate.longitude,
             }}
+            image={marker.kind === 'pickup' && marker.label === 'Pickup Point' ? require('../../assets/map/pickup-point.png') : undefined}
             title={marker.title}
             description={marker.description}
-            anchor={ANCHORS[marker.kind]}
+            anchor={marker.kind === 'pickup' && marker.label ? { x: 0.5, y: 0.8 } : ANCHORS[marker.kind]}
 
             tracksViewChanges={tracking}
           >
-            {renderMarkerBody(marker)}
+            {!(marker.kind === 'pickup' && marker.label === 'Pickup Point') && renderMarkerBody(marker)}
           </Marker>
         ))}
 
-        {validPolyline.length > 1 && (
-          <Polyline
-            coordinates={validPolyline.map((p) => ({ latitude: p.latitude, longitude: p.longitude }))}
-            strokeColor={colors.primary}
-            strokeWidth={4}
-          />
-        )}
+        {validPolyline.length > 1 && <>
+          <Polyline coordinates={validPolyline} strokeColor={colors.surface} strokeWidth={spacing.sm} lineCap="round" lineJoin="round" zIndex={1} />
+          <Polyline coordinates={validPolyline} strokeColor={colors.primary} strokeWidth={spacing.xs + 1} lineCap="round" lineJoin="round" zIndex={2} />
+        </>}
+
       </MapView>
+      {fitToMarkers && <Pressable
+        accessibilityRole="button" accessibilityLabel="Show full route"
+        onPress={() => setOverviewKey(k => k + 1)}
+        style={[styles.overview, { bottom: paddingBottom + spacing.md }]}
+      ><MaterialIcons name="center-focus-strong" size={spacing.xl} color={colors.primary} /></Pressable>}
       {children}
       {(routeStatus === 'loading' || routeStatus === 'error') && <View style={styles.routeNotice} accessibilityLiveRegion="polite">
         <Text style={styles.routeNoticeText}>{routeStatus === 'loading' ? 'Loading road route...' : 'Road route unavailable. Locations are still shown.'}</Text>
@@ -293,7 +316,28 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
   );
 };
 
+const HOME_MAP_STYLE = [
+  { elementType: 'geometry', stylers: [{ color: colors.surfaceContainerLow }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: colors.secondary }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: colors.surface }, { weight: 3 }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: colors.surface }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: colors.surface }] },
+  { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'simplified' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ visibility: 'on' }, { color: colors.successContainer }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: colors.secondaryContainer }] },
+];
 const styles = StyleSheet.create({
+  pickupLabelMarker: { width: spacing.xxxl * 5, height: spacing.xxxl * 2 + spacing.lg, alignItems: 'center', paddingTop: spacing.xs },
+  pickupLabel: { width: spacing.xxxl * 5 - spacing.sm, height: spacing.xxxl, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.statusGreen, borderRadius: borderRadius.full, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, ...shadows.card },
+  pickupLabelText: { ...typography.labelSm, fontWeight: '700', color: colors.onPrimary },
+  pickupLabelStem: { width: spacing.xs / 2, height: spacing.lg, backgroundColor: colors.statusGreen },
+  pickupLabelDot: { width: spacing.xxl, height: spacing.xxl, borderRadius: borderRadius.full, borderWidth: spacing.xs + 1, borderColor: colors.statusGreen, backgroundColor: colors.surface },
+  stopBadge: { minWidth: spacing.xxxl, height: spacing.xxxl, borderRadius: spacing.lg, borderWidth: spacing.xs, borderColor: colors.surface, alignItems: 'center', justifyContent: 'center', ...shadows.card },
+  stopBadgeText: { ...typography.labelSm, fontWeight: '700', color: colors.onPrimary },
+  overview: { position: 'absolute', right: spacing.md, width: spacing.xxxl + spacing.lg, height: spacing.xxxl + spacing.lg, borderRadius: spacing.lg, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', ...shadows.card },
   container: { overflow: 'hidden' },
   routeNotice: { position: 'absolute', top: spacing.xl, left: spacing.md, right: spacing.md, padding: spacing.sm, backgroundColor: colors.surface, borderRadius: spacing.sm },
   routeNoticeText: { ...typography.bodyMd, color: colors.onSurface },

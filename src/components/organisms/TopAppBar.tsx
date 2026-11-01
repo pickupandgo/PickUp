@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 export interface TopAppBarProps {
+  readonly compact?: boolean;
   readonly title: string;
   readonly leadingIcon?: React.ReactNode;
   readonly trailingIcon?: React.ReactNode;
@@ -14,6 +15,7 @@ export interface TopAppBarProps {
 
 const TopAppBar: React.FC<TopAppBarProps> = ({
   title,
+  compact = false,
   leadingIcon,
   trailingIcon,
   onLeadingPress,
@@ -25,11 +27,12 @@ const TopAppBar: React.FC<TopAppBarProps> = ({
     <View
       style={[
         styles.container,
+        compact && styles.compactContainer,
         variant === 'transparent' && styles.transparent,
       ]}
       accessibilityRole="header"
     >
-      <View style={styles.leftSection}>
+      <View style={[styles.leftSection, compact && styles.compactLeft]}>
         {leadingIcon && (
           <Pressable
             onPress={onLeadingPress}
@@ -40,7 +43,7 @@ const TopAppBar: React.FC<TopAppBarProps> = ({
             {leadingIcon}
           </Pressable>
         )}
-        <Text style={styles.title}>{title}</Text>
+        <Text style={[styles.title, compact && styles.compactTitle]}>{title}</Text>
       </View>
       {trailingIcon && (
         <Pressable
@@ -58,6 +61,9 @@ const TopAppBar: React.FC<TopAppBarProps> = ({
 };
 
 const styles = StyleSheet.create({
+  compactContainer: { minHeight: spacing.rowHeightSm, paddingVertical: 0, paddingHorizontal: spacing.sm },
+  compactLeft: { gap: spacing.sm },
+  compactTitle: { ...typography.bodyMd, fontWeight: '600' },
   container: {
     flexDirection: 'row',
     justifyContent: 'space-between',

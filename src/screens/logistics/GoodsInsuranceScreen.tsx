@@ -22,11 +22,12 @@ export interface GoodsInsuranceScreenProps {
   readonly onHelp?: () => void;
 }
 
-const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: any }> = ({
+const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: any; route?: any }> = ({
   onBack,
   onContinue,
   onHelp,
   navigation,
+  route,
 }) => {
   const keyboardAwareRef = useRef<any>(null);
   const inputRef = useRef<TextInput>(null);
@@ -51,7 +52,8 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
     });
     setInsured(false);
     if (onContinue) onContinue();
-    else navigation?.navigate('FareEstimateScreen');
+    else if (route?.params?.returnToReview) navigation?.goBack();
+    else navigation?.navigate('ReviewBookingScreen');
   };
 
   return (

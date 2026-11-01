@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography } from '../../theme';
@@ -86,6 +87,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
         },
         customerId
       );
+      Keyboard.dismiss();
       onLocationSelect?.(place.address);
       if (isPickupMode) {
         navigation?.navigate('SelectLocationScreen', { mode: 'pickup' });
@@ -120,6 +122,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
         },
         customerId
       );
+      Keyboard.dismiss();
       onCurrentLocation?.();
       if (isPickupMode) {
         navigation?.navigate('SelectLocationScreen', { mode: 'pickup' });
@@ -151,6 +154,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
       setPendingDrop(place);
     }
     void saveRecentLocation(loc, customerId);
+    Keyboard.dismiss();
     onLocationSelect?.(loc.address);
     if (isPickupMode) {
       navigation?.navigate('SelectLocationScreen', { mode: 'pickup' });
@@ -255,10 +259,8 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
         <Pressable style={styles.iconButton} onPress={() => (onBack ? onBack() : navigation?.goBack())}>
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Pick Up</Text>
-        <Pressable style={styles.iconButton} onPress={() => (onClose ? onClose() : navigation?.goBack())}>
-          <Feather name="x" size={24} color={colors.primary} />
-        </Pressable>
+        <Text style={styles.headerTitle}>{isPickupMode ? 'Pickup from' : 'Drop to'}</Text>
+
       </View>
 
       <KeyboardAvoidingView
@@ -268,53 +270,41 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
         <View style={styles.mainContent}>
           {/* Search Input Area */}
           <View style={styles.searchContainer}>
+            <View style={styles.modeIndicator} accessibilityElementsHidden><View style={[styles.modeDot, { backgroundColor: isPickupMode ? colors.homePickup : colors.primary }]} /><View style={styles.modeDash} /></View>
             <View style={styles.searchInputWrapper}>
               <Feather name="search" size={20} color={colors.onSurfaceVariant} style={styles.searchIcon} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search location"
+                placeholder="Search area, street or landmark"
                 placeholderTextColor={colors.onSurfaceVariant}
                 value={query}
                 onChangeText={setQuery}
                 autoFocus
                 autoCorrect={false}
+                accessibilityLabel={isPickupMode ? 'Search pickup location' : 'Search drop location'}
                 returnKeyType="search"
               />
               {isSearching && <ActivityIndicator size="small" color={colors.onSurfaceVariant} />}
               {hasQuery && !isSearching && (
                 <Pressable onPress={clear} style={styles.clearButton} accessibilityLabel="Clear search">
-                  <MaterialIcons name="cancel" size={20} color={colors.onSurfaceVariant} />
+                  <MaterialIcons name="close" size={20} color={colors.onSurfaceVariant} />
                 </Pressable>
               )}
             </View>
           </View>
 
-          {/* Current Location & Map Actions */}
           <View style={styles.quickActionsContainer}>
-            <Pressable
-              style={styles.quickActionBtn}
-              onPress={handleCurrentLocation}
-              disabled={isResolving}
-            >
-              <Feather name="navigation" size={20} color={colors.primary} />
-              <Text style={styles.quickActionText}>Current Location</Text>
+            <Pressable style={styles.quickActionBtn} accessibilityRole="button" accessibilityLabel="Select on map" disabled={isResolving} onPress={() => {
+              Keyboard.dismiss();
+              onMapSelect?.();
+              navigation?.navigate(isPickupMode ? 'SelectLocationScreen' : 'SelectDropLocationScreen', isPickupMode ? { mode: 'pickup' } : undefined);
+            }}>
+              <MaterialIcons name="place" size={spacing.xxl} color={colors.homePickup} />
+              <Text style={styles.quickActionText}>Select on map</Text>
             </Pressable>
-            
-            <View style={{ width: 1, backgroundColor: colors.outlineVariant, marginHorizontal: spacing.sm }} />
-            
-            <Pressable
-              style={styles.quickActionBtn}
-              onPress={() => {
-                onMapSelect?.();
-                if (isPickupMode) {
-                  navigation?.navigate('SelectLocationScreen', { mode: 'pickup' });
-                } else {
-                  navigation?.navigate('SelectDropLocationScreen');
-                }
-              }}
-            >
-              <Feather name="map" size={20} color={colors.primary} />
-              <Text style={styles.quickActionText}>Locate on Map</Text>
+            <Pressable style={styles.currentLocationAction} accessibilityRole="button" accessibilityLabel="Use current location" disabled={isResolving} onPress={handleCurrentLocation}>
+              <Feather name="crosshair" size={spacing.lg} color={colors.primary} />
+              <Text style={styles.currentLocationText}>Current Location</Text>
             </Pressable>
           </View>
 
@@ -359,7 +349,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
                           </View>
                           <View style={styles.locationTextContainer}>
                             <View style={styles.titleBadgeRow}>
-                              <Text style={styles.locationName}>{addr.title}</Text>
+                              <Text style={styles.locationName} numberOfLines={1}>{addr.title}</Text>
                               {addr.isPrimary && (
                                 <View style={styles.primaryBadge}>
                                   <Text style={styles.primaryBadgeText}>DEFAULT</Text>
@@ -381,7 +371,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
 
                   {/* Recent Searches Section */}
                   <View style={styles.recentSection}>
-                    <Text style={styles.listTitle}>RECENT SEARCHES</Text>
+                    <Text style={styles.listTitle}>RECENT LOCATIONS</Text>
                     {showRecentSkeleton ? (
                       <SkeletonListItem count={3} hasAvatar={true} hasSubtitle={true} />
                     ) : recentLocations.length > 0 ? (
@@ -398,11 +388,12 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
                             <Feather name="clock" size={20} color={colors.onSurfaceVariant} />
                           </View>
                           <View style={styles.locationTextContainer}>
-                            <Text style={styles.locationName}>{loc.name}</Text>
+                            <Text style={styles.locationName} numberOfLines={1}>{/^\d+$/.test(loc.name.trim()) ? loc.address.split(',').slice(0, 2).join(',') : loc.name}</Text>
                             <Text style={styles.locationAddress} numberOfLines={1}>
                               {loc.address}
                             </Text>
                           </View>
+                          <Feather name="chevron-right" size={spacing.lg} color={colors.onSurfaceVariant} />
                         </Pressable>
                       ))
                     ) : (
@@ -439,7 +430,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
                           </View>
                           <View style={styles.locationTextContainer}>
                             <View style={styles.titleBadgeRow}>
-                              <Text style={styles.locationName}>{addr.title}</Text>
+                              <Text style={styles.locationName} numberOfLines={1}>{addr.title}</Text>
                               <View style={styles.savedChipBadge}>
                                 <Text style={styles.savedChipBadgeText}>SAVED</Text>
                               </View>
@@ -475,11 +466,12 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
                         <Feather name="map-pin" size={20} color={colors.onSurfaceVariant} />
                       </View>
                       <View style={styles.locationTextContainer}>
-                        <Text style={styles.locationName}>{suggestion.primaryText}</Text>
+                        <Text style={styles.locationName} numberOfLines={1}>{suggestion.primaryText}</Text>
                         {suggestion.secondaryText.length > 0 && (
-                          <Text style={styles.locationAddress}>{suggestion.secondaryText}</Text>
+                          <Text style={styles.locationAddress} numberOfLines={1}>{suggestion.secondaryText}</Text>
                         )}
                       </View>
+                      <Feather name="chevron-right" size={spacing.lg} color={colors.onSurfaceVariant} />
                     </Pressable>
                   ))}
                 </>
@@ -502,7 +494,7 @@ const AddressSearchScreen: React.FC<AddressSearchScreenProps & { navigation?: an
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
   },
   messageRow: {
     flexDirection: 'row',
@@ -525,7 +517,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: spacing.sm,
     paddingHorizontal: spacing.sm,
     height: spacing.rowHeightStandard,
   },
@@ -545,16 +537,21 @@ const styles = StyleSheet.create({
   mainContent: {
     flex: 1,
     paddingHorizontal: spacing.marginMobile,
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
   },
   searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: spacing.lg,
   },
   searchInputWrapper: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.secondary,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceVariant,
-    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
     paddingHorizontal: spacing.md,
     height: 48,
   },
@@ -563,7 +560,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: typography.bodyLg.fontSize,
+    fontSize: typography.bodyMd.fontSize,
     color: colors.onSurface,
     fontFamily: typography.bodyLg.fontFamily,
     height: '100%',
@@ -572,16 +569,29 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
     padding: 4,
   },
+  modeIndicator: { width: spacing.xxxl, flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  modeDot: { width: spacing.md, height: spacing.md, borderRadius: borderRadius.full },
+  modeDash: { width: spacing.sm, height: spacing.xs / 2, backgroundColor: colors.outlineVariant },
+  currentLocationAction: { minHeight: spacing.rowHeightSm + spacing.xs, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.sm },
+  currentLocationText: { ...typography.labelSm, color: colors.onSurfaceVariant },
   quickActionsContainer: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginBottom: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+    paddingBottom: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.outlineHairline,
   },
   quickActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    backgroundColor: colors.secondaryContainer,
+    backgroundColor: colors.surface,
+    minHeight: spacing.rowHeightSm + spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
@@ -589,14 +599,12 @@ const styles = StyleSheet.create({
   quickActionText: {
     fontSize: typography.labelSm.fontSize,
     fontWeight: typography.labelSm.fontWeight,
-    color: colors.onSecondaryContainer,
+    color: colors.primary,
     fontFamily: typography.labelSm.fontFamily,
   },
   listContainer: {
     flex: 1,
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
+    backgroundColor: colors.surface,
   },
   listTitle: {
     fontSize: typography.labelCaps.fontSize,
@@ -611,32 +619,33 @@ const styles = StyleSheet.create({
   },
   locationItem: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: spacing.md,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.outlineVariant + '4D', // 30% opacity
+    borderBottomColor: colors.outlineHairline,
   },
   iconContainer: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.surfaceContainer,
+    backgroundColor: colors.surfaceContainerLow,
     alignItems: 'center',
     justifyContent: 'center',
   },
   locationTextContainer: {
     flex: 1,
+    minWidth: 0,
   },
   locationName: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
+    ...typography.bodyLg,
+    fontWeight: '600',
     color: colors.onSurface,
     fontFamily: typography.headlineSm.fontFamily,
     marginBottom: 4,
   },
   locationAddress: {
-    fontSize: typography.bodyMd.fontSize,
+    ...typography.labelSm,
     color: colors.onSurfaceVariant,
     fontFamily: typography.bodyMd.fontFamily,
   },

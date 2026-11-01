@@ -14,9 +14,13 @@ import { BookingContext } from '../src/state/BookingContext';
 import { mockVehicleTypes } from '../src/data/mockData';
 import type { FareQuote, NearbyDriver } from '../src/api/types';
 import { ApiError } from '../src/api/http';
+import { useRoadRoute } from '../src/hooks/useRoute';
+jest.mock('../src/hooks/useVehiclePreview', () => ({ useVehiclePreview: () => ({ vehicles: [], status: 'idle', refresh: jest.fn() }) }));
+jest.mock('../src/hooks/useRoute', () => ({ useRoadRoute: jest.fn(() => ({ status: 'ready', polyline: [], retry: jest.fn() })) }));
 
 const mockNavigate = jest.fn();
 const mockGoBack = jest.fn();
+const mockReplace = jest.fn();
 const mockSetVehicleType = jest.fn();
 const mockSetSender = jest.fn();
 const mockSetQuote = jest.fn();
@@ -99,7 +103,8 @@ describe('SelectVehicleScreen — Unit & Integration Tests', () => {
 
   const renderWithBooking = async (
     customDraft: any = {},
-    customContext: any = {}
+    customContext: any = {},
+    customRoute: any = {}
   ): Promise<ReactTestRenderer> => {
     const draft = {
       pickup: defaultPickup,
@@ -135,7 +140,7 @@ describe('SelectVehicleScreen — Unit & Integration Tests', () => {
     await act(async () => {
       renderer = TestRenderer.create(
         <BookingContext.Provider value={contextValue}>
-          <SelectVehicleScreen navigation={{ navigate: mockNavigate, goBack: mockGoBack }} />
+          <SelectVehicleScreen route={{ params: customRoute }} navigation={{ navigate: mockNavigate, goBack: mockGoBack, replace: mockReplace }} />
         </BookingContext.Provider>
       );
     });
@@ -143,6 +148,17 @@ describe('SelectVehicleScreen — Unit & Integration Tests', () => {
   };
 
   // ───────────────────────────────────────────────────────────────────────────
+  it('returns a changed vehicle directly to review with its newly priced quote', async () => {
+    const renderer = await renderWithBooking({ senderName: 'Existing sender', senderPhone: '0000000000' }, {}, { returnToReview: true });
+    const proceed = (renderer.root as any).findByProps({ accessibilityLabel: 'Proceed with Mini Truck' });
+    await act(async () => { proceed.props.onPress(); });
+    expect(mockSetQuote).toHaveBeenCalledWith(expect.objectContaining({ vehicleCategory: 'MINI_TRUCK' }));
+    expect(mockReplace).toHaveBeenCalledWith('ReviewBookingScreen');
+    expect(mockNavigate).not.toHaveBeenCalledWith('GoodsDetailsScreen');
+    expect(mockSetSender).not.toHaveBeenCalled();
+    act(() => renderer.unmount());
+  });
+
   // Helper Function Tests
   // ───────────────────────────────────────────────────────────────────────────
   describe('Helper functions: matchesVehicleCategory and formatFare', () => {
@@ -185,15 +201,46 @@ describe('SelectVehicleScreen — Unit & Integration Tests', () => {
   });
 
   // ───────────────────────────────────────────────────────────────────────────
+  it('scrolls pickup and drops together in a spacious bounded viewport and routes through all drops', async () => {
+    const first = { ...defaultPickup, address: 'First drop', latitude: 26.3 };
+    const last = { ...defaultPickup, address: 'Last drop', latitude: 26.4 };
+    const renderer = await renderWithBooking({ drops: [first, last] });
+    expect(useRoadRoute).toHaveBeenLastCalledWith(defaultPickup, last, [first]);
+    const viewport = (renderer.root as any).findByProps({ testID: 'vehicle-locations-scroll' });
+    expect(viewport.props.style.height).toBeGreaterThan(0);
+    expect(viewport.props.nestedScrollEnabled).toBe(true);
+    expect(viewport.findAllByType(Text).map((n: any) => n.props.children).flat().join(' ')).toContain(defaultPickup.address);
+    act(() => { renderer.unmount(); });
+  });
+
+  it('shows full pickup/drop addresses and preserves vehicle selection when route details close', async () => {
+    const longAddress = 'A very long drop address with building, street, neighborhood, city and state';
+    const renderer = await renderWithBooking({ drops: [{ ...defaultPickup, address: longAddress }] });
+    const root = renderer.root as any;
+    const selected = () => renderer.root.findAllByType(VehicleOptionCard).find((card: any) => card.props.selected)?.props.name;
+    const before = selected();
+    act(() => { root.findByProps({ accessibilityLabel: 'View All' }).props.onPress(); });
+    expect(root.findByProps({ testID: 'full-route-modal' }).props.visible).toBe(true);
+    expect(root.findByProps({ testID: 'full-pickup-address' }).props.children).toBe(defaultPickup.address);
+    const address = root.findByProps({ testID: 'full-drop-address-0' });
+    expect(address.props.children).toBe(longAddress);
+    expect(address.props.numberOfLines).toBeUndefined();
+    act(() => { root.findByProps({ accessibilityLabel: 'Close route details' }).props.onPress(); });
+    expect(root.findByProps({ testID: 'full-route-modal' }).props.visible).toBe(false);
+    expect(selected()).toBe(before);
+    act(() => { renderer.unmount(); });
+  });
+
   // Requirement 1: Sender Phone Number Display & Handling
   // ───────────────────────────────────────────────────────────────────────────
-  describe('1. Display the Actual Sender Phone Number', () => {
+  describe('1. Compact address summary and sender reconciliation', () => {
     it('displays the authenticated customer phone number with country code (+91)', async () => {
       const renderer = await renderWithBooking();
       const allTexts = renderer.root.findAllByType(Text).map((t) => t.props.children);
       const flattened = allTexts.flat().join(' ');
 
-      expect(flattened).toContain('+919876543210');
+      expect(flattened).toContain(defaultPickup.address);
+      expect(flattened).not.toContain('+919876543210');
       expect(flattened).not.toContain('No Number');
     });
 
@@ -211,7 +258,8 @@ describe('SelectVehicleScreen — Unit & Integration Tests', () => {
       const allTexts = renderer.root.findAllByType(Text).map((t) => t.props.children);
       const flattened = allTexts.flat().join(' ');
 
-      expect(flattened).toContain('Phone number unavailable');
+      expect(flattened).toContain(defaultPickup.address);
+      expect(flattened).not.toContain('Phone number unavailable');
       expect(flattened).not.toContain('No Number');
     });
 
@@ -233,7 +281,7 @@ describe('SelectVehicleScreen — Unit & Integration Tests', () => {
       const allTexts = renderer.root.findAllByType(Text).map((t) => t.props.children);
       const flattened = allTexts.flat().join(' ');
 
-      expect(flattened).toContain('+919988776655');
+      expect(mockSetSender).toHaveBeenCalledWith(expect.objectContaining({ phone: '+919988776655' }));
     });
 
     it('reconciles and updates draft.senderPhone if previously empty', async () => {
@@ -676,7 +724,7 @@ describe('SelectVehicleScreen — Unit & Integration Tests', () => {
       expect(proceedButton.props.accessibilityState.disabled).toBe(false);
 
       const buttonTexts = proceedButton.findAllByType(Text).map((t: any) => t.props.children).flat().join(' ');
-      expect(buttonTexts).toContain('Proceed With JCB');
+      expect(buttonTexts).toContain('Continue');
     });
 
     it('proceeds with JCB without creating a fake server quote', async () => {
@@ -732,7 +780,7 @@ describe('SelectVehicleScreen — Unit & Integration Tests', () => {
       expect(proceedButton.props.accessibilityState.disabled).toBe(false);
 
       const buttonTexts = proceedButton.findAllByType(Text).map((t: any) => t.props.children).flat().join(' ');
-      expect(buttonTexts).toContain('Proceed With Crane');
+      expect(buttonTexts).toContain('Continue');
 
       // Tap proceed
       await act(async () => {
@@ -776,7 +824,7 @@ describe('SelectVehicleScreen — Unit & Integration Tests', () => {
           accessibilityLabel: `Proceed with ${item.expectedButton.replace('Proceed With ', '')}`,
         });
         const buttonTexts = proceedButton.findAllByType(Text).map((t: any) => t.props.children).flat().join(' ');
-        expect(buttonTexts).toContain(item.expectedButton);
+        expect(buttonTexts).toContain('Continue');
       }
     });
   });

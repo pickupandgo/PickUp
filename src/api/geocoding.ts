@@ -50,6 +50,7 @@ export interface PlaceSuggestion {
 export interface ResolvedPlace extends GeoPoint {
   readonly address: string;
   readonly placeId?: string;
+  readonly addressDetails?: string;
   readonly receiverName?: string;
   readonly receiverPhone?: string;
   readonly instructions?: string;

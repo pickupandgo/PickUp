@@ -25,6 +25,10 @@ export interface Driver {
   readonly longitude: number;
   readonly isAvailable: boolean;
   readonly lastSeen?: number;
+  readonly capturedAt?: number;
+  readonly receivedAt?: string;
+  readonly accuracy?: number;
+  readonly locationStatus?: 'LIVE';
   readonly bearingDegrees?: number;
 }
 
@@ -54,12 +58,17 @@ export interface FareQuoteDrop {
  * it and books with `quoteId`. Any change to route, vehicle or weight needs a fresh quote.
  */
 export interface FareQuote {
+  /** Server-frozen customer surcharge; historical quotes omit it. */
+  readonly deliveryFarePaise?: number;
+  readonly customerPlatformFeePaise?: number;
+  readonly customerPlatformFeeBps?: number;
+  readonly surgeChargePaise?: number;
   readonly quoteId: string;
   readonly vehicleCategory: string;
   readonly weightKg: number;
   readonly pickup: { readonly latitude: number; readonly longitude: number };
   readonly distanceMeters: number;
-  /** Fare excluding taxes, in paise. */
+  /** Pre-tax subtotal including customer charges when present. */
   readonly farePaise: number;
   readonly taxPaise: number;
   /** Total to pay: fare + taxes. The sender pays this at once when the sender pays. */
@@ -132,6 +141,11 @@ export interface Ride {
   readonly id: string;
   readonly status: RideStatus;
   readonly bookingStatus?: string;
+  readonly searchStatus?: 'SEARCHING' | 'OFFERED' | 'EXHAUSTED' | null;
+  readonly offerStatus?: string | null;
+  readonly serverTime?: string;
+  readonly offerRequestedAt?: string | null;
+  readonly offerExpiresAt?: string | null;
   readonly requestedDriverId?: string | null;
   readonly assignedDriverId?: string | null;
   readonly externalRef?: string;

@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
+import { useAssignedDriverLocation } from '../../hooks/useAssignedDriverLocation';
 import { useTripStatus } from '../../hooks/useTripStatus';
 import { useBookingPayment } from '../../hooks/useBookingPayment';
 import BookingPaymentStatus from '../../components/organisms/BookingPaymentStatus';
@@ -91,6 +92,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
     if (polled) setTrip(polled);
   }, [polled, setTrip]);
 
+  const [panelHeight, setPanelHeight] = useState(0);
   const current = polled ?? trip;
   const driverId = current?.driverId ?? assignedDriver?.id;
   // Declared up-front because effects below read `status` in their dependency
@@ -117,37 +119,9 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
       navigation?.replace('TripCancelledStatusScreen');
     }
   }, [status, navigation]);
-  const [driverPoint, setDriverPoint] = useState<GeoPoint | undefined>(
-    assignedDriver
-      ? { latitude: assignedDriver.latitude, longitude: assignedDriver.longitude }
-      : undefined
-  );
-
-  // The engine only exposes the driver's location via GET /drivers/:id, and it
-  // changes when the driver app pushes an update.
-  useEffect(() => {
-    if (!driverId) return;
-    let cancelled = false;
-
-    const tick = async () => {
-      try {
-        const driver = await getDriver(driverId);
-        if (!cancelled && driver) {
-          setDriverPoint({ latitude: driver.latitude, longitude: driver.longitude });
-          setAssignedDriver(driver);
-        }
-      } catch {
-        // Keep the last known position on a transient failure.
-      }
-    };
-
-    void tick();
-    const id = setInterval(tick, 5_000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [driverId, setAssignedDriver]);
+  const assignedLocation = useAssignedDriverLocation(current?.id, driverId, !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(status ?? ''));
+  const driverPoint = assignedLocation.point;
+  useEffect(() => { if (assignedLocation.driver) setAssignedDriver(assignedLocation.driver); }, [assignedLocation.driver, setAssignedDriver]);
 
   const markers = useMemo<readonly MapMarker[]>(() => {
     const built: MapMarker[] = [];
@@ -157,7 +131,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
     if (current?.stops && current.stops.length > 0) {
       current.stops.forEach((stop, index) => {
         if (stop.status !== 'DELIVERED') {
-          built.push({ id: `drop-${index}`, kind: 'drop', coordinate: stop.location, title: `Drop ${index + 1}` });
+          built.push({ id: `drop-${index}`, kind: 'drop', stopNumber: index + 1, coordinate: stop.location, title: `Drop ${index + 1}` });
         }
       });
     } else if (current?.drop) {
@@ -167,11 +141,12 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
       built.push({
         id: 'driver',
         kind: 'driver',
+        preview: true,
         coordinate: driverPoint,
         title: assignedDriver?.name ?? 'Driver',
         vehicleType:
+          current?.vehicleType ||
           assignedDriver?.vehicleType ||
-          (current as any)?.vehicleType ||
           ride?.vehicleType ||
           draft?.vehicleType,
         bearing: assignedDriver?.bearingDegrees,
@@ -320,14 +295,15 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
       <MapCanvas
         style={styles.mapCanvas}
         markers={markers}
-        fitToMarkers={markers.length > 1}
+        fitToMarkers={markers.length > 0}
+        contentInsets={{ top: spacing.lg, bottom: panelHeight + spacing.lg }}
         polyline={road.polyline}
         routeStatus={road.status}
         onRetryRoute={road.retry}
       />
 
       {/* Bottom Overlay Container */}
-      <View style={styles.bottomOverlay}>
+      <View style={styles.bottomOverlay} onLayout={e => setPanelHeight(e.nativeEvent.layout.height)}>
         <SafeAreaView edges={['bottom']} style={styles.safeArea}>
           <View style={styles.tripStatusCard}>
             {/* Top Interactive Drag / Slide-down Handle */}
@@ -340,7 +316,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
               <View style={styles.dragHandlePill} />
               <View style={styles.dragHandleRow}>
                 <Text style={styles.dragHandleHint}>
-                  {isCollapsed ? 'Tap to view details' : 'Swipe / tap to view map'}
+                  {isCollapsed ? 'Tap to view details' : 'Tap to view map'}
                 </Text>
                 <Feather
                   name={isCollapsed ? 'chevron-up' : 'chevron-down'}
@@ -379,6 +355,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
               </Pressable>
             ) : (
               <ScrollView
+                style={{ flexShrink: 1 }}
                 showsVerticalScrollIndicator={false}
                 bounces={false}
                 contentContainerStyle={styles.cardScrollContent}
@@ -778,12 +755,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.marginMobile,
     paddingBottom: spacing.lg,
     zIndex: 30,
-    maxHeight: '68%',
+    maxHeight: '55%',
   },
   safeArea: {
+    flexShrink: 1,
     width: '100%',
   },
   tripStatusCard: {
+    flexShrink: 1,
     backgroundColor: colors.surface,
     borderRadius: 24,
     padding: spacing.lg,

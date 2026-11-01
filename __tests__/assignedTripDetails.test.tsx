@@ -1,0 +1,37 @@
+import React from 'react';
+import TestRenderer, { act } from 'react-test-renderer';
+import Screen from '../src/screens/tracking/DriverAssignedExpandedScreen';
+let mockStatus = 'DRIVER_ASSIGNED';
+const mockPickup = { latitude: 26, longitude: 73, address: 'Pickup road' };
+const mockPoint = { latitude: 26.01, longitude: 73.01 };
+const mockTrip = () => ({ id: 'trip', driverId: 'driver', status: mockStatus, vehicleType: 'TWO_WHEELER', pickup: mockPickup, stops: [{ location: { latitude: 26.1, longitude: 73.1, address: 'Drop road' } }], paymentBookingId: 'payment' });
+const mockSet = jest.fn();
+jest.mock('../src/state/BookingContext', () => ({ useBooking: () => ({ trip: mockTrip(), setTrip: mockSet, ride: null, assignedDriver: { id: 'driver', name: 'Test driver', vehicleType: 'PICKUP_TRUCK' }, setAssignedDriver: mockSet, draft: { drops: [] } }) }));
+jest.mock('../src/hooks/useTripStatus', () => ({ useTripStatus: () => ({ trip: undefined }) }));
+jest.mock('../src/hooks/useAssignedDriverLocation', () => ({ useAssignedDriverLocation: () => ({ point: mockPoint, status: 'live', refresh: jest.fn() }) }));
+jest.mock('../src/hooks/useRoute', () => ({ useRoadRoute: jest.fn(() => ({ polyline: [], status: 'loading', retry: jest.fn() })) }));
+jest.mock('../src/api/engine', () => ({ getRideTrip: jest.fn() }));
+jest.mock('../src/components/map/MapCanvas', () => { const { View } = require('react-native'); return (props: any) => <View testID="assigned-map" {...props} />; });
+beforeEach(() => { mockStatus = 'DRIVER_ASSIGNED'; jest.clearAllMocks(); });
+it('frames assigned driver and pickup only, using authoritative trip category', async () => {
+  let view: any;
+  await act(async () => { view = TestRenderer.create(<Screen />); });
+  const map = view.root.findByProps({ testID: 'assigned-map' });
+  expect(map.props.markers).toHaveLength(2);
+  expect(map.props.markers[1]).toMatchObject({ kind: 'driver', coordinate: mockPoint, vehicleType: 'TWO_WHEELER', preview: true });
+  expect(map.props.fitToMarkers).toBe(true);
+  expect(map.props.fitRouteOnly).toBe(false);
+  expect(require('../src/hooks/useRoute').useRoadRoute).toHaveBeenCalledWith(mockPoint, mockPickup);
+  act(() => view.unmount());
+});
+it('preserves server-owned pickup progression and routes chat with booking identity', async () => {
+  const navigation = { replace: jest.fn(), navigate: jest.fn() };
+  let view: any;
+  await act(async () => { view = TestRenderer.create(<Screen navigation={navigation} />); });
+  act(() => view.root.findByProps({ accessibilityLabel: 'Chat with driver' }).props.onPress());
+  expect(navigation.navigate).toHaveBeenCalledWith('ActiveTripChatScreen', expect.objectContaining({ tripId: 'trip', bookingId: 'payment' }));
+  mockStatus = 'DRIVER_ARRIVED';
+  await act(async () => { view.update(<Screen navigation={navigation} />); });
+  expect(navigation.replace).toHaveBeenCalledWith('PickupOtpVerificationScreen');
+  act(() => view.unmount());
+});

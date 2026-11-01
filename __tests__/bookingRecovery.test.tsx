@@ -1,3 +1,4 @@
+import { leaveFailedSearch } from '../src/services/leaveFailedSearch';
 import React from 'react';
 import TestRenderer, { act, type ReactTestRenderer } from 'react-test-renderer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -160,4 +161,113 @@ it('does not restore the journal when a stale create response arrives after conf
   finish(ride);
   await request;
   expect(await readPendingBooking('A')).toBeNull();
+});
+
+it('returning Home ends an exhausted booking remotely and clears its durable recovery identity', async () => {
+  await writePendingBooking('A', { input, rideId: ride.id });
+  (getRide as jest.Mock).mockResolvedValue({ ...ride, status: 'REJECTED' });
+  const { cancelRide } = require('../src/api/engine');
+  cancelRide.mockResolvedValue({ ...ride, status: 'CANCELLED' });
+  await expect(leaveFailedSearch('A', { ...ride, status: 'REQUESTED' })).resolves.toEqual({ kind: 'released' });
+  expect(cancelRide).toHaveBeenCalledWith(ride.id, expect.any(String), undefined);
+  expect(await readPendingBooking('A')).toBeNull();
+});
+it('does not discard a booking on offline/unconfirmed Return Home', async () => {
+  await writePendingBooking('A', { input, rideId: ride.id });
+  (getRide as jest.Mock).mockRejectedValue(new ApiError('network', 'Offline'));
+  await expect(leaveFailedSearch('A', ride)).rejects.toThrow();
+  expect((await readPendingBooking('A'))?.rideId).toBe(ride.id);
+});
+it('resumes a driver assignment that raced the Return Home request instead of cancelling it', async () => {
+  await writePendingBooking('A', { input, rideId: ride.id });
+  (getRide as jest.Mock).mockResolvedValueOnce({ ...ride, status: 'REJECTED' }).mockResolvedValueOnce(ride);
+  const { cancelRide } = require('../src/api/engine');
+  cancelRide.mockRejectedValue(new ApiError('http', 'Already assigned', 409));
+  await expect(leaveFailedSearch('A', ride)).resolves.toEqual({ kind: 'active', ride });
+  expect((await readPendingBooking('A'))?.rideId).toBe(ride.id);
+});
+it('recovers a lost cancellation response before clearing the booking', async () => {
+  await writePendingBooking('A', { input, rideId: ride.id });
+  (getRide as jest.Mock).mockResolvedValueOnce({ ...ride, status: 'REJECTED' }).mockResolvedValueOnce({ ...ride, status: 'CANCELLED' });
+  const { cancelRide } = require('../src/api/engine');
+  cancelRide.mockRejectedValue(new ApiError('timeout', 'Response lost'));
+  await expect(leaveFailedSearch('A', ride)).resolves.toEqual({ kind: 'released' });
+  expect(await readPendingBooking('A')).toBeNull();
+});
+it('a cancellation storage-clear failure does not permit a new booking over the retained identity', async () => {
+  await writePendingBooking('A', { input, rideId: ride.id });
+  (getRide as jest.Mock).mockResolvedValue({ ...ride, status: 'CANCELLED' });
+  (AsyncStorage.removeItem as jest.Mock).mockRejectedValueOnce(new Error('Storage failed'));
+  await expect(leaveFailedSearch('A', ride)).rejects.toThrow('Storage failed');
+  expect((await readPendingBooking('A'))?.rideId).toBe(ride.id);
+});
+
+it('allows a fresh booking after returning Home without reviving the exhausted request', async () => {
+  await writePendingBooking('A', { input, rideId: ride.id });
+  (getRide as jest.Mock).mockResolvedValue({ ...ride, status: 'REJECTED' });
+  const { cancelRide } = require('../src/api/engine');
+  cancelRide.mockResolvedValue({ ...ride, status: 'CANCELLED' });
+  await leaveFailedSearch('A', ride);
+  const next = { ...input, quoteId: 'new-quote' };
+  (recoverRide as jest.Mock).mockResolvedValue(null);
+  (createRide as jest.Mock).mockResolvedValue({ ...ride, id: 'new-ride', quoteId: next.quoteId });
+  const result = await findDriverAndCreateRide(next);
+  expect(result.ride.id).toBe('new-ride');
+  expect(createRide).toHaveBeenCalledWith(next, undefined);
+  expect((await readPendingBooking('A'))?.input.quoteId).toBe(next.quoteId);
+});
+
+
+it('does not clear a different journal written while Return Home is checking the old ride', async () => {
+  await writePendingBooking('A', { input, rideId: ride.id });
+  let finish!: (value: any) => void;
+  (getRide as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const leaving = leaveFailedSearch('A', ride);
+  await Promise.resolve(); await Promise.resolve();
+  const next = { input: { ...input, quoteId: 'new-quote' }, rideId: 'new-ride' };
+  await writePendingBooking('A', next);
+  finish({ ...ride, status: 'CANCELLED' });
+  await expect(leaving).rejects.toThrow('Booking changed');
+  expect(await readPendingBooking('A')).toEqual(next);
+});
+
+it('blocks late recovery after the journal is released even before context clear runs', async () => {
+  await writePendingBooking('A', { input, rideId: ride.id });
+  let finish!: (value: any) => void;
+  (recoverRide as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  let state!: ReturnType<typeof useBooking>;
+  function Capture() { state = useBooking(); return null; }
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
+  (getRide as jest.Mock).mockResolvedValue({ ...ride, status: 'CANCELLED' });
+  await leaveFailedSearch('A', ride);
+  await act(async () => { finish({ ...ride, status: 'REQUESTED' }); });
+  expect(state.ride).toBeUndefined();
+  expect(await readPendingBooking('A')).toBeNull();
+  act(() => state.clearActiveRide());
+  await act(async () => { await state.recoverBooking?.(); });
+  expect(state.pendingInput).toBeUndefined(); expect(state.ride).toBeUndefined();
+  act(() => renderer.unmount());
+});
+
+it('can release active search context while preserving all booking details for another vehicle', async () => {
+  let state!: ReturnType<typeof useBooking>;
+  function Capture() { state = useBooking(); return null; }
+  let view: ReactTestRenderer;
+  await act(async () => { view = TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
+  act(() => {
+    state.setPickup({ latitude: 26, longitude: 73, address: 'Pickup' });
+    state.addDrop({ latitude: 26.1, longitude: 73.1, address: 'Drop one', receiverName: 'Receiver one', receiverPhone: '0000000000', instructions: 'First gate' });
+    state.addDrop({ latitude: 26.2, longitude: 73.2, address: 'Drop two', receiverName: 'Receiver two', receiverPhone: '0000000001', instructions: 'Second gate' });
+    state.setSender({ name: 'Sender', phone: '0000000002', instructions: 'Pickup gate' });
+    state.setGoods({ weightKg: 25, goodsType: 'Furniture', declaredValue: '5000', goodsDescription: 'Two chairs', specialInstructions: 'Handle carefully' });
+    state.setVehicleType('Pickup / Bolero'); state.setCollectionPreference('UPI'); state.setPaymentMethod('PAY_AT_PICKUP');
+    state.setRide(ride); state.rememberPendingInput?.(input);
+  });
+  const before = state.draft;
+  act(() => state.clearActiveRide({ preserveDraft: true }));
+  expect(state.draft).toEqual({ ...before, quote: undefined, pendingDrop: undefined });
+  expect(state.draft.drops).toHaveLength(2);
+  expect(state.ride).toBeUndefined(); expect(state.trip).toBeUndefined(); expect(state.pendingInput).toBeUndefined();
+  act(() => view!.unmount());
 });

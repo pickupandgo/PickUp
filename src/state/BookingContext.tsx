@@ -39,9 +39,11 @@ export interface BookingDraft {
   readonly quote?: FareQuote;
   /** Exactly PAY_AT_PICKUP or PAY_AT_DELIVERY. No prepaid. */
   readonly paymentMethod?: PaymentMethod;
+  /** Preferred collection channel; actual payment is confirmed only by the backend. */
+  readonly collectionPreference?: 'CASH' | 'UPI';
 }
 
-const EMPTY_DRAFT: BookingDraft = { drops: [], paymentMethod: 'PAY_AT_DELIVERY' };
+const EMPTY_DRAFT: BookingDraft = { drops: [], paymentMethod: 'PAY_AT_DELIVERY', collectionPreference: 'CASH' };
 
 interface BookingContextValue {
   readonly pendingInput?: CreateRideInput;
@@ -79,6 +81,7 @@ interface BookingContextValue {
   /** Store a fresh server quote. */
   readonly setQuote: (quote: FareQuote | undefined) => void;
   readonly setPaymentMethod: (method: PaymentMethod | undefined) => void;
+  readonly setCollectionPreference: (preference: 'CASH' | 'UPI') => void;
   readonly resetDraft: () => void;
   readonly startNewBooking: () => void;
 
@@ -89,7 +92,7 @@ interface BookingContextValue {
   readonly setRide: (ride: Ride | undefined) => void;
   readonly setTrip: (trip: Trip | undefined) => void;
   readonly setAssignedDriver: (driver: NearbyDriver | undefined) => void;
-  readonly clearActiveRide: () => void;
+  readonly clearActiveRide: (options?: { readonly preserveDraft?: boolean }) => void;
 }
 
 export const BookingContext = createContext<BookingContextValue | undefined>(undefined);
@@ -126,7 +129,7 @@ const AccountBookingProvider: React.FC<{ children: React.ReactNode; customerId?:
     setRecoveringBooking(true);
     const journalRevision = bookingRevision(customerId);
     const version = ++recoveryVersion.current;
-    const current = () => alive.current && version === recoveryVersion.current;
+    const current = () => alive.current && version === recoveryVersion.current && bookingRevision(customerId) === journalRevision;
     const controller = new AbortController();
     const task = (async () => {
       try {
@@ -152,10 +155,11 @@ const AccountBookingProvider: React.FC<{ children: React.ReactNode; customerId?:
             pickupInstructions: metadata?.pickupInstructions, paymentMethod: detail.paymentMethod,
           }));
         }
+        if (!found && !saved && current()) { storeRide(undefined); setTrip(undefined); setAssignedDriver(undefined); }
         if (found) {
           if (found.status === 'CANCELLED' || found.bookingStatus === 'COMPLETED') {
-            await writePendingBooking(customerId, null);
-            if (current()) { setPendingInput(undefined); storeRide(undefined); }
+            await writePendingBooking(customerId, null, journalRevision, { value: saved });
+            if (alive.current && version === recoveryVersion.current && bookingRevision(customerId) === journalRevision + 1) { setPendingInput(undefined); storeRide(undefined); setTrip(undefined); setAssignedDriver(undefined); setRecoveringBooking(false); setBookingRecoveryError(undefined); }
           } else {
             const input = saved?.input ?? (found.quoteId && found.paymentMethod ? { quoteId: found.quoteId, paymentMethod: found.paymentMethod } : undefined);
             if (input) await writePendingBooking(customerId, { input, rideId: found.id }, journalRevision);
@@ -271,6 +275,10 @@ const AccountBookingProvider: React.FC<{ children: React.ReactNode; customerId?:
     setDraft((d) => ({ ...d, paymentMethod }));
   }, []);
 
+  const setCollectionPreference = useCallback((collectionPreference: 'CASH' | 'UPI') => {
+    setDraft(d => ({ ...d, collectionPreference }));
+  }, []);
+
   const resetDraft = useCallback(() => setDraft(EMPTY_DRAFT), []);
 
   const startNewBooking = useCallback(() => {
@@ -291,11 +299,11 @@ const AccountBookingProvider: React.FC<{ children: React.ReactNode; customerId?:
     });
   }, []);
 
-  const clearActiveRide = useCallback(() => {
+  const clearActiveRide = useCallback((options?: { readonly preserveDraft?: boolean }) => {
     setRide(undefined);
     setTrip(undefined);
     setAssignedDriver(undefined);
-    setDraft(EMPTY_DRAFT);
+    setDraft(current => options?.preserveDraft ? { ...current, quote: undefined, pendingDrop: undefined } : EMPTY_DRAFT);
     recoveryVersion.current += 1;
     setRecoveringBooking(false);
     setPendingInput(undefined);
@@ -323,6 +331,7 @@ const AccountBookingProvider: React.FC<{ children: React.ReactNode; customerId?:
       setReceiver,
       setQuote,
       setPaymentMethod,
+      setCollectionPreference,
       resetDraft,
       startNewBooking,
       ride,
@@ -350,6 +359,7 @@ const AccountBookingProvider: React.FC<{ children: React.ReactNode; customerId?:
       setReceiver,
       setQuote,
       setPaymentMethod,
+      setCollectionPreference,
       resetDraft,
       startNewBooking,
       ride,

@@ -1,0 +1,53 @@
+import React from 'react';
+import TestRenderer, { act } from 'react-test-renderer';
+import { useAssignedDriverLocation } from '../src/hooks/useAssignedDriverLocation';
+import { getDriver } from '../src/api/engine';
+jest.mock('../src/api/engine', () => ({ getDriver: jest.fn() }));
+jest.mock('@react-navigation/native', () => ({ useFocusEffect: (effect: any) => require('react').useEffect(effect, [effect]) }));
+jest.mock('@react-native-firebase/auth', () => ({ getAuth: () => ({ currentUser: { uid: 'test' } }), onAuthStateChanged: (_auth: any, callback: any) => { callback({ uid: 'test' }); return jest.fn(); } }));
+const fetchDriver = getDriver as jest.Mock;
+let current: ReturnType<typeof useAssignedDriverLocation>;
+function Harness({ id = 'one' }: { id?: string }) { current = useAssignedDriverLocation('trip', id); return null; }
+const driver = (id: string, capturedAt = Date.now(), latitude = 26) => ({ id, capturedAt, latitude, longitude: 73 });
+beforeEach(() => { jest.useFakeTimers(); fetchDriver.mockReset(); });
+afterEach(() => { jest.clearAllTimers(); jest.useRealTimers(); });
+it('aborts the previous identity and ignores its late response', async () => {
+  const pending: any[] = [];
+  fetchDriver.mockImplementation((id, signal) => new Promise(resolve => pending.push({ id, signal, resolve })));
+  let view: any;
+  await act(async () => { view = TestRenderer.create(<Harness />); });
+  await act(async () => { view.update(<Harness id="two" />); });
+  expect(pending[0].signal.aborted).toBe(true);
+  await act(async () => { pending[0].resolve(driver('one')); });
+  expect(current.point).toBeUndefined();
+  await act(async () => { pending[1].resolve(driver('two')); });
+  expect(current.driver?.id).toBe('two');
+  act(() => view.unmount());
+});
+it('keeps capture ordering and expires a fix while a request is pending', async () => {
+  const capture = Date.now();
+  fetchDriver.mockResolvedValueOnce(driver('one', capture, 26)).mockResolvedValueOnce(driver('one', capture - 1000, 27)).mockImplementation(() => new Promise(() => {}));
+  let view: any;
+  await act(async () => { view = TestRenderer.create(<Harness />); });
+  await act(async () => { jest.advanceTimersByTime(5000); });
+  expect(current.point?.latitude).toBe(26);
+  await act(async () => { jest.advanceTimersByTime(5000); });
+  const count = fetchDriver.mock.calls.length;
+  await act(async () => { jest.advanceTimersByTime(52000); });
+  expect(current.point).toBeUndefined();
+  expect(current.status).toBe('stale');
+  expect(fetchDriver).toHaveBeenCalledTimes(count);
+  act(() => view.unmount());
+});
+it('clears the marker on failure and never accepts un-timestamped GPS', async () => {
+  fetchDriver.mockResolvedValueOnce(driver('one')).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ id: 'one', latitude: 26, longitude: 73 });
+  let view: any;
+  await act(async () => { view = TestRenderer.create(<Harness />); });
+  expect(current.point).toBeDefined();
+  await act(async () => { jest.advanceTimersByTime(5000); });
+  expect(current.point).toBeUndefined();
+  expect(current.status).toBe('error');
+  await act(async () => { jest.advanceTimersByTime(5000); });
+  expect(current.status).toBe('unavailable');
+  act(() => view.unmount());
+});

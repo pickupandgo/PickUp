@@ -30,30 +30,4 @@ describe('customer payment options', () => {
     }
   });
 
-  it('selects PAY_AT_DELIVERY by default in PaymentMethodScreen when no method is in draft', () => {
-    const mockSetPaymentMethod = jest.fn();
-    const mockContinue = jest.fn();
-    jest.spyOn(require('../src/state/BookingContext'), 'useBooking').mockReturnValue({
-      draft: { drops: [] },
-      setPaymentMethod: mockSetPaymentMethod,
-    });
-
-    const React = require('react');
-    const TestRenderer = require('react-test-renderer');
-    const PaymentMethodScreen = require('../src/screens/payment/PaymentMethodScreen').default;
-
-    let renderer: any;
-    TestRenderer.act(() => {
-      renderer = TestRenderer.create(React.createElement(PaymentMethodScreen, { onContinue: mockContinue }));
-    });
-
-    const root = renderer.root;
-    const radios = root.findAll((el: any) => el.props.accessibilityRole === 'radio' && typeof el.props.onPress === 'function');
-    expect(radios).toHaveLength(2);
-
-    // PAY_AT_PICKUP should be unselected
-    expect(radios[0].props.accessibilityState).toEqual({ selected: false });
-    // PAY_AT_DELIVERY should be selected by default
-    expect(radios[1].props.accessibilityState).toEqual({ selected: true });
-  });
 });

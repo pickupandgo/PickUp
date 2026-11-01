@@ -7,7 +7,6 @@ import ReceiverDetailsScreen from '../src/screens/logistics/ReceiverDetailsScree
 import GoodsInsuranceScreen from '../src/screens/logistics/GoodsInsuranceScreen';
 import Button from '../src/components/atoms/Button';
 import ReviewBookingScreen from '../src/screens/booking/ReviewBookingScreen';
-import FareEstimateScreen from '../src/screens/booking/FareEstimateScreen';
 import { useQuoteValidity } from '../src/hooks/useQuoteValidity';
 import { quoteMatchesDraft } from '../src/state/quoteValidation';
 import type { FareQuote } from '../src/api/types';
@@ -19,13 +18,16 @@ const quote = (latitude = 3): FareQuote => ({ quoteId: 'q', vehicleCategory: 'MI
   distanceMeters: 100, farePaise: 100, taxPaise: 0, payablePaise: 100, currency: 'INR', redeemed: false,
   expiresAt: new Date(Date.now() + 60_000).toISOString(), createdAt: new Date().toISOString() });
 let renderer: ReactTestRenderer;
+let mockNoDrivers = false;
+const mockLeaveResult = jest.fn(), mockRetrySearch = jest.fn();
+beforeEach(() => { mockNoDrivers = false; mockLeaveResult.mockClear(); mockRetrySearch.mockClear(); });
 afterEach(() => { if (renderer) act(() => renderer.unmount()); jest.useRealTimers(); });
 
 it('discards old quote responses after a same-count drop change', async () => {
   let state!: ReturnType<typeof useBooking>;
   const finish: Array<(value: FareQuote) => void> = [];
   (createFareQuote as jest.Mock).mockImplementation(() => new Promise(resolve => finish.push(resolve)));
-  function Capture() { state = useBooking(); return <FareEstimateScreen />; }
+  function Capture() { state = useBooking(); return <ReviewBookingScreen />; }
   await act(async () => { renderer = TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
   await act(async () => {
     state.setPickup({ latitude: 1, longitude: 2, address: 'Pickup' });
@@ -62,24 +64,28 @@ it('rejects reordered route, weight and vehicle mismatches', () => {
 });
 
 
-it('prevents double confirm and enables review again when it regains focus', async () => {
+it('starts one in-place search and does not restart booking on focus', async () => {
+  const confirmStarted = jest.fn();
   let state!: ReturnType<typeof useBooking>;
+  (createFareQuote as jest.Mock).mockResolvedValue(quote());
   let focus!: () => void;
   const navigation = { navigate: jest.fn(), addListener: (_: string, callback: () => void) => { focus = callback; return jest.fn(); } };
-  function Capture() { state = useBooking(); return <ReviewBookingScreen navigation={navigation} />; }
+  function Capture() { state = useBooking(); return <ReviewBookingScreen navigation={navigation} onConfirm={confirmStarted} />; }
   await act(async () => { renderer = TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
   act(() => {
     state.setPickup({ latitude: 1, longitude: 2, address: 'Pickup' });
     state.addDrop({ latitude: 3, longitude: 4, address: 'Drop' });
     state.setVehicleType('Mini Truck / Tata Ace'); state.setGoods({ weightKg: 10 });
   });
-  act(() => state.setQuote(quote()));
+  await act(async () => { state.setQuote(quote()); });
   const confirm = renderer.root.findByType(Button).props.onPress as () => void;
   act(() => { confirm(); confirm(); });
-  expect(navigation.navigate).toHaveBeenCalledTimes(1);
+  expect(confirmStarted).toHaveBeenCalledTimes(1);
+  expect(navigation.navigate).not.toHaveBeenCalled();
   act(() => focus());
-  act(() => (renderer.root.findByType(Button).props.onPress as () => void)());
-  expect(navigation.navigate).toHaveBeenCalledTimes(2);
+  expect(renderer.root.findByType(Button).props.label).toBe('Finding driver...');
+  expect(renderer.root.findByType(Button).props.disabled).toBe(true);
+  expect(confirmStarted).toHaveBeenCalledTimes(1);
 });
 
 
@@ -113,3 +119,104 @@ it('preserves a real declared value without inventing insurance coverage', async
 });
 
 jest.mock('../src/api/engine', () => ({ ...jest.requireActual('../src/api/engine'), recoverRide: jest.fn(async () => null) }));
+
+jest.mock('../src/hooks/useRoute', () => ({ useRoadRoute: () => ({ status: 'idle', retry: jest.fn() }) }));
+
+
+it('merges route, fare and both payment choices without visiting old pages', async () => {
+  (createFareQuote as jest.Mock).mockResolvedValue(quote());
+  let state!: ReturnType<typeof useBooking>;
+  const navigation = { navigate: jest.fn(), addListener: () => jest.fn() };
+  function Capture() { state = useBooking(); return <ReviewBookingScreen navigation={navigation} />; }
+  await act(async () => { renderer = TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
+  await act(async () => {
+    state.setPickup({ latitude: 1, longitude: 2, address: 'Pickup' });
+    state.addDrop({ latitude: 3, longitude: 4, address: 'Drop' });
+    state.setVehicleType('Mini Truck / Tata Ace');
+  });
+  const press = (label: string) => (renderer.root as any).findAll((node: any) => node.props.accessibilityLabel === label && typeof node.props.onPress === 'function')[0].props.onPress();
+  act(() => { press('UPI'); press('Pay at pickup'); });
+  expect(state.draft.collectionPreference).toBe('UPI');
+  expect(state.draft.paymentMethod).toBe('PAY_AT_PICKUP');
+  expect(state.draft.quote?.quoteId).toBe('q');
+  expect(navigation.navigate).not.toHaveBeenCalled();
+  const texts = renderer.root.findAllByType(require('react-native').Text).map((node: any) => node.props.children);
+  expect(texts).toContain('Total');
+  expect(texts).toContain('\u20B91');
+  expect(texts.some(value => typeof value === 'string' && /^\?\d/.test(value))).toBe(false);
+  expect(renderer.root.findByType(Button).props.label).toBe('Book Mini Truck');
+  act(() => (renderer.root.findByType(Button).props.onPress as () => void)());
+  expect(navigation.navigate).not.toHaveBeenCalled();
+  expect(renderer.root.findByType(Button).props.label).toBe('Finding driver...');
+  expect(renderer.root.findAllByType(require('react-native').Text).some((node: any) => node.props.children === 'Payment method')).toBe(false);
+});
+
+it('disables merged booking at quote expiry and permits an explicit refresh', async () => {
+  jest.useFakeTimers();
+  (createFareQuote as jest.Mock).mockImplementation(async () => quote());
+  let state!: ReturnType<typeof useBooking>;
+  function Capture() { state = useBooking(); return <ReviewBookingScreen />; }
+  await act(async () => { renderer = TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
+  await act(async () => {
+    state.setPickup({ latitude: 1, longitude: 2, address: 'Pickup' });
+    state.addDrop({ latitude: 3, longitude: 4, address: 'Drop' });
+    state.setVehicleType('Mini Truck / Tata Ace');
+  });
+  expect(renderer.root.findByType(Button).props.disabled).toBe(false);
+  await act(async () => { await jest.advanceTimersByTimeAsync(60_001); });
+  expect(renderer.root.findByType(Button).props.disabled).toBe(true);
+  const retry = (renderer.root as any).findAll((node: any) => node.props.accessibilityLabel === 'Refresh fare' && typeof node.props.onPress === 'function')[0];
+  await act(async () => { retry.props.onPress(); });
+  expect(renderer.root.findByType(Button).props.disabled).toBe(false);
+});
+
+jest.mock('../src/hooks/useBookingSearch', () => ({ useBookingSearch: () => ({ failure: undefined, noDrivers: mockNoDrivers, leaving: false, leave: mockLeaveResult, requestBack: jest.fn(), retry: mockRetrySearch }) }));
+
+jest.mock('../src/hooks/useVehiclePreview', () => ({ useVehiclePreview: jest.fn((_point, category, enabled) => ({ vehicles: enabled ? [{ key: 'a'.repeat(20), vehicleCategory: category, latitude: 1.01, longitude: 2.01 }] : [], status: 'ready', refresh: jest.fn() })) }));
+
+jest.mock('../src/components/map/MapCanvas', () => { const { View } = require('react-native'); return (props: any) => <View testID="review-route-map" {...props} />; });
+it('shows selected-category preview only while searching and hides it immediately on assignment', async () => {
+  (createFareQuote as jest.Mock).mockImplementation(async () => quote());
+  let state!: ReturnType<typeof useBooking>;
+  function Capture() { state = useBooking(); return <ReviewBookingScreen />; }
+  await act(async () => { renderer = TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
+  await act(async () => { state.setPickup({ latitude: 1, longitude: 2, address: 'Pickup' }); state.addDrop({ latitude: 3, longitude: 4, address: 'Drop' }); state.setVehicleType('Mini Truck / Tata Ace'); });
+  const map = () => (renderer.root as any).findByProps({ testID: 'review-route-map' });
+  expect(map().props.markers).toHaveLength(2);
+  expect(map().props.markers[1].stopNumber).toBe(1);
+  act(() => (renderer.root.findByType(Button).props.onPress as () => void)());
+  expect(map().props.markers).toHaveLength(3);
+  expect(map().props.markers[2]).toMatchObject({ kind: 'nearby', vehicleType: 'MINI_TRUCK', preview: true });
+  expect(map().props.fitRouteOnly).toBe(true);
+  act(() => state.setRide({ id: 'assigned', status: 'ACCEPTED', vehicleType: 'MINI_TRUCK' }));
+  expect(map().props.markers).toHaveLength(2);
+});
+
+it('renders no-driver result in the same map screen with three actions and no search/payment clutter', async () => {
+  mockNoDrivers = true;
+  await act(async () => { renderer = TestRenderer.create(<BookingProvider><ReviewBookingScreen route={{ params: { searchMode: true } }} /></BookingProvider>); });
+  const texts = renderer.root.findAllByType(require('react-native').Text).map((node: any) => node.props.children);
+  expect(texts).toContain('No driver found yet');
+  expect(texts).not.toContain('Payment method'); expect(texts).not.toContain('Fare details'); expect(texts).not.toContain('High demand in your area.');
+  expect((renderer.root as any).findAll((node: any) => node.props.accessibilityLabel === 'Searching for a driver')).toHaveLength(0);
+  const buttons: any[] = renderer.root.findAllByType(Button);
+  expect(buttons.map((button: any) => button.props.label)).toEqual(['Try again', 'Change vehicle']);
+  act(() => { buttons[0].props.onPress(); buttons[1].props.onPress(); });
+  expect(mockRetrySearch).toHaveBeenCalledTimes(1); expect(mockLeaveResult).toHaveBeenCalledWith('vehicle');
+  const home = (renderer.root as any).findAll((node: any) => node.props.accessibilityLabel === 'Back to Home' && typeof node.props.onPress === 'function')[0];
+  act(() => home.props.onPress());
+  expect(mockLeaveResult).toHaveBeenCalledWith('home');
+  expect((renderer.root as any).findByProps({ testID: 'review-route-map' })).toBeDefined();
+});
+
+it('shows server delivery/platform breakup and total while keeping surge hidden', async () => {
+ (createFareQuote as jest.Mock).mockImplementation(async () => ({ ...quote(), deliveryFarePaise: 4818, customerPlatformFeePaise: 482, customerPlatformFeeBps: 1000, surgeChargePaise: 0, farePaise: 5300, payablePaise: 5300, drops: [{...quote().drops[0], farePaise: 5300, payablePaise: 5300}] }));
+ let state!: ReturnType<typeof useBooking>;
+ function Capture() { state=useBooking(); return <ReviewBookingScreen />; }
+ await act(async () => { renderer=TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
+ await act(async () => { state.setPickup({latitude:1,longitude:2,address:'Pickup'}); state.addDrop({latitude:3,longitude:4,address:'Drop'}); state.setVehicleType('Mini Truck / Tata Ace'); });
+ const texts=renderer.root.findAllByType(require('react-native').Text).map((node:any)=>Array.isArray(node.props.children)?node.props.children.join(''):node.props.children);
+ expect(texts).toContain('Platform fee (10%)'); expect(texts).toContain('\u20B948.18'); expect(texts).toContain('\u20B94.82'); expect(texts).toContain('\u20B953.00');
+ expect(texts.some(value=>typeof value==='string' && /surge/i.test(value))).toBe(false);
+ expect(state.draft.quote?.payablePaise).toBe(5300);
+});

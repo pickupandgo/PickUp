@@ -42,16 +42,14 @@ Entry: `index.js` → `App.tsx`.
 ## Booking flow (the real path)
 
 ```
-locations → goods → vehicle → FareEstimate (POST /v1/fare/quotes) → PaymentMethod (two options)
-  → ReviewBooking (book needs an unexpired quote + a chosen method) → BookingConfirmed
-  → FindingDriver (POST /rides {quoteId, paymentMethod, driverId}) → DriverAssigned
-  → PickupOtpVerification → CustomerLiveTracking → (per drop) → TripCompleted
+locations -> vehicle -> goods/value -> ReviewBooking (server fare + payment preference/timing)
+  -> in-place finding/result (durable POST /rides, server-owned dispatch)
+  -> Trip Details -> pickup OTP -> live tracking -> completion
 ```
 
 - No local fare is ever calculated or sent. The server quote is the only fare; any change to the
   route, vehicle or weight discards the quote and forces a new one (`BookingContext`).
-- Payment methods are exactly **PAY_AT_PICKUP** and **PAY_AT_DELIVERY**. There is no prepaid /
-  pay-now flow; those screens were removed.
+- Payment timing remains exactly **PAY_AT_PICKUP** and **PAY_AT_DELIVERY**. Cash/UPI on the merged review is a collection preference sent in existing booking metadata instructions, not a new payment timing or payment confirmation. Actual collection/paid state remains backend-owned. There is no prepaid/pay-now flow. FareEstimateScreen and PaymentMethodScreen were removed; use ReviewBookingScreen only.
 
 ## OTP / payment gate (security)
 
@@ -98,3 +96,13 @@ npm run typecheck
 npm test
 npm run check:wiring   # navigation wiring (pre-existing warnings for tab/nested routes)
 ```
+
+## Read-only vehicle map preview (user approved 2026-11-01)
+
+The vehicle-selection map may display nearby vehicle icons through the authenticated Engine `/drivers/preview` contract (`useVehiclePreview`). This is display-only and never selects a driver, controls dispatch, promises availability, or supplies an identity to booking creation. Do not re-enable the legacy `useNearbyDrivers` enumeration/count hook. No driver counts or fabricated movement: use only verified category, fresh GPS and actual-coordinate interpolation. Pause on blur/background, abort on category/account changes, expire old markers. See `engine/docs/CUSTOMER_VEHICLE_PREVIEW.md` for deployment and existing process-local presence limits.
+
+## Booking-screen refresh (2026-11-01)
+
+ReviewBookingScreen owns the in-place search UI after Book. BookingConfirmedScreen was removed. FindingDriverScreen is a recovery/deep-link wrapper around that same review component in searchMode; do not reintroduce a separate finding layout. useBookingSearch reuses the durable matching API and server-owned dispatch. Cross-stack transitions use resetBookingDestination because SelectVehicle belongs to BookingStack and assignment/cancellation/result belong to ActiveTripStack. Keep draft details on vehicle change and never treat the loading animation as a timeout. The user explicitly deferred emulator builds/installs until new refresh milestone M6. M4 response-window/live-preview and M5 in-place no-driver result are implemented in source; M6 deployment/native/live validation remains pending.
+
+NoDriversAvailableScreen is now also a legacy recovery wrapper around the same finding/review result UI. Server exhaustion sets an in-place result; it never navigates to a separate failure popup. Try again explicitly retries the same registered booking; its frozen server fare remains authoritative even after the original quote expires. Home/vehicle actions call leaveFailedSearch first. Vehicle change preserves details and gets a new quote; it never silently books a changed price. Foreground/focus recovery reads status and must not replay a prior dispatch retry.

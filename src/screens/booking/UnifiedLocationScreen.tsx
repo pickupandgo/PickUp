@@ -8,11 +8,13 @@ import {
   ScrollView,
   Keyboard,
   ActivityIndicator,
-  useWindowDimensions,
+  Animated,
+  BackHandler,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
-import { reverseGeocode, type ResolvedPlace, type PlaceSuggestion } from '../../api/geocoding';
+import { getCurrentPlace, reverseGeocode, type ResolvedPlace, type PlaceSuggestion } from '../../api/geocoding';
 import type { GeoPoint } from '../../api/types';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
@@ -20,7 +22,10 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useBooking } from '../../state/BookingContext';
 import { useRecentLocations, saveRecentLocation } from '../../state/recentLocations';
 import Button from '../../components/atoms/Button';
-import DraggableBottomSheet from '../../components/organisms/DraggableBottomSheet';
+import { getAuth, onAuthStateChanged } from '@react-native-firebase/auth';
+import { getSavedAddresses, saveAddress, updateSavedAddress } from '../../state/savedAddresses';
+import { withAddressDetails } from '../../utils/locationDetails';
+import { useFocusEffect } from '@react-navigation/native';
 import { KeyboardAwareScrollView } from '../../components/organisms';
 import { usePlaceSearch } from '../../hooks/usePlaceSearch';
 
@@ -44,15 +49,18 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
     addDrop,
     replaceDrop,
     setPendingDrop,
-    commitPendingDrop,
     customerId,
   } = useBooking();
 
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
   
   // High-level mode
   const initialMode = route?.params?.mode ?? 'pickup';
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const mapShare = useRef(new Animated.Value(0.7)).current;
+  const [mapCenter, setMapCenter] = useState<GeoPoint | undefined>(draft.pickup);
+  const [locationError, setLocationError] = useState<string>();
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [mode, setMode] = useState<LocationSelectionMode>(initialMode);
 
   // If we're editing a specific target from the 'edit' mode list
@@ -62,9 +70,10 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
 
   // React Navigation can reuse this screen for a different stop.
   useEffect(() => {
+    setDetailsOpen(false);
     setMode(route?.params?.mode ?? 'pickup');
     setEditTarget(route?.params?.editTarget);
-  }, [route?.params]);
+  }, [route?.params?.mode, route?.params?.editTarget?.type, route?.params?.editTarget?.index]);
 
   // Determine what we're currently resolving/editing.
   const activeType = useMemo(() => {
@@ -81,7 +90,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
       if (editTarget?.index !== undefined && editTarget.index < draft.drops.length) {
         return draft.drops[editTarget.index];
       }
-      return draft.pendingDrop;
+      return draft.pendingDrop ?? draft.pickup;
     }
     return undefined;
   }, [activeType, draft.pickup, draft.drops, draft.pendingDrop, editTarget]);
@@ -114,17 +123,87 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
     activeType === 'pickup' ? (draft.senderPhone ?? '') : (initialPlace?.receiverPhone ?? '')
   );
 
+  const [houseDetails, setHouseDetails] = useState(initialPlace?.addressDetails ?? '');
+  const [saveAs, setSaveAs] = useState<'Home' | 'Shop' | 'Other' | undefined>();
+  const [saveError, setSaveError] = useState<string>();
+  const [savingDetails, setSavingDetails] = useState(false);
+  const saveFlight = useRef(false);
+  const previousPhone = useRef('');
+  const [useOwnNumber, setUseOwnNumber] = useState(false);
+  const [ownMobile, setOwnMobile] = useState('');
+  useEffect(() => onAuthStateChanged(getAuth(), user => {
+    const digits = user?.uid === customerId ? user?.phoneNumber?.replace(/\D/g, '') ?? '' : '';
+    setOwnMobile(digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits.length === 10 ? digits : '');
+    setUseOwnNumber(false);
+  }), [customerId]);
   const [isResolving, setIsResolving] = useState(false);
   const latestResolveSeq = useRef(0);
+  const searchRef = useRef<TextInput>(null);
 
   // Re-sync form state when activeType or initialPlace changes (e.g. user tapped a timeline item)
   useEffect(() => {
+    setHouseDetails(initialPlace?.addressDetails ?? '');
+    setSaveAs(undefined);
+    setSaveError(undefined);
+    setUseOwnNumber(false);
     setTempPlace(initialPlace);
+    if (initialPlace) setMapCenter(initialPlace);
     setSearchQuery(initialPlace?.address ?? '');
     setInstructions(activeType === 'pickup' ? (draft.pickupInstructions ?? '') : (initialPlace?.instructions ?? ''));
     setPersonName(activeType === 'pickup' ? (draft.senderName ?? '') : (initialPlace?.receiverName ?? ''));
     setPersonPhone(activeType === 'pickup' ? (draft.senderPhone ?? '') : (initialPlace?.receiverPhone ?? ''));
   }, [activeType, initialPlace, draft.pickupInstructions, draft.senderName, draft.senderPhone]);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
+    return () => { ++latestResolveSeq.current; show.remove(); hide.remove(); };
+  }, []);
+  // Android adjustResize already removes keyboard space from this viewport.
+  // Its native ScrollView must not add a second keyboard-height spacer.
+  const DetailsScrollView = Platform.OS === 'android' ? ScrollView : KeyboardAwareScrollView;
+  const timelineVisible = mode === 'edit' && !editTarget;
+  useEffect(() => {
+    Animated.timing(mapShare, { toValue: keyboardOpen ? 0.3 : detailsOpen || timelineVisible ? 0.42 : 0.7, duration: 260, useNativeDriver: false }).start();
+  }, [detailsOpen, timelineVisible, keyboardOpen, mapShare]);
+
+  const collapseDetails = () => {
+    Keyboard.dismiss();
+    setDetailsOpen(false);
+    if (tempPlace) setMapCenter(tempPlace);
+  };
+  useFocusEffect(useCallback(() => {
+    if (!detailsOpen) return;
+    const sub = BackHandler?.addEventListener('hardwareBackPress', () => {
+      Keyboard.dismiss();
+      setDetailsOpen(false);
+      return true;
+    });
+    return () => sub?.remove();
+  }, [detailsOpen]));
+
+  const selectLocation = () => {
+    if (!tempPlace || isResolving) return;
+    Keyboard.dismiss();
+    setIsSearchFocused(false);
+    clearPlaceSuggestions();
+    setMapCenter(tempPlace);
+    setDetailsOpen(true);
+  };
+  const locateSelection = async () => {
+    const seq = ++latestResolveSeq.current;
+    setIsResolving(true);
+    setLocationError(undefined);
+    try {
+      const place = await getCurrentPlace();
+      if (seq !== latestResolveSeq.current) return;
+      setTempPlace(place);
+      setMapCenter(place);
+      setSearchQuery(place.address);
+    } catch {
+      if (seq === latestResolveSeq.current) setLocationError('Could not find your location. Move the map or search for an address.');
+    } finally { if (seq === latestResolveSeq.current) setIsResolving(false); }
+  };
 
   const handleSearchChange = (text: string) => {
     setSearchQuery(text);
@@ -137,9 +216,12 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
   };
 
   const handleSelectSuggestion = async (s: PlaceSuggestion) => {
+    const seq = ++latestResolveSeq.current;
     try {
       setIsResolving(true);
       const place = await resolvePlaceSuggestion(s);
+      if (seq !== latestResolveSeq.current) return;
+      setMapCenter(place);
       setTempPlace(place);
       setSearchQuery(place.address);
       clearPlaceSuggestions();
@@ -158,7 +240,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
     } catch {
       // Ignore resolution failures and retain current place
     } finally {
-      setIsResolving(false);
+      if (seq === latestResolveSeq.current) setIsResolving(false);
     }
   };
 
@@ -179,7 +261,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
   const handleRegionChange = useCallback(
     (point: GeoPoint, details?: { isGesture?: boolean }) => {
       // Don't resolve if we are just looking at the timeline
-      if (mode === 'edit' && !editTarget) return;
+      if (detailsOpen || (mode === 'edit' && !editTarget)) return;
 
       // DO NOT auto-fetch if it wasn't a user gesture!
       if (details && !details.isGesture) {
@@ -227,34 +309,51 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
         }
       })();
     },
-    [mode, editTarget, tempPlace]
+    [mode, editTarget, tempPlace, detailsOpen]
   );
 
   const numericPhone = personPhone.replace(/\D/g, '');
   const isFormValid = personName.trim().length > 0 && numericPhone.length >= 10 && tempPlace;
 
-  const handleConfirm = () => {
-    if (!tempPlace) return;
+  const finishDetails = async (next: (place: ResolvedPlace) => void) => {
+    if (!tempPlace || !isFormValid || isResolving || saveFlight.current) return;
+    const owner = customerId;
+    const identity = getAuth().currentUser?.uid;
+    saveFlight.current = true;
+    setSavingDetails(true);
+    setSaveError(undefined);
+    Keyboard.dismiss();
+    const place = withAddressDetails(tempPlace, houseDetails);
+    try {
+      if (saveAs) {
+        if (!owner || identity !== owner) throw new Error('Sign in again before saving this address.');
+        const id = `location_${saveAs}_${place.latitude}_${place.longitude}`;
+        const existing = await getSavedAddresses(owner);
+        if (getAuth().currentUser?.uid !== identity) throw new Error('Your sign-in changed. Please try again.');
+        const input = { id, title: saveAs, icon: saveAs === 'Home' ? 'home' as const : saveAs === 'Shop' ? 'box' as const : 'map-pin' as const,
+          addressLine1: place.address, addressLine2: '', latitude: place.latitude, longitude: place.longitude };
+        const result = existing.some(item => item.id === id)
+          ? await updateSavedAddress(id, input, owner) : await saveAddress(input, owner);
+        if (!result.some(item => item.id === id && item.addressLine1 === place.address)) throw new Error('Could not save this address. Please retry or deselect Save as.');
+      }
+      if (getAuth().currentUser?.uid !== identity) return;
+      void saveRecentLocation({ name: tempPlace.address.split(',')[0].trim(), address: place.address,
+        latitude: place.latitude, longitude: place.longitude, placeId: place.placeId }, owner);
+      next(place);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Could not save your details. Please try again.');
+    } finally { saveFlight.current = false; setSavingDetails(false); }
+  };
 
-    void saveRecentLocation(
-      {
-        name: tempPlace.address.split(',')[0].trim(),
-        address: tempPlace.address,
-        latitude: tempPlace.latitude,
-        longitude: tempPlace.longitude,
-        placeId: tempPlace.placeId,
-      },
-      customerId
-    );
-
+  const handleConfirm = () => finishDetails(place => {
     if (activeType === 'pickup') {
-      setPickup(tempPlace);
-      setSender({ name: personName, phone: personPhone, instructions });
+      setPickup(place);
+      setSender({ name: personName.trim(), phone: numericPhone, instructions });
     } else if (activeType === 'drop') {
       const dropObj = {
-        ...tempPlace,
+        ...place,
         receiverName: personName,
-        receiverPhone: personPhone,
+        receiverPhone: numericPhone,
         instructions,
       };
 
@@ -263,15 +362,20 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
         replaceDrop(editTarget.index, dropObj);
       } else {
         // Adding a new drop
-        setPendingDrop(dropObj);
-        commitPendingDrop();
+        if (draft.drops.length >= 5) return;
+        // This form now owns the saved stop. Returning from vehicle selection
+        // edits that stop instead of creating another one.
+        setEditTarget({ type: 'drop', index: draft.drops.length });
+        addDrop(dropObj);
+        setPendingDrop(undefined);
       }
     }
 
     // Navigation logic after confirm
     if (mode === 'edit' && editTarget) {
-      // Return to timeline view within the edit mode
-      setEditTarget(undefined);
+      // Saving an edit completes it; do not show another confirmation timeline.
+      if (typeof navigation?.popTo === 'function') navigation.popTo('SelectVehicleScreen');
+      else navigation?.navigate('SelectVehicleScreen');
     } else if (mode === 'pickup') {
       // Normal flow: go to Drop
       navigation?.navigate('SelectDropLocationScreen');
@@ -279,39 +383,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
       // Drop, stop, or done editing timeline
       navigation?.navigate('SelectVehicleScreen');
     }
-  };
-
-  const handleAddAnother = () => {
-    if (!tempPlace) return;
-    
-    void saveRecentLocation(
-      {
-        name: tempPlace.address.split(',')[0].trim(),
-        address: tempPlace.address,
-        latitude: tempPlace.latitude,
-        longitude: tempPlace.longitude,
-        placeId: tempPlace.placeId,
-      },
-      customerId
-    );
-
-    // Save current as a new drop
-    const dropObj = {
-      ...tempPlace,
-      receiverName: personName,
-      receiverPhone: personPhone,
-      instructions,
-    };
-    setPendingDrop(dropObj);
-    commitPendingDrop();
-    
-    // Clear form for the next drop
-    setTempPlace(undefined);
-    setSearchQuery('');
-    setPersonName('');
-    setPersonPhone('');
-    setInstructions('');
-  };
+  });
 
   // ----------------------------------------------------------------------
   // Render Helpers
@@ -329,6 +401,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
               Keyboard.dismiss();
               return;
             }
+            if (detailsOpen) { collapseDetails(); return; }
             if (mode === 'edit' && editTarget) {
               setEditTarget(undefined); // Back to timeline
             } else {
@@ -342,6 +415,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
         <View style={styles.searchContainer}>
           <Feather name="search" size={20} color={colors.onSurfaceVariant} style={styles.searchIcon} />
           <TextInput
+            ref={searchRef}
             style={styles.searchInput}
             placeholder="Search location"
             placeholderTextColor={colors.onSurfaceVariant}
@@ -394,87 +468,55 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
     </View>
   );
 
-  const renderForm = () => {
-    let headerLabel = 'LOCATION';
-    if (activeType === 'pickup') headerLabel = 'PICKUP';
-    if (activeType === 'drop') {
-      if (editTarget?.index !== undefined) {
-        headerLabel = `DROP ${editTarget.index + 1}`;
-      } else {
-        headerLabel = `DROP ${draft.drops.length + 1}`;
-      }
-    }
-
-    return (
-      <View style={styles.sheetContent}>
-        <View style={styles.sheetHeader}>
-          <Text style={styles.dropIndex}>{headerLabel}</Text>
-          <Text style={styles.locationTitle} numberOfLines={2}>
-            {isResolving ? 'Locating…' : (tempPlace?.address ?? 'No location selected')}
-          </Text>
-        </View>
-
-        <View style={styles.formContainer}>
-          <View style={styles.inputWrapper}>
-            <TextInput
-              style={styles.inputField}
-              placeholder="House / Apartment / Shop (optional)"
-              placeholderTextColor={colors.onSurfaceVariant}
-              value={instructions}
-              onChangeText={setInstructions}
-            />
-          </View>
-
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>{activeType === 'pickup' ? "Sender's Name" : "Receiver's Name"}</Text>
-            <View style={styles.inputRow}>
-              <TextInput
-                style={styles.inputFieldInner}
-                placeholder="Enter name"
-                placeholderTextColor={colors.onSurfaceVariant}
-                value={personName}
-                onChangeText={setPersonName}
-              />
-              <MaterialIcons name="contact-page" size={20} color={colors.primary} />
-            </View>
-          </View>
-
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>{activeType === 'pickup' ? "Sender's Mobile number" : "Receiver's Mobile number"}</Text>
-            <TextInput
-              style={styles.inputFieldInner}
-              placeholder="Enter mobile number"
-              placeholderTextColor={colors.onSurfaceVariant}
-              value={personPhone}
-              onChangeText={setPersonPhone}
-              keyboardType="phone-pad"
-              maxLength={10}
-            />
-          </View>
-        </View>
-
-        <View style={styles.actionsContainer}>
-          <Button
-            label={mode === 'edit' && editTarget ? "Save Changes" : "Confirm and Proceed"}
-            onPress={handleConfirm}
-            variant="primary"
-            fullWidth
-            disabled={isResolving || !isFormValid}
-          />
-          {activeType === 'drop' && !editTarget && draft.drops.length < 4 && (
-            <Pressable
-              style={styles.addDropButton}
-              onPress={handleAddAnother}
-              disabled={isResolving || !isFormValid}
-            >
-              <Feather name="plus" size={18} color={isResolving || !isFormValid ? colors.onSurfaceVariant : colors.primary} />
-              <Text style={[styles.addDropText, (isResolving || !isFormValid) && { color: colors.onSurfaceVariant }]}>Add another drop</Text>
-            </Pressable>
-          )}
-        </View>
+  const renderAddress = () => (
+    <View style={styles.selectedAddress}>
+      <MaterialIcons name="place" size={spacing.xxl} color={activeType === 'pickup' ? colors.homePickup : colors.primary} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.addressName} numberOfLines={1}>{tempPlace?.address.split(',')[0] || 'Choose a location'}</Text>
+        <Text style={styles.addressSubtitle} numberOfLines={2}>{isResolving ? 'Finding address...' : tempPlace?.address ?? 'Move the map or search above'}</Text>
       </View>
-    );
-  };
+      <Pressable onPress={() => { collapseDetails(); setIsSearchFocused(true); searchRef.current?.focus(); }} accessibilityRole="button" accessibilityLabel="Change selected location" hitSlop={spacing.sm}>
+        {detailsOpen ? <Text style={styles.changeText}>Change</Text> : <Feather name="edit-2" size={spacing.lg} color={colors.primary} />}
+      </Pressable>
+    </View>
+  );
+  const renderSelection = () => (
+    <View style={styles.sheetContent}>
+      <Text style={styles.stageTitle}>Select {activeType === 'pickup' ? 'pickup' : 'drop'} location</Text>
+      {renderAddress()}
+      <Text style={styles.selectionHint}>Move the map to adjust the pin.</Text>
+      {locationError && <Text style={styles.locationError}>{locationError}</Text>}
+      <Button label={`Confirm ${activeType === 'pickup' ? 'pickup' : 'drop'} location`} onPress={selectLocation} disabled={!tempPlace || isResolving} loading={isResolving} fullWidth style={styles.stageButton} />
+    </View>
+  );
+  const renderForm = () => (
+    <View style={styles.sheetContent}>
+      <View style={styles.detailsHeading}>
+        <Text style={styles.stageTitle}>{activeType === 'pickup' ? 'Sender' : 'Receiver'} details</Text>
+        <Pressable onPress={collapseDetails} accessibilityRole="button" accessibilityLabel="Back to location selection" hitSlop={spacing.sm}><Feather name="chevron-down" size={spacing.xxl} color={colors.primary} /></Pressable>
+      </View>
+      {renderAddress()}
+      <View style={styles.formContainer}>
+        <TextInput accessibilityLabel="House / Apartment / Shop (optional)" style={styles.filledInput} placeholder="House / Apartment / Shop (optional)" placeholderTextColor={colors.onSurfaceVariant} value={houseDetails} onChangeText={setHouseDetails} />
+        <View style={styles.filledNameRow}>
+          <TextInput accessibilityLabel={activeType === 'pickup' ? 'Sender name' : 'Receiver name'} style={styles.filledNameInput} placeholder={activeType === 'pickup' ? "Sender's Name" : "Receiver's Name"} placeholderTextColor={colors.onSurfaceVariant} value={personName} onChangeText={setPersonName} autoCapitalize="words" />
+          <MaterialIcons name="person" size={spacing.xl} color={colors.primary} accessibilityElementsHidden importantForAccessibility="no" />
+        </View>
+        <TextInput accessibilityLabel="Mobile number" style={styles.filledInput} placeholder={activeType === 'pickup' ? "Sender's Mobile number" : "Receiver's Mobile number"} placeholderTextColor={colors.onSurfaceVariant} value={personPhone} onChangeText={text => { setUseOwnNumber(false); setPersonPhone(text.replace(/\D/g, '').slice(0, 10)); }} keyboardType="phone-pad" maxLength={10} />
+        {ownMobile.length === 10 && <Pressable accessibilityRole="checkbox" accessibilityLabel="Use my mobile number" accessibilityState={{ checked: useOwnNumber }} style={styles.ownPhoneRow} onPress={() => {
+          if (useOwnNumber) { setPersonPhone(previousPhone.current); setUseOwnNumber(false); }
+          else { previousPhone.current = personPhone; setPersonPhone(ownMobile); setUseOwnNumber(true); }
+        }}><Feather name={useOwnNumber ? 'check-square' : 'square'} size={spacing.xl} color={colors.primary} /><Text style={styles.ownPhoneText}>Use my mobile number: {ownMobile}</Text></Pressable>}
+        <TextInput accessibilityLabel="Instructions (optional)" style={styles.filledInput} placeholder="Landmark / instructions (optional)" placeholderTextColor={colors.onSurfaceVariant} value={instructions} onChangeText={setInstructions} />
+        <Text style={styles.saveAsLabel}>Save as (optional)</Text>
+        <View style={styles.saveAsRow}>{(['Home', 'Shop', 'Other'] as const).map(label => <Pressable key={label} accessibilityRole="button" accessibilityLabel={`Save address as ${label}`} accessibilityState={{ selected: saveAs === label }} style={[styles.saveAsChip, saveAs === label && styles.saveAsSelected]} onPress={() => setSaveAs(saveAs === label ? undefined : label)}>
+          <Feather name={label === 'Home' ? 'home' : label === 'Shop' ? 'shopping-bag' : 'heart'} size={spacing.lg} color={colors.primary} /><Text style={styles.changeText}>{label}</Text>
+        </Pressable>)}</View>
+        {saveAs && <Text style={styles.selectionHint}>Saved on this device for your account.</Text>}
+      </View>
+      {saveError && <Text style={styles.locationError}>{saveError}</Text>}
+    </View>
+  );
 
   const renderTimeline = () => {
     // Shows Pickup and all Drops so user can tap to edit them.
@@ -546,43 +588,56 @@ label="Done Editing"
 
   return (
     <View style={styles.container}>
-      <MapCanvas
-        style={styles.mapCanvas}
-        center={tempPlace}
-        markers={mapMarkers}
-        showsUserLocation
-        onRegionChangeComplete={handleRegionChange}
-      >
-        {renderTopControls()}
-
-        {/* Map Center Pin - Only show if not just viewing timeline */}
-        {(mode !== 'edit' || editTarget !== undefined) && (
-          <View style={styles.mapPinContainer} pointerEvents="none">
-            <View style={styles.mapPin}>
-              <Feather name="map-pin" size={24} color={colors.onPrimary} />
-            </View>
-            <View style={styles.mapPinDot} />
-          </View>
-        )}
-      </MapCanvas>
-
-      <DraggableBottomSheet
-        snapPoints={[200, windowHeight * 0.65, windowHeight * 0.88]}
-        initialSnapIndex={initialMode === 'drop' ? 2 : 1}
-      >
-        <KeyboardAwareScrollView
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={styles.scrollContent}
-        >
-          {mode === 'edit' && editTarget === undefined ? renderTimeline() : renderForm()}
-        </KeyboardAwareScrollView>
-      </DraggableBottomSheet>
+      <Animated.View style={{ flex: mapShare, minHeight: spacing.rowHeightStandard * 2 }}>
+        <MapCanvas style={styles.mapCanvas} appearance="home" center={mapCenter ?? tempPlace} recenterOnLayout markers={timelineVisible ? mapMarkers : []} scrollEnabled={!detailsOpen && !timelineVisible} onRegionChangeComplete={handleRegionChange}>
+          {renderTopControls()}
+          {!timelineVisible && <View style={styles.mapPinContainer} pointerEvents="none">
+            <MaterialIcons name="place" size={spacing.xxxl + spacing.md} color={activeType === 'pickup' ? colors.homePickup : colors.primary} />
+            <View style={[styles.mapPinDot, activeType === 'pickup' && { backgroundColor: colors.homePickup }]} />
+          </View>}
+          <Pressable style={styles.recenterButton} onPress={locateSelection} disabled={isResolving} accessibilityRole="button" accessibilityLabel="Use my current location">
+            <Feather name="crosshair" size={spacing.xl} color={colors.primary} />
+          </Pressable>
+        </MapCanvas>
+      </Animated.View>
+      <Animated.View style={[styles.detailsSheet, { flex: Animated.subtract(1, mapShare), paddingBottom: keyboardOpen ? spacing.xs : Math.max(insets.bottom, spacing.sm) }]}>
+        <View style={styles.sheetHandle} />
+        <DetailsScrollView testID="location-details-scroll" style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" overScrollMode="never" bounces={false} automaticallyAdjustKeyboardInsets={false} contentContainerStyle={styles.scrollContent}>
+          {timelineVisible ? renderTimeline() : detailsOpen ? renderForm() : renderSelection()}
+        </DetailsScrollView>
+        {detailsOpen && !timelineVisible && <View style={styles.stickyFooter}><Button label="Save and continue" onPress={handleConfirm} fullWidth disabled={isResolving || !isFormValid || savingDetails} loading={savingDetails} style={styles.stageButton} /></View>}
+      </Animated.View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  stickyFooter: { paddingHorizontal: spacing.marginMobile, paddingTop: spacing.sm, paddingBottom: spacing.xs, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.outlineHairline },
+  filledInput: { ...typography.bodyMd, color: colors.onSurface, backgroundColor: colors.surfaceContainerLow, borderRadius: borderRadius.md, padding: spacing.md, minHeight: spacing.rowHeightSm + spacing.sm },
+  filledNameRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceContainerLow, borderRadius: borderRadius.md, paddingHorizontal: spacing.md },
+  filledNameInput: { ...typography.bodyMd, color: colors.onSurface, flex: 1, minWidth: 0, minHeight: spacing.rowHeightSm + spacing.sm, paddingVertical: spacing.md },
+  ownPhoneRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center', minHeight: spacing.rowHeightSm },
+  ownPhoneText: { ...typography.labelSm, color: colors.primary, flex: 1 },
+  saveAsLabel: { ...typography.bodyMd, color: colors.primary, fontWeight: '500' },
+  saveAsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  saveAsChip: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderWidth: 1, borderColor: colors.outlineHairline, borderRadius: borderRadius.full, paddingHorizontal: spacing.md, minHeight: spacing.rowHeightSm },
+  saveAsSelected: { backgroundColor: colors.primaryFixed, borderColor: colors.primary },
+  detailsSheet: { flex: 1, borderTopLeftRadius: borderRadius.xxl, borderTopRightRadius: borderRadius.xxl, backgroundColor: colors.surface, overflow: 'hidden', paddingBottom: spacing.sm },
+  sheetHandle: { width: spacing.xxxl, height: spacing.xs, backgroundColor: colors.outlineVariant, borderRadius: borderRadius.full, alignSelf: 'center', marginTop: spacing.sm },
+  stageTitle: { ...typography.headlineMd, color: colors.primary, marginBottom: spacing.md },
+  selectedAddress: { backgroundColor: colors.surfaceContainerLow, borderWidth: 1, borderColor: colors.outlineHairline, borderRadius: borderRadius.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, marginBottom: spacing.md },
+  addressName: { ...typography.bodyMd, fontWeight: '600', color: colors.primary },
+  addressSubtitle: { ...typography.labelSm, color: colors.onSurfaceVariant },
+  selectionHint: { ...typography.labelSm, color: colors.onSurfaceVariant, marginBottom: spacing.md },
+  locationError: { ...typography.labelSm, color: colors.error, marginBottom: spacing.sm },
+  stageButton: { backgroundColor: colors.primary, borderRadius: borderRadius.lg },
+  detailsHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  changeText: { ...typography.labelSm, fontWeight: '600', color: colors.primary },
+  detailInput: { ...typography.bodyMd, color: colors.onSurface, borderWidth: 1, borderColor: colors.outlineHairline, borderRadius: borderRadius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, minHeight: spacing.rowHeightSm + spacing.xs },
+  phoneField: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.outlineHairline, borderRadius: borderRadius.md },
+  phonePrefix: { ...typography.bodyMd, color: colors.primary, paddingHorizontal: spacing.md },
+  phoneInput: { ...typography.bodyMd, color: colors.onSurface, flex: 1, minWidth: 0, minHeight: spacing.rowHeightSm + spacing.xs, padding: spacing.sm },
+  recenterButton: { position: 'absolute', bottom: spacing.lg, right: spacing.lg, width: spacing.rowHeightSm + spacing.xs, height: spacing.rowHeightSm + spacing.xs, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, ...shadows.card },
   container: {
     flex: 1,
     backgroundColor: colors.surfaceContainerLow,
@@ -630,7 +685,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '50%',
     left: '50%',
-    transform: [{ translateX: -20 }, { translateY: -40 }],
+    transform: [{ translateX: -(spacing.xxxl + spacing.md) / 2 }, { translateY: -(spacing.xxxl + spacing.md + spacing.xs / 2) }],
     alignItems: 'center',
   },
   mapPin: {
@@ -643,15 +698,15 @@ const styles = StyleSheet.create({
     ...shadows.elevated,
   },
   mapPinDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: spacing.xs,
+    height: spacing.xs,
+    borderRadius: borderRadius.xs,
     backgroundColor: colors.primary,
-    marginTop: 4,
+    marginTop: 0,
     opacity: 0.8,
   },
   scrollContent: {
-    paddingBottom: spacing.xxxl + spacing.xl,
+    paddingBottom: spacing.lg,
   },
   sheetContent: {
     paddingHorizontal: spacing.marginMobile,

@@ -417,7 +417,9 @@ describe('Recent Locations Feature & Requirements', () => {
       const textNodes = root.findAllByType(Text);
       const textContents = textNodes.map((n: any) => n.props.children).flat().join(' ');
 
-      expect(textContents).toContain('RECENT SEARCHES');
+      expect(textContents).toContain('RECENT LOCATIONS');
+      expect(textContents).toContain('Drop to');
+      expect(textContents).toContain('Select on map');
       expect(textContents).toContain('No recent searches yet.');
       expect(textContents).toContain('Your searched locations will appear here.');
 
@@ -452,7 +454,7 @@ describe('Recent Locations Feature & Requirements', () => {
       const textNodes = root.findAllByType(Text);
       const textContents = textNodes.map((n: any) => n.props.children).flat().join(' ');
 
-      expect(textContents).toContain('RECENT SEARCHES');
+      expect(textContents).toContain('RECENT LOCATIONS');
       expect(textContents).toContain('Kaylana Lake');
 
       act(() => {
@@ -495,6 +497,7 @@ describe('Recent Locations Feature & Requirements', () => {
 
       const root = renderer!.root;
       const textNodes = root.findAllByType(Text);
+      expect(textNodes.some((n: any) => n.props.children === 'Pickup from')).toBe(true);
       const itemNode = textNodes.find((n: any) => n.props.children === 'Jodhpur Railway Station');
       expect(itemNode).toBeDefined();
 

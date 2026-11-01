@@ -17,7 +17,6 @@ import ActiveTripChatScreen from './src/screens/support/ActiveTripChatScreen';
 import ActiveTripTrackingScreen from './src/screens/tracking/ActiveTripTrackingScreen';
 import AddressSearchScreen from './src/screens/booking/AddressSearchScreen';
 import AssignmentFailedScreen from './src/screens/support/AssignmentFailedScreen';
-import BookingConfirmedScreen from './src/screens/booking/BookingConfirmedScreen';
 import CallDriverScreen from './src/screens/support/CallDriverScreen';
 import CancellationChargeConfirmationScreen from './src/screens/support/CancellationChargeConfirmationScreen';
 import CancellationConfirmationScreen from './src/screens/support/CancellationConfirmationScreen';
@@ -31,15 +30,12 @@ import CustomerSettingsScreen from './src/screens/profile/CustomerSettingsScreen
 import DeclaredValueSelectionScreen from './src/screens/booking/DeclaredValueSelectionScreen';
 import DigitalReceiptScreen from './src/screens/payment/DigitalReceiptScreen';
 import DriverAssignedExpandedScreen from './src/screens/tracking/DriverAssignedExpandedScreen';
-import DriverAssignedScreen from './src/screens/tracking/DriverAssignedScreen';
-import DriverFoundScreen from './src/screens/tracking/DriverFoundScreen';
 import DriverRatingScreen from './src/screens/support/DriverRatingScreen';
 import DropCompletedStateScreen from './src/screens/logistics/DropCompletedStateScreen';
 import DropOtpVerificationScreen from './src/screens/logistics/DropOtpVerificationScreen';
 import EditProfileScreen from './src/screens/profile/EditProfileScreen';
 import EmptyStateScreen from './src/screens/support/EmptyStateScreen';
 import ErrorScreen from './src/screens/support/ErrorScreen';
-import FareEstimateScreen from './src/screens/booking/FareEstimateScreen';
 import FinalDeliverySummaryScreen from './src/screens/logistics/FinalDeliverySummaryScreen';
 import FindingDriverScreen from './src/screens/tracking/FindingDriverScreen';
 import GoodsDetailsScreen from './src/screens/logistics/GoodsDetailsScreen';
@@ -61,7 +57,6 @@ import NextDropScreen from './src/screens/logistics/NextDropScreen';
 import NoDriversAvailableScreen from './src/screens/support/NoDriversAvailableScreen';
 import NotificationCenterScreen from './src/screens/support/NotificationCenterScreen';
 import OtpVerificationScreen from './src/screens/auth/OtpVerificationScreen';
-import PaymentMethodScreen from './src/screens/payment/PaymentMethodScreen';
 import PickupOtpVerificationScreen from './src/screens/logistics/PickupOtpVerificationScreen';
 import PickupVerifiedSuccessScreen from './src/screens/logistics/PickupVerifiedSuccessScreen';
 import ProfileScreen from './src/screens/profile/ProfileScreen';
@@ -84,6 +79,7 @@ import ValidateBookingScreen from './src/screens/booking/ValidateBookingScreen';
 import VehicleSelectionScreen from './src/screens/booking/SelectVehicleScreen';
 import WrittenReviewScreen from './src/screens/support/WrittenReviewScreen';
 import Feather from 'react-native-vector-icons/Feather';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -110,7 +106,7 @@ function GalleryScreen({ navigation }: any) {
       <Text style={styles.header}>Screen Gallery</Text>
       <FlatList
         data={[
-          'ActiveTripChatScreen', 'ActiveTripTrackingScreen', 'AddressSearchScreen', 'AssignmentFailedScreen', 'BookingConfirmedScreen', 'BookingReviewScreen', 'CallDriverScreen', 'CancellationChargeConfirmationScreen', 'CancellationConfirmationScreen', 'CancellationReasonScreen', 'CancellationResultScreen', 'ChangeProfilePhotoScreen', 'CreateProfileScreen', 'CurrentDropDetailsScreen', 'CustomerLiveTrackingScreen', 'CustomerSettingsScreen', 'DeclaredValueSelectionScreen', 'DigitalReceiptScreen', 'DriverAssignedExpandedScreen', 'DriverAssignedScreen', 'DriverFoundScreen', 'DriverRatingScreen', 'DropCompletedStateScreen', 'DropOtpVerificationScreen', 'EditProfileScreen', 'EmptyStateScreen', 'ErrorScreen', 'FareEstimateScreen', 'FinalDeliverySummaryScreen', 'FindingDriverScreen', 'GoodsDetailsScreen', 'GoodsInsuranceScreen', 'HistoricalTripDetailScreen', 'HomeScreen', 'LiveTrackingExceptionsScreen', 'LiveTrackingScreen', 'LoadingSkeletonScreen', 'LoginScreen', 'LogoutConfirmationScreen', 'MapLoadingScreen', 'MultiDropOverviewScreen', 'MultiDropProgressScreen', 'NetworkErrorScreen', 'NextDropScreen', 'NoDriversAvailableScreen', 'NotificationCenterScreen', 'OtpVerificationScreen', 'PaymentMethodScreen', 'PickupOtpVerificationScreen', 'PickupVerifiedSuccessScreen', 'ProfileScreen', 'ReceiverDetailsScreen', 'ReconnectingScreen', 'ReviewBookingScreen', 'RouteUnavailableScreen', 'SavedAddressesScreen', 'SearchingDriverScreen', 'SearchUnavailableScreen', 'SelectDropLocationScreen', 'SelectLocationScreen', 'SelectVehicleScreen', 'ShareTrackingSheetScreen', 'TripCancelledStatusScreen', 'TripCompletedScreen', 'TripCompletedSummaryScreen', 'TripHistoryScreen', 'ValidateBookingScreen', 'VehicleSelectionScreen', 'WrittenReviewScreen'
+          'ActiveTripChatScreen', 'ActiveTripTrackingScreen', 'AddressSearchScreen', 'AssignmentFailedScreen', 'BookingReviewScreen', 'CallDriverScreen', 'CancellationChargeConfirmationScreen', 'CancellationConfirmationScreen', 'CancellationReasonScreen', 'CancellationResultScreen', 'ChangeProfilePhotoScreen', 'CreateProfileScreen', 'CurrentDropDetailsScreen', 'CustomerLiveTrackingScreen', 'CustomerSettingsScreen', 'DeclaredValueSelectionScreen', 'DigitalReceiptScreen', 'DriverAssignedExpandedScreen', 'DriverAssignedScreen', 'DriverFoundScreen', 'DriverRatingScreen', 'DropCompletedStateScreen', 'DropOtpVerificationScreen', 'EditProfileScreen', 'EmptyStateScreen', 'ErrorScreen', 'FinalDeliverySummaryScreen', 'FindingDriverScreen', 'GoodsDetailsScreen', 'GoodsInsuranceScreen', 'HistoricalTripDetailScreen', 'HomeScreen', 'LiveTrackingExceptionsScreen', 'LiveTrackingScreen', 'LoadingSkeletonScreen', 'LoginScreen', 'LogoutConfirmationScreen', 'MapLoadingScreen', 'MultiDropOverviewScreen', 'MultiDropProgressScreen', 'NetworkErrorScreen', 'NextDropScreen', 'NoDriversAvailableScreen', 'NotificationCenterScreen', 'OtpVerificationScreen', 'PickupOtpVerificationScreen', 'PickupVerifiedSuccessScreen', 'ProfileScreen', 'ReceiverDetailsScreen', 'ReconnectingScreen', 'ReviewBookingScreen', 'RouteUnavailableScreen', 'SavedAddressesScreen', 'SearchingDriverScreen', 'SearchUnavailableScreen', 'SelectDropLocationScreen', 'SelectLocationScreen', 'SelectVehicleScreen', 'ShareTrackingSheetScreen', 'TripCancelledStatusScreen', 'TripCompletedScreen', 'TripCompletedSummaryScreen', 'TripHistoryScreen', 'ValidateBookingScreen', 'VehicleSelectionScreen', 'WrittenReviewScreen'
         ]}
         keyExtractor={item => item}
         renderItem={({item}) => (
@@ -151,7 +147,7 @@ function MainTabNavigator() {
         component={HomeScreen} 
         options={{
           tabBarLabel: 'Home',
-          tabBarIcon: ({ color, size }) => <Feather name="home" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => focused ? <MaterialIcons name="home" size={size} color={color} /> : <Feather name="home" size={size} color={color} />
         }}
       />
       <Tab.Screen 
@@ -181,7 +177,6 @@ function BookingStackNavigator() {
       <Stack.Screen name="AddressSearchScreen" component={AddressSearchScreen} />
       <Stack.Screen name="SelectDropLocationScreen" component={SelectDropLocationScreen} />
       <Stack.Screen name="SelectVehicleScreen" component={SelectVehicleScreen} />
-      <Stack.Screen name="FareEstimateScreen" component={FareEstimateScreen} />
       <Stack.Screen name="ReviewBookingScreen" component={ReviewBookingScreen} />
       <Stack.Screen name="BookingReviewScreen" component={ReviewBookingScreen} />
       <Stack.Screen name="DeclaredValueSelectionScreen" component={DeclaredValueSelectionScreen} />
@@ -192,10 +187,8 @@ function BookingStackNavigator() {
       
       {/* Payment method: exactly PAY_AT_PICKUP / PAY_AT_DELIVERY (review H). The old prepaid
           chain (selection, processing, pending, success/failed, cash status) is removed. */}
-      <Stack.Screen name="PaymentMethodScreen" component={PaymentMethodScreen} />
       <Stack.Screen name="DigitalReceiptScreen" component={DigitalReceiptScreen} />
 
-      <Stack.Screen name="BookingConfirmedScreen" component={BookingConfirmedScreen} />
     </Stack.Navigator>
   );
 }
@@ -204,8 +197,8 @@ function ActiveTripStackNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="FindingDriverScreen" component={FindingDriverScreen} />
-      <Stack.Screen name="DriverFoundScreen" component={DriverAssignedScreen} />
-      <Stack.Screen name="DriverAssignedScreen" component={DriverAssignedScreen} />
+      <Stack.Screen name="DriverFoundScreen" component={DriverAssignedExpandedScreen} />
+      <Stack.Screen name="DriverAssignedScreen" component={DriverAssignedExpandedScreen} />
       <Stack.Screen name="DriverAssignedExpandedScreen" component={DriverAssignedExpandedScreen} />
       <Stack.Screen name="CustomerLiveTrackingScreen" component={CustomerLiveTrackingScreen} />
       <Stack.Screen name="ActiveTripTrackingScreen" component={CustomerLiveTrackingScreen} />

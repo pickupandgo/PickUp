@@ -1,0 +1,26 @@
+import React from 'react';
+import TestRenderer, { act } from 'react-test-renderer';
+import HomeScreen from '../src/screens/home/HomeScreen';
+import { getActiveTripForCustomer, getDriver, getRide } from '../src/api/engine';
+import { writePendingBooking } from '../src/state/pendingBooking';
+const mockSetTrip = jest.fn(), mockSetRide = jest.fn(), mockSetDriver = jest.fn();
+const mockRefresh = jest.fn();
+const mockBooking = { customerId: 'A', draft: { pickup: { latitude: 26, longitude: 73, address: 'Pickup' }, drops: [] }, setTrip: mockSetTrip, setRide: mockSetRide, setAssignedDriver: mockSetDriver, recoverBooking: mockRefresh };
+jest.mock('../src/state/BookingContext', () => ({ useBooking: () => mockBooking }));
+jest.mock('@react-native-firebase/auth', () => ({ getAuth: () => ({ currentUser: { uid: 'A' } }) }));
+jest.mock('../src/api/engine', () => ({ getActiveTripForCustomer: jest.fn(), getDriver: jest.fn(), getRide: jest.fn() }));
+jest.mock('../src/hooks/useTripStatus', () => ({ useTripStatus: () => ({ trip: undefined }) }));
+jest.mock('../src/state/recentLocations', () => ({ useRecentLocations: () => ({ locations: [], isLoading: false, refresh: mockRefresh }) }));
+it('ignores Home active-trip reads that started before failed-search cleanup', async () => {
+  const pending: Array<(value: any) => void> = [];
+  (getActiveTripForCustomer as jest.Mock).mockImplementation(() => new Promise(resolve => pending.push(resolve)));
+  let view: any;
+  await act(async () => { view = TestRenderer.create(<HomeScreen />); });
+  expect(pending.length).toBeGreaterThan(0);
+  await writePendingBooking('A', null);
+  await act(async () => { pending.forEach(resolve => resolve({ id: 'old-trip', driverId: 'old-driver', rideId: 'old-ride', status: 'DRIVER_ASSIGNED' })); });
+  expect(mockSetTrip).not.toHaveBeenCalled();
+  expect(mockSetRide).not.toHaveBeenCalled();
+  expect(getDriver).not.toHaveBeenCalled(); expect(getRide).not.toHaveBeenCalled();
+  act(() => view.unmount());
+});
