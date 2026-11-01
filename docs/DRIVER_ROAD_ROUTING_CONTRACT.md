@@ -1,0 +1,11 @@
+# Driver road geometry contract
+
+`POST /v1/driver/routes/road` is a separate Driver-only geometry endpoint. The existing `POST /v1/routes/road` remains Customer-only and its implementation is unchanged. Engine/Driver select pickup and remaining-drop stage; this endpoint does not move trip states or calculate/change authoritative fare, payments, wallet or KYC.
+
+Use the normal Firebase bearer session. The existing global guard verifies identity and resolves the database principal. The service requires role DRIVER, a Driver profile, and a Backend trip assigned to that resolved Driver which is neither COMPLETED nor CANCELLED. A client Driver ID is never accepted as authorization.
+
+Body: `{ tripId, origin:{latitude,longitude}, destination:{latitude,longitude}, waypoints?:[{latitude,longitude}] }`. `tripId` is the Backend payment trip UUID supplied to the Driver by the Engine, not the Engine UUID. Coordinate validation is inherited from the existing Customer geometry DTO; unexpected properties are rejected. Origin comes from fresh Driver GPS. Waypoints then destination must be an ordered subset of the immutable quote pickup/drop coordinates (tolerance 0.00001 degrees). Completed stops can be omitted; arbitrary/reversed stops and historical trips without quote geometry fail 403.
+
+Response: `{ encodedPolyline, distanceMeters, durationSeconds }`, `Cache-Control:no-store`, endpoint throttle 30 requests/minute. This delegates to the same existing Google Routes service with HIGH_QUALITY encoded geometry, provider timeout, bounded concurrency, sanitized errors and a server-only credential. There is no mock/artificial fallback. Missing routing configuration/provider failures remain errors. No new credential is needed in the Driver APK; its existing Backend HTTPS host is used.
+
+New unit tests check ownership, ordered multi-stop geometry, foreign/closed trips and failure propagation. HTTP integration tests use real application authentication/validation and database ownership fixtures, replacing only Google geometry with a synthetic provider response. The existing Google service tests verify HIGH_QUALITY, sanitized errors, server credential isolation and Customer-only policy. Actual Google service/device navigation, signed release functionality and production load remain release gates; this change has not been pushed/deployed.
