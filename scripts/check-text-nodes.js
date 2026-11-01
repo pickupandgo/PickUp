@@ -63,7 +63,13 @@ for (const file of files) {
     if (ts.isJsxElement(node) || ts.isJsxFragment(node)) {
       // A fragment is transparent: its string children land in whatever the
       // fragment's own parent renders, so they are never safe to ignore.
-      const parent = ts.isJsxFragment(node) ? 'Fragment' : tagName(node);
+      let parent = ts.isJsxFragment(node) ? 'Fragment' : tagName(node);
+      if (ts.isJsxFragment(node)) {
+        // Fragments inherit their actual host: whitespace inside <Text> is legal.
+        let ancestor = node.parent;
+        while (ancestor && !ts.isJsxElement(ancestor)) ancestor = ancestor.parent;
+        if (ancestor) parent = tagName(ancestor);
+      }
       if (!TEXT_LIKE.has(parent)) {
         for (const child of node.children) {
           if (!ts.isJsxText(child)) continue;

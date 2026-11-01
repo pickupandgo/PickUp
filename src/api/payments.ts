@@ -1,3 +1,4 @@
+import { withDeadline } from './deadline';
 import { getAuth } from '@react-native-firebase/auth';
 import { env, hasPaymentsConfig } from '../config/env';
 import { ApiError } from './http';
@@ -20,7 +21,10 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 
 const assertPaymentsConfig = (): void => {
   if (!hasPaymentsConfig()) {
-    throw new ApiError('config', 'The fare and booking service is not configured.');
+    throw new ApiError(
+      'config',
+      'The fare and booking service is not configured.',
+    );
   }
 };
 
@@ -46,14 +50,22 @@ export const buildPaymentsUrl = (baseUrl: string, path: string): string => {
   return `${base}${cleanPath}`;
 };
 
-const buildUrl = (path: string): string => buildPaymentsUrl(env.paymentsApiBaseUrl, path);
+const buildUrl = (path: string): string =>
+  buildPaymentsUrl(env.paymentsApiBaseUrl, path);
 
 const attempt = async <T>(
   path: string,
   options: PaymentsRequestOptions,
-  forceRefresh: boolean
+  forceRefresh: boolean,
+  ownerUid?: string,
 ): Promise<T> => {
-  const { method = 'GET', body, idempotencyKey, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = options;
+  const {
+    method = 'GET',
+    body,
+    idempotencyKey,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    signal,
+  } = options;
 
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -72,30 +84,47 @@ const attempt = async <T>(
   });
 
   const request = async (): Promise<T> => {
-    if (controller.signal.aborted) throw new ApiError('network', 'Request cancelled');
+    if (controller.signal.aborted)
+      throw new ApiError('network', 'Request cancelled');
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body) headers['Content-Type'] = 'application/json';
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
     const currentUser = getAuth().currentUser;
+    if (ownerUid !== undefined && currentUser?.uid !== ownerUid)
+      throw new ApiError('session_changed', 'Your account changed. Please try again.');
     if (currentUser) {
       // A failed token read must never become an anonymous account request.
       headers.Authorization = `Bearer ${await currentUser.getIdToken(forceRefresh)}`;
     }
-    if (controller.signal.aborted) throw new ApiError('network', 'Request cancelled');
+    if (controller.signal.aborted)
+      throw new ApiError('network', 'Request cancelled');
+    if (ownerUid !== undefined && getAuth().currentUser?.uid !== ownerUid)
+      throw new ApiError('session_changed', 'Your account changed. Please try again.');
     const response = await fetch(buildUrl(path), {
-      method, headers, body: body ? JSON.stringify(body) : undefined,
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
     const raw = await response.text();
+    if (ownerUid !== undefined && getAuth().currentUser?.uid !== ownerUid)
+      throw new ApiError('session_changed', 'Your account changed. Please try again.');
     let parsed: unknown;
     if (raw.length) {
-      try { parsed = JSON.parse(raw); }
-      catch {
-        if (response.ok) throw new ApiError('parse', `Malformed JSON from ${path}`);
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        if (response.ok)
+          throw new ApiError('parse', `Malformed JSON from ${path}`);
       }
     }
     if (!response.ok) {
-      throw new ApiError('http', `${method} ${path} failed with ${response.status}`, response.status, parsed);
+      throw new ApiError(
+        'http',
+        `${method} ${path} failed with ${response.status}`,
+        response.status,
+        parsed,
+      );
     }
     return parsed as T;
   };
@@ -111,14 +140,24 @@ const attempt = async <T>(
   }
 };
 
-export const paymentsRequest = async <T>(path: string, options: PaymentsRequestOptions = {}): Promise<T> => {
+const requestWithRecovery = async <T>(
+  path: string,
+  options: PaymentsRequestOptions,
+  ownerUid?: string,
+): Promise<T> => {
   assertPaymentsConfig();
   try {
-    return await attempt<T>(path, options, false);
+    return await attempt<T>(path, options, false, ownerUid);
   } catch (error) {
+    if (ownerUid !== undefined && getAuth().currentUser?.uid !== ownerUid)
+      throw new ApiError('session_changed', 'Your account changed. Please try again.');
     // The cached Firebase token may have expired: refresh once and retry.
-    if (error instanceof ApiError && error.kind === 'http' && error.status === 401) {
-      return attempt<T>(path, options, true);
+    if (
+      error instanceof ApiError &&
+      error.kind === 'http' &&
+      error.status === 401
+    ) {
+      return attempt<T>(path, options, true, ownerUid);
     }
     // If the customer identity is unprovisioned, auto-register and retry once
     const errBody = (error as any)?.body;
@@ -130,11 +169,34 @@ export const paymentsRequest = async <T>(path: string, options: PaymentsRequestO
       errCode === 'USER_NOT_PROVISIONED' &&
       path !== '/v1/customers/me'
     ) {
-      await attempt<CustomerAccount>('/v1/customers/me', { method: 'POST', signal: options.signal }, false);
-      return attempt<T>(path, options, false);
+      await attempt<CustomerAccount>(
+        '/v1/customers/me',
+        { method: 'POST', signal: options.signal },
+        false,
+        ownerUid,
+      );
+      return attempt<T>(path, options, false, ownerUid);
     }
     throw error;
   }
+};
+export const paymentsRequest = async <T>(
+  path: string,
+  options: PaymentsRequestOptions = {},
+): Promise<T> => {
+  const ownerUid = getAuth().currentUser?.uid;
+  return withDeadline(
+    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    options.signal,
+    (reason) =>
+      new ApiError(
+        reason === 'timeout' ? 'timeout' : 'network',
+        reason === 'timeout'
+          ? 'Backend request timed out'
+          : 'Backend request cancelled',
+      ),
+    (signal) => requestWithRecovery<T>(path, { ...options, signal }, ownerUid),
+  );
 };
 
 // ─── Account ──────────────────────────────────────────────────────────────────
@@ -143,7 +205,10 @@ export const paymentsRequest = async <T>(path: string, options: PaymentsRequestO
  * Capture the user identity so an account switch can never replay another user's bootstrap.
  * Each attempt includes token refresh within its 30-second deadline.
  */
-const accountRequest = async (method: 'GET' | 'POST', signal?: AbortSignal): Promise<CustomerAccount> => {
+const accountRequest = async (
+  method: 'GET' | 'POST',
+  signal?: AbortSignal,
+): Promise<CustomerAccount> => {
   assertPaymentsConfig();
   const identity = getAuth().currentUser?.uid;
   for (let retry = 0; ; retry++) {
@@ -151,15 +216,30 @@ const accountRequest = async (method: 'GET' | 'POST', signal?: AbortSignal): Pro
       throw new ApiError('network', 'Account request cancelled');
     }
     try {
-      return await attempt<CustomerAccount>('/v1/customers/me', {
-        method, signal, timeoutMs: 30_000,
-      }, retry > 0);
-    } catch (error) {
-      const retryable = error instanceof ApiError && (
-        error.kind === 'network' || error.kind === 'timeout' ||
-        (error.kind === 'http' && [401, 502, 503, 504].includes(error.status ?? 0))
+      return await attempt<CustomerAccount>(
+        '/v1/customers/me',
+        {
+          method,
+          signal,
+          timeoutMs: 30_000,
+        },
+        retry > 0,
+        identity,
       );
-      if (retry >= 1 || !retryable || signal?.aborted || getAuth().currentUser?.uid !== identity) throw error;
+    } catch (error) {
+      const retryable =
+        error instanceof ApiError &&
+        (error.kind === 'network' ||
+          error.kind === 'timeout' ||
+          (error.kind === 'http' &&
+            [401, 502, 503, 504].includes(error.status ?? 0)));
+      if (
+        retry >= 1 ||
+        !retryable ||
+        signal?.aborted ||
+        getAuth().currentUser?.uid !== identity
+      )
+        throw error;
     }
   }
 };
@@ -168,19 +248,30 @@ const accountRequest = async (method: 'GET' | 'POST', signal?: AbortSignal): Pro
  * Registers the signed-in customer, or returns the existing account. Safe to call after every
  * sign-in. The sign-in must carry a verified phone number.
  */
-export const registerCustomer = async (signal?: AbortSignal): Promise<CustomerAccount> =>
-  accountRequest('POST', signal);
+export const registerCustomer = async (
+  signal?: AbortSignal,
+): Promise<CustomerAccount> => accountRequest('POST', signal);
 
 /** Reads the signed-in customer's account from the payments backend. */
-export const getCustomerAccount = async (signal?: AbortSignal): Promise<CustomerAccount> =>
-  accountRequest('GET', signal);
+export const getCustomerAccount = async (
+  signal?: AbortSignal,
+): Promise<CustomerAccount> => accountRequest('GET', signal);
 
 /** Changes only customer display fields; phone and Firebase identity never come from the body. */
 export const updateCustomerProfile = async (
-  body: { name: string; email: string; age: number | null; address: string | null },
+  body: {
+    name: string;
+    email: string;
+    age: number | null;
+    address: string | null;
+  },
   signal?: AbortSignal,
 ): Promise<CustomerAccount> =>
-  paymentsRequest<CustomerAccount>('/v1/customers/me', { method: 'PATCH', body, signal });
+  paymentsRequest<CustomerAccount>('/v1/customers/me', {
+    method: 'PATCH',
+    body,
+    signal,
+  });
 
 // ─── Fare quotes ────────────────────────────────────────────────────────────
 
@@ -198,13 +289,19 @@ export interface FareQuoteRequest {
  */
 export const createFareQuote = async (
   input: FareQuoteRequest,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<FareQuote> =>
   paymentsRequest<FareQuote>('/v1/fare/quotes', {
     method: 'POST',
     body: {
-      pickup: { latitude: input.pickup.latitude, longitude: input.pickup.longitude },
-      drops: input.drops.map((d) => ({ latitude: d.latitude, longitude: d.longitude })),
+      pickup: {
+        latitude: input.pickup.latitude,
+        longitude: input.pickup.longitude,
+      },
+      drops: input.drops.map((d) => ({
+        latitude: d.latitude,
+        longitude: d.longitude,
+      })),
       vehicleCategory: input.vehicleCategory,
       weightKg: input.weightKg,
     },
@@ -212,8 +309,13 @@ export const createFareQuote = async (
   });
 
 /** Re-reads a quote (e.g. to check it is still valid / not yet redeemed before booking). */
-export const getFareQuote = async (quoteId: string, signal?: AbortSignal): Promise<FareQuote> =>
-  paymentsRequest<FareQuote>(`/v1/fare/quotes/${encodeURIComponent(quoteId)}`, { signal });
+export const getFareQuote = async (
+  quoteId: string,
+  signal?: AbortSignal,
+): Promise<FareQuote> =>
+  paymentsRequest<FareQuote>(`/v1/fare/quotes/${encodeURIComponent(quoteId)}`, {
+    signal,
+  });
 
 // ─── Booking payment view ─────────────────────────────────────────────────────
 
@@ -224,13 +326,15 @@ export const getFareQuote = async (quoteId: string, signal?: AbortSignal): Promi
  */
 export const getBookingPayment = async (
   bookingId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<CustomerBooking> =>
-  paymentsRequest<CustomerBooking>(`/v1/bookings/${encodeURIComponent(bookingId)}`, { signal });
+  paymentsRequest<CustomerBooking>(
+    `/v1/bookings/${encodeURIComponent(bookingId)}`,
+    { signal },
+  );
 
 /** True when the quote can still be booked (not expired, not already used). */
 export const isQuoteBookable = (quote: FareQuote): boolean =>
   !quote.redeemed && Date.parse(quote.expiresAt) > Date.now();
 
 export type { PaymentMethod };
-

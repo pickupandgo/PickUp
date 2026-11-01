@@ -69,7 +69,7 @@ it('rejects a mismatched acknowledgement and prevents cross-account late success
  await expect(sendChatMessage(booking,'Hello',undefined,clientMessageId)).rejects.toMatchObject({ kind: 'parse' });
  let finish!: (value: Response) => void;
  (fetch as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
- const request = expect(fetchChatMessages(booking)).rejects.toThrow('sign-in changed');
+ const request = expect(fetchChatMessages(booking)).rejects.toMatchObject({ kind: 'session_changed' });
  // Allow token acquisition/fetch to begin before changing owner.
  for (let n=0;n<8;n++) await Promise.resolve();
  mockUser = { uid: 'B', getIdToken: mockToken }; finish(response([record()]));

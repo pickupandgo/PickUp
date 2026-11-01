@@ -38,7 +38,6 @@
     "scripts": {
         "start": "react-native start --port 8083",
         "android": "react-native run-android",
-        "ios": "react-native run-ios",
         "typecheck": "tsc --noEmit",
         "test": "jest",
         "check:wiring": "node scripts/check-wiring.js",

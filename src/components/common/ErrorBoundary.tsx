@@ -24,7 +24,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.warn('[ErrorBoundary] Caught render error:', error, errorInfo);
+    if (__DEV__) console.warn('[ErrorBoundary] Caught render error:', error, errorInfo);
   }
 
   private handleReset = () => {

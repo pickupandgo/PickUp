@@ -70,7 +70,8 @@ const selfOnly = (route) => {
 // The entry route needs no inbound edge, and the Gallery is a dev launcher.
 const initialRoute = /initialRouteName="([^"]+)"/.exec(appSrc)?.[1];
 // Session-controlled roots have no navigate(...) edge; RootNavigator selects them from account state.
-const entryPoints = new Set(['Gallery', initialRoute, 'PhoneCompletionScreen', 'CreateProfileScreen', 'AccountRecoveryScreen'].filter(Boolean));
+const navigatorContainers = [...appSrc.matchAll(/<Stack\.Screen\s+name="([^"]+)"\s+component=\{\w*Navigator\}/g)].map(m => m[1]);
+const entryPoints = new Set([...navigatorContainers, 'Gallery', initialRoute, 'PhoneCompletionScreen', 'CreateProfileScreen', 'AccountRecoveryScreen'].filter(Boolean));
 
 const unreachable = [...registered].filter(
   (r) => !entryPoints.has(r) && (!used.has(r) || selfOnly(r))
@@ -92,11 +93,26 @@ const GALLERY_ONLY = new Set([
   // gallery as a fully-static demo of the tracking layout.
   'ActiveTripTrackingScreen',
 ]);
-const orphans = unreachable.filter((r) => !GALLERY_ONLY.has(r));
+// Audited compatibility destinations. Keep reasons explicit; do not silently count them as reachable.
+const compatibility = {
+  DropCompletedStateScreen: 'Legacy route projects real trip state; live tracking already displays stop outcomes.',
+  ReceiverDetailsScreen: 'Legacy form retained; the current location flow edits receiver fields inline.',
+  WrittenReviewScreen: 'M11 compatibility route explicitly says submission unavailable.',
+  CancellationChargeConfirmationScreen: 'Legacy cancellation view; the current cancellation flow uses server reconciliation.',
+  CancellationConfirmationScreen: 'Legacy cancellation view retained for compatibility.',
+  AssignmentFailedScreen: 'Alternate failure destination; current search uses NoDriversAvailableScreen.',
+  ChangeProfilePhotoScreen: 'M11 compatibility destination explicitly says photo changes unavailable.',
+};
+const orphans = unreachable.filter((r) => !GALLERY_ONLY.has(r) && !compatibility[r]);
+const audited = unreachable.filter(r => compatibility[r]);
+console.log(`Audited compatibility routes (${audited.length}):`);
+for (const name of audited) console.log(`  ${name}: ${compatibility[name]}`);
+const staleTriage = Object.keys(compatibility).filter(name => !registered.has(name));
 const galleryOnly = unreachable.filter((r) => GALLERY_ONLY.has(r));
 
 // --- report ------------------------------------------------------------------
 const problems = [];
+if (staleTriage.length) problems.push(['Stale compatibility triage', staleTriage]);
 if (unknown.length) problems.push(['Unknown navigation targets', unknown]);
 if (orphans.length) problems.push(['Unreachable routes', orphans]);
 if (deadHandlers.length) problems.push(['Possible dead handlers', deadHandlers]);
@@ -106,7 +122,7 @@ console.log(`Screen files scanned: ${files.length}`);
 console.log(`Distinct navigation targets used: ${used.size}`);
 
 console.log(
-  `Reachable from the flow: ${registered.size - 1 - galleryOnly.length}` +
+  `Registered destinations excluding audited compatibility/gallery: ${registered.size - audited.length - galleryOnly.length}` +
     ` | Gallery-only by design: ${galleryOnly.length}`
 );
 if (galleryOnly.length) {

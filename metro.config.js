@@ -1,7 +1,7 @@
 const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
 const path = require('path');
 
-const realRoot = 'C:\\Users\\Vicky Singh\\Downloads\\multiple rde backend\\customer';
+const realRoot = require('fs').realpathSync(__dirname);
 
 /**
  * Metro configuration

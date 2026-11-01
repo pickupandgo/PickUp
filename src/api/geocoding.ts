@@ -1,3 +1,4 @@
+import { withDeadline } from './deadline';
 import Geolocation from '@react-native-community/geolocation';
 
 Geolocation.setRNConfiguration({
@@ -26,6 +27,11 @@ import type { GeoPoint } from './types';
  *   - Billing enabled    → all Maps Platform calls fail without it
  */
 
+const addressFetch: typeof fetch = (input, init) => {
+  if (init?.signal?.aborted)
+    return Promise.reject(new ApiError('network', 'Address request cancelled'));
+  return fetch(input, init);
+};
 const PLACES_HOST = 'https://places.googleapis.com/v1';
 const GEOCODE_HOST = 'https://maps.googleapis.com/maps/api/geocode/json';
 
@@ -51,7 +57,10 @@ export interface ResolvedPlace extends GeoPoint {
 
 const assertKey = (): void => {
   if (!hasGeocodingConfig()) {
-    console.warn('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY is not set; falling back to open location services.');
+    if (__DEV__)
+      console.warn(
+        'EXPO_PUBLIC_GOOGLE_MAPS_API_KEY is not set; falling back to open location services.',
+      );
   }
 };
 
@@ -62,35 +71,49 @@ interface GoogleErrorBody {
   readonly status?: string;
 }
 
-const describeGoogleError = (status: number, body: GoogleErrorBody | undefined): ApiError => {
+const describeGoogleError = (
+  status: number,
+  body: GoogleErrorBody | undefined,
+): ApiError => {
   const message = body?.error?.message ?? body?.error_message ?? '';
 
   if (/billing/i.test(message)) {
     return new ApiError(
       'config',
-      'Google Maps billing is not enabled on the project. Enable billing in Google Cloud Console.'
+      'Google Maps billing is not enabled on the project. Enable billing in Google Cloud Console.',
     );
   }
   if (/legacy API/i.test(message)) {
-    return new ApiError('config', 'This project cannot use the legacy Places API. Enable "Places API (New)".');
+    return new ApiError(
+      'config',
+      'This project cannot use the legacy Places API. Enable "Places API (New)".',
+    );
   }
   if (status === 403 || body?.status === 'REQUEST_DENIED') {
-    return new ApiError('config', `Google Maps rejected the request: ${message || 'check the API key and enabled APIs'}`);
+    return new ApiError(
+      'config',
+      `Google Maps rejected the request: ${message || 'check the API key and enabled APIs'}`,
+    );
   }
   if (status === 429 || body?.status === 'OVER_QUERY_LIMIT') {
     return new ApiError('http', 'Google Maps quota exceeded', 429);
   }
-  return new ApiError('http', `Google Maps request failed: ${message || status}`, status, body);
+  return new ApiError(
+    'http',
+    `Google Maps request failed: ${message || status}`,
+    status,
+    body,
+  );
 };
 
 const googleFetch = async <T>(
   url: string,
   init: RequestInit | undefined,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
 ): Promise<T> => {
   let response: Response;
   try {
-    response = await fetch(url, { ...init, signal });
+    response = await addressFetch(url, { ...init, signal });
   } catch {
     throw new ApiError('network', 'Could not reach the address service');
   }
@@ -101,7 +124,10 @@ const googleFetch = async <T>(
     try {
       body = JSON.parse(raw);
     } catch {
-      throw new ApiError('parse', 'Malformed response from the address service');
+      throw new ApiError(
+        'parse',
+        'Malformed response from the address service',
+      );
     }
   }
 
@@ -111,7 +137,11 @@ const googleFetch = async <T>(
 
   // Geocoding API returns 200 with a status field, unlike Places (New).
   const legacyStatus = (body as GoogleErrorBody | undefined)?.status;
-  if (legacyStatus && legacyStatus !== 'OK' && legacyStatus !== 'ZERO_RESULTS') {
+  if (
+    legacyStatus &&
+    legacyStatus !== 'OK' &&
+    legacyStatus !== 'ZERO_RESULTS'
+  ) {
     throw describeGoogleError(response.status, body as GoogleErrorBody);
   }
 
@@ -122,7 +152,7 @@ const googleFetch = async <T>(
 
 const openSearchPlaces = async (
   query: string,
-  options: { readonly origin?: GeoPoint; readonly signal?: AbortSignal } = {}
+  options: { readonly origin?: GeoPoint; readonly signal?: AbortSignal } = {},
 ): Promise<readonly PlaceSuggestion[]> => {
   const input = query.trim();
   if (input.length < 3) return [];
@@ -133,7 +163,7 @@ const openSearchPlaces = async (
       ? `&lat=${options.origin.latitude}&lon=${options.origin.longitude}`
       : '';
     const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(input)}&limit=10${originParam}`;
-    const resp = await fetch(photonUrl, { signal: options.signal });
+    const resp = await addressFetch(photonUrl, { signal: options.signal });
     if (resp.ok) {
       const data = (await resp.json()) as {
         features?: Array<{
@@ -163,8 +193,16 @@ const openSearchPlaces = async (
           .map((f) => {
             const p = f.properties ?? {};
             const name = p.name ?? p.street ?? p.city ?? input;
-            const parts = [p.street, p.district, p.city, p.state, p.country].filter(Boolean) as string[];
-            const secondary = Array.from(new Set(parts)).filter((x) => x !== name).join(', ');
+            const parts = [
+              p.street,
+              p.district,
+              p.city,
+              p.state,
+              p.country,
+            ].filter(Boolean) as string[];
+            const secondary = Array.from(new Set(parts))
+              .filter((x) => x !== name)
+              .join(', ');
             const [lon, lat] = f.geometry!.coordinates!;
             const fullDesc = [name, secondary].filter(Boolean).join(', ');
             return {
@@ -183,9 +221,11 @@ const openSearchPlaces = async (
   // 2. Fallback to Nominatim search
   try {
     const nominatimUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(input)}&format=json&addressdetails=1&limit=10&countrycodes=in`;
-    const resp = await fetch(nominatimUrl, {
+    const resp = await addressFetch(nominatimUrl, {
       signal: options.signal,
-      headers: { 'User-Agent': 'MultipleRideCustomerApp/1.0 (support@multipleride.com)' },
+      headers: {
+        'User-Agent': 'MultipleRideCustomerApp/1.0 (support@multipleride.com)',
+      },
     });
     if (resp.ok) {
       const list = (await resp.json()) as Array<{
@@ -198,7 +238,10 @@ const openSearchPlaces = async (
       if (Array.isArray(list) && list.length > 0) {
         return list.map((item) => {
           const name = item.name ?? item.display_name.split(',')[0].trim();
-          const rest = item.display_name.replace(name, '').replace(/^,\s*/, '').trim();
+          const rest = item.display_name
+            .replace(name, '')
+            .replace(/^,\s*/, '')
+            .trim();
           return {
             placeId: `osm:${item.lat}:${item.lon}:${encodeURIComponent(item.display_name)}`,
             primaryText: name,
@@ -237,9 +280,13 @@ interface AutocompleteResponse {
  * back to open providers (Photon / Nominatim) if Google Maps Platform returns an
  * authorization, billing, or configuration error.
  */
-export const searchPlaces = async (
+const searchPlacesImpl = async (
   query: string,
-  options: { readonly sessionToken?: string; readonly origin?: GeoPoint; readonly signal?: AbortSignal } = {}
+  options: {
+    readonly sessionToken?: string;
+    readonly origin?: GeoPoint;
+    readonly signal?: AbortSignal;
+  } = {},
 ): Promise<readonly PlaceSuggestion[]> => {
   const input = query.trim();
   if (input.length < 3) return [];
@@ -255,11 +302,17 @@ export const searchPlaces = async (
       if (options.origin) {
         body.locationBias = {
           circle: {
-            center: { latitude: options.origin.latitude, longitude: options.origin.longitude },
+            center: {
+              latitude: options.origin.latitude,
+              longitude: options.origin.longitude,
+            },
             radius: BIAS_RADIUS_M,
           },
         };
-        body.origin = { latitude: options.origin.latitude, longitude: options.origin.longitude };
+        body.origin = {
+          latitude: options.origin.latitude,
+          longitude: options.origin.longitude,
+        };
       }
 
       const data = await googleFetch<AutocompleteResponse>(
@@ -272,7 +325,7 @@ export const searchPlaces = async (
           },
           body: JSON.stringify(body),
         },
-        options.signal
+        options.signal,
       );
 
       const suggestions = (data.suggestions ?? [])
@@ -285,7 +338,8 @@ export const searchPlaces = async (
             placeId: p.placeId as string,
             primaryText: main,
             secondaryText: secondary,
-            description: p.text?.text ?? [main, secondary].filter(Boolean).join(', '),
+            description:
+              p.text?.text ?? [main, secondary].filter(Boolean).join(', '),
           };
         });
 
@@ -293,10 +347,16 @@ export const searchPlaces = async (
         return suggestions;
       }
     } catch (caught: any) {
-      if (caught?.name === 'AbortError' || caught?.message?.includes('aborted')) {
+      if (
+        caught?.name === 'AbortError' ||
+        caught?.message?.includes('aborted')
+      ) {
         throw caught;
       }
-      console.warn('[searchPlaces] Google Places request failed, falling back to open provider:', caught?.message);
+      if (__DEV__)
+        console.warn(
+          '[searchPlaces] Address provider unavailable; trying fallback.',
+        );
     }
   }
 
@@ -310,13 +370,19 @@ interface PlaceDetailsResponse {
   readonly id?: string;
   readonly formattedAddress?: string;
   readonly displayName?: { readonly text?: string };
-  readonly location?: { readonly latitude?: number; readonly longitude?: number };
+  readonly location?: {
+    readonly latitude?: number;
+    readonly longitude?: number;
+  };
 }
 
 /** Resolves a suggestion into coordinates the engine can use. */
-export const resolvePlaceId = async (
+const resolvePlaceIdImpl = async (
   placeId: string,
-  options: { readonly sessionToken?: string; readonly signal?: AbortSignal } = {}
+  options: {
+    readonly sessionToken?: string;
+    readonly signal?: AbortSignal;
+  } = {},
 ): Promise<ResolvedPlace> => {
   // Check if place was provided by open geocoding provider
   if (placeId.startsWith('osm:')) {
@@ -349,7 +415,7 @@ export const resolvePlaceId = async (
             'X-Goog-FieldMask': 'id,location,formattedAddress,displayName',
           },
         },
-        options.signal
+        options.signal,
       );
 
       const lat = data.location?.latitude;
@@ -364,7 +430,8 @@ export const resolvePlaceId = async (
       }
     } catch (caught: any) {
       if (caught?.name === 'AbortError') throw caught;
-      console.warn('[resolvePlaceId] Google Place Details failed:', caught?.message);
+      if (__DEV__)
+        console.warn('[resolvePlaceId] Address provider unavailable.');
     }
   }
 
@@ -378,9 +445,9 @@ interface GeocodeResponse {
 }
 
 /** Human-readable address for a coordinate, for the "current location" label. */
-export const reverseGeocode = async (
+const reverseGeocodeImpl = async (
   point: GeoPoint,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<string> => {
   // 1. Primary: Google Maps Geocoding API
   if (hasGeocodingConfig()) {
@@ -393,7 +460,7 @@ export const reverseGeocode = async (
       const data = await googleFetch<GeocodeResponse>(
         `${GEOCODE_HOST}?${params.toString()}`,
         { method: 'GET' },
-        signal
+        signal,
       );
 
       const googleAddress = data.results?.[0]?.formatted_address;
@@ -402,16 +469,21 @@ export const reverseGeocode = async (
       }
     } catch (caught: any) {
       if (caught?.name === 'AbortError') throw caught;
-      console.warn('[reverseGeocode] Google reverse geocode failed, falling back:', caught?.message);
+      if (__DEV__)
+        console.warn(
+          '[reverseGeocode] Address provider unavailable; trying fallback.',
+        );
     }
   }
 
   // 2. Fallback: OpenStreetMap Nominatim reverse geocode
   try {
     const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${point.latitude}&lon=${point.longitude}&addressdetails=1`;
-    const resp = await fetch(nominatimUrl, {
+    const resp = await addressFetch(nominatimUrl, {
       signal,
-      headers: { 'User-Agent': 'MultipleRideCustomerApp/1.0 (support@multipleride.com)' },
+      headers: {
+        'User-Agent': 'MultipleRideCustomerApp/1.0 (support@multipleride.com)',
+      },
     });
     if (resp.ok) {
       const data = (await resp.json()) as {
@@ -424,7 +496,7 @@ export const reverseGeocode = async (
     }
   } catch (caught: any) {
     if (caught?.name === 'AbortError') throw caught;
-    console.warn('[reverseGeocode] Nominatim reverse geocode failed:', caught?.message);
+    if (__DEV__) console.warn('[reverseGeocode] Address fallback unavailable.');
   }
 
   // 3. Fallback: Formatted coordinate string (never empty, never 'Dropped pin', never 'Current location')
@@ -445,46 +517,86 @@ export class LocationPermissionDeniedError extends Error {
  * readable address, falling back to clean coordinate notation if geocoding is unavailable.
  */
 const readDevicePosition = async (): Promise<any> => {
-  console.log('[CUSTOMER_LOCATION] getCurrentPosition started');
+  if (__DEV__) console.log('[CUSTOMER_LOCATION] getCurrentPosition started');
   if (Platform.OS === 'android') {
-    console.log('[CUSTOMER_LOCATION] permission status: requesting');
-    console.log('[CUSTOMER_LOCATION] requesting permission: ACCESS_FINE_LOCATION');
+    if (__DEV__)
+      console.log('[CUSTOMER_LOCATION] permission status: requesting');
+    if (__DEV__)
+      console.log(
+        '[CUSTOMER_LOCATION] requesting permission: ACCESS_FINE_LOCATION',
+      );
     const granted = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
     );
-    console.log('[CUSTOMER_LOCATION] permission result:', granted);
+    if (__DEV__) console.log('[CUSTOMER_LOCATION] permission result:', granted);
     if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-      throw new ApiError('location_permission', 'Location permission is required to detect your pickup location.');
+      throw new ApiError(
+        'location_permission',
+        'Location permission is required to detect your pickup location.',
+      );
     }
   }
 
-  const position = await new Promise<any>((resolve, reject) => {
-    Geolocation.getCurrentPosition(
-      (pos) => resolve(pos),
-      (err) => {
-        // Fallback for indoors / slow GPS: try cell/WiFi/network fused location
-        if (err?.code === 2 || err?.code === 3) {
-          console.log('[CUSTOMER_LOCATION] High accuracy failed, trying network fallback...');
-          Geolocation.getCurrentPosition(
-            (fallbackPos) => resolve(fallbackPos),
-            () => reject(err),
-            { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
-          );
-        } else {
-          reject(err);
-        }
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+  const position = await withDeadline(
+    22000,
+    undefined,
+    () =>
+      new ApiError(
+        'location_timeout',
+        'Location detection timed out. Please try again.',
+      ),
+    () =>
+      new Promise<any>((resolve, reject) => {
+        Geolocation.getCurrentPosition(
+          (pos) => resolve(pos),
+          (err) => {
+            // Fallback for indoors / slow GPS: try cell/WiFi/network fused location
+            if (err?.code === 2 || err?.code === 3) {
+              if (__DEV__)
+                console.log(
+                  '[CUSTOMER_LOCATION] High accuracy failed, trying network fallback...',
+                );
+              Geolocation.getCurrentPosition(
+                (fallbackPos) => resolve(fallbackPos),
+                () => reject(err),
+                {
+                  enableHighAccuracy: false,
+                  timeout: 10000,
+                  maximumAge: 60000,
+                },
+              );
+            } else {
+              reject(err);
+            }
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 },
+        );
+      }),
+  ).catch((err) => {
+    if (err instanceof ApiError) throw err;
+    if (__DEV__) console.log('[CUSTOMER_LOCATION] error code:', err?.code);
+    if (__DEV__)
+      console.log('[CUSTOMER_LOCATION] error message:', err?.message);
+    if (err?.code === 1)
+      throw new ApiError(
+        'location_permission',
+        'Location permission is required to detect your pickup location.',
+      );
+    if (err?.code === 2)
+      throw new ApiError(
+        'location_unavailable',
+        'GPS position unavailable. Please ensure location services are enabled.',
+      );
+    if (err?.code === 3)
+      throw new ApiError(
+        'location_timeout',
+        'Location detection timed out. Please try again.',
+      );
+    throw new ApiError(
+      'location_unavailable',
+      'Unable to determine your current location. Please try again.',
     );
-  }).catch((err) => {
-    console.log('[CUSTOMER_LOCATION] error code:', err?.code);
-    console.log('[CUSTOMER_LOCATION] error message:', err?.message);
-    if (err?.code === 1) throw new ApiError('location_permission', 'Location permission is required to detect your pickup location.');
-    if (err?.code === 2) throw new ApiError('location_unavailable', 'GPS position unavailable. Please ensure location services are enabled.');
-    if (err?.code === 3) throw new ApiError('location_timeout', 'Location detection timed out. Please try again.');
-    throw new ApiError('location_unavailable', 'Unable to determine your current location. Please try again.');
   });
-
 
   if (
     !Number.isFinite(position.coords.latitude) ||
@@ -492,7 +604,10 @@ const readDevicePosition = async (): Promise<any> => {
     Math.abs(position.coords.latitude) > 90 ||
     Math.abs(position.coords.longitude) > 180
   ) {
-    throw new ApiError('location_unavailable', 'Invalid coordinates received from GPS.');
+    throw new ApiError(
+      'location_unavailable',
+      'Invalid coordinates received from GPS.',
+    );
   }
 
   return position;
@@ -505,7 +620,9 @@ const getDevicePosition = (): Promise<any> => {
   if (positionRequest) return positionRequest;
   const pending = readDevicePosition();
   positionRequest = pending;
-  const clear = () => { if (positionRequest === pending) positionRequest = null; };
+  const clear = () => {
+    if (positionRequest === pending) positionRequest = null;
+  };
   void pending.then(clear, clear);
   return pending;
 };
@@ -518,9 +635,30 @@ const checkLocationAbort = (signal?: AbortSignal) => {
   }
 };
 
-export const getCurrentPlace = async (signal?: AbortSignal): Promise<ResolvedPlace> => {
+export const getCurrentPlace = async (
+  signal?: AbortSignal,
+): Promise<ResolvedPlace> => {
   checkLocationAbort(signal);
-  const position = await getDevicePosition();
+  // Cancel this caller immediately without cancelling another screen's shared GPS request.
+  const pending = getDevicePosition();
+  let cancel = () => {};
+  const cancelled = new Promise<never>((_, reject) => {
+    cancel = () => {
+      try {
+        checkLocationAbort(signal);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    signal?.addEventListener('abort', cancel);
+    if (signal?.aborted) cancel();
+  });
+  let position: any;
+  try {
+    position = await Promise.race([pending, cancelled]);
+  } finally {
+    signal?.removeEventListener('abort', cancel);
+  }
   checkLocationAbort(signal);
   const point: GeoPoint = {
     latitude: position.coords.latitude,
@@ -534,11 +672,56 @@ export const getCurrentPlace = async (signal?: AbortSignal): Promise<ResolvedPla
       return { ...point, address };
     }
   } catch (error: any) {
+    checkLocationAbort(signal);
     if (error?.name === 'AbortError') throw error;
     // Reverse geocoding failed; fall back to coordinate string.
   }
 
-  return { ...point, address: `${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}` };
+  return {
+    ...point,
+    address: `${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`,
+  };
 };
 
-
+const addressDeadline = <T>(
+  signal: AbortSignal | undefined,
+  work: (linked: AbortSignal) => Promise<T>,
+) =>
+  withDeadline(
+    12000,
+    signal,
+    (reason) =>
+      new ApiError(
+        reason === 'timeout' ? 'timeout' : 'network',
+        reason === 'timeout'
+          ? 'Address service timed out. Please retry.'
+          : 'Address request cancelled',
+      ),
+    work,
+  );
+export const searchPlaces = (
+  query: string,
+  options: {
+    readonly sessionToken?: string;
+    readonly origin?: GeoPoint;
+    readonly signal?: AbortSignal;
+  } = {},
+): Promise<readonly PlaceSuggestion[]> =>
+  addressDeadline(options.signal, (signal) =>
+    searchPlacesImpl(query, { ...options, signal }),
+  );
+export const resolvePlaceId = (
+  placeId: string,
+  options: {
+    readonly sessionToken?: string;
+    readonly signal?: AbortSignal;
+  } = {},
+): Promise<ResolvedPlace> =>
+  addressDeadline(options.signal, (signal) =>
+    resolvePlaceIdImpl(placeId, { ...options, signal }),
+  );
+export const reverseGeocode = (
+  point: GeoPoint,
+  signal?: AbortSignal,
+): Promise<string> =>
+  addressDeadline(signal, (linked) => reverseGeocodeImpl(point, linked));

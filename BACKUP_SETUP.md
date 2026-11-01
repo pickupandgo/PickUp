@@ -9,3 +9,5 @@ To restore on another machine:
 5. Rebuild the app. A standalone phone APK must bundle JavaScript; Metro alone does not update an existing release APK.
 
 Road routing now uses authenticated POST /v1/routes/road on the backend; GOOGLE_ROUTES_API_KEY stays only on Render. The ordinary Android Maps/Places key remains separate. Secrets intentionally require separate secure recovery; keep an appropriate private backup of local environment/Firebase setup.
+
+M12 build update: phone testing now uses assembleInternal (bundled JS, TEST signing). Production assembleRelease/bundleRelease requires private release signing configuration; no debug-key fallback. See docs/M12_RELEASE_GATE.md for verified results and open acceptance gates.

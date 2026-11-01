@@ -93,16 +93,30 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+// Production credentials are supplied privately, never committed or replaced with the debug key.
+def releaseSigningValues = [
+    filePath: System.getenv('PICKUP_RELEASE_STORE_FILE') ?: localProperties.getProperty('PICKUP_RELEASE_STORE_FILE'),
+    storePassword: System.getenv('PICKUP_RELEASE_STORE_PASSWORD') ?: localProperties.getProperty('PICKUP_RELEASE_STORE_PASSWORD'),
+    keyAlias: System.getenv('PICKUP_RELEASE_KEY_ALIAS') ?: localProperties.getProperty('PICKUP_RELEASE_KEY_ALIAS'),
+    keyPassword: System.getenv('PICKUP_RELEASE_KEY_PASSWORD') ?: localProperties.getProperty('PICKUP_RELEASE_KEY_PASSWORD')
+]
+def releaseSigningConfigured = releaseSigningValues.values().every { it != null && !it.trim().isEmpty() }
+def nativeBuildDir = System.getenv('PICKUP_NATIVE_BUILD_DIR')
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
+    if (nativeBuildDir) {
+        externalNativeBuild { cmake { buildStagingDirectory file(nativeBuildDir) } }
+    }
     namespace "com.multipleride.customer"
     defaultConfig {
         applicationId "com.multipleride.customer"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        externalNativeBuild { cmake { arguments '-DCMAKE_OBJECT_PATH_MAX=240' } }
         versionCode 1
         versionName "1.0"
         manifestPlaceholders = [GOOGLE_MAPS_API_KEY: mapsApiKey]
@@ -112,6 +126,14 @@ android {
         buildConfig true
     }
     signingConfigs {
+        if (releaseSigningConfigured) {
+            release {
+                storeFile file(releaseSigningValues.filePath)
+                storePassword releaseSigningValues.storePassword
+                keyAlias releaseSigningValues.keyAlias
+                keyPassword releaseSigningValues.keyPassword
+            }
+        }
         debug {
             storeFile file('debug.keystore')
             storePassword 'android'
@@ -124,11 +146,15 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig(releaseSigningConfigured ? signingConfigs.release : null)
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+        internal {
+            initWith release
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+            versionNameSuffix '-internal'
         }
     }
 }
@@ -153,3 +179,11 @@ dependencies {
 
 apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"
 
+
+// Internal APKs exercise bundled, non-debug JavaScript. They are not production signing artifacts.
+gradle.taskGraph.whenReady { graph ->
+    def productionTasks = ['assembleRelease', 'bundleRelease', 'packageRelease', 'packageReleaseBundle', 'validateSigningRelease']
+    if (!releaseSigningConfigured && graph.allTasks.any { it.project == project && productionTasks.contains(it.name) }) {
+        throw new GradleException('Production signing is not configured. Set PICKUP_RELEASE_STORE_FILE, PICKUP_RELEASE_STORE_PASSWORD, PICKUP_RELEASE_KEY_ALIAS and PICKUP_RELEASE_KEY_PASSWORD privately, or build assembleInternal for device testing.')
+    }
+}
