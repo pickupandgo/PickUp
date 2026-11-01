@@ -150,7 +150,7 @@ describe('engine routes (Phase 8 contract)', () => {
     await engine.acceptRideRequest(RIDE_ID);
     await engine.rejectRideRequest(RIDE_ID);
     await engine.setDriverAvailability('driverUid123', true);
-    await engine.updateDriverLocation('driverUid123', 26.29, 73.02);
+    await engine.updateDriverLocation('driverUid123', { latitude: 26.29, longitude: 73.02, capturedAt: Date.now(), accuracy: 5 });
     for (const request of requests) {
       expect(JSON.stringify(request.body ?? {})).not.toMatch(
         /driverId|customerId/,

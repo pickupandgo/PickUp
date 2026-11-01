@@ -11,6 +11,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.module.annotations.ReactModule
+import com.facebook.react.common.LifecycleState
 
 /**
  * React Native native module exposing the Kotlin location subsystem to JavaScript.
@@ -27,10 +28,32 @@ class LocationModule(reactContext: ReactApplicationContext) :
 
     companion object {
         const val NAME = "PickUpLocationModule"
+        @Volatile var foregroundEmitter: LocationEventEmitter? = null
+            private set
     }
 
     private val locationManager = LocationManager(reactContext)
     private val eventEmitter = LocationEventEmitter(reactContext)
+    init { foregroundEmitter = eventEmitter }
+
+    @ReactMethod
+    fun setPublishing(enabled: Boolean, tripId: String?, promise: Promise) {
+        try {
+            if (enabled) {
+                if (!LocationService.isServiceRunning() && reactApplicationContext.lifecycleState != LifecycleState.RESUMED) {
+                    throw IllegalStateException("Open the Driver App to start location sharing")
+                }
+                if (ContextCompat.checkSelfPermission(reactApplicationContext, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    throw SecurityException("Precise location permission required")
+                }
+                locationManager.stopTracking()
+                LocationService.start(reactApplicationContext, tripId)
+            } else LocationService.stop(reactApplicationContext)
+            promise.resolve(true)
+        } catch (_: Exception) {
+            promise.reject("TRACKING_UNAVAILABLE", "Location sharing could not start. Check permission and reopen the app.")
+        }
+    }
 
     override fun getName(): String = NAME
 
@@ -53,7 +76,7 @@ class LocationModule(reactContext: ReactApplicationContext) :
         ) == PackageManager.PERMISSION_GRANTED
 
         val state = when {
-            fineGranted || coarseGranted -> PermissionState.GRANTED
+            fineGranted -> PermissionState.GRANTED
             else -> PermissionState.DENIED
         }
 
@@ -127,6 +150,7 @@ class LocationModule(reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun startTracking(config: ReadableMap?, promise: Promise) {
+        if (LocationService.isServiceRunning()) { promise.resolve(true); return }
         val priority = if (config?.hasKey("priority") == true) {
             config.getInt("priority")
         } else {
@@ -186,7 +210,7 @@ class LocationModule(reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun isTracking(promise: Promise) {
-        promise.resolve(locationManager.isCurrentlyTracking())
+        promise.resolve(LocationService.isServiceRunning() || locationManager.isCurrentlyTracking())
     }
 
     // ─── Foreground Service ────────────────────────────────────────────
@@ -299,6 +323,7 @@ class LocationModule(reactContext: ReactApplicationContext) :
     // ─── Cleanup ───────────────────────────────────────────────────────
 
     override fun onCatalystInstanceDestroy() {
+        foregroundEmitter = null
         locationManager.destroy()
         super.onCatalystInstanceDestroy()
     }

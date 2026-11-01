@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { DriverMap, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
+import { TrackingService } from '../../services/tracking/TrackingService';
 import { useActiveTrip } from '../../hooks/useActiveTrip';
 import { useTripRoute } from '../../hooks/useTripRoute';
 import type { HomeScreenProps } from '../../types/navigation';
@@ -36,12 +37,10 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
     error: locationError,
     requestPermission,
     getCurrentLocation,
-    startTracking,
   } = useDriverLocation();
   const trip = useActiveTrip(navRoute.params?.tripId);
-  const { route: routingData, isLoading: routeLoading, error: routeError } = useTripRoute();
+  const { route: routingData, error: routeError } = useTripRoute();
 
-  const [networkDismissed, setNetworkDismissed] = useState(false);
 
   const granted = permissionState === 'granted';
 
@@ -72,14 +71,14 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
   }, [trip, routingData]);
 
   const displayEta = useMemo(() => {
-    if (!routingData?.eta) return currentStop?.etaMinutes;
+    if (!routingData?.eta) return undefined;
     const diffMs = routingData.eta.getTime() - Date.now();
     return Math.max(0, Math.ceil(diffMs / 60000));
-  }, [routingData?.eta, currentStop?.etaMinutes]);
+  }, [routingData?.eta]);
 
   const displayDistance = routingData?.totalDistanceMeters
     ? (routingData.totalDistanceMeters / 1000).toFixed(1)
-    : currentStop?.distanceKm ?? trip?.totalDistanceKm;
+    : undefined;
 
   const destinationName = currentStop?.label || currentStop?.address?.split(',')[0] || 'Destination';
 
@@ -87,7 +86,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
   const showPermissionModal = !granted;
   const gpsLost = granted && (!providerEnabled || !!locationError);
   const reconnecting = granted && providerEnabled && !currentLocation;
-  const networkLost = !!routeError && !routingData && !networkDismissed;
+  const networkLost = !!routeError && !routingData;
 
   // ── Handlers ───────────────────────────────────────────────────────
   const openExternalMaps = useCallback(() => {
@@ -128,15 +127,14 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
   const handleGrantPermission = useCallback(async () => {
     await requestPermission();
     try {
-      await startTracking();
+      await TrackingService.getInstance().recover();
       await getCurrentLocation();
     } catch {
       /* handled via state */
     }
-  }, [requestPermission, startTracking, getCurrentLocation]);
+  }, [requestPermission, getCurrentLocation]);
 
   const handleRetryNetwork = useCallback(() => {
-    setNetworkDismissed(true);
     getCurrentLocation().catch(() => {});
   }, [getCurrentLocation]);
 
@@ -239,7 +237,10 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
             </View>
             <Text style={styles.modalTitle}>Enable Location Services</Text>
             <Text style={styles.modalBody}>
-              To navigate to the pickup location, we need access to your device GPS.
+              Pick Up collects and shares your precise location with the trip service and your
+              assigned customer during delivery, including while minimized or with the screen
+              locked. Android runs a location foreground service. Sharing stops when you go offline without
+              an active trip or sign out.
             </Text>
             <Pressable style={styles.modalBtn} onPress={handleGrantPermission} accessibilityRole="button">
               <Text style={styles.modalBtnText}>GRANT PERMISSION</Text>
@@ -254,7 +255,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
           <View style={styles.networkIcon}>
             <Icon name="wifi_off" size={40} color={colors.outlineVariant} />
           </View>
-          <Text style={styles.networkTitle}>Connection Lost</Text>
+          <Text style={styles.networkTitle}>{routeError?.message ?? 'Road routing unavailable'}</Text>
           <Pressable style={styles.retryBtn} onPress={handleRetryNetwork} accessibilityRole="button">
             <Text style={styles.retryText}>RETRY</Text>
           </Pressable>

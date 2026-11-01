@@ -12,6 +12,9 @@ import type {
 import type { EmitterSubscription } from 'react-native';
 
 export class LocationService {
+  static async setPublishing(enabled: boolean, tripId: string | null): Promise<boolean> {
+    return NativeLocationModule.setPublishing(enabled, tripId);
+  }
   static async getPermissionStatus(): Promise<PermissionState> {
     return NativeLocationModule.getPermissionStatus();
   }

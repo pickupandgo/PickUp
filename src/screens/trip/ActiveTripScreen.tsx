@@ -82,14 +82,14 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   }, [trip, routingData]);
 
   const displayEta = useMemo(() => {
-    if (!routingData?.eta) return currentStop?.etaMinutes;
+    if (!routingData?.eta) return undefined;
     const diffMs = routingData.eta.getTime() - Date.now();
     return Math.max(0, Math.ceil(diffMs / 60000));
-  }, [routingData?.eta, currentStop?.etaMinutes]);
+  }, [routingData?.eta]);
 
   const displayDistance = routingData?.totalDistanceMeters
     ? (routingData.totalDistanceMeters / 1000).toFixed(1)
-    : currentStop?.distanceKm ?? trip?.totalDistanceKm;
+    : undefined;
 
   const handleNavigate = useCallback(() => {
     if (trip) navigation.navigate('Navigation', { tripId: trip.id });

@@ -359,16 +359,15 @@ export const setDriverAvailability = async (
   });
 };
 
-/** PATCH /drivers/:id/location: the signed-in driver's live location (also a heartbeat). */
+/** Explicit one-shot adapter. Continuous publishing belongs exclusively to TrackingService/native. */
 export const updateDriverLocation = async (
   driverId: string,
-  latitude: number,
-  longitude: number,
+  fix: { latitude: number; longitude: number; capturedAt: number; accuracy: number; tripId?: string },
 ): Promise<void> => {
   await getEngineClient().request({
     method: 'PATCH',
     path: `/drivers/${enc(driver(driverId))}/location`,
-    body: { latitude, longitude },
+    body: { ...fix },
     retry: false,
   });
 };

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { PermissionsAndroid, Platform } from 'react-native';
+import { AppState, PermissionsAndroid, Platform } from 'react-native';
 import { LocationService } from './LocationService';
+import { isFreshFix, newestFix } from './fixPolicy';
 import type { 
   LocationResult, 
   LocationError, 
@@ -35,12 +36,16 @@ export function useDriverLocation() {
 
   useEffect(() => {
     checkStatus();
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') checkStatus();
+    });
+    return () => subscription.remove();
   }, [checkStatus]);
 
   useEffect(() => {
     const locSub = LocationService.subscribeToLocationUpdates((location) => {
-      console.log('[NativeLocationDelivery] Received location:', location.latitude, location.longitude);
-      setCurrentLocation(location);
+      if (!isFreshFix(location)) return;
+      setCurrentLocation(current => newestFix(current, location));
       setError(null);
     });
 
@@ -59,13 +64,18 @@ export function useDriverLocation() {
     };
   }, []);
 
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentLocation(current => isFreshFix(current) ? current : null), 5000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Seed one immediate fix once permission is granted so maps can center on the
   // driver (and trip routing can compute) even before continuous tracking runs.
   useEffect(() => {
     if (permissionState === 'granted' && !currentLocation) {
       LocationService.getCurrentLocation()
         .then((loc) => {
-          setCurrentLocation(loc);
+          if (isFreshFix(loc)) setCurrentLocation(current => newestFix(current, loc));
           setError(null);
         })
         .catch(() => {
@@ -77,30 +87,15 @@ export function useDriverLocation() {
   const requestPermission = useCallback(async () => {
     if (Platform.OS === 'android') {
       try {
-        const granted = await PermissionsAndroid.request(
+        const grants = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-          {
-            title: 'Location Permission',
-            message: 'PickUp Driver needs access to your location to track trips, navigate to pickups, and run geofences.',
-            buttonNeutral: 'Ask Me Later',
-            buttonNegative: 'Cancel',
-            buttonPositive: 'OK',
-          },
-        );
-        
-        if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-          // If we also need background, we might request ACCESS_BACKGROUND_LOCATION
-          // but usually that has to be done separately after fine location is granted.
-          const bgGranted = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
-            {
-              title: 'Background Location Permission',
-              message: 'PickUp Driver needs background location access to track trips when the app is in the background.',
-              buttonNeutral: 'Ask Me Later',
-              buttonNegative: 'Cancel',
-              buttonPositive: 'OK',
-            }
-          );
+        ]);
+        if (grants[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION] !== PermissionsAndroid.RESULTS.GRANTED) {
+          throw new Error('Precise location permission is required for live delivery tracking.');
+        }
+        if (Number(Platform.Version) >= 33) {
+          await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
         }
       } catch (err) {
         console.warn('Failed to request permissions:', err);
@@ -114,7 +109,8 @@ export function useDriverLocation() {
     setError(null);
     try {
       const loc = await LocationService.getCurrentLocation();
-      setCurrentLocation(loc);
+      if (!isFreshFix(loc)) throw new Error('A fresh GPS fix is unavailable');
+      setCurrentLocation(current => newestFix(current, loc));
       return loc;
     } catch (err: unknown) {
       setError({ code: 'UNKNOWN_ERROR', message: err instanceof Error ? err.message : 'Unknown error' } as any);

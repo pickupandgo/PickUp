@@ -25,7 +25,10 @@ export const GoLiveSheet: React.FC<GoLiveSheetProps> = ({
       </View>
       <Text style={styles.title}>Go Live</Text>
       <Text style={styles.description}>
-        To receive nearby trip requests and support live trip operations, Pick Up needs your location while you're working.
+        Pick Up collects and shares your precise location with the trip service while you are online,
+        and with your assigned customer during an active delivery, including when the app is minimized
+        or the screen is locked. Android runs a location foreground service. Sharing stops when
+        you go offline without an active trip or sign out.
       </Text>
       <View style={styles.actions}>
         <PrimaryButton label="CONTINUE" onPress={onContinue} style={styles.continueButton} />

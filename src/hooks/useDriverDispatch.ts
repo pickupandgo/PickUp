@@ -4,11 +4,10 @@ import {
   getCurrentDriverId,
   rideRequestToOffer,
   setDriverAvailability,
-  updateDriverLocation,
 } from '../services/engine/dispatch';
 import type { TripOffer } from '../types/trip';
 
-/** How often we heartbeat location + poll for ride requests. */
+/** Dispatch only. The session-owned native service publishes GPS independently. */
 const POLL_INTERVAL_MS = 3000;
 
 export interface UseDriverDispatchParams {
@@ -35,7 +34,6 @@ export interface UseDriverDispatchResult {
  */
 export function useDriverDispatch({
   enabled,
-  getLocation,
   onOffer,
 }: UseDriverDispatchParams): UseDriverDispatchResult {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -43,9 +41,7 @@ export function useDriverDispatch({
   const handledRideRef = useRef<string | null>(null);
 
   const onOfferRef = useRef(onOffer);
-  const getLocationRef = useRef(getLocation);
   onOfferRef.current = onOffer;
-  getLocationRef.current = getLocation;
 
   const clearTimer = useCallback(() => {
     if (intervalRef.current) {
@@ -75,22 +71,13 @@ export function useDriverDispatch({
     pausedRef.current = false;
     handledRideRef.current = null;
 
-    const pingLocation = () => {
-      const loc = getLocationRef.current?.();
-      if (loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
-        updateDriverLocation(driverId, loc.latitude, loc.longitude).catch(() => {});
-      }
-    };
-
-    // Announce availability immediately, then start heartbeat + polling.
+    // Announce availability immediately, then poll for offers.
     setDriverAvailability(driverId, true).catch((e) =>
       console.warn('[useDriverDispatch] Failed to set availability:', e),
     );
-    pingLocation();
 
     const tick = async () => {
       if (cancelled) return;
-      pingLocation();
       if (pausedRef.current) return;
       // Re-assert availability every tick so we self-heal if the initial call
       // failed (e.g. backend cold start). Skipped while paused so a driver who

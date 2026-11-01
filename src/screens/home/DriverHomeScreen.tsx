@@ -8,7 +8,8 @@ import Icon from '../../components/atoms/Icon';
 import { GoLiveSheet } from '../../components/organisms/GoLiveSheet';
 import { GoOfflineSheet } from '../../components/organisms/GoOfflineSheet';
 import { useFocusEffect } from '@react-navigation/native';
-import { useDriverLocation, LocationService } from '../../location';
+import { useDriverLocation } from '../../location';
+import { TrackingService } from '../../services/tracking/TrackingService';
 import type { HomeScreenProps } from '../../types/navigation';
 import type { ActiveTrip, TripStop } from '../../types/trip';
 import { useDriverDispatch } from '../../hooks/useDriverDispatch';
@@ -196,7 +197,7 @@ const ActiveTripHero: React.FC<{ trip: ActiveTrip; onOpen: () => void }> = ({ tr
 // ─── Screen ────────────────────────────────────────────────────────
 
 export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, testID }) => {
-  const { startTracking, stopTracking, requestPermission, currentLocation } = useDriverLocation();
+  const { requestPermission, currentLocation } = useDriverLocation();
   const { t } = useI18n();
   const { balance } = useWallet({ includeTransactions: false });
   const { summary } = useEarnings();
@@ -206,10 +207,6 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
   const [sheetMode, setSheetMode] = useState<'none' | 'go_live' | 'go_offline'>('none');
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    requestPermission().catch(console.error);
-  }, [requestPermission]);
 
   const handleToggleLive = useCallback((value: boolean) => {
     setSheetMode(value ? 'go_live' : 'go_offline');
@@ -226,11 +223,9 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
         try {
           if (value) {
             await requestPermission();
-            await LocationService.startForegroundService();
-            await startTracking();
+            await TrackingService.getInstance().setOnline(true);
           } else {
-            await stopTracking();
-            await LocationService.stopForegroundService();
+            await TrackingService.getInstance().setOnline(false);
           }
           setDriverMode(value ? 'searching' : 'offline');
         } catch (err) {
@@ -244,7 +239,7 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
         }
       });
     },
-    [fadeAnim, startTracking, stopTracking, requestPermission],
+    [fadeAnim, requestPermission],
   );
 
   const handleNotifications = useCallback(() => {

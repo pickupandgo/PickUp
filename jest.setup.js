@@ -47,6 +47,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 // Mock the NativeLocationModule before anything imports it
 jest.mock('./src/location/NativeLocationModule', () => ({
   NativeLocationModule: {
+    setPublishing: jest.fn().mockResolvedValue(true),
     getPermissionStatus: jest.fn().mockResolvedValue('granted'),
     hasBackgroundPermission: jest.fn().mockResolvedValue(true),
     isProviderEnabled: jest.fn().mockResolvedValue(true),

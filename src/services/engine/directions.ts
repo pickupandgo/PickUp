@@ -1,35 +1,7 @@
-import { env, hasGeocodingConfig } from '../../config/env';
-import { ApiError } from './http';
+import { env } from '../../config/env';
+import { createPaymentsClient } from '../payments/paymentsClient';
+import { getFirebaseIdToken } from '../payments/firebaseToken';
 import type { GeoPoint } from './types';
-
-/**
- * Google Routes API — road-following polyline for two points.
- *
- * The engine only stores haversine distance, so without this every route drawn
- * on the map was a straight line through parks, buildings and railway tracks.
- *
- * Uses Routes API (v2), which replaced the legacy Directions API. The key ships
- * in the app bundle: restrict it in Cloud Console.
- */
-
-const ROUTES_HOST = 'https://routes.googleapis.com/directions/v2:computeRoutes';
-
-interface RoutesResponse {
-  readonly routes?: ReadonlyArray<{
-    readonly distanceMeters?: number;
-    readonly duration?: string;
-    readonly polyline?: { readonly encodedPolyline?: string };
-    readonly legs?: ReadonlyArray<{
-      readonly distanceMeters?: number;
-      readonly duration?: string;
-    }>;
-  }>;
-  readonly error?: {
-    readonly code?: number;
-    readonly message?: string;
-    readonly status?: string;
-  };
-}
 
 export interface RouteResult {
   readonly polyline: readonly GeoPoint[];
@@ -37,147 +9,60 @@ export interface RouteResult {
   readonly durationSeconds: number;
 }
 
-/**
- * Decodes Google's encoded polyline algorithm. The response is a stream of
- * variable-length base-64 offsets from the previous lat/lng, ~5x smaller than
- * a list of raw coordinates. Reference: developers.google.com/maps/documentation/utilities/polylinealgorithm
- */
-const decodePolyline = (encoded: string): GeoPoint[] => {
+async function routingToken(refresh: boolean): Promise<string> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([getFirebaseIdToken(refresh), new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Routing authentication timed out')), 10000);
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
+}
+export const decodeRoadPolyline = (encoded: string): GeoPoint[] => {
   const points: GeoPoint[] = [];
-  let index = 0;
-  let lat = 0;
-  let lng = 0;
-
+  let index = 0, latitude = 0, longitude = 0;
+  const component = () => {
+    let shift = 0, value = 0, byte: number;
+    do {
+      if (index >= encoded.length || shift > 30) throw new Error('Invalid road geometry');
+      byte = encoded.charCodeAt(index++) - 63;
+      if (byte < 0 || byte > 63) throw new Error('Invalid road geometry');
+      value += (byte % 32) * 2 ** shift; shift += 5;
+    } while (byte >= 32);
+    return value % 2 ? -(value + 1) / 2 : value / 2;
+  };
   while (index < encoded.length) {
-    let shift = 0;
-    let result = 0;
-    let byte: number;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-    const dlat = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
-    lat += dlat;
-
-    shift = 0;
-    result = 0;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-    const dlng = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
-    lng += dlng;
-
-    points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+    latitude += component(); longitude += component();
+    if (Math.abs(latitude / 1e5) > 90 || Math.abs(longitude / 1e5) > 180) throw new Error('Invalid road geometry');
+    points.push({ latitude: latitude / 1e5, longitude: longitude / 1e5 });
   }
-
   return points;
 };
 
-/**
- * Parses ISO 8601 duration string to seconds (e.g. "123s" → 123, "2m30s" → 150).
- */
-const parseDuration = (duration: string | undefined): number => {
-  if (!duration) return 0;
-  const match = duration.match(/^(\d+)s$/);
-  return match ? parseInt(match[1], 10) : 0;
-};
-
-/**
- * Fetches a driving route between two points and returns the decoded polyline.
- * Any waypoints go through the same route as ordered intermediate stops.
- */
+/** Uses the existing Firebase-authenticated server adapter. No Google server credential in JS. */
 export const getRoute = async (
-  origin: GeoPoint,
-  destination: GeoPoint,
-  options: { readonly waypoints?: readonly GeoPoint[]; readonly signal?: AbortSignal } = {}
+  origin: GeoPoint, destination: GeoPoint,
+  options: { readonly waypoints?: readonly GeoPoint[]; readonly tripId?: string; readonly signal?: AbortSignal } = {},
 ): Promise<RouteResult> => {
-  if (!hasGeocodingConfig()) {
-    throw new ApiError('config', 'Google Maps API key is not set.');
+  const baseUrl = env.PAYMENTS_API_BASE_URL;
+  if (!baseUrl || !/^https:\/\/[A-Za-z0-9.-]+(?::\d+)?$/.test(baseUrl) ||
+      !options.tripId || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(options.tripId)) {
+    throw new Error('An authenticated assigned trip and HTTPS routing service are required.');
   }
-
-  const body: Record<string, unknown> = {
-    origin: {
-      location: {
-        latLng: {
-          latitude: origin.latitude,
-          longitude: origin.longitude,
-        },
-      },
-    },
-    destination: {
-      location: {
-        latLng: {
-          latitude: destination.latitude,
-          longitude: destination.longitude,
-        },
-      },
-    },
-    travelMode: 'DRIVE',
-    polylineEncoding: 'ENCODED_POLYLINE',
-  };
-
-  if (options.waypoints?.length) {
-    body.intermediates = options.waypoints.map((p) => ({
-      location: {
-        latLng: {
-          latitude: p.latitude,
-          longitude: p.longitude,
-        },
-      },
-    }));
+  for (const point of [origin, ...(options.waypoints ?? []), destination]) {
+    if (!Number.isFinite(point.latitude) || Math.abs(point.latitude) > 90 ||
+        !Number.isFinite(point.longitude) || Math.abs(point.longitude) > 180) throw new Error('Invalid route coordinates');
   }
-
-  let response: Response;
-  try {
-    response = await fetch(ROUTES_HOST, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': env.googleMapsApiKey as string,
-        'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.distanceMeters,routes.legs.duration',
-      },
-      body: JSON.stringify(body),
-      signal: options.signal,
-    });
-  } catch {
-    throw new ApiError('network', 'Could not reach the directions service');
-  }
-
-  const raw = await response.text();
-  let data: RoutesResponse;
-  try {
-    data = raw.length ? JSON.parse(raw) : {};
-  } catch {
-    throw new ApiError('parse', 'Malformed response from directions service');
-  }
-
-  if (!response.ok || data.error) {
-    const message = data.error?.message ?? `HTTP ${response.status}`;
-    const status = data.error?.status ?? '';
-    if (status === 'PERMISSION_DENIED' || status === 'UNAUTHENTICATED') {
-      throw new ApiError(
-        'config',
-        `Routes API denied: ${message} — check API key and enabled APIs.`
-      );
-    }
-    throw new ApiError('http', `Routes API failed: ${message}`, response.status);
-  }
-
-  const route = data.routes?.[0];
-  const encoded = route?.polyline?.encodedPolyline;
-  if (!encoded) throw new ApiError('parse', 'No polyline in routes response');
-
-  // Sum the legs. For A→B there is one leg; with intermediates there are more.
-  const legs = route?.legs ?? [];
-  const distanceMeters = legs.reduce((sum, leg) => sum + (leg.distanceMeters ?? 0), 0);
-  const durationSeconds = legs.reduce((sum, leg) => sum + parseDuration(leg.duration), 0);
-
-  return {
-    polyline: decodePolyline(encoded),
-    distanceMeters,
-    durationSeconds,
-  };
+  const clean = (p: GeoPoint) => ({ latitude: p.latitude, longitude: p.longitude });
+  const result = await createPaymentsClient({ baseUrl, getToken: routingToken, timeoutMs: 12000, maxAttempts: 1 })
+    .request({ method: 'POST', path: '/v1/driver/routes/road', body: {
+      tripId: options.tripId, origin: clean(origin), destination: clean(destination),
+      waypoints: (options.waypoints ?? []).map(clean),
+    } }) as { encodedPolyline: string; distanceMeters: number; durationSeconds: number };
+  if (options.signal?.aborted) throw new Error('Route request cancelled');
+  if (!result || typeof result.encodedPolyline !== 'string' || result.encodedPolyline.length > 500000 ||
+      !Number.isFinite(result.distanceMeters) || result.distanceMeters < 0 ||
+      !Number.isFinite(result.durationSeconds) || result.durationSeconds < 0) throw new Error('Invalid road route response');
+  const polyline = decodeRoadPolyline(result.encodedPolyline);
+  if (polyline.length < 2) throw new Error('No usable road route geometry');
+  return { polyline, distanceMeters: result.distanceMeters, durationSeconds: result.durationSeconds };
 };

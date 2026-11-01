@@ -12,6 +12,10 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import android.Manifest
+import android.content.pm.PackageManager
+import com.google.firebase.auth.FirebaseAuth
 
 /**
  * Android foreground service for persistent location tracking during active trips.
@@ -23,7 +27,7 @@ import androidx.core.app.NotificationCompat
  * The service does NOT make business-logic decisions — it only provides the
  * Android lifecycle necessary for continuous GPS in foreground/background.
  *
- * No direct backend communication. No UI logic.
+ * A single LocationPublisher sends authenticated fixes while JS is suspended.
  */
 class LocationService : Service() {
 
@@ -41,26 +45,29 @@ class LocationService : Service() {
         /**
          * Convenience: start the foreground location service.
          */
-        fun start(context: Context) {
+        fun start(context: Context, tripId: String? = null) {
             val intent = Intent(context, LocationService::class.java).apply {
                 action = ACTION_START
+                putExtra("tripId", tripId)
             }
-            context.startForegroundService(intent)
+            ContextCompat.startForegroundService(context, intent)
         }
 
         /**
          * Convenience: stop the foreground location service.
          */
         fun stop(context: Context) {
-            val intent = Intent(context, LocationService::class.java).apply {
-                action = ACTION_STOP
-            }
-            context.startService(intent)
+            context.stopService(Intent(context, LocationService::class.java))
         }
     }
 
     private var locationManager: LocationManager? = null
-    private var eventEmitter: LocationEventEmitter? = null
+    private var publisher: LocationPublisher? = null
+    private var owner: String? = null
+    private var activeTrip = false
+    private val authListener = FirebaseAuth.AuthStateListener { auth ->
+        if (owner != null && auth.currentUser?.uid != owner) stopSelf()
+    }
 
     // ─── Service Lifecycle ─────────────────────────────────────────────
 
@@ -68,20 +75,28 @@ class LocationService : Service() {
         super.onCreate()
         createNotificationChannel()
         locationManager = LocationManager(applicationContext)
+        FirebaseAuth.getInstance().addAuthStateListener(authListener)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> startForegroundTracking()
+            ACTION_START -> {
+                try {
+                    publisher?.configure(intent.getStringExtra("tripId"))
+                    startForegroundTracking(intent.getStringExtra("tripId"))
+                } catch (_: Exception) { stopSelf() }
+            }
             ACTION_STOP -> stopForegroundTracking()
-            else -> Log.w(TAG, "Unknown action: ${intent?.action}")
+            else -> stopSelf() // No silent resurrection of location sharing after process death.
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        FirebaseAuth.getInstance().removeAuthStateListener(authListener)
+        publisher?.close(); publisher = null
         stopForegroundTracking()
         locationManager?.destroy()
         locationManager = null
@@ -91,11 +106,19 @@ class LocationService : Service() {
 
     // ─── Foreground Tracking ───────────────────────────────────────────
 
-    private fun startForegroundTracking() {
+    private fun startForegroundTracking(tripId: String?) {
         if (isRunning) {
-            Log.d(TAG, "Service already running, ignoring duplicate start")
+            if (activeTrip != (tripId != null) || locationManager?.isCurrentlyTracking() != true) {
+                locationManager?.stopTracking()
+                startLocationUpdates(tripId != null)
+            }
             return
         }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            throw SecurityException("Precise location permission required")
+        }
+        owner = FirebaseAuth.getInstance().currentUser?.uid ?: throw SecurityException("Sign-in required")
 
         val notification = buildNotification()
 
@@ -110,24 +133,41 @@ class LocationService : Service() {
             startForeground(LocationConfig.FOREGROUND_NOTIFICATION_ID, notification)
         }
 
+        publisher = LocationPublisher { message, terminal ->
+            LocationModule.foregroundEmitter?.emitLocationError(LocationErrorCode.TRACKING_UNAVAILABLE)
+            // No upstream payload, token, coordinates or history in logs/notifications.
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.notify(LocationConfig.FOREGROUND_NOTIFICATION_ID,
+                NotificationCompat.Builder(this, LocationConfig.NOTIFICATION_CHANNEL_ID)
+                    .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                    .setContentTitle("Driver location sharing").setContentText(message).setOngoing(true).build())
+            if (terminal) stopSelf()
+        }.also { it.configure(tripId) }
+        startLocationUpdates(tripId != null)
+        isRunning = true
+        LocationModule.foregroundEmitter?.emitTrackingStateChanged(TrackingState.TRACKING)
+        Log.d(TAG, "Foreground tracking started")
+    }
+
+    private fun startLocationUpdates(inTrip: Boolean) {
+        activeTrip = inTrip
         locationManager?.startTracking(
             priority = LocationConfig.PRIORITY_HIGH_ACCURACY,
-            intervalMs = LocationConfig.ACTIVE_TRIP_INTERVAL_MS,
-            fastestIntervalMs = LocationConfig.ACTIVE_TRIP_FASTEST_INTERVAL_MS,
-            minDisplacementMeters = LocationConfig.ACTIVE_TRIP_MIN_DISPLACEMENT_METERS,
+            intervalMs = if (inTrip) LocationConfig.ACTIVE_TRIP_INTERVAL_MS else LocationConfig.ONLINE_INTERVAL_MS,
+            fastestIntervalMs = if (inTrip) LocationConfig.ACTIVE_TRIP_FASTEST_INTERVAL_MS else LocationConfig.ONLINE_FASTEST_INTERVAL_MS,
+            minDisplacementMeters = 0f, // Stationary drivers still need fresh fixes, not replayed timestamps.
             updateListener = object : LocationManager.LocationUpdateListener {
                 override fun onLocationUpdate(result: LocationResult) {
-                    eventEmitter?.emitLocationUpdate(result)
+                    publisher?.offer(result)
+                    LocationModule.foregroundEmitter?.emitLocationUpdate(result)
                 }
 
                 override fun onLocationError(error: LocationErrorCode) {
-                    eventEmitter?.emitLocationError(error)
+                    LocationModule.foregroundEmitter?.emitLocationError(error)
                 }
             },
         )
 
-        isRunning = true
-        Log.d(TAG, "Foreground tracking started")
     }
 
     private fun stopForegroundTracking() {
@@ -135,12 +175,14 @@ class LocationService : Service() {
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         isRunning = false
+        LocationModule.foregroundEmitter?.emitTrackingStateChanged(TrackingState.STOPPED)
         Log.d(TAG, "Foreground tracking stopped")
     }
 
     // ─── Notification ──────────────────────────────────────────────────
 
     private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(
             LocationConfig.NOTIFICATION_CHANNEL_ID,
             LocationConfig.NOTIFICATION_CHANNEL_NAME,
@@ -163,7 +205,7 @@ class LocationService : Service() {
 
         return NotificationCompat.Builder(this, LocationConfig.NOTIFICATION_CHANNEL_ID)
             .setContentTitle(LocationConfig.NOTIFICATION_TITLE)
-            .setContentText(LocationConfig.NOTIFICATION_TEXT)
+            .setContentText("Sharing location while online or on an active trip")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -174,11 +216,4 @@ class LocationService : Service() {
 
     // ─── Event Emitter Injection ───────────────────────────────────────
 
-    /**
-     * Called by [LocationModule] to inject the event emitter so the service
-     * can push location updates to the RN layer.
-     */
-    fun setEventEmitter(emitter: LocationEventEmitter) {
-        this.eventEmitter = emitter
-    }
 }

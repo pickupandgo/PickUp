@@ -1,5 +1,6 @@
-import React from 'react';
-import { Text, StyleSheet } from 'react-native';
+import React, { useEffect } from 'react';
+import { TrackingService } from '../services/tracking/TrackingService';
+import { StyleSheet } from 'react-native';
 import Icon from '../components/atoms/Icon';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { MainTabParamList } from '../types/navigation';
@@ -30,6 +31,11 @@ const TAB_LABEL_KEYS: Record<keyof MainTabParamList, string> = {
 };
 
 export const MainTabNavigator: React.FC = () => {
+  useEffect(() => {
+    const tracking = TrackingService.getInstance();
+    tracking.startSession();
+    return () => { tracking.stopSession().catch(() => {}); };
+  }, []);
   const { t } = useI18n();
   return (
     <Tab.Navigator

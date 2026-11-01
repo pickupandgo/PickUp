@@ -1,6 +1,8 @@
 ﻿import type { Coordinate } from '../../map/types';
 
 export interface RoutingRequest {
+  /** Backend trip id; never a client-supplied driver identity. */
+  tripId?: string;
   origin: Coordinate;
   destinations: Coordinate[];
 }
@@ -24,7 +26,7 @@ export interface RoutingProvider {
 }
 
 export class RoutingError extends Error {
-  constructor(message: string, public readonly code: 'NETWORK' | 'NO_ROUTE' | 'STALE' | 'INVALID_COORDINATES' | 'PROVIDER_ERROR') {
+  constructor(message: string, public readonly code: 'NETWORK' | 'NO_ROUTE' | 'STALE' | 'INVALID_COORDINATES' | 'PROVIDER_ERROR' | 'GPS_UNAVAILABLE') {
     super(message);
     this.name = 'RoutingError';
   }

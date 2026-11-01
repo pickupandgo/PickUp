@@ -29,6 +29,9 @@ export const LOCATION_EVENTS = {
 } as const;
 
 export const NativeLocationModule = {
+  setPublishing(enabled: boolean, tripId: string | null): Promise<boolean> {
+    return PickUpLocationModule.setPublishing(enabled, tripId);
+  },
   getPermissionStatus(): Promise<PermissionState> {
     return PickUpLocationModule.getPermissionStatus();
   },

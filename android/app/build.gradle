@@ -124,6 +124,11 @@ android {
 }
 
 dependencies {
+    testImplementation "junit:junit:4.13.2"
+    // Match the already-installed Firebase SDK; native tracking refreshes tokens while JS sleeps.
+    def firebaseSdk = new groovy.json.JsonSlurper().parse(file("../../node_modules/@react-native-firebase/app/package.json"))
+    implementation platform("com.google.firebase:firebase-bom:${firebaseSdk.sdkVersions.android.firebase}")
+    implementation "com.google.firebase:firebase-auth"
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 

@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { mockActiveTrip } from '../../data/mockData';
 import { MultiStopTimeline } from '../../components/organisms/MultiStopTimeline';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { DriverMap, RouteData, StopType } from '../../map';
@@ -33,15 +32,15 @@ function compactAddress(address?: string): string {
 
 export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
   navigation,
-  route: navRoute,
   testID,
 }) => {
   const { currentLocation } = useDriverLocation();
-  const trip = useActiveTrip() || mockActiveTrip;
+  const trip = useActiveTrip();
   const { route: routingData } = useTripRoute();
 
   const handleNavigateToStop = useCallback(
     (stopId: string) => {
+      if (!trip) return;
       const stopIndex = trip.stops.findIndex((s) => s.id === stopId);
       const stop = trip.stops[stopIndex];
       if (!stop) return;
@@ -70,6 +69,7 @@ export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
     };
   }, [trip, routingData]);
 
+  if (!trip) return <View style={styles.root}><Text>Loading current trip...</Text></View>;
   const currentStopIndex = trip.currentStopIndex;
   const totalDrops = trip.stops.filter((s) => s.type === 'drop').length;
   const currentDropNumber = currentStopIndex;
@@ -81,11 +81,11 @@ export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
 
   const displayEta = routingData?.eta
     ? Math.max(0, Math.ceil((routingData.eta.getTime() - Date.now()) / 60000))
-    : currentStop?.etaMinutes || 0;
+    : undefined;
 
   const displayDistance = routingData?.totalDistanceMeters
     ? (routingData.totalDistanceMeters / 1000).toFixed(1)
-    : currentStop?.distanceKm ?? trip.totalDistanceKm;
+    : undefined;
 
   return (
     <View style={styles.root} testID={testID}>
@@ -122,7 +122,7 @@ export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
           <Text style={styles.distanceText}>
             {displayDistance != null ? `${displayDistance} km` : '—'}
           </Text>
-          <Text style={styles.etaText}> • {displayEta} min</Text>
+          <Text style={styles.etaText}>{displayEta != null ? ` • ${displayEta} min` : ' • —'}</Text>
         </View>
 
         <View style={styles.arrivingRow}>
