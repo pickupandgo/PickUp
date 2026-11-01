@@ -16,6 +16,7 @@ export interface NearbyDriverResult extends Driver {
 }
 
 export interface NearbySearchParams {
+  preview?: boolean; // bounded display-only eligibility checks, never used by dispatch
   latitude: number;
   longitude: number;
   radiusKm: number;

@@ -79,6 +79,9 @@ export function rideView(bundle: RideBundle, now: Date) {
             ? 'OFFERED'
             : 'SEARCHING',
     offerStatus: latest ? effectiveOfferStatus(latest, now) : null,
+    /** Read-only response-window timing; expiry advances dispatch, never ends the whole search. */
+    serverTime: now.toISOString(),
+    offerRequestedAt: latest?.createdAt?.toISOString() ?? null,
     offerExpiresAt: latest?.expiresAt.toISOString() ?? null,
     requestedDriverId: latest?.driverSubject ?? null,
     assignedDriverId: liveTrip?.driverSubject ?? null,

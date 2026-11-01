@@ -4,7 +4,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes, createHmac } from 'node:crypto';
 import {
   Driver,
   NearbyDriverResult,
@@ -29,6 +29,11 @@ export type DriverEligibilityResult =
  */
 @Injectable()
 export class DriversService {
+  private readonly previewSecret = randomBytes(32);
+  private readonly previewBudgets = new Map<
+    string,
+    { start: number; requests: number }
+  >();
   private drivers: Driver[] = [...MOCK_DRIVERS];
   private readonly logger = new Logger(DriversService.name);
 
@@ -247,6 +252,90 @@ export class DriversService {
     return driver;
   }
 
+  /** Display-only snapshot. Never selects/assigns a driver or exposes their identity. */
+  async previewNearby(viewer: string, params: NearbySearchParams) {
+    const now = Date.now();
+    for (const [key, budget] of this.previewBudgets) {
+      if (now - budget.start >= 60_000) this.previewBudgets.delete(key);
+    }
+    let budget = this.previewBudgets.get(viewer);
+    if (!budget) {
+      if (this.previewBudgets.size >= 10_000)
+        throw engineError(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          'PREVIEW_BUSY',
+          'Vehicle preview is temporarily unavailable.',
+        );
+      budget = { start: now, requests: 0 };
+      this.previewBudgets.set(viewer, budget);
+    }
+    if (++budget.requests > 12)
+      throw engineError(
+        HttpStatus.TOO_MANY_REQUESTS,
+        'PREVIEW_RATE_LIMITED',
+        'Please wait before refreshing nearby vehicles.',
+      );
+    const candidates = await this.findNearby({ ...params, preview: true });
+    const [positions, trips] = await Promise.all([
+      this.locations.fresh(),
+      candidates.length
+        ? this.prisma.engineTrip.findMany({
+            where: {
+              driverSubject: { in: candidates.map((driver) => driver.id) },
+              status: { notIn: ['COMPLETED', 'CANCELLED'] },
+            },
+            select: { driverSubject: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    const fresh = new Map(
+      positions.map((position) => [position.subject, position]),
+    );
+    const busy = new Set(trips.map((trip) => trip.driverSubject));
+    const generatedAt = Date.now();
+    const vehicles = candidates
+      .flatMap((driver) => {
+        const fix = fresh.get(driver.id);
+        if (
+          !fix ||
+          busy.has(driver.id) ||
+          !this.drivers.find((item) => item.id === driver.id)?.isAvailable ||
+          generatedAt - Number(fix.capturedAt) > 60_000
+        )
+          return [];
+        const distance = haversineDistance(
+          params.latitude,
+          params.longitude,
+          fix.latitude,
+          fix.longitude,
+        );
+        if (distance > params.radiusKm) return [];
+        return [
+          {
+            key: createHmac('sha256', this.previewSecret)
+              .update(viewer + '\0' + driver.id)
+              .digest('hex')
+              .slice(0, 20),
+            latitude: Math.round(fix.latitude * 10_000) / 10_000,
+            longitude: Math.round(fix.longitude * 10_000) / 10_000,
+            vehicleCategory: params.vehicleCategory!,
+            capturedAt: Number(fix.capturedAt),
+            distance,
+          },
+        ];
+      })
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 30)
+      .map((vehicle) => ({
+        key: vehicle.key,
+        latitude: vehicle.latitude,
+        longitude: vehicle.longitude,
+        vehicleCategory: vehicle.vehicleCategory,
+        capturedAt: vehicle.capturedAt,
+      }));
+    return { generatedAt, vehicles };
+  }
+
   async findNearby(params: NearbySearchParams): Promise<NearbyDriverResult[]> {
     const { latitude, longitude, radiusKm, vehicleType } = params;
     const STALE_MS = 60_000; // 60 seconds - driver must have pinged in last 60s
@@ -319,6 +408,53 @@ export class DriversService {
     nearbyDrivers.sort((a, b) => a.distanceKm - b.distanceKm);
 
     if (!params.vehicleCategory) return nearbyDrivers;
+    if (params.preview) {
+      const eligible: NearbyDriverResult[] = [];
+      let unavailable = false;
+      const deadline = Date.now() + 6_000;
+      const candidates = nearbyDrivers.slice(0, 30);
+      for (
+        let index = 0;
+        index < candidates.length && Date.now() < deadline;
+        index += 4
+      ) {
+        const batch = candidates.slice(index, index + 4);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const outcomes = await Promise.race([
+            Promise.all(
+              batch.map((candidate) => this.checkEligibility(candidate.id)),
+            ),
+            new Promise<never>((_resolve, reject) => {
+              timer = setTimeout(
+                () => reject(new Error('Preview deadline')),
+                Math.max(1, deadline - Date.now()),
+              );
+            }),
+          ]);
+          outcomes.forEach((outcome, offset) => {
+            if (outcome.kind === 'UNAVAILABLE') unavailable = true;
+            if (
+              outcome.kind === 'ELIGIBLE' &&
+              outcome.vehicleCategory === params.vehicleCategory
+            )
+              eligible.push(batch[offset]);
+          });
+        } catch {
+          unavailable = true;
+          break;
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      }
+      if (!eligible.length && (unavailable || Date.now() >= deadline))
+        throw engineError(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          'DRIVER_ELIGIBILITY_UNAVAILABLE',
+          'Nearby vehicles could not be verified.',
+        );
+      return eligible;
+    }
     const verified: NearbyDriverResult[] = [];
     let unavailable = false;
     for (const candidate of nearbyDrivers) {

@@ -6,6 +6,7 @@ import {
   Param,
   Body,
   Query,
+  Header,
   BadRequestException,
 } from '@nestjs/common';
 import { DriversService } from './drivers.service';
@@ -26,6 +27,48 @@ export class DriversController {
     return {
       success: true,
       drivers: [await this.driversService.positionFor(subject, subject)],
+    };
+  }
+
+  @Get('preview')
+  @Header('Cache-Control', 'no-store')
+  async preview(
+    @CurrentSubject() subject: string,
+    @Query('lat') lat: string,
+    @Query('lng') lng: string,
+    @Query('vehicleCategory') vehicleCategory: string,
+    @Query('radius') radius?: string,
+  ) {
+    const latitude = Number(lat);
+    const longitude = Number(lng);
+    const radiusKm = radius === undefined ? 5 : Number(radius);
+    if (
+      !lat?.trim() ||
+      !lng?.trim() ||
+      !Number.isFinite(latitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      !Number.isFinite(longitude) ||
+      longitude < -180 ||
+      longitude > 180
+    )
+      throw new BadRequestException('Valid latitude and longitude required');
+    if (!Number.isFinite(radiusKm) || radiusKm <= 0 || radiusKm > 10)
+      throw new BadRequestException('Radius must be between 0 and 10 km');
+    if (
+      !['TWO_WHEELER', 'THREE_WHEELER', 'MINI_TRUCK', 'PICKUP_TRUCK'].includes(
+        vehicleCategory,
+      )
+    )
+      throw new BadRequestException('Supported vehicle category required');
+    return {
+      success: true,
+      ...(await this.driversService.previewNearby(subject, {
+        latitude,
+        longitude,
+        radiusKm,
+        vehicleCategory,
+      })),
     };
   }
 

@@ -202,7 +202,8 @@ it('progresses rejection, then reports exhaustion separately from an individual 
   const h = setup();
   await h.service['dispatch'](h.booking);
   const ride = await h.service.rejectRide('first', h.booking.id);
-  expect(ride).toMatchObject({ status: 'REQUESTED', searchStatus: 'OFFERED' });
+  expect(ride).toMatchObject({ status: 'REQUESTED', searchStatus: 'OFFERED', offerRequestedAt: h.offers[1].createdAt.toISOString(), offerExpiresAt: h.offers[1].expiresAt.toISOString() });
+  expect(Number.isFinite(Date.parse(ride.serverTime))).toBe(true);
   h.offers[1].expiresAt = new Date(Date.now() - 1);
   await h.service.progressDispatch();
   expect(h.booking.searchExhaustedAt).toBeInstanceOf(Date);
