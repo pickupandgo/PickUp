@@ -2,11 +2,15 @@ import React, { useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import { strings, mockActiveTrip } from '../../data/mockData';
+import { strings } from '../../data/mockData';
 import Card from '../../components/molecules/Card';
 import ListRow from '../../components/molecules/ListRow';
 import Divider from '../../components/atoms/Divider';
 import Button from '../../components/atoms/Button';
+import { useSelectedTrip } from '../../hooks/useSelectedTrip';
+import { useBookingPayment } from '../../hooks/useBookingPayment';
+import BookingPaymentStatus from '../../components/organisms/BookingPaymentStatus';
+import { formatPaise, paymentLabel } from '../../utils/paymentPresentation';
 import { useBooking } from '../../state/BookingContext';
 import { getVehicleDisplayName } from '../../utils/vehicleAssets';
 
@@ -23,7 +27,18 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
   navigation,
   route,
 }) => {
-  const { ride, trip, draft, assignedDriver } = useBooking();
+  const context = useBooking();
+  const trip = useSelectedTrip(route?.params, context.trip);
+  const explicit = !!route?.params && ('trip' in route.params || 'tripId' in route.params || 'paymentBookingId' in route.params);
+  const scoped = !explicit || (!!trip && trip.id === context.trip?.id);
+  const ride = scoped ? context.ride : undefined;
+  const draft = { drops: [] } as typeof context.draft;
+  const assignedDriver = scoped ? context.assignedDriver : undefined;
+  const clearActiveRide = () => { if (trip?.id === context.trip?.id && ['COMPLETED', 'CANCELLED'].includes(trip?.status ?? '')) context.clearActiveRide(); };
+  const payment = useBookingPayment(trip?.paymentBookingId ?? ride?.paymentBookingId);
+  const selected = { trip, tripId: trip?.id, paymentBookingId: trip?.paymentBookingId };
+  const phase = trip?.status === 'COMPLETED' ? 'Trip completed' : trip?.status === 'DELIVERED' ? 'Finalizing trip' : trip?.status === 'CANCELLED' ? 'Trip cancelled' : 'Trip status unavailable';
+
 
   // 1. Trip ID
   const displayTripId = useMemo(() => {
@@ -33,7 +48,7 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
       (trip?.id ? `TRIP-${trip.id.substring(0, 6).toUpperCase()}` : undefined) ||
       ride?.externalRef ||
       (ride?.id ? `TRIP-${ride.id.substring(0, 6).toUpperCase()}` : undefined) ||
-      mockActiveTrip.id
+      'Not available'
     );
   }, [route?.params?.tripId, trip, ride]);
 
@@ -47,7 +62,7 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
     if (typeof km === 'number' && !isNaN(km) && km > 0) {
       return `${km.toFixed(1)} km`;
     }
-    return mockActiveTrip.distance;
+    return 'Not available';
   }, [route?.params?.distanceKm, trip, ride, draft.quote]);
 
   // 3. Vehicle Display Name
@@ -68,24 +83,12 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
       assignedDriver?.name ||
       (trip as any)?.driverName ||
       (ride as any)?.driverName ||
-      mockActiveTrip.driverName
+      'Not available'
     );
   }, [route?.params?.driverName, assignedDriver?.name, trip, ride]);
 
   // 5. Total Fare
-  const displayFare = useMemo(() => {
-    const amount =
-      route?.params?.fare ??
-      trip?.fare ??
-      ride?.fare ??
-      (trip?.payablePaise ? trip.payablePaise / 100 : undefined) ??
-      (ride?.payablePaise ? ride.payablePaise / 100 : undefined) ??
-      (draft.quote ? draft.quote.payablePaise / 100 : undefined);
-    if (typeof amount === 'number' && !isNaN(amount) && amount > 0) {
-      return `₹${Math.round(amount)}`;
-    }
-    return mockActiveTrip.fare;
-  }, [route?.params?.fare, trip, ride, draft.quote]);
+  const displayFare = formatPaise(payment.booking?.farePaise ?? trip?.payablePaise ?? ride?.payablePaise);
 
   // 6. Route Stops
   const stops = useMemo(() => {
@@ -153,7 +156,7 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
       return list;
     }
 
-    return mockActiveTrip.stops;
+    return [];
   }, [trip, ride, draft]);
 
   return (
@@ -163,14 +166,16 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <BookingPaymentStatus state={payment} />
+        {trip?.stops?.map(stop => <Text key={`outcome-${stop.sequence}`}>Drop {stop.sequence}: {stop.status.replace(/_/g, ' ').toLowerCase()}</Text>)}
         {/* Success Icon */}
         <View style={styles.heroSection}>
           <View style={styles.successCircle}>
             <Text style={styles.successIcon}>✓</Text>
           </View>
-          <Text style={styles.title}>{strings.trip.completed}</Text>
+          <Text style={styles.title}>{phase}</Text>
           <Text style={styles.subtitle}>
-            Your delivery has been completed successfully
+            {trip?.stops?.some(stop => ['UNDELIVERED', 'FAILED', 'CANCELLED'].includes(stop.status)) ? 'Some delivery stops need attention.' : trip?.status === 'COMPLETED' ? 'Trip completion confirmed.' : 'Waiting for final trip confirmation.'}
           </Text>
         </View>
 
@@ -234,7 +239,7 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
         <Button
           label="Write a Review"
           onPress={() =>
-            onWriteReview ? onWriteReview() : navigation?.navigate('DriverRatingScreen')
+            onWriteReview ? onWriteReview() : navigation?.navigate('DriverRatingScreen', selected)
           }
           variant="outline"
           size="lg"
@@ -244,7 +249,7 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
           label="Done"
           onPress={() => {
             onDone?.();
-            navigation?.navigate('TripCompletedSummaryScreen');
+            navigation?.navigate('TripCompletedSummaryScreen', selected);
           }}
           variant="primary"
           size="lg"

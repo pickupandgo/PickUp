@@ -16,7 +16,7 @@ import { useTripStatus } from '../../hooks/useTripStatus';
 import { getDriver, getRide } from '../../api/engine';
 import type { GeoPoint } from '../../api/types';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
-import { useRoute } from '../../hooks/useRoute';
+import { useRoadRoute } from '../../hooks/useRoute';
 import { getVehicleImage } from '../../utils/vehicleAssets';
 import { DriverAssignedPanelSkeleton, useSkeletonVisibility } from '../../components/skeleton';
 
@@ -119,7 +119,7 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
 
   // Route from the driver to the pickup: they're on their way to fetch you.
   // Recomputed only when the driver crosses ~11m boundaries (see useRoute).
-  const roadRoute = useRoute(driverPoint, current?.pickup);
+  const road = useRoadRoute(driverPoint, current?.pickup);
 
   const markers = useMemo<readonly MapMarker[]>(() => {
     const built: MapMarker[] = [];
@@ -174,7 +174,9 @@ const DriverAssignedScreen: React.FC<DriverAssignedScreenProps & { navigation?: 
         style={StyleSheet.absoluteFill as any}
         markers={markers}
         fitToMarkers={markers.length > 1}
-        polyline={roadRoute}
+        polyline={road.polyline}
+        routeStatus={road.status}
+        onRetryRoute={road.retry}
       />
 
       {/* Top App Bar */}

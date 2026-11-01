@@ -31,3 +31,9 @@ export const normalizePhoneNumber = (phone?: string | null): string | null => {
     return null;
   }
 };
+
+/** Keep the +91 prefix out of the editable national-number field, including pasted numbers. */
+export const nationalMobileInput = (value: string): string => {
+  const digits = value.replace(/\D/g, '');
+  return digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
+};

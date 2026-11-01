@@ -1,4 +1,6 @@
-import { cancelRide, cancelTrip } from '../api/engine';
+import { cancelRide, cancelTrip, getRide, getRideTrip, getTrip, recoverRide } from '../api/engine';
+import { getAuth } from '@react-native-firebase/auth';
+import { readPendingBooking, writePendingBooking } from '../state/pendingBooking';
 import type { NearbyDriver, Ride, Trip } from '../api/types';
 import type { BookingDraft } from '../state/BookingContext';
 
@@ -23,7 +25,7 @@ export interface CancellationEstimate {
 export interface CancellationResult {
   readonly success: boolean;
   readonly tripId: string;
-  readonly feeAmount: string;
+  readonly feeAmount: string | null;
   readonly cancelledTrip?: Trip | Ride;
 }
 
@@ -187,33 +189,36 @@ export const executeTripCancellation = async (params: {
   reason?: string;
   signal?: AbortSignal;
 }): Promise<CancellationResult> => {
-  const { trip, ride, customerId, reason = 'Customer cancelled booking', signal } = params;
-
-  const estimate = getCancellationEstimate({ trip, ride });
-
-  if (trip?.id && customerId) {
-    const cancelledTrip = await cancelTrip(trip.id, customerId, reason, signal);
-    return {
-      success: true,
-      tripId: estimate.tripReference,
-      feeAmount: estimate.formattedFee,
-      cancelledTrip,
-    };
-  }
-
-  if (ride?.id) {
-    const cancelledRide = await cancelRide(ride.id, reason, signal);
-    return {
-      success: true,
-      tripId: estimate.tripReference,
-      feeAmount: estimate.formattedFee,
-      cancelledTrip: cancelledRide,
-    };
-  }
-
-  return {
-    success: true,
-    tripId: estimate.tripReference,
-    feeAmount: estimate.formattedFee,
+  const { trip, ride, reason = 'Customer cancelled booking', signal } = params;
+  const uid = getAuth().currentUser?.uid;
+  const saved = !trip?.id && !ride?.id && uid ? await readPendingBooking(uid) : null;
+  let targetRide = ride;
+  let targetTrip = trip;
+  if (!targetRide && !targetTrip && saved) targetRide = await recoverRide(saved.input.quoteId, signal);
+  if (!targetRide?.id && !targetTrip?.id) throw new Error('No confirmed booking was found to cancel. Retry booking recovery.');
+  const cancelKnownTrip = async (value: Trip): Promise<Trip> => {
+    try { return await cancelTrip(value.id, reason, signal); }
+    catch (error) {
+      const latest = await getTrip(value.id, signal).catch(() => null);
+      if (latest?.status === 'CANCELLED') return latest;
+      throw error;
+    }
   };
+  let confirmed: Trip | Ride;
+  if (targetTrip?.id) confirmed = await cancelKnownTrip(targetTrip);
+  else {
+    try { confirmed = await cancelRide(targetRide!.id, reason, signal); }
+    catch (error) {
+      const latest = await getRide(targetRide!.id, signal).catch(() => null);
+      if (latest?.status === 'CANCELLED') confirmed = latest;
+      else if (latest?.status === 'ACCEPTED') {
+        targetTrip = await getRideTrip(latest.id, signal);
+        if (!targetTrip) throw new Error('Driver assignment is being confirmed. Retry cancellation.');
+        confirmed = await cancelKnownTrip(targetTrip);
+      } else throw error;
+    }
+  }
+  if (confirmed.status !== 'CANCELLED') throw new Error('Cancellation is not yet confirmed. Please retry.');
+  if (uid) await writePendingBooking(uid, null).catch(() => {});
+  return { success: true, tripId: confirmed.externalRef || confirmed.id, feeAmount: null, cancelledTrip: confirmed };
 };

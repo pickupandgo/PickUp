@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getAuth } from '@react-native-firebase/auth';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 
 export interface RecentLocation {
   readonly id: string;
@@ -187,29 +187,41 @@ export const useRecentLocations = (userId?: string | null) => {
   const [isLoading, setIsLoading] = useState(true);
 
   const key = getRecentLocationsStorageKey(userId);
+  const activeKey = useRef(key);
+  activeKey.current = key;
+  const [dataKey, setDataKey] = useState(key);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  // Resolve the owner before any await; omitted userId must not drift to a new Firebase account.
+  const owner = key.slice('pickup.recentLocations.'.length);
+  const accept = useCallback((list: RecentLocation[]) => {
+    if (!mounted.current || activeKey.current !== key) return;
+    setDataKey(key);
+    setLocations(list);
+  }, [key]);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const list = await getRecentLocations(userId);
-      setLocations(list);
+      const list = await getRecentLocations(owner);
+      accept(list);
     } finally {
-      setIsLoading(false);
+      if (mounted.current && activeKey.current === key) setIsLoading(false);
     }
-  }, [userId]);
+  }, [owner, key, accept]);
 
   useEffect(() => {
     void refresh();
     return subscribeRecentLocations((updatedList, updatedKey) => {
       if (updatedKey === key) {
-        setLocations(updatedList);
-        setIsLoading(false);
+        accept(updatedList);
+        if (mounted.current && activeKey.current === key) setIsLoading(false);
       }
     });
   }, [key, refresh]);
 
   return {
-    locations,
+    locations: dataKey === key ? locations : [],
     isLoading,
     refresh,
   };

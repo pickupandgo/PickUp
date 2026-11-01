@@ -14,7 +14,9 @@ import ProfileScreen from '../src/screens/profile/ProfileScreen';
 import EditProfileScreen from '../src/screens/profile/EditProfileScreen';
 import { SessionProvider, useSession } from '../src/state/SessionContext';
 import { BookingProvider, useBooking } from '../src/state/BookingContext';
+import * as engineApi from '../src/api/engine';
 import * as userProfileApi from '../src/api/userProfile';
+import * as authModule from '@react-native-firebase/auth';
 import Button from '../src/components/atoms/Button';
 
 // Mock dependencies
@@ -30,7 +32,7 @@ jest.mock('../src/config/env', () => ({
 }));
 
 jest.mock('../src/api/userProfile', () => ({
-  saveUserProfileApi: jest.fn(async (_uid, profile) => profile),
+  saveUserProfileApi: jest.fn(async (profile) => profile),
   fetchUserProfileApi: jest.fn(async () => null),
 }));
 
@@ -81,6 +83,7 @@ describe('1. Shared Cancellation Service (Authoritative Source of Truth)', () =>
   });
 
   it('executes trip cancellation and calls engine API', async () => {
+    const cancel = (engineApi.cancelTrip as jest.Mock).mockResolvedValueOnce({ id: 'trp-100', externalRef: 'TRP-8472-X', status: 'CANCELLED' } as any);
     const result = await executeTripCancellation({
       trip: {
         id: 'trp-100',
@@ -92,8 +95,8 @@ describe('1. Shared Cancellation Service (Authoritative Source of Truth)', () =>
     });
 
     expect(result.success).toBe(true);
-    expect(result.feeAmount).toBe('₹112.50');
-    expect(result.tripId).toBe('#TRP-8472-X');
+    expect(result.feeAmount).toBeNull();
+    expect(result.tripId).toBe('TRP-8472-X');
   });
 });
 
@@ -369,14 +372,20 @@ describe('4. Second Cancellation Confirmation Sheet (Authoritative Fee)', () => 
     expect(mockNavigate).toHaveBeenCalledWith(
       'CancellationResultScreen',
       expect.objectContaining({
-        tripId: '#TRP-202',
-        feeAmount: '₹200.00',
+        tripId: 'TRP-202',
+        feeAmount: null,
       })
     );
   });
 });
 
 describe('5. Profile Screen & Isolation by Authenticated Account', () => {
+  beforeEach(() => {
+    jest.spyOn(authModule, 'getAuth').mockReturnValue({
+      currentUser: { uid: 'customer-A', phoneNumber: '+919811122233' },
+    } as any);
+  });
+
   it('displays real customer details from session and updates on account switch', async () => {
     let sessionApi: ReturnType<typeof useSession> | undefined;
 
@@ -397,10 +406,10 @@ describe('5. Profile Screen & Isolation by Authenticated Account', () => {
 
     // Simulate User A logging in
     await act(async () => {
-      sessionApi?.markProfileDone({
+      await sessionApi?.markProfileDone({
         fullName: 'Vikram Malhotra',
         phone: '+91 98111 22233',
-        email: 'vikram@example.com',
+        email: 'vikram@example.com', age: '29', address: 'Jaipur',
       });
     });
 
@@ -413,11 +422,14 @@ describe('5. Profile Screen & Isolation by Authenticated Account', () => {
     expect(fullText).not.toContain('+91 98765 43210');
 
     // Simulate switching to User B
+    jest.spyOn(authModule, 'getAuth').mockReturnValue({
+      currentUser: { uid: 'customer-B', phoneNumber: '+919722233344' },
+    } as any);
     await act(async () => {
-      sessionApi?.markProfileDone({
+      await sessionApi?.markProfileDone({
         fullName: 'Ananya Sharma',
         phone: '+91 97222 33344',
-        email: 'ananya@example.com',
+        email: 'ananya@example.com', age: '30', address: 'Delhi',
       });
     });
 
@@ -451,10 +463,10 @@ describe('5. Profile Screen & Isolation by Authenticated Account', () => {
 
     // Populate initial saved profile
     await act(async () => {
-      sessionApi?.markProfileDone({
+      await sessionApi?.markProfileDone({
         fullName: 'Rohan Gupta',
         phone: '+91 98888 77777',
-        email: 'rohan@example.com',
+        email: 'rohan@example.com', age: '31', address: 'Mumbai',
       });
     });
 
@@ -470,3 +482,5 @@ describe('5. Profile Screen & Isolation by Authenticated Account', () => {
     expect(mockGoBack).toHaveBeenCalled();
   });
 });
+
+jest.mock('../src/api/engine', () => ({ ...jest.requireActual('../src/api/engine'), recoverRide: jest.fn(async () => null), cancelTrip: jest.fn(async (id) => ({ id, externalRef: id === 'trp-100' ? 'TRP-8472-X' : 'TRP-202', status: 'CANCELLED' })) }));

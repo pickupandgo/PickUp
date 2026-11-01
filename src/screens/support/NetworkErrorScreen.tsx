@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { useBooking } from '../../state/BookingContext';
 import Feather from 'react-native-vector-icons/Feather';
 
 export interface NetworkErrorScreenProps {
@@ -23,6 +24,7 @@ const NetworkErrorScreen: React.FC<NetworkErrorScreenProps & { navigation?: any 
   onCheckSettings,
   navigation,
 }) => {
+  const { trip } = useBooking();
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       {/* Top Navigation */}
@@ -60,7 +62,7 @@ const NetworkErrorScreen: React.FC<NetworkErrorScreenProps & { navigation?: any 
             <Pressable
               style={styles.primaryButton}
               onPress={() =>
-                onRetry ? onRetry() : navigation?.navigate('CustomerLiveTrackingScreen')
+                onRetry ? onRetry() : navigation?.navigate(trip ? 'CustomerLiveTrackingScreen' : 'FindingDriverScreen')
               }
             >
               <Feather name="refresh-cw" size={18} color={colors.onPrimary} />

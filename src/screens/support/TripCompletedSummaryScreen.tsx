@@ -9,7 +9,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
-import { mockActiveTrip } from '../../data/mockData';
+import { useSelectedTrip } from '../../hooks/useSelectedTrip';
+import { useBookingPayment } from '../../hooks/useBookingPayment';
+import BookingPaymentStatus from '../../components/organisms/BookingPaymentStatus';
+import { formatPaise, paymentLabel } from '../../utils/paymentPresentation';
 import { useBooking } from '../../state/BookingContext';
 import { getVehicleDisplayName } from '../../utils/vehicleAssets';
 
@@ -32,7 +35,18 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
   navigation,
   route,
 }) => {
-  const { clearActiveRide, ride, trip, draft, assignedDriver } = useBooking();
+  const context = useBooking();
+  const trip = useSelectedTrip(route?.params, context.trip);
+  const explicit = !!route?.params && ('trip' in route.params || 'tripId' in route.params || 'paymentBookingId' in route.params);
+  const scoped = !explicit || (!!trip && trip.id === context.trip?.id);
+  const ride = scoped ? context.ride : undefined;
+  const draft = { drops: [] } as typeof context.draft;
+  const assignedDriver = scoped ? context.assignedDriver : undefined;
+  const clearActiveRide = () => { if (trip?.id === context.trip?.id && ['COMPLETED', 'CANCELLED'].includes(trip?.status ?? '')) context.clearActiveRide(); };
+  const payment = useBookingPayment(trip?.paymentBookingId ?? ride?.paymentBookingId);
+  const selected = { trip, tripId: trip?.id, paymentBookingId: trip?.paymentBookingId };
+  const phase = trip?.status === 'COMPLETED' ? 'Trip completed' : trip?.status === 'DELIVERED' ? 'Finalizing trip' : trip?.status === 'CANCELLED' ? 'Trip cancelled' : 'Trip status unavailable';
+
 
   // 1. Route Stops
   const stops = useMemo(() => {
@@ -100,7 +114,7 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
       return list;
     }
 
-    return mockActiveTrip.stops;
+    return [];
   }, [trip, ride, draft]);
 
   // 2. Vehicle Summary
@@ -118,45 +132,16 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
       (assignedDriver as any)?.vehicleRegistrationNumber ||
       (trip as any)?.vehicleNumber ||
       (ride as any)?.vehicleNumber ||
-      mockActiveTrip.vehicleNumber;
+      'Not available';
     return `${vName} | ${vNumber}`;
   }, [route?.params, assignedDriver, trip, ride, draft.vehicleType]);
 
   // 3. Completion Time
-  const displayCompletionTime = useMemo(() => {
-    const rawTime =
-      route?.params?.completedAt ||
-      trip?.completedAt ||
-      trip?.updatedAt ||
-      (trip as any)?.deliveredAt;
-    const d = rawTime ? new Date(rawTime) : new Date();
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const month = months[d.getMonth()];
-    const day = d.getDate();
-    const year = d.getFullYear();
-    let hours = d.getHours();
-    const minutes = d.getMinutes().toString().padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    return `${month} ${day}, ${year} • ${hours}:${minutes} ${ampm}`;
-  }, [route?.params?.completedAt, trip?.completedAt, trip?.updatedAt]);
+  const displayCompletionTime = trip?.completedAt && Number.isFinite(Date.parse(trip.completedAt))
+    ? new Date(trip.completedAt).toLocaleString('en-IN') : 'Not available';
 
   // 4. Payment Status
-  const displayPaymentStatus = useMemo(() => {
-    const amount =
-      route?.params?.fare ??
-      trip?.fare ??
-      ride?.fare ??
-      (trip?.payablePaise ? trip.payablePaise / 100 : undefined) ??
-      (ride?.payablePaise ? ride.payablePaise / 100 : undefined) ??
-      (draft.quote ? draft.quote.payablePaise / 100 : undefined);
-    const fareStr =
-      typeof amount === 'number' && !isNaN(amount) && amount > 0
-        ? `₹${Math.round(amount)}`
-        : mockActiveTrip.fare;
-    return `Paid • ${fareStr}`;
-  }, [route?.params?.fare, trip, ride, draft.quote]);
+  const displayPaymentStatus = paymentLabel(payment.booking);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -169,11 +154,11 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
           >
             <Feather name="arrow-left" size={24} color={colors.primary} />
           </Pressable>
-          <Text style={styles.headerTitle}>Trip Completed</Text>
+          <Text style={styles.headerTitle}>{phase}</Text>
           <Pressable
             style={styles.iconButton}
             onPress={() =>
-              onMore ? onMore() : navigation?.navigate('ShareTrackingSheetScreen')
+              onMore ? onMore() : scoped ? navigation?.navigate('ShareTrackingSheetScreen') : undefined
             }
           >
             <Feather name="more-vertical" size={24} color={colors.primary} />
@@ -183,10 +168,12 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        <BookingPaymentStatus state={payment} />
+        {trip?.stops?.map(stop => <Text key={`outcome-${stop.sequence}`}>Drop {stop.sequence}: {stop.status.replace(/_/g, ' ').toLowerCase()}</Text>)}
         {/* Success Banner */}
         <View style={styles.successBanner}>
-          <Feather name="check-circle" size={24} color={colors.onSuccessContainer} />
-          <Text style={styles.successBannerText}>✓ TRIP COMPLETED</Text>
+          <Feather name={trip?.status === 'COMPLETED' ? 'check-circle' : 'clock'} size={24} color={colors.onSuccessContainer} />
+          <Text style={styles.successBannerText}>{phase}</Text>
         </View>
 
         {/* High Fidelity Card */}
@@ -265,7 +252,7 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
           <Pressable
             style={styles.rateButton}
             onPress={() =>
-              onRateDriver ? onRateDriver() : navigation?.navigate('DriverRatingScreen')
+              onRateDriver ? onRateDriver() : navigation?.navigate('DriverRatingScreen', selected)
             }
           >
             <Feather name="star" size={20} color={colors.onPrimary} />
@@ -275,7 +262,7 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
           <Pressable
             style={styles.receiptButton}
             onPress={() =>
-              onViewReceipt ? onViewReceipt() : navigation?.navigate('DigitalReceiptScreen')
+              onViewReceipt ? onViewReceipt() : navigation?.navigate('BookingStack', { screen: 'DigitalReceiptScreen', params: selected })
             }
           >
             <Feather name="file-text" size={20} color={colors.onSecondaryContainer} />
@@ -287,7 +274,7 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
             onPress={() => {
               clearActiveRide();
               if (onBackToHome) onBackToHome();
-              else navigation?.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+              else (navigation?.getParent?.() ?? navigation)?.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
             }}
           >
             <Text style={styles.homeButtonText}>BACK TO HOME</Text>

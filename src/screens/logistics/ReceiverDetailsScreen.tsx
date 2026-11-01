@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useBooking } from '../../state/BookingContext';
 import Button from '../../components/atoms/Button';
 import { KeyboardAwareScrollView, useKeyboardAware } from '../../components/organisms';
 
@@ -25,26 +26,30 @@ export interface ReceiverDetailsScreenProps {
 
 const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?: any }> = ({
   dropNumber = 1,
-  dropAddress = 'Shastri Nagar, Jodhpur',
+  dropAddress,
   onBack,
   onContinue,
   navigation,
 }) => {
+  const { draft, replaceDrop } = useBooking();
+  const index = dropNumber - 1;
+  const drop = draft.drops[index];
   const keyboardAwareRef = useRef<any>(null);
   const scrollToInput = useCallback((target: any) => {
     keyboardAwareRef.current?.scrollIntoView(target);
   }, []);
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [instructions, setInstructions] = useState('');
+  const [name, setName] = useState(drop?.receiverName ?? '');
+  const [phone, setPhone] = useState(drop?.receiverPhone ?? '');
+  const [instructions, setInstructions] = useState(drop?.instructions ?? '');
 
   const handleContinue = () => {
-    if (name && phone.length >= 10) {
-      onContinue?.({ name, phone, instructions });
-    }
+    if (!name.trim() || !/^\+?[0-9]{10,15}$/.test(phone.trim()) || !drop) return;
+    replaceDrop(index, { ...drop, receiverName: name.trim(), receiverPhone: phone.trim(), instructions: instructions.trim() });
+    if (onContinue) onContinue({ name: name.trim(), phone: phone.trim(), instructions: instructions.trim() });
+    else navigation?.navigate('FareEstimateScreen');
   };
 
-  const isContinueDisabled = !name || phone.length < 10;
+  const isContinueDisabled = !drop || !name.trim() || !/^\+?[0-9]{10,15}$/.test(phone.trim());
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -70,10 +75,7 @@ const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?
           <View style={styles.footer}>
             <Button
               label="CONTINUE"
-              onPress={() => {
-                handleContinue();
-                navigation?.navigate('FareEstimateScreen');
-              }}
+              onPress={handleContinue}
               variant="primary"
               disabled={isContinueDisabled}
               fullWidth
@@ -88,7 +90,7 @@ const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?
           </View>
           <View style={styles.destinationTextContainer}>
             <Text style={styles.dropLabel}>DROP {dropNumber}</Text>
-            <Text style={styles.dropAddress}>{dropAddress}</Text>
+            <Text style={styles.dropAddress}>{dropAddress ?? drop?.address ?? 'Select a drop location'}</Text>
           </View>
         </View>
 
@@ -102,6 +104,7 @@ const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?
             <TextInput
               style={styles.textInput}
               placeholder="Enter name"
+                maxLength={100}
               placeholderTextColor={colors.outlineVariant}
               value={name}
               onChangeText={setName}
@@ -133,6 +136,7 @@ const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?
             <TextInput
               style={[styles.textInput, styles.textArea]}
               placeholder="e.g. Near the blue gate, 2nd floor..."
+                maxLength={1000}
               placeholderTextColor={colors.outlineVariant}
               multiline
               numberOfLines={3}

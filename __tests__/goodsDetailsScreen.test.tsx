@@ -585,6 +585,15 @@ describe('GoodsDetailsScreen — Unit & Integration Tests', () => {
       expect(mockNavigate).toHaveBeenCalledWith('GoodsInsuranceScreen');
     });
 
+    it('reopens pounds without converting canonical kg a second time', () => {
+      const renderer = renderScreen({ goodsType: 'Electronics', goodsDescription: 'Boxes', weightKg: 45.359, weightUnit: 'lbs', declaredValue: '1000' });
+      const input = (renderer.root as any).findByProps({ testID: 'input-approximate-weight' });
+      expect(Number(input.props.value)).toBeCloseTo(100, 2);
+      const button = (renderer.root as any).findByProps({ testID: 'goods-details-continue-button' });
+      act(() => button.props.onPress());
+      expect(mockSetGoods).toHaveBeenCalledWith(expect.objectContaining({ weightKg: 45.359, weightUnit: 'lbs' }));
+    });
+
     it('hydrates initial field state from BookingContext draft', () => {
       const renderer = renderScreen({
         goodsType: 'Electronics',

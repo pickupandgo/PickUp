@@ -1,166 +1,102 @@
-/**
- * Routes API unit test — verifies migration from legacy Directions API.
- * Mocks the fetch call to avoid needing a real API key in CI.
- */
-
 jest.mock('../src/config/env', () => ({
-  env: { googleMapsApiKey: 'test-key' },
-  hasGeocodingConfig: () => true,
+  env: { paymentsApiBaseUrl: 'https://backend.test', googleMapsApiKey: '' },
+  hasPaymentsConfig: () => true,
 }));
-
+const mockToken = jest.fn(async () => 'customer-test-token');
+jest.mock('@react-native-firebase/auth', () => ({
+  getAuth: () => ({ currentUser: { getIdToken: mockToken } }),
+}));
 import { getRoute } from '../src/api/directions';
-
-const pickup = { latitude: 26.2389, longitude: 73.0243 };
-const drop1 = { latitude: 26.208427, longitude: 73.024591 };
-const drop2 = { latitude: 26.236281, longitude: 73.01559 };
-
-type FetchCall = { url: string; init: RequestInit };
-const calls: FetchCall[] = [];
-const bodyOf = (c: FetchCall): any => JSON.parse(String(c.init.body ?? '{}'));
-
+const a = { latitude: 26.2389, longitude: 73.0243, address: 'Private address' };
+const b = { latitude: 26.21, longitude: 73.02 };
+const c = { latitude: 26.2, longitude: 73.01 };
+const valid = {
+  encodedPolyline: 'oashCsvmuMnAf@',
+  distanceMeters: 2400,
+  durationSeconds: 123,
+};
 beforeEach(() => {
-  calls.length = 0;
+  jest.clearAllMocks();
+  globalThis.fetch = jest.fn(async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify(valid),
+  })) as any;
 });
-
-// Minimal Routes API response with encoded polyline for Jodhpur ~2km route
-const ROUTES_RESPONSE = {
-  routes: [{
-    distanceMeters: 2064,
-    duration: '123s',
-    polyline: { encodedPolyline: 'oashCsvmuMnAf@' }, // Short sample polyline
-    legs: [{
-      distanceMeters: 2064,
-      duration: '123s',
-    }],
-  }],
-};
-
-const MULTI_DROP_RESPONSE = {
-  routes: [{
-    distanceMeters: 10350,
-    duration: '420s',
-    polyline: { encodedPolyline: 'oashCsvmuMnAf@xBrA' },
-    legs: [
-      { distanceMeters: 2064, duration: '123s' },
-      { distanceMeters: 3236, duration: '150s' },
-      { distanceMeters: 5050, duration: '147s' },
-    ],
-  }],
-};
-
-describe('Routes API (getRoute)', () => {
-  it('sends POST request to Routes API v2 with correct structure', async () => {
-    globalThis.fetch = jest.fn(async (url: string, init: RequestInit) => {
-      calls.push({ url, init });
-      return {
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify(ROUTES_RESPONSE),
-      } as Response;
-    }) as unknown as typeof fetch;
-
-    await getRoute(pickup, drop1);
-
-    expect(calls[0].url).toBe('https://routes.googleapis.com/directions/v2:computeRoutes');
-    expect(calls[0].init.method).toBe('POST');
-    const headers = calls[0].init.headers as Record<string, string>;
-    expect(headers['X-Goog-Api-Key']).toBe('test-key');
-    expect(headers['X-Goog-FieldMask']).toContain('routes.polyline.encodedPolyline');
-    
-    const body = bodyOf(calls[0]);
-    expect(body.origin.location.latLng).toEqual({ latitude: pickup.latitude, longitude: pickup.longitude });
-    expect(body.destination.location.latLng).toEqual({ latitude: drop1.latitude, longitude: drop1.longitude });
-    expect(body.travelMode).toBe('DRIVE');
-    expect(body.polylineEncoding).toBe('ENCODED_POLYLINE');
+it('uses only authenticated backend routing without an Android Maps key', async () => {
+  const result = await getRoute(a, c, { waypoints: [b] });
+  const [url, init] = (fetch as jest.Mock).mock.calls[0];
+  expect(url).toBe('https://backend.test/v1/routes/road');
+  expect(init.headers.Authorization).toBe('Bearer customer-test-token');
+  expect(init.headers['X-Goog-Api-Key']).toBeUndefined();
+  expect(JSON.parse(init.body)).toEqual({
+    origin: { latitude: a.latitude, longitude: a.longitude },
+    destination: c,
+    waypoints: [b],
   });
-
-  it('returns route with polyline, distance and duration', async () => {
-    globalThis.fetch = jest.fn(async () => ({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify(ROUTES_RESPONSE),
-    } as Response)) as unknown as typeof fetch;
-
-    const result = await getRoute(pickup, drop1);
-
-    expect(result.polyline).toBeDefined();
-    expect(result.polyline.length).toBeGreaterThan(0);
-    expect(result.distanceMeters).toBe(2064);
-    expect(result.durationSeconds).toBe(123);
-  });
-
-  it('supports multi-drop routes with intermediates', async () => {
-    globalThis.fetch = jest.fn(async (url: string, init: RequestInit) => {
-      calls.push({ url, init });
-      return {
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify(MULTI_DROP_RESPONSE),
-      } as Response;
-    }) as unknown as typeof fetch;
-
-    const result = await getRoute(pickup, drop2, { waypoints: [drop1] });
-
-    const body = bodyOf(calls[0]);
-    expect(body.intermediates).toBeDefined();
-    expect(body.intermediates).toHaveLength(1);
-    expect(body.intermediates[0].location.latLng).toEqual({
-      latitude: drop1.latitude,
-      longitude: drop1.longitude,
-    });
-
-    expect(result.distanceMeters).toBe(10350);
-    expect(result.durationSeconds).toBe(420);
-  });
-
-  it('decodes polyline into coordinates', async () => {
-    globalThis.fetch = jest.fn(async () => ({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify(ROUTES_RESPONSE),
-    } as Response)) as unknown as typeof fetch;
-
-    const result = await getRoute(pickup, drop1);
-
-    expect(result.polyline.length).toBeGreaterThan(0);
-    result.polyline.forEach((point) => {
-      expect(typeof point.latitude).toBe('number');
-      expect(typeof point.longitude).toBe('number');
-    });
-  });
-
-  it('throws on API error with status', async () => {
-    globalThis.fetch = jest.fn(async () => ({
-      ok: false,
-      status: 400,
-      text: async () => JSON.stringify({
-        error: { status: 'INVALID_ARGUMENT', message: 'Bad request' },
+  expect(init.body).not.toContain('Private address');
+  expect(result.distanceMeters).toBe(2400);
+  expect(result.polyline.length).toBeGreaterThan(1);
+});
+it('propagates a truthful server configuration error without direct Google fallback', async () => {
+  (fetch as jest.Mock).mockResolvedValue({
+    ok: false,
+    status: 503,
+    text: async () =>
+      JSON.stringify({
+        error: {
+          code: 'ROUTING_PROVIDER_DENIED',
+          message: 'Road routing is unavailable.',
+        },
       }),
-    } as Response)) as unknown as typeof fetch;
-
-    await expect(getRoute(pickup, drop1)).rejects.toThrow('Routes API failed');
   });
-
-  it('respects abort signal', async () => {
-    globalThis.fetch = jest.fn(async (_url, init) => {
-      // Simulate the signal being checked during fetch
-      await new Promise<void>((resolve) => setTimeout(() => resolve(), 10));
-      if (init?.signal?.aborted) {
-        throw new Error('AbortError: Aborted');
-      }
-      return {
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify(ROUTES_RESPONSE),
-      } as Response;
-    }) as unknown as typeof fetch;
-
-    const controller = new AbortController();
-    const promise = getRoute(pickup, drop1, { signal: controller.signal });
-    
-    // Abort immediately
-    controller.abort();
-    
-    await expect(promise).rejects.toThrow();
+  await expect(getRoute(a, b)).rejects.toMatchObject({
+    status: 503,
+    kind: 'http',
   });
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+it('rejects malformed/truncated geometry and invalid numeric responses', async () => {
+  for (const body of [
+    { ...valid, encodedPolyline: '~' },
+    { ...valid, durationSeconds: -1 },
+    { ...valid, distanceMeters: '2400' },
+    { ...valid, encodedPolyline: '?' },
+  ]) {
+    (fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      text: async () => JSON.stringify(body),
+    });
+    await expect(getRoute(a, b)).rejects.toMatchObject({ kind: 'parse' });
+  }
+});
+it('does not send invalid coordinates', async () => {
+  await expect(
+    getRoute({ latitude: 91, longitude: 73 }, b),
+  ).rejects.toMatchObject({ kind: 'config' });
+  expect(fetch).not.toHaveBeenCalled();
+});
+it('honors caller cancellation', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await expect(
+    getRoute(a, b, { signal: controller.signal }),
+  ).rejects.toMatchObject({ kind: 'network' });
+  expect(fetch).not.toHaveBeenCalled();
+});
+it('bounds the complete authenticated request including a stalled response body', async () => {
+  jest.useFakeTimers();
+  try {
+    (fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      text: () => new Promise(() => {}),
+    });
+    const pending = expect(getRoute(a, b)).rejects.toMatchObject({
+      kind: 'timeout',
+    });
+    await jest.advanceTimersByTimeAsync(12000);
+    await pending;
+  } finally {
+    jest.useRealTimers();
+  }
 });

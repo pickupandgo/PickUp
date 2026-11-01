@@ -22,7 +22,7 @@ jest.mock('../src/config/env', () => ({
 }));
 
 // Mock Engine API
-jest.mock('../src/api/engine', () => ({
+jest.mock('../src/api/engine', () => ({ recoverRide: jest.fn(async () => null),
   getActiveTripForCustomer: jest.fn(async () => null),
   fetchNearbyDrivers: jest.fn(async () => []),
 }));

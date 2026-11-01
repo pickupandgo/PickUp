@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { Alert } from 'react-native';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,7 +12,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { strings, vehicleCategoryFor } from '../../data/mockData';
 import { useBooking, toGeoPoint } from '../../state/BookingContext';
-import { createFareQuote } from '../../api/payments';
+import { useQuoteValidity } from '../../hooks/useQuoteValidity';
+import { quoteMatchesDraft } from '../../state/quoteValidation';
+import { createFareQuote, isQuoteBookable } from '../../api/payments';
 import { toApiError } from '../../api/http';
 import Feather from 'react-native-vector-icons/Feather';
 
@@ -35,6 +38,9 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>();
 
+  const requestRef = useRef<AbortController | null>(null);
+  const currentDraft = useRef(draft);
+  currentDraft.current = draft;
   const pickup = draft.pickup;
   /** The pricing defaults to 10kg when weight is omitted; mirror that here. */
   const weightKg = draft.weightKg ?? 10;
@@ -49,6 +55,9 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
       setError('This vehicle is available on request only. Pick another vehicle for an instant fare.');
       return;
     }
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     setIsLoading(true);
     setError(undefined);
     try {
@@ -58,24 +67,26 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
         drops: draft.drops.map(toGeoPoint),
         vehicleCategory,
         weightKg,
-      });
+      }, controller.signal);
+      if (controller.signal.aborted || requestRef.current !== controller || !quoteMatchesDraft(fresh, currentDraft.current)) return;
       setQuote(fresh);
     } catch (caught) {
+      if (controller.signal.aborted || requestRef.current !== controller) return;
       setQuote(undefined);
       setError(toApiError(caught).userMessage);
     } finally {
-      setIsLoading(false);
+      if (!controller.signal.aborted && requestRef.current === controller) setIsLoading(false);
     }
   }, [pickup, draft.drops, vehicleCategory, weightKg, setQuote]);
 
-  // Quote on entry, and re-quote whenever the route, vehicle or weight invalidated it.
   useEffect(() => {
-    if (!quote) void loadQuote();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quote, pickup?.latitude, draft.drops.length, vehicleCategory, weightKg]);
+    if (!currentDraft.current.quote) void loadQuote();
+    return () => { requestRef.current?.abort(); };
+  }, [loadQuote]);
 
-  const expired = quote ? Date.parse(quote.expiresAt) <= Date.now() : false;
-  const canContinue = !!quote && !expired && !isLoading;
+  const valid = useQuoteValidity(quote);
+  const expired = !!quote && !valid;
+  const canContinue = !!quote && valid && quoteMatchesDraft(quote, draft) && !isLoading;
 
   const expiresLabel = quote
     ? new Date(quote.expiresAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })
@@ -95,7 +106,7 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
         <Text style={styles.headerTitle}>Pick Up</Text>
         <Pressable
           style={styles.helpButton}
-          onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
+          onPress={() => (onHelp ? onHelp() : Alert.alert('Booking help', 'Check your pickup, drops and goods details. Retry if prices could not load. Driver chat becomes available after assignment.'))}
           accessibilityRole="button"
           accessibilityLabel="Help"
         >
@@ -193,8 +204,9 @@ const FareEstimateScreen: React.FC<FareEstimateScreenProps & { navigation?: any 
           style={[styles.continueButton, !canContinue && styles.continueButtonDisabled]}
           disabled={!canContinue}
           onPress={() => {
-            onContinue?.();
-            navigation?.navigate('ReviewBookingScreen');
+            if (!canContinue || !quote || !isQuoteBookable(quote) || !quoteMatchesDraft(quote, currentDraft.current)) return;
+            if (onContinue) onContinue();
+            else navigation?.navigate('ReviewBookingScreen');
           }}
           accessibilityRole="button"
           accessibilityState={{ disabled: !canContinue }}

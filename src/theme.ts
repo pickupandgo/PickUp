@@ -127,6 +127,13 @@ export const fontFamily = {
 } as const;
 
 export const typography = {
+  authTitle: {
+    fontFamily: fontFamily.default,
+    fontSize: 22,
+    lineHeight: 30,
+    fontWeight: '500' as const,
+    letterSpacing: 0,
+  },
   headlineLg: {
     fontFamily: fontFamily.default,
     fontSize: 24,

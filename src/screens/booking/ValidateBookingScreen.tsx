@@ -1,3 +1,4 @@
+import { Alert } from 'react-native';
 import React from 'react';
 import {
   View,
@@ -33,7 +34,7 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
         <Text style={styles.headerTitle}>Validate Booking</Text>
         <Pressable
           style={styles.iconButton}
-          onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
+          onPress={() => (onHelp ? onHelp() : Alert.alert('Booking help', 'Check your pickup, drops and goods details. Retry if prices could not load. Driver chat becomes available after assignment.'))}
         >
           <Feather name="help-circle" size={24} color={colors.onSurfaceVariant} />
         </Pressable>

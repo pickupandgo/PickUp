@@ -10,7 +10,6 @@ import { CommonActions } from '@react-navigation/native';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import Button from '../../components/atoms/Button';
-import { useBooking } from '../../state/BookingContext';
 
 export interface NoDriversAvailableScreenProps {
   readonly onRetry?: () => void;
@@ -24,7 +23,6 @@ const NoDriversAvailableScreen: React.FC<NoDriversAvailableScreenProps & { navig
   onMenu,
   navigation,
 }) => {
-  const { clearActiveRide } = useBooking();
   return (
     <View style={styles.container}>
       {/* Dimmed Map Background Mock */}
@@ -69,25 +67,22 @@ const NoDriversAvailableScreen: React.FC<NoDriversAvailableScreenProps & { navig
                   if (onRetry) {
                     onRetry();
                   } else {
-                    navigation?.dispatch(
-                      CommonActions.reset({
-                        index: 0,
-                        routes: [{ name: 'FindingDriverScreen' }],
-                      })
-                    );
+                    if (navigation?.replace) navigation.replace('FindingDriverScreen', { retrySearch: true });
+                    else navigation?.navigate('FindingDriverScreen', { retrySearch: true });
                   }
                 }}
                 variant="primary"
                 fullWidth
               />
+              <Button label="Cancel booking" variant="secondary" fullWidth onPress={() => navigation?.navigate('CancellationReasonScreen')} />
               <Button
                 label="Return to Home"
                 onPress={() => {
                   if (onReturnHome) {
                     onReturnHome();
                   } else {
-                    clearActiveRide();
-                    navigation?.dispatch(
+                    const root = navigation?.getParent?.() ?? navigation;
+                    root?.dispatch(
                       CommonActions.reset({
                         index: 0,
                         routes: [{ name: 'MainTabs', params: { screen: 'HomeScreen' } }],

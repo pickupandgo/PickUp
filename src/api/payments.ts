@@ -25,7 +25,7 @@ const assertPaymentsConfig = (): void => {
 };
 
 interface PaymentsRequestOptions {
-  readonly method?: 'GET' | 'POST';
+  readonly method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   readonly body?: unknown;
   readonly idempotencyKey?: string;
   readonly timeoutMs?: number;
@@ -56,65 +56,62 @@ const attempt = async <T>(
   const { method = 'GET', body, idempotencyKey, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = options;
 
   const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-  const onExternalAbort = () => controller.abort();
-  signal?.addEventListener('abort', onExternalAbort);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onExternalAbort = () => {};
+  const interrupted = new Promise<never>((_, reject) => {
+    onExternalAbort = () => {
+      reject(new ApiError('network', `Request to ${path} cancelled`));
+      controller.abort();
+    };
+    timer = setTimeout(() => {
+      reject(new ApiError('timeout', `Request to ${path} timed out`));
+      controller.abort();
+    }, timeoutMs);
+    signal?.addEventListener('abort', onExternalAbort);
+    if (signal?.aborted) onExternalAbort();
+  });
 
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  if (body) {
-    headers['Content-Type'] = 'application/json';
-  }
-  if (idempotencyKey) {
-    headers['Idempotency-Key'] = idempotencyKey;
-  }
-  const currentUser = getAuth().currentUser;
-  if (currentUser) {
-    try {
-      headers['Authorization'] = `Bearer ${await currentUser.getIdToken(forceRefresh)}`;
-    } catch (e) {
-      console.warn('Failed to get Firebase token', e);
+  const request = async (): Promise<T> => {
+    if (controller.signal.aborted) throw new ApiError('network', 'Request cancelled');
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (body) headers['Content-Type'] = 'application/json';
+    if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+    const currentUser = getAuth().currentUser;
+    if (currentUser) {
+      // A failed token read must never become an anonymous account request.
+      headers.Authorization = `Bearer ${await currentUser.getIdToken(forceRefresh)}`;
     }
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(buildUrl(path), {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
+    if (controller.signal.aborted) throw new ApiError('network', 'Request cancelled');
+    const response = await fetch(buildUrl(path), {
+      method, headers, body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
-  } catch {
-    throw timedOut
-      ? new ApiError('timeout', `Request to ${path} timed out`)
-      : new ApiError('network', `Could not reach ${path}`);
-  } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener('abort', onExternalAbort);
-  }
-
-  const raw = await response.text();
-  let parsed: unknown;
-  if (raw.length) {
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      if (response.ok) {
-        throw new ApiError('parse', `Malformed JSON from ${path}`);
+    const raw = await response.text();
+    let parsed: unknown;
+    if (raw.length) {
+      try { parsed = JSON.parse(raw); }
+      catch {
+        if (response.ok) throw new ApiError('parse', `Malformed JSON from ${path}`);
       }
     }
+    if (!response.ok) {
+      throw new ApiError('http', `${method} ${path} failed with ${response.status}`, response.status, parsed);
+    }
+    return parsed as T;
+  };
+  try {
+    // Bound token acquisition and body reading as well as the fetch itself.
+    return await Promise.race([interrupted, request()]);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError('network', `Could not reach ${path}`);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    signal?.removeEventListener('abort', onExternalAbort);
   }
-  if (!response.ok) {
-    throw new ApiError('http', `${method} ${path} failed with ${response.status}`, response.status, parsed);
-  }
-  return parsed as T;
 };
 
-const paymentsRequest = async <T>(path: string, options: PaymentsRequestOptions = {}): Promise<T> => {
+export const paymentsRequest = async <T>(path: string, options: PaymentsRequestOptions = {}): Promise<T> => {
   assertPaymentsConfig();
   try {
     return await attempt<T>(path, options, false);
@@ -133,12 +130,8 @@ const paymentsRequest = async <T>(path: string, options: PaymentsRequestOptions 
       errCode === 'USER_NOT_PROVISIONED' &&
       path !== '/v1/customers/me'
     ) {
-      try {
-        await attempt<CustomerAccount>('/v1/customers/me', { method: 'POST', signal: options.signal }, false);
-        return await attempt<T>(path, options, false);
-      } catch {
-        throw error;
-      }
+      await attempt<CustomerAccount>('/v1/customers/me', { method: 'POST', signal: options.signal }, false);
+      return attempt<T>(path, options, false);
     }
     throw error;
   }
@@ -146,15 +139,48 @@ const paymentsRequest = async <T>(path: string, options: PaymentsRequestOptions 
 
 // ─── Account ──────────────────────────────────────────────────────────────────
 
+/** Only account reads and idempotent registration tolerate one transient retry.
+ * Capture the user identity so an account switch can never replay another user's bootstrap.
+ * Each attempt includes token refresh within its 30-second deadline.
+ */
+const accountRequest = async (method: 'GET' | 'POST', signal?: AbortSignal): Promise<CustomerAccount> => {
+  assertPaymentsConfig();
+  const identity = getAuth().currentUser?.uid;
+  for (let retry = 0; ; retry++) {
+    if (signal?.aborted || getAuth().currentUser?.uid !== identity) {
+      throw new ApiError('network', 'Account request cancelled');
+    }
+    try {
+      return await attempt<CustomerAccount>('/v1/customers/me', {
+        method, signal, timeoutMs: 30_000,
+      }, retry > 0);
+    } catch (error) {
+      const retryable = error instanceof ApiError && (
+        error.kind === 'network' || error.kind === 'timeout' ||
+        (error.kind === 'http' && [401, 502, 503, 504].includes(error.status ?? 0))
+      );
+      if (retry >= 1 || !retryable || signal?.aborted || getAuth().currentUser?.uid !== identity) throw error;
+    }
+  }
+};
+
 /**
  * Registers the signed-in customer, or returns the existing account. Safe to call after every
  * sign-in. The sign-in must carry a verified phone number.
  */
-export const registerCustomer = async (
-  body?: { name?: string; email?: string },
-  signal?: AbortSignal
+export const registerCustomer = async (signal?: AbortSignal): Promise<CustomerAccount> =>
+  accountRequest('POST', signal);
+
+/** Reads the signed-in customer's account from the payments backend. */
+export const getCustomerAccount = async (signal?: AbortSignal): Promise<CustomerAccount> =>
+  accountRequest('GET', signal);
+
+/** Changes only customer display fields; phone and Firebase identity never come from the body. */
+export const updateCustomerProfile = async (
+  body: { name: string; email: string; age: number | null; address: string | null },
+  signal?: AbortSignal,
 ): Promise<CustomerAccount> =>
-  paymentsRequest<CustomerAccount>('/v1/customers/me', { method: 'POST', body, signal });
+  paymentsRequest<CustomerAccount>('/v1/customers/me', { method: 'PATCH', body, signal });
 
 // ─── Fare quotes ────────────────────────────────────────────────────────────
 
@@ -207,3 +233,4 @@ export const isQuoteBookable = (quote: FareQuote): boolean =>
   !quote.redeemed && Date.parse(quote.expiresAt) > Date.now();
 
 export type { PaymentMethod };
+

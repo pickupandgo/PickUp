@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
-  ScrollView,
+  ScrollView, Alert, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { getAuth } from '@react-native-firebase/auth';
+import { useNotificationInbox } from '../../hooks/useNotificationInbox';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
 export interface NotificationItem {
@@ -21,6 +23,8 @@ export interface NotificationItem {
   type: 'trip' | 'account' | 'payment';
   /** Route this notification opens when tapped. */
   destination?: string;
+  bookingId?: string;
+  eventType?: string;
 }
 
 export interface NotificationCenterScreenProps {
@@ -31,59 +35,6 @@ export interface NotificationCenterScreenProps {
   readonly notifications?: NotificationItem[];
 }
 
-const DEFAULT_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: '1',
-    title: 'Driver arriving soon',
-    timeText: '2m ago',
-    description: 'Your driver, Michael, is 2 minutes away in a Black Sedan (XYZ-123).',
-    icon: 'directions-car',
-    isUnread: true,
-    type: 'trip',
-    destination: 'CustomerLiveTrackingScreen',
-  },
-  {
-    id: '2',
-    title: 'Payment successful',
-    timeText: '15m ago',
-    description: 'Receipt for your trip to Downtown Core has been emailed.',
-    icon: 'credit-card',
-    isUnread: true,
-    type: 'payment',
-    destination: 'DigitalReceiptScreen',
-  },
-  {
-    id: '3',
-    title: 'Trip completed',
-    timeText: '3h ago',
-    description: 'How was your ride? Rate your trip to help us improve.',
-    icon: 'check-circle',
-    isUnread: false,
-    type: 'trip',
-    destination: 'TripCompletedSummaryScreen',
-  },
-  {
-    id: '4',
-    title: 'New device login',
-    timeText: 'Yesterday',
-    description: 'A new sign-in was detected on iOS Device. If this was you, no action is needed.',
-    icon: 'manage-accounts',
-    isUnread: false,
-    type: 'account',
-    destination: 'CustomerSettingsScreen',
-  },
-  {
-    id: '5',
-    title: 'Booking cancelled',
-    timeText: 'Oct 24',
-    description: 'Your advance booking for Oct 25 has been cancelled at your request.',
-    icon: 'cancel',
-    isUnread: false,
-    type: 'trip',
-    destination: 'TripCancelledStatusScreen',
-  },
-];
-
 const FILTER_TABS = ['All', 'Trips', 'Account'];
 
 const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navigation?: any }> = ({
@@ -91,13 +42,36 @@ const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navig
   onHelp,
   onNotificationPress,
   onDeleteNotification,
-  notifications = DEFAULT_NOTIFICATIONS,
+  notifications,
   navigation,
 }) => {
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [activeTab, setActiveTab] = useState('All');
+  const inbox = useNotificationInbox(notifications === undefined);
+  const [actionError, setActionError] = useState<string>();
+  const inboxAvailable = !inbox.loading && !inbox.error;
+  const items: NotificationItem[] = notifications ?? inbox.items.map(event => ({
+    id: event.id, title: event.title, description: event.body, timeText: new Date(event.createdAt).toLocaleString('en-IN'),
+    icon: event.type === 'NEW_CHAT_MESSAGE' ? 'chat' : 'notifications', isUnread: !event.readAt,
+    type: event.type.includes('PAYMENT') ? 'payment' : 'trip', eventType: event.type,
+    bookingId: typeof event.data?.bookingId === 'string' ? event.data.bookingId : undefined,
+  }));
+  const openItem = async (item: NotificationItem) => {
+    if (onNotificationPress) { onNotificationPress(item.id); return; }
+    if (notifications !== undefined) return;
+    const owner = getAuth().currentUser?.uid;
+    try { await inbox.markRead(item.id); if (!mounted.current) return; setActionError(undefined); }
+    catch { if (!mounted.current) return; setActionError('Read status could not be saved. Please retry.'); }
+    if (!mounted.current || getAuth().currentUser?.uid !== owner) return;
+    if (item.bookingId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.bookingId)) {
+      if (item.eventType === 'NEW_CHAT_MESSAGE') navigation?.navigate('ActiveTripStack', { screen: 'ActiveTripChatScreen', params: { bookingId: item.bookingId } });
+      else navigation?.navigate('BookingStack', { screen: 'DigitalReceiptScreen', params: { paymentBookingId: item.bookingId } });
+    } else Alert.alert(item.title, item.description);
+  };
 
-  const newNotifications = notifications.filter(n => n.isUnread);
-  const earlierNotifications = notifications.filter(n => !n.isUnread);
+  const newNotifications = items.filter(n => n.isUnread);
+  const earlierNotifications = items.filter(n => !n.isUnread);
 
   const filterItems = (items: NotificationItem[]) => {
     if (activeTab === 'All') return items;
@@ -113,16 +87,8 @@ const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navig
     <Pressable
       key={item.id}
       style={styles.notificationCard}
-      onPress={() => {
-        onNotificationPress?.(item.id);
-        if (item.destination) {
-          if (item.destination === 'CustomerLiveTrackingScreen') {
-            navigation?.navigate('ActiveTripStack', { screen: 'CustomerLiveTrackingScreen' });
-          } else {
-            navigation?.navigate(item.destination);
-          }
-        }
-      }}
+      disabled={notifications !== undefined && !onNotificationPress}
+      onPress={() => { void openItem(item); }}
     >
       {item.isUnread && <View style={styles.unreadIndicator} />}
       
@@ -156,7 +122,8 @@ const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navig
         </Pressable>
         <Text style={styles.headerTitle}>Pick Up</Text>
         <Pressable
-          onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
+          disabled={!onHelp}
+          onPress={() => onHelp?.()}
           style={styles.iconButton}
         >
           <Feather name="help-circle" size={24} color={colors.primary} />
@@ -165,6 +132,10 @@ const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navig
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={styles.pageTitle}>Notifications</Text>
+        <Pressable accessibilityRole="button" onPress={() => { void Linking.openSettings(); }}><Text style={styles.description}>System notification settings</Text></Pressable>
+        {notifications === undefined && <Pressable accessibilityRole="button" disabled={inbox.loading} onPress={() => { void inbox.load(); }}><Text style={styles.description}>Refresh notifications</Text></Pressable>}
+        {notifications === undefined && inbox.loading && <Text style={styles.description}>Loading notifications...</Text>}
+        {notifications === undefined && (inbox.error || actionError) && <Text style={styles.description}>{inbox.error ?? actionError}</Text>}
 
         {/* Tabs */}
         <ScrollView 
@@ -186,6 +157,12 @@ const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navig
           ))}
         </ScrollView>
 
+        {notifications === undefined && !inboxAvailable ? (
+          <Text style={styles.description}>Notification history is not available yet.</Text>
+        ) : displayNew.length === 0 && displayEarlier.length === 0 ? (
+          <Text style={styles.description}>No notifications in this category.</Text>
+        ) : null}
+
         {/* Notification Lists */}
         {displayNew.length > 0 && (
           <View style={styles.section}>
@@ -204,6 +181,7 @@ const NotificationCenterScreen: React.FC<NotificationCenterScreenProps & { navig
             </View>
           </View>
         )}
+        {notifications === undefined && inbox.nextCursor && <Pressable accessibilityRole="button" disabled={inbox.loading} onPress={() => { void inbox.load(inbox.nextCursor!); }}><Text style={styles.description}>Load more notifications</Text></Pressable>}
       </ScrollView>
     </SafeAreaView>
   );

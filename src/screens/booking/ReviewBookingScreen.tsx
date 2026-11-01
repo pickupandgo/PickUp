@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import { mockBookingReview, mockVehicleTypes, vehicleLabelFor } from '../../data/mockData';
+import { mockVehicleTypes, vehicleLabelFor } from '../../data/mockData';
 import { useBooking } from '../../state/BookingContext';
+import { useQuoteValidity } from '../../hooks/useQuoteValidity';
+import { quoteMatchesDraft } from '../../state/quoteValidation';
 import { isQuoteBookable } from '../../api/payments';
 import TopAppBar from '../../components/organisms/TopAppBar';
 import Card from '../../components/molecules/Card';
@@ -36,19 +38,24 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
   const [isAddressExpanded, setIsAddressExpanded] = useState(false);
   // Prevents a double-tap from starting two booking flows.
   const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
+  useEffect(() => navigation?.addListener?.('focus', () => {
+    submitLock.current = false; setSubmitting(false);
+  }), [navigation]);
 
   // Fallback vehicle info if somehow unselected, but we assume select vehicle always passes one
   const vehicleName = vehicleLabelFor(draft.vehicleType);
   const vehicle = mockVehicleTypes.find((v) => v.name === draft.vehicleType) || mockVehicleTypes[2];
 
   // Address logic
-  const pickupAddress = draft.pickup?.address ?? mockBookingReview.pickup;
+  const pickupAddress = draft.pickup?.address ?? 'Select pickup';
   const dropAddresses = draft.drops.length
     ? draft.drops.map((d) => d.address)
-    : mockBookingReview.drops;
+    : [];
 
   // Fare and payment method come from the server quote and the chosen method; never a local total.
-  const quoteValid = !!quote && isQuoteBookable(quote);
+  const timeValid = useQuoteValidity(quote);
+  const quoteValid = !!quote && timeValid && quoteMatchesDraft(quote, draft);
   const estimatedFare = quote ? `₹${(quote.payablePaise / 100).toFixed(2)}` : '--';
   const etaMinutes = parseInt(vehicle.eta, 10) || 30;
   const paymentLabel =
@@ -129,7 +136,7 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
         <Card variant="outlined" padding="none" style={styles.extraServicesCard}>
           <ListRow
             title="Declared Value"
-            subtitle={draft.declaredValue ?? mockBookingReview.declaredValue}
+            subtitle={draft.declaredValue ?? 'Not provided'}
             leading={<Feather name="tag" size={20} color={colors.onSurfaceVariant} />}
             trailing={<Feather name="chevron-right" size={20} color={colors.onSurfaceVariant} />}
             onPress={() => navigation?.navigate('DeclaredValueSelectionScreen')}
@@ -137,7 +144,7 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
           <Divider />
           <ListRow
             title="Insurance"
-            subtitle={draft.insured ? 'Active' : mockBookingReview.insurance}
+            subtitle="Not included"
             leading={<Feather name="shield" size={20} color={colors.onSurfaceVariant} />}
             trailing={<Feather name="chevron-right" size={20} color={colors.onSurfaceVariant} />}
             onPress={() => navigation?.navigate('GoodsInsuranceScreen')}
@@ -173,10 +180,16 @@ const ReviewBookingScreen: React.FC<ReviewBookingScreenProps & { navigation?: an
         <Button
           label={canBook ? `Book ${vehicleName}` : !draft.paymentMethod ? 'Select payment method' : 'Book'}
           onPress={() => {
-            if (!canBook) return;
+            if (!canBook || submitLock.current || !quote || !isQuoteBookable(quote) || !quoteMatchesDraft(quote, draft)) return;
+            submitLock.current = true;
             setSubmitting(true);
-            onConfirm?.();
-            navigation?.navigate('BookingConfirmedScreen');
+            try {
+              if (onConfirm) onConfirm();
+              else navigation?.navigate('BookingConfirmedScreen');
+            } catch (error) {
+              submitLock.current = false; setSubmitting(false);
+              throw error;
+            }
           }}
           variant="primary"
           size="lg"

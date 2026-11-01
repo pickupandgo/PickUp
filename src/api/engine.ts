@@ -40,6 +40,13 @@ export const createRide = async (input: CreateRideInput, signal?: AbortSignal): 
   return res.ride;
 };
 
+/** Authenticated recovery: no customer ID from the client and no create side effect. */
+export const recoverRide = async (quoteId?: string, signal?: AbortSignal): Promise<Ride | null> => {
+  const path = '/rides/recovery' + (quoteId ? `?quoteId=${encodeURIComponent(quoteId)}` : '');
+  const res = await request<Envelope & { ride: Ride | null }>(path, { signal });
+  return res.ride ?? null;
+};
+
 export const getRide = async (rideId: string, signal?: AbortSignal): Promise<Ride> => {
   const res = await request<Envelope & { ride: Ride }>(
     `/rides/${encodeURIComponent(rideId)}`,

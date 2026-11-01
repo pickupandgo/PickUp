@@ -34,6 +34,8 @@ export interface MapCanvasProps {
   readonly forceCenterKey?: number;
   readonly markers?: readonly MapMarker[];
   /** Straight line drawn through these points, in order. */
+  readonly routeStatus?: 'idle' | 'loading' | 'ready' | 'error';
+  readonly onRetryRoute?: () => void;
   readonly polyline?: readonly GeoPoint[];
   /** Zoom the camera to include every marker. */
   readonly fitToMarkers?: boolean;

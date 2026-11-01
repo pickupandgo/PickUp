@@ -1,431 +1,80 @@
-import React, { useState, useCallback, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ActivityIndicator,
-  Image,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Feather from 'react-native-vector-icons/Feather';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import Button from '../../components/atoms/Button';
-import InputField from '../../components/atoms/InputField';
-import { KeyboardAwareScrollView } from '../../components/organisms';
-import {
-  sendPhoneOTP,
-  signInWithGoogle,
-  formatToE164,
-  mapFirebaseAuthError,
-  getRemainingCooldown,
-  hasActiveSession,
-  usePhoneCooldown,
-} from '../../auth/authService';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
+import { sendPhoneOTP, signInWithGoogle, mapFirebaseAuthError, usePhoneCooldown, hasActiveSession } from '../../auth/authService';
+import { formatToE164, nationalMobileInput } from '../../auth/phoneUtils';
+import { AuthLayout, MobileField, authStyles } from './AuthLayout';
+import { AuthButton as Button } from './AuthLayout';
+import { colors, spacing, typography, borderRadius } from '../../theme';
 
-const logoImage = require('../../../assets/images/assets_logo.png');
-
-export interface LoginScreenProps {
-  readonly onGetOtp?: (phone: string) => void;
-  readonly navigation?: any;
-}
-
-export const LoginScreen: React.FC<LoginScreenProps> = ({ onGetOtp, navigation }) => {
+export interface LoginScreenProps { onGetOtp?: (phone: string) => void; navigation?: any; }
+export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation, onGetOtp }) => {
   const [phone, setPhone] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<'google' | null>(null);
+  const [busy, setBusy] = useState<'phone' | 'google' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [resetMessage, setResetMessage] = useState<string | null>(null);
-  const isSubmittingRef = useRef(false);
-
-  // Phone validation
-  const cleanPhone = phone.replace(/\D/g, '');
-  const isValidPhone = cleanPhone.length === 10;
-  const { cooldownRemaining, isCoolingDown } = usePhoneCooldown(isValidPhone ? cleanPhone : '');
-  const isGetOtpDisabled = !isValidPhone || loading || isCoolingDown || cooldownRemaining > 0;
-
-  const busy = loading || socialLoading !== null;
-
-  // Phone OTP Login
-  const handleGetOtp = useCallback(async () => {
-    if (isSubmittingRef.current || busy || isCoolingDown || cooldownRemaining > 0) return;
-    if (!isValidPhone) {
-      setError('Please enter a valid 10-digit mobile number.');
-      return;
-    }
-
-    const fullPhone = formatToE164(cleanPhone);
-    const remaining = getRemainingCooldown(fullPhone);
-
-    if (remaining > 0 && hasActiveSession(fullPhone)) {
-      console.log(`[AUTH] Active session exists within cooldown (${remaining}s remaining), navigating to OTP screen`);
-      navigation?.navigate('OtpVerificationScreen', { phoneNumber: fullPhone, authMode: 'login' });
-      return;
-    }
-
-    if (remaining > 0) {
-      console.log(`[AUTH] Request blocked by cooldown (${remaining}s remaining)`);
-      return;
-    }
-
-    isSubmittingRef.current = true;
-    setLoading(true);
-    setError(null);
-    setResetMessage(null);
-
+  const [touched, setTouched] = useState(false);
+  const lock = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const digits = phone.replace(/\D/g, '');
+  const national = digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
+  const valid = /^[6-9]\d{9}$/.test(national);
+  const { cooldownRemaining } = usePhoneCooldown(valid ? national : '');
+  const resumable = valid && hasActiveSession(national);
+  const continuePhone = async () => {
+    if (lock.current || !valid) return;
+    lock.current = true; setBusy('phone'); setError(null);
     try {
-      await sendPhoneOTP(fullPhone);
+      const fullPhone = formatToE164(national);
+      if (!hasActiveSession(fullPhone)) await sendPhoneOTP(fullPhone);
+      if (!mounted.current) return;
       onGetOtp?.(fullPhone);
-      navigation?.navigate('OtpVerificationScreen', { phoneNumber: fullPhone, authMode: 'login' });
-    } catch (e: any) {
-      setError(mapFirebaseAuthError(e));
-    } finally {
-      isSubmittingRef.current = false;
-      setLoading(false);
-    }
-  }, [cleanPhone, isValidPhone, busy, isCoolingDown, cooldownRemaining, onGetOtp, navigation]);
-
-  // Google Sign-In
-  const handleGoogleSignIn = useCallback(async () => {
-    if (busy) return;
-    setSocialLoading('google');
-    setError(null);
-    setResetMessage(null);
-
-    try {
-      await signInWithGoogle();
-      // Auth state listener handles session
-    } catch (e: any) {
-      if (e?.code !== 'auth/cancelled') {
-        setError(mapFirebaseAuthError(e));
-      }
-    } finally {
-      setSocialLoading(null);
-    }
-  }, [busy]);
-
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAwareScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* 1. MultipleRide Logo & Welcome Header */}
-        <View style={styles.heroSection}>
-          <View style={styles.logoContainer}>
-            <View style={styles.logoInner}>
-              <Image
-                source={logoImage}
-                style={styles.logoImage}
-                resizeMode="contain"
-                accessibilityRole="image"
-                accessibilityLabel="MultipleRide App Logo"
-              />
-            </View>
-          </View>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Log in to book rides and track deliveries</Text>
-        </View>
-
-        {resetMessage && (
-          <View style={styles.successContainer}>
-            <Feather name="check-circle" size={16} color={colors.primary} />
-            <Text style={styles.successText}>{resetMessage}</Text>
-          </View>
-        )}
-
-        {error && (
-          <View style={styles.errorContainer}>
-            <Feather name="alert-circle" size={16} color={colors.error} />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        {/* 3. Mobile Number Field & Get OTP Button */}
-        <View style={styles.formSection}>
-          <Text style={styles.inputLabel}>MOBILE NUMBER</Text>
-          <View style={styles.phoneRow}>
-            <View style={styles.countryCode}>
-              <Text style={styles.countryCodeText}>+91</Text>
-            </View>
-            <View style={styles.phoneInputWrapper}>
-              <InputField
-                placeholder="Enter 10-digit number"
-                value={phone}
-                onChangeText={(t) => {
-                  setPhone(t);
-                  if (error) setError(null);
-                }}
-                keyboardType="phone-pad"
-                maxLength={10}
-                editable={!busy}
-              />
-            </View>
-          </View>
-
-          {isValidPhone && cooldownRemaining > 0 && (
-            <View style={styles.cooldownContainer}>
-              <Text style={styles.cooldownText}>
-                Request a new OTP in {cooldownRemaining} {cooldownRemaining === 1 ? 'second' : 'seconds'}
-              </Text>
-            </View>
-          )}
-
-          <Button
-            label={loading ? 'Sending OTP...' : 'Get OTP'}
-            onPress={handleGetOtp}
-            variant="primary"
-            size="lg"
-            fullWidth
-            disabled={isGetOtpDisabled}
-            loading={loading}
-            style={styles.submitButton}
-          />
-        </View>
-
-        {/* 4. Social Divider */}
-        <View style={styles.dividerRow}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>Or continue with</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
-        {/* 5. Social Sign-In: Continue with Google Only */}
-        <View style={styles.socialButtonsContainer}>
-          <Pressable
-            style={[styles.socialButton, busy && styles.buttonDisabled]}
-            onPress={handleGoogleSignIn}
-            disabled={busy}
-            accessibilityRole="button"
-            accessibilityLabel="Continue with Google"
-          >
-            {socialLoading === 'google' ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <>
-                <Text style={styles.socialIconText}>G</Text>
-                <Text style={styles.socialButtonText}>Continue with Google</Text>
-              </>
-            )}
-          </Pressable>
-        </View>
-
-        {/* 6. Switch to Sign Up */}
-        <View style={styles.switchRow}>
-          <Text style={styles.switchPrompt}>
-            Don't have an account?{' '}
-            <Text
-              style={styles.switchLink}
-              onPress={() => {
-                navigation?.navigate('SignUpScreen');
-              }}
-            >
-              Sign Up
-            </Text>
-          </Text>
-        </View>
-
-        {/* 7. Terms & Privacy Policy Footer */}
-        <Text style={styles.termsText}>
-          By continuing, you agree to our{' '}
-          <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
-          <Text style={styles.termsLink}>Privacy Policy</Text>.
-        </Text>
-      </KeyboardAwareScrollView>
-    </SafeAreaView>
-  );
+      navigation?.navigate('OtpVerificationScreen', { phoneNumber: fullPhone, authMode: 'phone' });
+    } catch (e) { if (mounted.current) setError(mapFirebaseAuthError(e)); }
+    finally { lock.current = false; if (mounted.current) setBusy(null); }
+  };
+  const google = async () => {
+    if (lock.current) return;
+    lock.current = true; setBusy('google'); setError(null);
+    try { await signInWithGoogle(); }
+    catch (e: any) { if (mounted.current && e?.code !== 'auth/cancelled') setError(mapFirebaseAuthError(e)); }
+    finally { lock.current = false; if (mounted.current) setBusy(null); }
+  };
+  return <AuthLayout busy={Boolean(busy)}>
+    <Image source={require('../../../assets/images/auth_delivery.png')} resizeMode="contain"
+      style={styles.illustration} accessible={false} />
+    <Text style={authStyles.title}>Let’s get moving</Text>
+    <Text style={authStyles.body}>Continue with your mobile number.</Text>
+    <View style={authStyles.form}>
+      <MobileField value={phone} onChangeText={value => { setPhone(nationalMobileInput(value)); setError(null); }} editable={!busy}
+        onBlur={() => setTouched(true)} error={touched && !valid ? 'Enter a valid 10-digit Indian mobile number.' : undefined}
+        onSubmitEditing={() => void continuePhone()} />
+      {error && <Text style={authStyles.error} accessibilityRole="alert">{error}</Text>}
+      <Button label={resumable ? 'Continue verification' : 'Continue'} onPress={continuePhone}
+        loading={busy === 'phone'} disabled={!valid || Boolean(busy) || (cooldownRemaining > 0 && !resumable)}
+        fullWidth style={authStyles.button} />
+      {cooldownRemaining > 0 && !resumable && <Text style={authStyles.hint}>Request another code in {cooldownRemaining}s.</Text>}
+    </View>
+    <View style={styles.divider}><View style={styles.line} /><Text style={styles.or}>or</Text><View style={styles.line} /></View>
+    <Pressable onPress={google} disabled={Boolean(busy)} accessibilityRole="button"
+      accessibilityLabel="Continue with Google" accessibilityState={{ disabled: Boolean(busy) }} style={styles.google}>
+      <Image source={require('../../../assets/images/google_g.png')} resizeMode="contain"
+        style={styles.googleIcon} accessible={false} />
+      <Text style={styles.googleText}>{busy === 'google' ? 'Connecting…' : 'Continue with Google'}</Text>
+    </Pressable>
+    <Text style={styles.footer}>New here? We’ll help you set up after verification.</Text>
+  </AuthLayout>;
 };
-
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.marginMobile,
-    paddingBottom: spacing.xxl,
-  },
-  heroSection: {
-    alignItems: 'center',
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
-  },
-  logoContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.surfaceContainerLowest,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-    ...shadows.card,
-  },
-  logoInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoImage: {
-    width: 44,
-    height: 44,
-  },
-  title: {
-    fontSize: typography.headlineMd.fontSize,
-    fontWeight: '700',
-    color: colors.primary,
-    marginBottom: spacing.xs,
-  },
-  subtitle: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurfaceVariant,
-    textAlign: 'center',
-  },
-  successContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.sm,
-    marginBottom: spacing.md,
-    gap: spacing.xs,
-  },
-  successText: {
-    fontSize: typography.labelSm.fontSize,
-    color: '#166534',
-    flex: 1,
-  },
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.sm,
-    marginBottom: spacing.md,
-    gap: spacing.xs,
-  },
-  errorText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.error,
-    flex: 1,
-  },
-  formSection: {
-    marginBottom: spacing.lg,
-  },
-  inputLabel: {
-    fontSize: typography.labelSm.fontSize,
-    fontWeight: '600',
-    color: colors.onSurfaceVariant,
-    marginBottom: spacing.xs,
-  },
-  phoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  countryCode: {
-    height: 48,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: borderRadius.sm,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.outlineHairline,
-  },
-  countryCodeText: {
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '700',
-    color: colors.onSurface,
-  },
-  phoneInputWrapper: {
-    flex: 1,
-  },
-  cooldownContainer: {
-    marginVertical: spacing.xs,
-    alignItems: 'center',
-  },
-  cooldownText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  submitButton: {
-    marginTop: spacing.md,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: spacing.lg,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.outlineHairline,
-  },
-  dividerText: {
-    marginHorizontal: spacing.md,
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-  },
-  socialButtonsContainer: {
-    marginBottom: spacing.xl,
-  },
-  socialButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 48,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderColor: colors.outlineHairline,
-    backgroundColor: colors.surface,
-    gap: spacing.sm,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  socialIconText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#4285F4',
-  },
-  socialButtonText: {
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '600',
-    color: colors.onSurface,
-  },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  switchPrompt: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurfaceVariant,
-  },
-  switchLink: {
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  termsText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  termsLink: {
-    color: colors.primary,
-    textDecorationLine: 'underline',
-  },
+  illustration: { width: '100%', height: spacing.rowHeightStandard * 3, marginBottom: spacing.xxl },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg, marginVertical: spacing.xxl },
+  line: { flex: 1, height: 1, backgroundColor: colors.outlineHairline },
+  or: { ...typography.bodyMd, color: colors.onSurfaceVariant },
+  google: { minHeight: spacing.rowHeightStandard, borderWidth: 1, borderColor: colors.outlineVariant,
+    borderRadius: borderRadius.lg, backgroundColor: colors.surface, flexDirection: 'row', gap: spacing.md,
+    alignItems: 'center', justifyContent: 'center', padding: spacing.md },
+  googleIcon: { width: spacing.xl, height: spacing.xl },
+  googleText: { ...typography.bodyLg, fontWeight: '500', color: colors.primary },
+  footer: { ...typography.labelSm, textAlign: 'center', color: colors.onSurfaceVariant, marginTop: spacing.xxl },
 });
-
 export default LoginScreen;
+

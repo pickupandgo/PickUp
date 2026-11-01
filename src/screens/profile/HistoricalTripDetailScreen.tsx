@@ -10,6 +10,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useBookingPayment } from '../../hooks/useBookingPayment';
+import BookingPaymentStatus from '../../components/organisms/BookingPaymentStatus';
+import { formatPaise } from '../../utils/paymentPresentation';
 import type { Trip } from '../../api/types';
 
 export interface HistoricalTripDetailScreenProps {
@@ -30,6 +33,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
   route,
 }) => {
   const trip = route?.params?.trip;
+  const payment = useBookingPayment(trip?.paymentBookingId);
   if (!trip) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -51,7 +55,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
       contactName: stop.receiver?.name,
     })),
   ];
-  const fare = trip.fare ?? (trip.payablePaise != null ? trip.payablePaise / 100 : undefined);
+  const selected = { trip, tripId: trip.id, paymentBookingId: trip.paymentBookingId };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -63,7 +67,8 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
         <Text style={styles.headerTitle} numberOfLines={1}>Trip Details</Text>
         <Pressable
           style={styles.iconButton}
-          onPress={() => (onMore ? onMore() : navigation?.navigate('ShareTrackingSheetScreen'))}
+          disabled={!onMore}
+          onPress={() => onMore?.()}
         >
           <Feather name="more-vertical" size={24} color={colors.primary} />
         </Pressable>
@@ -76,7 +81,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
             <Feather name="check-circle" size={24} color={colors.primary} />
             <View>
               <Text style={styles.statusTitle}>{trip.status.replace(/_/g, ' ')}</Text>
-              <Text style={styles.statusTime}>Oct 24, 2023 • 11:30 AM</Text>
+              <Text style={styles.statusTime}>{trip.completedAt || trip.createdAt ? new Date(trip.completedAt ?? trip.createdAt).toLocaleString('en-IN') : 'Not available'}</Text>
             </View>
           </View>
           
@@ -139,24 +144,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Payment Summary</Text>
           
-          <View style={styles.paymentRow}>
-            <Text style={styles.paymentLabel}>Trip Fare</Text>
-            <Text style={styles.paymentValueMono}>{fare != null ? `₹${fare}` : 'Not available'}</Text>
-          </View>
-          <View style={styles.paymentRow}>
-            <Text style={styles.paymentLabel}>Taxes & Fees</Text>
-            <Text style={styles.paymentValueMono}>₹45.00</Text>
-          </View>
-          <View style={[styles.paymentRow, styles.paymentRowTotal]}>
-            <Text style={styles.paymentTotalLabel}>Total Paid</Text>
-            <Text style={styles.paymentTotalValue}>₹495.00</Text>
-          </View>
-          <View style={styles.paymentMethodRow}>
-            <View style={styles.paymentMethodBadge}>
-              <Feather name="credit-card" size={14} color={colors.onSurfaceVariant} />
-              <Text style={styles.paymentMethodText}>{trip.paymentMethod?.replace(/_/g, ' ') ?? 'Payment method unavailable'}</Text>
-            </View>
-          </View>
+          <BookingPaymentStatus state={payment} />
         </View>
 
         {/* Driver Details */}
@@ -176,7 +164,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
             </View>
             <Pressable
               style={styles.rateButton}
-              onPress={() => (onRateTrip ? onRateTrip() : navigation?.navigate('ActiveTripStack', { screen: 'DriverRatingScreen' }))}
+              onPress={() => (onRateTrip ? onRateTrip() : navigation?.navigate('ActiveTripStack', { screen: 'DriverRatingScreen', params: selected }))}
             >
               <Text style={styles.rateButtonText}>Rate Trip</Text>
             </Pressable>
@@ -188,15 +176,15 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
           <Pressable
             style={styles.primaryActionButton}
             onPress={() =>
-              onDownloadInvoice ? onDownloadInvoice() : navigation?.navigate('BookingStack', { screen: 'DigitalReceiptScreen' })
+              onDownloadInvoice ? onDownloadInvoice() : navigation?.navigate('BookingStack', { screen: 'DigitalReceiptScreen', params: selected })
             }
           >
             <Feather name="download" size={20} color={colors.onPrimary} />
-            <Text style={styles.primaryActionText}>Download Invoice</Text>
+            <Text style={styles.primaryActionText}>View payment details</Text>
           </Pressable>
           <Pressable
             style={styles.secondaryActionButton}
-            onPress={() => (onNeedHelp ? onNeedHelp() : navigation?.navigate('ActiveTripStack', { screen: 'ActiveTripChatScreen' }))}
+            onPress={() => (onNeedHelp ? onNeedHelp() : navigation?.navigate('ActiveTripStack', { screen: 'ActiveTripChatScreen', params: { ...selected, bookingId: trip.paymentBookingId } }))}
           >
             <Feather name="help-circle" size={20} color={colors.onSurface} />
             <Text style={styles.secondaryActionText}>Need Help?</Text>

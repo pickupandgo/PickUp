@@ -28,30 +28,6 @@ export interface MultiDropOverviewScreenProps {
   readonly stops?: readonly DropStop[];
 }
 
-const defaultStops: readonly DropStop[] = [
-  {
-    id: '1',
-    type: 'pickup',
-    label: 'Pickup',
-    title: 'Pickup Location',
-  },
-  {
-    id: '2',
-    type: 'drop',
-    label: 'Drop 1',
-    title: 'Sardarpura Warehouse',
-    landmark: 'Gate No. 2',
-    receiver: 'Akash Singh',
-  },
-  {
-    id: '3',
-    type: 'drop',
-    label: 'Drop 2',
-    title: 'Ratanada Hub',
-    receiver: 'Meera J.',
-  },
-];
-
 const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigation?: any }> = ({
   onBack,
   onContinue,
@@ -67,7 +43,7 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
   // Gallery, where no booking exists.
   const stops = useMemo<readonly DropStop[]>(() => {
     if (stopsProp) return stopsProp;
-    if (!draft.pickup && !draft.drops.length) return defaultStops;
+    if (!draft.pickup && !draft.drops.length) return [];
 
     const built: DropStop[] = [];
     if (draft.pickup) {
@@ -84,11 +60,11 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
         type: 'drop',
         label: `Drop ${index + 1}`,
         title: drop.address,
-        receiver: draft.receiverName,
+        receiver: drop.receiverName,
       });
     });
     return built;
-  }, [stopsProp, draft.pickup, draft.drops, draft.receiverName]);
+  }, [stopsProp, draft.pickup, draft.drops]);
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       {/* Top App Bar */}
@@ -157,7 +133,8 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
                       onEditStop
                         ? onEditStop(stop.id)
                         : navigation?.navigate(
-                            isPickup ? 'SelectLocationScreen' : 'SelectDropLocationScreen'
+                            isPickup ? 'SelectLocationScreen' : 'SelectDropLocationScreen',
+                            { mode: 'edit', editTarget: isPickup ? { type: 'pickup' } : { type: 'drop', index: Number(stop.id.replace('drop-', '')) } }
                           )
                     }
                     accessibilityRole="button"
@@ -179,7 +156,7 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
             </View>
             <Pressable
               style={styles.addStopButton}
-              onPress={() => (onAddStop ? onAddStop() : navigation?.navigate('SelectDropLocationScreen'))}
+              onPress={() => (onAddStop ? onAddStop() : navigation?.navigate('SelectDropLocationScreen', { mode: 'stop' }))}
               accessibilityRole="button"
             >
               <Text style={styles.addStopText}>Add Drop Location</Text>
@@ -193,8 +170,8 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
         <Pressable
           style={styles.continueButton}
           onPress={() => {
-            onContinue?.();
-            navigation?.navigate('SelectVehicleScreen');
+            if (onContinue) onContinue();
+            else navigation?.navigate('SelectVehicleScreen');
           }}
           accessibilityRole="button"
           accessibilityLabel="Continue"

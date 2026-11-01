@@ -5,9 +5,10 @@
     "dependencies": {
         "@invertase/react-native-apple-authentication": "^2.5.1",
         "@react-native-async-storage/async-storage": "2.2.0",
-        "@react-native-community/geolocation": "^3.4.0",
+        "@react-native-community/geolocation": "3.4.0",
         "@react-native-firebase/app": "^26.4.0",
         "@react-native-firebase/auth": "^26.4.0",
+        "@react-native-firebase/messaging": "26.4.0",
         "@react-native-google-signin/google-signin": "^16.1.5",
         "@react-navigation/bottom-tabs": "^7.19.1",
         "@react-navigation/native": "^7.3.17",
@@ -42,7 +43,10 @@
         "test": "jest",
         "check:wiring": "node scripts/check-wiring.js",
         "check:text": "node scripts/check-text-nodes.js",
-        "check": "npm run typecheck && npm run check:wiring && npm run check:text"
+        "check": "npm run typecheck && npm run check:wiring && npm run check:text",
+        "postinstall": "node scripts/patch-geolocation.cjs",
+        "patch:location": "node scripts/patch-geolocation.cjs",
+        "test:location:native": "node scripts/test-geolocation-callback.cjs"
     },
     "private": true
 }

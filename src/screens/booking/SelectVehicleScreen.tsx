@@ -1,3 +1,4 @@
+import { Alert } from 'react-native';
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -317,7 +318,7 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
         leadingIcon={<Text style={styles.backIcon}>←</Text>}
         onLeadingPress={() => (onBack ? onBack() : navigation?.goBack())}
         trailingIcon={<Text style={styles.helpText}>Help</Text>}
-        onTrailingPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
+        onTrailingPress={() => (onHelp ? onHelp() : Alert.alert('Booking help', 'Check your pickup, drops and goods details. Retry if prices could not load. Driver chat becomes available after assignment.'))}
       />
 
       {showSkeleton ? (
@@ -377,7 +378,7 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
             <View style={styles.routeActionDivider} />
             <Pressable
               style={styles.routeActionBtn}
-              onPress={() => navigation?.navigate('SelectLocationScreen', { mode: 'edit' })}
+              onPress={() => navigation?.navigate('MultiDropOverviewScreen')}
             >
               <Feather name="edit-2" size={16} color={colors.primary} />
               <Text style={styles.routeActionText}>Edit Locations</Text>

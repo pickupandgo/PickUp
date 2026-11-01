@@ -14,11 +14,13 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
 import { useTripStatus } from '../../hooks/useTripStatus';
+import { useBookingPayment } from '../../hooks/useBookingPayment';
+import BookingPaymentStatus from '../../components/organisms/BookingPaymentStatus';
 import { useRideOtps } from '../../hooks/useRideOtps';
 import { getActiveTripForCustomer, getDriver, getRide } from '../../api/engine';
 import type { GeoPoint } from '../../api/types';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
-import { useRoute } from '../../hooks/useRoute';
+import { useRoadRoute } from '../../hooks/useRoute';
 import { getVehicleImage } from '../../utils/vehicleAssets';
 
 export interface CustomerLiveTrackingScreenProps {
@@ -95,6 +97,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
   // arrays; a later `const` would be in the temporal dead zone at render time
   // and Hermes throws "Property 'status' doesn't exist".
   const status = current?.status;
+  const payment = useBookingPayment(current?.paymentBookingId ?? ride?.paymentBookingId);
 
   // Handover OTPs come from the gated endpoint: the server releases the pickup OTP once the
   // pickup handover is allowed, and each drop's OTP once that drop's payment is confirmed.
@@ -108,8 +111,8 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
   // to live tracking after the trip is done.
   useEffect(() => {
     if (!status) return;
-    if (status === 'DELIVERED' || status === 'COMPLETED') {
-      navigation?.replace('TripCompletedScreen');
+    if (status === 'COMPLETED') {
+      navigation?.replace('TripCompletedScreen', { trip: current, tripId: current?.id });
     } else if (status === 'CANCELLED') {
       navigation?.replace('TripCancelledStatusScreen');
     }
@@ -183,8 +186,10 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
   // driver doesn't blow through the Directions quota.
   const preTransit =
     status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED' || status === 'PICKUP_VERIFIED';
-  const routeDestination = (preTransit ? current?.pickup : current?.drop) ?? undefined;
-  const roadRoute = useRoute(driverPoint ?? current?.pickup, routeDestination);
+  const orderedRemaining = current?.stops.filter(stop => stop.status !== 'DELIVERED' && stop.status !== 'UNDELIVERED' && stop.status !== 'CANCELLED') ?? [];
+  const routeDestination = (preTransit ? current?.pickup : orderedRemaining[orderedRemaining.length - 1]?.location ?? current?.drop) ?? undefined;
+  const routeWaypoints = preTransit ? [] : orderedRemaining.slice(0, -1).map(stop => stop.location);
+  const road = useRoadRoute(driverPoint ?? current?.pickup, routeDestination, routeWaypoints);
 
   // The pickup OTP and the current drop's OTP, only when the server has released them.
   const pickupOtp = otps?.pickup.otp ?? null;
@@ -208,6 +213,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
       case 'DROP_PROGRESS':
         return 'On the way to the drop';
       case 'DELIVERED':
+        return 'Delivery finished - finalizing trip';
       case 'COMPLETED':
         return 'Trip completed';
       case 'CANCELLED':
@@ -315,7 +321,9 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
         style={styles.mapCanvas}
         markers={markers}
         fitToMarkers={markers.length > 1}
-        polyline={roadRoute}
+        polyline={road.polyline}
+        routeStatus={road.status}
+        onRetryRoute={road.retry}
       />
 
       {/* Bottom Overlay Container */}
@@ -342,6 +350,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
               </View>
             </Pressable>
 
+            {current && current.stops.length > 1 && <Pressable accessibilityRole="button" onPress={() => navigation?.navigate('MultiDropProgressScreen', { tripId: current.id })} style={{ paddingVertical: spacing.sm }}><Text style={{ ...typography.labelSm, color: colors.primary }}>View all stops</Text></Pressable>}
             {/* Minimized Pill View when Collapsed */}
             {isCollapsed ? (
               <Pressable style={styles.minimizedRow} onPress={toggleCollapsed} accessibilityRole="button">
@@ -374,6 +383,7 @@ const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { n
                 bounces={false}
                 contentContainerStyle={styles.cardScrollContent}
               >
+        <BookingPaymentStatus state={payment} />
                 <View style={styles.tripStatusHeader}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.tripStatusTitle}>{tripHeadline}</Text>

@@ -14,7 +14,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
 import { getVehicleImage } from '../../utils/vehicleAssets';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
-import { useRoute } from '../../hooks/useRoute';
+import { useRoadRoute } from '../../hooks/useRoute';
 import type { GeoPoint } from '../../api/types';
 
 export interface DriverAssignedExpandedScreenProps {
@@ -51,7 +51,7 @@ const DriverAssignedExpandedScreen: React.FC<
     (trip as any)?.vehicleType ||
     ride?.vehicleType ||
     draft?.vehicleType ||
-    'Mini Truck';
+    'Vehicle unavailable';
 
   const vehicleNumber =
     route?.params?.vehicleNumber ||
@@ -59,19 +59,19 @@ const DriverAssignedExpandedScreen: React.FC<
     (assignedDriver as any)?.vehicleRegistrationNumber ||
     (trip as any)?.vehicleRegistration ||
     (ride as any)?.vehicleRegistration ||
-    'RJ 19 XX 1234';
+    'Registration unavailable';
 
   const driverRating =
     (assignedDriver as any)?.rating != null
       ? Number((assignedDriver as any).rating).toFixed(1)
-      : '4.8';
+      : 'Unavailable';
 
   const tripReference =
     trip?.id ||
     ride?.id ||
     trip?.paymentBookingId ||
     ride?.paymentBookingId ||
-    '4910';
+    'Unavailable';
 
   const shortTripId =
     tripReference.length > 8 ? tripReference.slice(0, 8) : tripReference;
@@ -95,8 +95,8 @@ const DriverAssignedExpandedScreen: React.FC<
 
   // Real Road Route
   const routeOrigin = driverPoint ?? pickupPoint;
-  const routeDestination = pickupPoint ?? dropPoint;
-  const roadRoute = useRoute(routeOrigin, routeDestination);
+  const routeDestination = trip?.startedAt ? trip.currentStop?.location ?? dropPoint : pickupPoint ?? dropPoint;
+  const road = useRoadRoute(routeOrigin, routeDestination);
 
   // Markers for MapCanvas
   const mapMarkers = useMemo(() => {
@@ -258,7 +258,9 @@ const DriverAssignedExpandedScreen: React.FC<
             style={styles.mapCanvas}
             center={driverPoint ?? pickupPoint}
             markers={mapMarkers}
-            polyline={roadRoute}
+            polyline={road.polyline}
+        routeStatus={road.status}
+        onRetryRoute={road.retry}
             fitToMarkers={Boolean(pickupPoint && (dropPoint || driverPoint))}
           />
 

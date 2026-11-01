@@ -66,12 +66,13 @@ describe('booking quote invalidation', () => {
 
     const seed = () => {
       act(() => {
+        api.resetDraft();
         api.setPickup(place(26.29, 73.02, 'Pickup'));
         api.addDrop(place(26.3, 73.03, 'Drop 1'));
         api.setVehicleType('Mini Truck / Tata Ace');
         api.setGoods({ weightKg: 10 });
       });
-      act(() => api.setQuote(QUOTE));
+      act(() => api.setQuote({ ...QUOTE, drops: [{ ...QUOTE, sequence: 1, latitude: 26.3, longitude: 73.03 }] }));
       expect(api.draft.quote).toBeDefined();
     };
 
@@ -117,3 +118,5 @@ describe('booking quote invalidation', () => {
     unmount();
   });
 });
+
+jest.mock('../src/api/engine', () => ({ ...jest.requireActual('../src/api/engine'), recoverRide: jest.fn(async () => null) }));

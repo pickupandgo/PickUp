@@ -131,7 +131,7 @@ describe('TripCompleted screens with Real Data', () => {
       expect(allTexts).toContain('Vikram Singh');
 
       // Verify real Total Fare
-      expect(allTexts).toContain('₹540');
+      expect(allTexts).toContain('\u20b9540.00');
 
       // Verify real Route Addresses
       expect(allTexts).toContain('Indiranagar Metro Station, 100ft Road');
@@ -156,7 +156,7 @@ describe('TripCompleted screens with Real Data', () => {
         doneBtn.props.onPress();
       });
 
-      expect(mockNav.navigate).toHaveBeenCalledWith('TripCompletedSummaryScreen');
+      expect(mockNav.navigate).toHaveBeenCalledWith('TripCompletedSummaryScreen', expect.objectContaining({ trip: mockRealTrip, tripId: mockRealTrip.id }));
     });
   });
 
@@ -184,7 +184,7 @@ describe('TripCompleted screens with Real Data', () => {
       expect(allTexts).toContain('Mini Truck / Tata Ace | KA 05 MN 9876');
 
       // Verify real payment status with actual fare
-      expect(allTexts).toContain('Paid • ₹540');
+      expect(allTexts).toContain('Payment status unavailable');
     });
 
     it('clears active ride and resets to MainTabs when BACK TO HOME is clicked', () => {

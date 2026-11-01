@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getAuth } from '@react-native-firebase/auth';
+import { hasRequiredProfile } from './profileValidation';
 
 const SESSION_KEY = 'pickup.isLoggedIn';
 const PROFILE_KEY = 'pickup.profileComplete';
@@ -71,16 +72,15 @@ export const setProfileComplete = async (
 ): Promise<void> => {
   try {
     const userUid = uid ?? getFirebaseUid();
+    if (!userUid) return;
     const profileKey = getUserProfileKey(userUid);
     const dataKey = getUserProfileDataKey(userUid);
 
     await AsyncStorage.setItem(profileKey, 'true');
-    await AsyncStorage.setItem(PROFILE_KEY, 'true');
 
     if (profileData) {
       const serialized = JSON.stringify(profileData);
       await AsyncStorage.setItem(dataKey, serialized);
-      await AsyncStorage.setItem(PROFILE_DATA_KEY, serialized);
     }
   } catch {
     // Non-fatal
@@ -96,24 +96,15 @@ export const isProfileComplete = async (uid?: string | null): Promise<boolean> =
       if (rawUser) {
         try {
           const parsed = JSON.parse(rawUser);
-          const hasName = Boolean(parsed?.fullName && parsed.fullName.trim().length > 0);
-          const hasValidEmail = Boolean(
-            parsed?.email &&
-              parsed.email.trim().length > 0 &&
-              /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed.email.trim())
-          );
-          if (hasName && hasValidEmail) {
+          if (typeof parsed?.fullName === 'string' && typeof parsed?.email === 'string' && hasRequiredProfile(parsed)) {
             return true;
           }
         } catch {
           // parse failed
         }
       }
-      const scopedFlag = await AsyncStorage.getItem(getUserProfileKey(userUid));
-      if (scopedFlag === 'true') return true;
     }
-
-    return (await AsyncStorage.getItem(PROFILE_KEY)) === 'true';
+    return false;
   } catch {
     return false;
   }
@@ -141,9 +132,9 @@ export const getCustomerProfile = async (uid?: string | null): Promise<CustomerP
       if (rawScoped) {
         return JSON.parse(rawScoped);
       }
+      return null;
     }
-    const raw = await AsyncStorage.getItem(PROFILE_DATA_KEY);
-    return raw ? JSON.parse(raw) : null;
+    return null;
   } catch {
     return null;
   }

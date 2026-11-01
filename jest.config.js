@@ -15,6 +15,8 @@ module.exports = {
       '|@react-native-firebase' +
       '|@react-native-async-storage' +
       '|@react-native-community' +
+      '|@react-navigation' +
+      '|nanoid' +
     ')/)',
   ],
   setupFiles: ['./jest.setup.js'],

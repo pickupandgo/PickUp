@@ -1,3 +1,6 @@
+import TripRouteDetailsScreen from './src/screens/logistics/TripRouteDetailsScreen';
+import { usePushNotifications } from './src/hooks/usePushNotifications';
+import { pushNavigationRef, flushPendingPush } from './src/services/pushNavigation';
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, FlatList, ActivityIndicator, StatusBar } from 'react-native';
 
@@ -7,8 +10,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { BookingProvider, useBooking } from './src/state/BookingContext';
 import { SessionProvider, useSession } from './src/state/SessionContext';
-import { AuthProvider } from './src/auth/AuthProvider';
-import { colors } from './src/theme';
+import { colors, spacing, typography } from './src/theme';
 import ErrorBoundary from './src/components/common/ErrorBoundary';
 
 import ActiveTripChatScreen from './src/screens/support/ActiveTripChatScreen';
@@ -48,7 +50,8 @@ import LiveTrackingExceptionsScreen from './src/screens/tracking/LiveTrackingExc
 import LiveTrackingScreen from './src/screens/tracking/LiveTrackingScreen';
 import LoadingSkeletonScreen from './src/screens/support/LoadingSkeletonScreen';
 import LoginScreen from './src/screens/auth/LoginScreen';
-import SignUpScreen from './src/screens/auth/SignUpScreen';
+import PhoneCompletionScreen from './src/screens/auth/PhoneCompletionScreen';
+import AccountRecoveryScreen from './src/screens/auth/AccountRecoveryScreen';
 import LogoutConfirmationScreen from './src/screens/auth/LogoutConfirmationScreen';
 import MapLoadingScreen from './src/screens/tracking/MapLoadingScreen';
 import MultiDropOverviewScreen from './src/screens/logistics/MultiDropOverviewScreen';
@@ -124,9 +127,7 @@ function AuthNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="LoginScreen">
       <Stack.Screen name="LoginScreen" component={LoginScreen} />
-      <Stack.Screen name="SignUpScreen" component={SignUpScreen} />
       <Stack.Screen name="OtpVerificationScreen" component={OtpVerificationScreen} />
-      <Stack.Screen name="CreateProfileScreen" component={CreateProfileScreen} />
     </Stack.Navigator>
   );
 }
@@ -203,24 +204,24 @@ function ActiveTripStackNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="FindingDriverScreen" component={FindingDriverScreen} />
-      <Stack.Screen name="DriverFoundScreen" component={DriverFoundScreen} />
+      <Stack.Screen name="DriverFoundScreen" component={DriverAssignedScreen} />
       <Stack.Screen name="DriverAssignedScreen" component={DriverAssignedScreen} />
       <Stack.Screen name="DriverAssignedExpandedScreen" component={DriverAssignedExpandedScreen} />
       <Stack.Screen name="CustomerLiveTrackingScreen" component={CustomerLiveTrackingScreen} />
-      <Stack.Screen name="ActiveTripTrackingScreen" component={ActiveTripTrackingScreen} />
+      <Stack.Screen name="ActiveTripTrackingScreen" component={CustomerLiveTrackingScreen} />
       <Stack.Screen name="ActiveTripChatScreen" component={ActiveTripChatScreen} />
       <Stack.Screen name="CallDriverScreen" component={CallDriverScreen} />
       
       {/* Logistics/Trip states */}
       <Stack.Screen name="PickupVerifiedSuccessScreen" component={PickupVerifiedSuccessScreen} />
       <Stack.Screen name="PickupOtpVerificationScreen" component={PickupOtpVerificationScreen} />
-      <Stack.Screen name="MultiDropProgressScreen" component={MultiDropProgressScreen} />
-      <Stack.Screen name="CurrentDropDetailsScreen" component={CurrentDropDetailsScreen} />
+      <Stack.Screen name="MultiDropProgressScreen" component={TripRouteDetailsScreen} />
+      <Stack.Screen name="CurrentDropDetailsScreen" component={TripRouteDetailsScreen} />
       <Stack.Screen name="DropOtpVerificationScreen" component={DropOtpVerificationScreen} />
-      <Stack.Screen name="DropCompletedStateScreen" component={DropCompletedStateScreen} />
-      <Stack.Screen name="NextDropScreen" component={NextDropScreen} />
+      <Stack.Screen name="DropCompletedStateScreen" component={TripRouteDetailsScreen} />
+      <Stack.Screen name="NextDropScreen" component={TripRouteDetailsScreen} />
       <Stack.Screen name="ReceiverDetailsScreen" component={ReceiverDetailsScreen} />
-      <Stack.Screen name="FinalDeliverySummaryScreen" component={FinalDeliverySummaryScreen} />
+      <Stack.Screen name="FinalDeliverySummaryScreen" component={TripRouteDetailsScreen} />
       
       {/* Support / Completion */}
       <Stack.Screen name="TripCompletedScreen" component={TripCompletedScreen} />
@@ -246,6 +247,10 @@ function MainNavigator() {
       <Stack.Screen name="BookingStack" component={BookingStackNavigator} />
       <Stack.Screen name="ActiveTripStack" component={ActiveTripStackNavigator} />
       
+      {/* Shared actions can bubble from any customer stack. */}
+      <Stack.Screen name="ActiveTripChatScreen" component={ActiveTripChatScreen} />
+      <Stack.Screen name="ShareTrackingSheetScreen" component={ShareTrackingSheetScreen} />
+      <Stack.Screen name="LiveTrackingExceptionsScreen" component={TripRouteDetailsScreen} />
       {/* Global Modals/Screens in Main */}
       <Stack.Screen name="CustomerSettingsScreen" component={CustomerSettingsScreen} />
       <Stack.Screen name="ChangeProfilePhotoScreen" component={ChangeProfilePhotoScreen} options={{ presentation: 'transparentModal', animation: 'fade' }} />
@@ -262,36 +267,43 @@ function MainNavigator() {
       <Stack.Screen name="EmptyStateScreen" component={EmptyStateRoute} />
       <Stack.Screen name="LoadingSkeletonScreen" component={LoadingSkeletonScreen} />
       <Stack.Screen name="MapLoadingScreen" component={MapLoadingScreen} />
-      <Stack.Screen name="Gallery" component={GalleryScreen} />
+      {__DEV__ && <Stack.Screen name="Gallery" component={GalleryScreen} />}
     </Stack.Navigator>
   );
 }
 
 function OnboardingNavigator() {
+  const { registrationStatus, authUid } = useSession();
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="CreateProfileScreen" component={CreateProfileScreen} />
+    <Stack.Navigator key={`${authUid}:${registrationStatus}`} screenOptions={{ headerShown: false }}>
+      {registrationStatus === 'needs_phone' ? <>
+        <Stack.Screen name="PhoneCompletionScreen" component={PhoneCompletionScreen} />
+        <Stack.Screen name="OtpVerificationScreen" component={OtpVerificationScreen} />
+      </> : registrationStatus === 'needs_profile' ? (
+        <Stack.Screen name="CreateProfileScreen" component={CreateProfileScreen} />
+      ) : <Stack.Screen name="AccountRecoveryScreen" component={AccountRecoveryScreen} />}
     </Stack.Navigator>
   );
 }
 
 function RootNavigator() {
-  const { isLoggedIn, hasProfile } = useSession();
+  const { isLoggedIn, hasProfile, authUid } = useSession();
 
   if (isLoggedIn === null || (isLoggedIn && hasProfile === null)) {
     return (
       <View style={styles.splash}>
         <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.splashLabel}>{isLoggedIn ? 'Checking your account…' : 'Opening PICKUP…'}</Text>
       </View>
     );
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={pushNavigationRef} onReady={() => { void flushPendingPush().catch(() => {}); }}>
       {!isLoggedIn ? (
         <AuthNavigator />
       ) : hasProfile ? (
-        <MainNavigator />
+        <MainNavigator key={authUid} />
       ) : (
         <OnboardingNavigator />
       )}
@@ -304,20 +316,24 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
       <ErrorBoundary>
-        <AuthProvider>
           <SessionProvider>
-            <BookingProvider>
-              <RootNavigator />
-            </BookingProvider>
+            <SessionContent />
           </SessionProvider>
-        </AuthProvider>
       </ErrorBoundary>
     </SafeAreaProvider>
   );
 }
 
+// Booking data must not survive a Firebase identity change.
+function SessionContent() {
+  const { authUid, isLoggedIn, hasProfile } = useSession();
+  usePushNotifications(authUid, isLoggedIn === true && hasProfile === true);
+  return <BookingProvider key={authUid ?? 'signed-out'}><RootNavigator /></BookingProvider>;
+}
+
 const styles = StyleSheet.create({
   splash: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  splashLabel: { marginTop: spacing.lg, ...typography.bodyMd, color: colors.onSurfaceVariant },
   galleryContainer: { flex: 1, backgroundColor: '#fff' },
   header: { fontSize: 24, fontWeight: 'bold', padding: 20, borderBottomWidth: 1, borderColor: '#eee' },
   item: { padding: 16, borderBottomWidth: 1, borderColor: '#f0f0f0' },

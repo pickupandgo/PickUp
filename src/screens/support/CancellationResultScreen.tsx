@@ -85,7 +85,8 @@ const CancellationResultScreen: React.FC<
       onHome();
     } else {
       clearActiveRide();
-      navigation?.dispatch(
+      const root = navigation?.getParent?.() ?? navigation;
+      root?.dispatch(
         CommonActions.reset({
           index: 0,
           routes: [{ name: 'MainTabs', params: { screen: 'HomeScreen' } }],
@@ -176,7 +177,7 @@ const CancellationResultScreen: React.FC<
                 style={styles.infoIcon}
               />
               <Text style={styles.infoText}>
-                No cancellation fee applies.
+                Cancellation confirmed. Fee information is not available.
               </Text>
             </View>
           )}

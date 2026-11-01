@@ -64,10 +64,11 @@ const PickupOTPVerificationScreen: React.FC<PickupOTPVerificationScreenProps & {
   // status changes can't drive us forward a second time.
   useEffect(() => {
     const status = current?.status;
-    if (status === 'DELIVERED' || status === 'COMPLETED') {
-      navigation?.replace('TripCompletedScreen');
+    if (status === 'COMPLETED') {
+      navigation?.replace('TripCompletedScreen', { trip: current, tripId: current?.id });
       return;
     }
+    if (status === 'DELIVERED') { navigation?.replace('CustomerLiveTrackingScreen'); return; }
     if (status === 'CANCELLED') {
       navigation?.replace('TripCancelledStatusScreen');
       return;

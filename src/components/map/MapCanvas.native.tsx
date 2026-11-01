@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, Image } from 'react-native';
+import { View, StyleSheet, Image, Text, Pressable } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { colors, shadows } from '../../theme';
+import { colors, shadows, spacing, typography } from '../../theme';
 import type { GeoPoint } from '../../api/types';
 import { getVehicleImage } from '../../utils/vehicleAssets';
 import {
@@ -81,6 +81,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
   center,
   markers = [],
   polyline,
+  routeStatus,
+  onRetryRoute,
   fitToMarkers = false,
   showsUserLocation = false,
     onRegionChangeComplete,
@@ -283,12 +285,19 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
         )}
       </MapView>
       {children}
+      {(routeStatus === 'loading' || routeStatus === 'error') && <View style={styles.routeNotice} accessibilityLiveRegion="polite">
+        <Text style={styles.routeNoticeText}>{routeStatus === 'loading' ? 'Loading road route...' : 'Road route unavailable. Locations are still shown.'}</Text>
+        {routeStatus === 'error' && onRetryRoute && <Pressable onPress={onRetryRoute} accessibilityRole="button"><Text style={styles.routeRetry}>Retry route</Text></Pressable>}
+      </View>}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: { overflow: 'hidden' },
+  routeNotice: { position: 'absolute', top: spacing.xl, left: spacing.md, right: spacing.md, padding: spacing.sm, backgroundColor: colors.surface, borderRadius: spacing.sm },
+  routeNoticeText: { ...typography.bodyMd, color: colors.onSurface },
+  routeRetry: { ...typography.labelSm, color: colors.primary, paddingVertical: spacing.sm },
 
   // Themed stop pin — dark filled dot on a white ring, hanging from a stem.
   pinContainer: {

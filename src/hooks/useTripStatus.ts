@@ -40,6 +40,7 @@ export const useTripStatus = (
   const { intervalMs = DEFAULT_INTERVAL_MS, enabled = true } = options;
 
   const [trip, setTrip] = useState<Trip>();
+  const [resultId, setResultId] = useState<string>();
   const [error, setError] = useState<ApiError>();
   const [isLoading, setIsLoading] = useState(false);
 
@@ -68,12 +69,15 @@ export const useTripStatus = (
 
       try {
         const next = await getTrip(id, controller.signal);
-        if (!isMountedRef.current) return undefined;
+        if (!isMountedRef.current || controller.signal.aborted || abortRef.current !== controller) return undefined;
+        setResultId(id);
         setTrip(next);
         setError(undefined);
         return next;
       } catch (caught) {
-        if (!isMountedRef.current || controller.signal.aborted) return undefined;
+        if (!isMountedRef.current || controller.signal.aborted || abortRef.current !== controller) return undefined;
+        setResultId(id);
+        setTrip(undefined);
         setError(toApiError(caught));
         return undefined;
       }
@@ -83,6 +87,10 @@ export const useTripStatus = (
 
   useEffect(() => {
     isMountedRef.current = true;
+    setError(undefined);
+    setTrip(undefined);
+    setResultId(undefined);
+    setIsLoading(false);
 
     if (!tripId || !enabled || !appActive) {
       clearTimer();
@@ -124,8 +132,8 @@ export const useTripStatus = (
   );
 
   const refresh = useCallback(() => {
-    if (tripId) void fetchOnce(tripId);
-  }, [tripId, fetchOnce]);
+    if (tripId && enabled && appActive) void fetchOnce(tripId);
+  }, [tripId, enabled, appActive, fetchOnce]);
 
-  return { trip, error, isLoading, refresh };
+  return { trip: enabled && appActive && resultId === tripId ? trip : undefined, error, isLoading, refresh };
 };

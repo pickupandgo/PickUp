@@ -12,6 +12,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { mockActiveTrip } from '../../data/mockData';
+import { useSelectedTrip } from '../../hooks/useSelectedTrip';
 import { useBooking } from '../../state/BookingContext';
 import { getVehicleImage, getVehicleDisplayName } from '../../utils/vehicleAssets';
 
@@ -43,7 +44,15 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any;
   navigation,
   route,
 }) => {
-  const { assignedDriver, trip, ride, draft } = useBooking();
+  const context = useBooking();
+  const trip = useSelectedTrip(route?.params, context.trip);
+  const explicit = !!route?.params && ('trip' in route.params || 'tripId' in route.params || 'paymentBookingId' in route.params);
+  const scoped = !explicit || (!!trip && trip.id === context.trip?.id);
+  const assignedDriver = scoped ? context.assignedDriver : undefined;
+  const ride = scoped ? context.ride : undefined;
+  const draft = scoped ? context.draft : { drops: [] } as typeof context.draft;
+  const selected = { trip, tripId: trip?.id, paymentBookingId: trip?.paymentBookingId };
+
   const [rating, setRating] = useState(0);
   const [selectedFeedback, setSelectedFeedback] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -54,7 +63,7 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any;
     (trip?.id ? `TRIP-${trip.id.substring(0, 6).toUpperCase()}` : undefined) ||
     ride?.externalRef ||
     (ride?.id ? `TRIP-${ride.id.substring(0, 6).toUpperCase()}` : undefined) ||
-    mockActiveTrip.id;
+    'Not available';
 
   const rawVehicleType =
     route?.params?.vehicleType ||
@@ -69,14 +78,14 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any;
     (assignedDriver as any)?.vehicleRegistrationNumber ||
     (trip as any)?.vehicleNumber ||
     (ride as any)?.vehicleNumber ||
-    mockActiveTrip.vehicleNumber;
+    'Not available';
 
   const driverName =
     route?.params?.driverName ||
     assignedDriver?.name ||
     (trip as any)?.driverName ||
     (ride as any)?.driverName ||
-    mockActiveTrip.driverName;
+    'Not available';
 
   const handleFeedbackToggle = (option: string) => {
     if (selectedFeedback.includes(option)) {
@@ -92,7 +101,7 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any;
     setTimeout(() => {
       onSubmit?.(rating, selectedFeedback);
       setIsSubmitting(false);
-      navigation?.navigate('WrittenReviewScreen');
+      navigation?.navigate('WrittenReviewScreen', selected);
     }, 1000);
   };
 
@@ -208,7 +217,7 @@ const DriverRatingScreen: React.FC<DriverRatingScreenProps & { navigation?: any;
           <Pressable
             style={styles.skipButton}
             onPress={() =>
-              onSkip ? onSkip() : navigation?.navigate('TripCompletedSummaryScreen')
+              onSkip ? onSkip() : navigation?.navigate('TripCompletedSummaryScreen', selected)
             }
           >
             <Text style={styles.skipButtonText}>Skip</Text>

@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { KeyboardAwareScrollView } from '../../components/organisms';
+import { isValidDeclaredValue } from './GoodsDetailsScreen';
 import { useBooking } from '../../state/BookingContext';
 
 export interface GoodsInsuranceScreenProps {
@@ -38,22 +39,19 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
 
   const [declaredValue, setDeclaredValue] = useState<string>(() => {
     const raw = draft.declaredValue?.trim();
-    return raw && raw !== '50,000' && raw !== '50000' ? raw : '';
+    return raw ?? '';
   });
-  const [isInsured, setIsInsuredState] = useState<boolean>(() => draft.insured ?? false);
-
-  const parsedVal = parseFloat(declaredValue.replace(/,/g, ''));
-  const effectiveValue = Number.isFinite(parsedVal) && parsedVal > 0 ? parsedVal : 5000;
-  const estPremium = Math.max(25, Math.round(effectiveValue * 0.005));
+  const validValue = isValidDeclaredValue(declaredValue);
 
   const handleContinue = () => {
+    if (!validValue) return;
     const cleanVal = declaredValue.trim().replace(/,/g, '');
     setGoods({
-      declaredValue: cleanVal || '5000',
+      declaredValue: cleanVal,
     });
-    setInsured(isInsured);
-    onContinue?.();
-    navigation?.navigate('FareEstimateScreen');
+    setInsured(false);
+    if (onContinue) onContinue();
+    else navigation?.navigate('FareEstimateScreen');
   };
 
   return (
@@ -91,6 +89,8 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
             <Pressable
               style={styles.continueButton}
               onPress={handleContinue}
+              disabled={!validValue}
+              accessibilityState={{ disabled: !validValue }}
               accessibilityRole="button"
               accessibilityLabel="Continue"
             >
@@ -101,8 +101,8 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
       >
         {/* Header Section */}
         <View style={styles.titleSection}>
-          <Text style={styles.pageTitle}>Protect Your Delivery</Text>
-          <Text style={styles.pageSubtitle}>Optional protection for eligible goods during transit.</Text>
+          <Text style={styles.pageTitle}>Goods Value</Text>
+          <Text style={styles.pageSubtitle}>Confirm the value of the goods you are sending.</Text>
         </View>
 
         {/* Value Declaration */}
@@ -112,7 +112,7 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
             <Text style={styles.cardTitle}>Declared Value</Text>
           </View>
           <Text style={styles.cardDesc}>
-            Enter the estimated value of the items you are shipping to get an insurance quote.
+            Enter the estimated value of the items you are shipping.
           </Text>
           <View style={styles.valueInputWrapper}>
             <Text style={styles.currencyPrefix}>₹</Text>
@@ -130,47 +130,10 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
           </View>
         </View>
 
-        {/* Insurance Option Toggle */}
-        <Pressable
-          style={[styles.insuranceCard, isInsured && styles.insuranceCardActive]}
-          onPress={() => setIsInsuredState(!isInsured)}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: isInsured }}
-          accessibilityLabel="Select Goods Insurance"
-        >
-          <View style={styles.insuranceHeader}>
-            <View style={styles.insuranceHeaderLeft}>
-              <View style={styles.iconCircle}>
-                <Feather name="shield" size={20} color={colors.onSecondaryContainer} />
-              </View>
-              <View style={styles.insuranceTitleCol}>
-                <Text style={styles.insuranceTitle}>Goods Insurance</Text>
-                <Text style={styles.insurancePremium}>Est. Premium: ₹ {estPremium}</Text>
-              </View>
-            </View>
-            <View style={[styles.checkbox, isInsured && styles.checkboxChecked]}>
-              {isInsured && <Feather name="check" size={14} color={colors.onPrimary} />}
-            </View>
-          </View>
-
-          <View style={styles.coverageBox}>
-            <Text style={styles.coverageLabel}>COVERAGE SUMMARY</Text>
-            <View style={styles.bulletList}>
-              <View style={styles.bulletItem}>
-                <View style={styles.bulletDot} />
-                <Text style={styles.bulletText}>Protection against loss or severe damage</Text>
-              </View>
-              <View style={styles.bulletItem}>
-                <View style={styles.bulletDot} />
-                <Text style={styles.bulletText}>Coverage up to declared value</Text>
-              </View>
-              <View style={styles.bulletItem}>
-                <View style={styles.bulletDot} />
-                <Text style={styles.bulletText}>Subject to standard terms and conditions</Text>
-              </View>
-            </View>
-          </View>
-        </Pressable>
+        <View style={styles.insuranceCard}>
+          <Text style={styles.insuranceTitle}>Goods Insurance</Text>
+          <Text style={styles.cardDesc}>Insurance is currently unavailable. No coverage or premium is included in this booking.</Text>
+        </View>
       </KeyboardAwareScrollView>
     </SafeAreaView>
   );

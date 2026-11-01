@@ -51,7 +51,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
     startNewBooking,
     assignedDriver,
     setAssignedDriver,
-    setRide,
+    setRide, ride, pendingInput, recoveringBooking, bookingRecoveryError, recoverBooking,
   } = useBooking();
   const {
     locations: recentLocations,
@@ -231,11 +231,16 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
     }
   }, [polledTrip, setTrip]);
 
+  const latestTrip = useRef(trip);
+  latestTrip.current = trip;
+
   // Restore or refresh active trip and driver info from engine
   const refreshActiveTrip = useCallback(async () => {
     if (!customerId) return;
+    const snapshot = latestTrip.current;
     try {
       const found = await getActiveTripForCustomer(customerId);
+      if (latestTrip.current?.id !== snapshot?.id) return;
       if (found) {
         setTrip(found);
         if (found.driverId) {
@@ -246,14 +251,14 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
           const r = await getRide(found.rideId).catch(() => null);
           if (r) setRide(r);
         }
-      } else if (trip && isTripActive) {
+      } else if (snapshot && latestTrip.current?.id === snapshot.id) {
         // Server reports no active trip anymore
         setTrip(undefined);
       }
     } catch {
       // Offline or backend down: Home still works.
     }
-  }, [customerId, trip, isTripActive, setTrip, setAssignedDriver, setRide]);
+  }, [customerId, setTrip, setAssignedDriver, setRide]);
 
   useEffect(() => {
     void refreshActiveTrip();
@@ -262,15 +267,21 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
   useFocusEffect(
     useCallback(() => {
       refreshRecent();
+      void recoverBooking?.();
       void refreshActiveTrip();
       if (!draft.pickup) {
         void centerOnUser();
       }
-    }, [refreshRecent, refreshActiveTrip, draft.pickup, centerOnUser])
+    }, [refreshRecent, refreshActiveTrip, draft.pickup, centerOnUser, recoverBooking])
   );
 
   const handleRecentLocationSelect = useCallback(
     (loc: RecentLocation) => {
+      if (ride || pendingInput || recoveringBooking || bookingRecoveryError) {
+        if (ride || pendingInput) navigation?.navigate('ActiveTripStack', { screen: 'FindingDriverScreen' });
+        else void recoverBooking?.();
+        return;
+      }
       startNewBooking();
       const place: ResolvedPlace = {
         address: loc.address,
@@ -283,8 +294,14 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
       onRecentLocationPress?.(loc.address);
       navigation?.navigate('BookingStack', { screen: 'SelectDropLocationScreen' });
     },
-    [startNewBooking, setPendingDrop, customerId, onRecentLocationPress, navigation]
+    [startNewBooking, setPendingDrop, customerId, onRecentLocationPress, navigation, ride, pendingInput, recoveringBooking, bookingRecoveryError, recoverBooking]
   );
+
+  const resumePreviousBooking = () => {
+    if (ride || pendingInput) { navigation?.navigate('ActiveTripStack', { screen: 'FindingDriverScreen' }); return true; }
+    if (recoveringBooking || bookingRecoveryError) { void recoverBooking?.(); return true; }
+    return false;
+  };
 
   const mapMarkers = useMemo<readonly MapMarker[]>(() => {
     const markers: MapMarker[] = [];
@@ -371,6 +388,20 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
         )}
       </MapCanvas>
 
+      {!isTripActive && (ride || pendingInput || bookingRecoveryError || recoveringBooking) && (
+        <View style={[styles.activeTripOverlay, { top: topSafeOffset }]}>
+          <Card variant="elevated" padding="md">
+            <Pressable accessibilityRole="button" onPress={() => {
+              if (ride || pendingInput) navigation?.navigate('ActiveTripStack', { screen: 'FindingDriverScreen' });
+              else void recoverBooking?.();
+            }}>
+              <Text>{recoveringBooking ? 'Checking your previous booking...' : ride || pendingInput ? 'Resume your booking' : 'Retry booking recovery'}</Text>
+              {bookingRecoveryError && <Text>{bookingRecoveryError}</Text>}
+            </Pressable>
+          </Card>
+        </View>
+      )}
+
       {/* Active Trip Overlay Pill — only shown when the engine reports a live
           trip for this customer. Never hardcoded mock data. */}
       {isTripActive && (
@@ -449,6 +480,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                       </Text>
                       <Pressable
                         onPress={() => {
+                          if (resumePreviousBooking()) return;
                           startNewBooking();
                           navigation?.navigate('BookingStack', {
                             screen: 'AddressSearchScreen',
@@ -474,14 +506,16 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
 
                 <View style={styles.inputRowContainer}>
                   <Pressable style={styles.dotLineWrapper} onPress={() => {
-                    startNewBooking();
+                          if (resumePreviousBooking()) return;
+                          startNewBooking();
                     navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
                   }}>
                     <Text style={styles.dropPinIcon}>📍</Text>
                     <View style={[styles.connectingLine, styles.connectingLineShort]} />
                   </Pressable>
                   <Pressable style={styles.inputContentWrapper} onPress={() => {
-                    startNewBooking();
+                          if (resumePreviousBooking()) return;
+                          startNewBooking();
                     navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
                   }}>
                     <View style={styles.inputFieldRow}>
@@ -497,7 +531,8 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                 <Pressable
                   style={styles.addDropRow}
                   onPress={() => {
-                    startNewBooking();
+                          if (resumePreviousBooking()) return;
+                          startNewBooking();
                     navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
                   }}
                 >
@@ -509,6 +544,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
               <Button
                 label={strings.home.startBooking}
                 onPress={() => {
+                  if (resumePreviousBooking()) return;
                   startNewBooking();
                   navigation?.navigate('BookingStack', { screen: 'AddressSearchScreen' });
                 }}

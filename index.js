@@ -1,3 +1,4 @@
+import { getMessaging, setBackgroundMessageHandler } from '@react-native-firebase/messaging';
 /**
  * @format
  */
@@ -20,5 +21,8 @@ if (typeof global !== 'undefined' && global.ErrorUtils) {
     }
   });
 }
+
+// Android displays the generic notification payload; private details remain in the server inbox.
+setBackgroundMessageHandler(getMessaging(), async () => {});
 
 AppRegistry.registerComponent(appName, () => App);

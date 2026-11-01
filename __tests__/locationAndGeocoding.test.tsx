@@ -258,6 +258,7 @@ describe('Current Location Resolution (getCurrentPlace)', () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     jest.spyOn(PermissionsAndroid, 'request').mockResolvedValue(PermissionsAndroid.RESULTS.GRANTED);
   });
 
@@ -322,6 +323,56 @@ describe('Current Location Resolution (getCurrentPlace)', () => {
     await expect(getCurrentPlace()).rejects.toMatchObject({
       kind: 'location_timeout',
     });
+  });
+
+  it('shares one native request when screens ask for location together', async () => {
+    let report!: (position: any) => void;
+    const native = jest.spyOn(Geolocation, 'getCurrentPosition').mockImplementation((success: any) => { report = success; });
+    globalThis.fetch = jest.fn(async () => ({ ok: true, status: 200,
+      text: async () => JSON.stringify({ results: [{ formatted_address: 'QA location' }] }),
+    })) as unknown as typeof fetch;
+    const first = getCurrentPlace();
+    const second = getCurrentPlace();
+    await Promise.resolve();
+    const permissionCalls = (PermissionsAndroid.request as jest.Mock).mock.calls.length;
+    const nativeCalls = native.mock.calls.length;
+    report({ coords: { latitude: 26.2, longitude: 73.0 } });
+    const results = await Promise.all([first, second]);
+    expect(permissionCalls).toBe(1);
+    expect(nativeCalls).toBe(1);
+    expect(results).toEqual([{ latitude: 26.2, longitude: 73.0, address: 'QA location' },
+      { latitude: 26.2, longitude: 73.0, address: 'QA location' }]);
+  });
+
+  it('does not let one cancelled caller cancel the shared position for another screen', async () => {
+    let report!: (position: any) => void;
+    const native = jest.spyOn(Geolocation, 'getCurrentPosition').mockImplementation((success: any) => { report = success; });
+    const fetcher = jest.fn(async () => ({ ok: true, status: 200,
+      text: async () => JSON.stringify({ results: [{ formatted_address: 'QA location' }] }),
+    }));
+    globalThis.fetch = fetcher as unknown as typeof fetch;
+    const controller = new AbortController();
+    const cancelled = getCurrentPlace(controller.signal).catch(error => error);
+    const active = getCurrentPlace();
+    await Promise.resolve();
+    controller.abort();
+    report({ coords: { latitude: 26.2, longitude: 73.0 } });
+    expect(await cancelled).toMatchObject({ name: 'AbortError' });
+    await expect(active).resolves.toMatchObject({ address: 'QA location' });
+    expect(native).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('permits a fresh location attempt after a shared permission failure', async () => {
+    (PermissionsAndroid.request as jest.Mock).mockResolvedValueOnce(PermissionsAndroid.RESULTS.DENIED);
+    await expect(getCurrentPlace()).rejects.toMatchObject({ kind: 'location_permission' });
+    jest.spyOn(Geolocation, 'getCurrentPosition').mockImplementation((success: any) => {
+      success({ coords: { latitude: 26.2, longitude: 73.0 } });
+    });
+    globalThis.fetch = jest.fn(async () => ({ ok: true, status: 200,
+      text: async () => JSON.stringify({ results: [{ formatted_address: 'QA location' }] }),
+    })) as unknown as typeof fetch;
+    await expect(getCurrentPlace()).resolves.toMatchObject({ address: 'QA location' });
   });
 });
 
@@ -392,3 +443,5 @@ describe('ApiError userMessage formatting', () => {
     expect(err.userMessage).toBe('Invalid stop coordinates');
   });
 });
+
+jest.mock('../src/api/engine', () => ({ ...jest.requireActual('../src/api/engine'), recoverRide: jest.fn(async () => null) }));

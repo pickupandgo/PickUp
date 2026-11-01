@@ -89,7 +89,7 @@ const CancellationChargeConfirmationScreen: React.FC<
 
       navigation?.navigate('CancellationResultScreen', {
         tripId: result.tripId || estimate.tripReference,
-        feeAmount: result.feeAmount || estimate.formattedFee,
+        feeAmount: result.feeAmount,
         cancelledTrip: result.cancelledTrip,
       });
     } catch (err: unknown) {

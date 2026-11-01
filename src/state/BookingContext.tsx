@@ -1,6 +1,9 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef } from 'react';
 import { getAuth, onAuthStateChanged } from '@react-native-firebase/auth';
-import type { FareQuote, GeoPoint, NearbyDriver, PaymentMethod, Ride, Trip } from '../api/types';
+import { recoverRide, getRideTrip } from '../api/engine';
+import { bookingRevision, readPendingBooking, writePendingBooking } from './pendingBooking';
+import type { CreateRideInput, FareQuote, GeoPoint, NearbyDriver, PaymentMethod, Ride, Trip } from '../api/types';
+import { quoteMatchesDraft } from './quoteValidation';
 import type { ResolvedPlace } from '../api/geocoding';
 
 /**
@@ -41,6 +44,11 @@ export interface BookingDraft {
 const EMPTY_DRAFT: BookingDraft = { drops: [], paymentMethod: 'PAY_AT_DELIVERY' };
 
 interface BookingContextValue {
+  readonly pendingInput?: CreateRideInput;
+  readonly rememberPendingInput?: (input: CreateRideInput) => void;
+  readonly recoveringBooking?: boolean;
+  readonly bookingRecoveryError?: string;
+  readonly recoverBooking?: () => Promise<void>;
   /** The signed-in customer's id (Firebase uid), or undefined when signed out. */
   readonly customerId: string | undefined;
   readonly draft: BookingDraft;
@@ -87,19 +95,92 @@ interface BookingContextValue {
 export const BookingContext = createContext<BookingContextValue | undefined>(undefined);
 
 export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> = ({ children }) => {
-  const [customerId, setCustomerId] = useState<string>();
+  const [customerId, setCustomerId] = useState<string | undefined>(() => getAuth().currentUser?.uid);
+  useEffect(() => onAuthStateChanged(getAuth(), user => setCustomerId(user?.uid)), []);
+  return <AccountBookingProvider key={customerId ?? 'signed-out'} customerId={customerId}>{children}</AccountBookingProvider>;
+};
+
+// Remount the entire state owner, including consumers, on every identity transition.
+// Old async callbacks retain setters for an unmounted owner and cannot update the next account.
+const AccountBookingProvider: React.FC<{ children: React.ReactNode; customerId?: string }> = ({ children, customerId }) => {
   const [draft, setDraft] = useState<BookingDraft>(EMPTY_DRAFT);
-  const [ride, setRide] = useState<Ride>();
+  const recoveryVersion = useRef(0);
+  const [ride, storeRide] = useState<Ride>();
+  const setRide = useCallback((next: Ride | undefined) => {
+    recoveryVersion.current += 1;
+    storeRide(next);
+    setRecoveringBooking(false);
+    setBookingRecoveryError(undefined);
+  }, []);
   const [trip, setTrip] = useState<Trip>();
   const [assignedDriver, setAssignedDriver] = useState<NearbyDriver>();
 
-  // The engine identifies the customer by the Firebase token; mirror its uid here for the
-  // customer-scoped reads (GET /trips/active|history/customer/:id, which must be this user).
+  const [pendingInput, setPendingInput] = useState<CreateRideInput>();
+  const [recoveringBooking, setRecoveringBooking] = useState(true);
+  const [bookingRecoveryError, setBookingRecoveryError] = useState<string>();
+  const alive = useRef(true);
+  const recoveryFlight = useRef<Promise<void> | null>(null);
+  const recoverBooking = useCallback((): Promise<void> => {
+    if (!customerId) { setRecoveringBooking(false); return Promise.resolve(); }
+    if (recoveryFlight.current) return recoveryFlight.current;
+    setRecoveringBooking(true);
+    const journalRevision = bookingRevision(customerId);
+    const version = ++recoveryVersion.current;
+    const current = () => alive.current && version === recoveryVersion.current;
+    const controller = new AbortController();
+    const task = (async () => {
+      try {
+        const saved = await readPendingBooking(customerId);
+        if (!current()) return;
+        setPendingInput(saved?.input);
+        const found = await recoverRide(saved?.input.quoteId, controller.signal);
+        if (!current()) return;
+        const detail = found ?? saved?.input;
+        if (detail?.pickup && typeof detail.pickup.latitude === 'number' && typeof detail.pickup.longitude === 'number') {
+          const pickup = { latitude: detail.pickup.latitude, longitude: detail.pickup.longitude, address: detail.pickup.address ?? '' };
+          const drops = detail.drops?.filter(drop => typeof drop.latitude === 'number' && typeof drop.longitude === 'number').map(drop => ({
+            latitude: drop.latitude!, longitude: drop.longitude!, address: drop.address ?? '',
+            receiverName: drop.receiver?.name, receiverPhone: drop.receiver?.phone, instructions: drop.instructions,
+          })) ?? [];
+          const metadata = detail.metadata;
+          setDraft(previous => ({ ...previous, pickup, drops, quote: undefined,
+            vehicleType: found?.vehicleType ?? previous.vehicleType,
+            weightKg: found?.weight ?? previous.weightKg,
+            goodsType: metadata?.goodsType, goodsDescription: metadata?.goodsDescription,
+            declaredValue: metadata?.declaredValue, specialInstructions: metadata?.specialInstructions,
+            senderName: metadata?.sender?.name, senderPhone: metadata?.sender?.phone,
+            pickupInstructions: metadata?.pickupInstructions, paymentMethod: detail.paymentMethod,
+          }));
+        }
+        if (found) {
+          if (found.status === 'CANCELLED' || found.bookingStatus === 'COMPLETED') {
+            await writePendingBooking(customerId, null);
+            if (current()) { setPendingInput(undefined); storeRide(undefined); }
+          } else {
+            const input = saved?.input ?? (found.quoteId && found.paymentMethod ? { quoteId: found.quoteId, paymentMethod: found.paymentMethod } : undefined);
+            if (input) await writePendingBooking(customerId, { input, rideId: found.id }, journalRevision);
+            if (!current()) return;
+            setPendingInput(input); storeRide(found);
+            if (found.status === 'ACCEPTED') {
+              const restoredTrip = await getRideTrip(found.id, controller.signal);
+              if (current() && restoredTrip) setTrip(restoredTrip);
+            }
+          }
+        }
+        if (current()) setBookingRecoveryError(saved && !found ? 'Your booking outcome is unconfirmed. Resume to retry using the same booking reference.' : undefined);
+      } catch {
+        if (current()) setBookingRecoveryError('Could not check your previous booking. Retry before starting another booking.');
+      } finally { if (current()) setRecoveringBooking(false); }
+    })();
+    recoveryFlight.current = task;
+    void task.finally(() => { if (recoveryFlight.current === task) recoveryFlight.current = null; });
+    return task;
+  }, [customerId]);
   useEffect(() => {
-    const auth = getAuth();
-    setCustomerId(auth.currentUser?.uid ?? undefined);
-    return onAuthStateChanged(auth, (user) => setCustomerId(user?.uid ?? undefined));
-  }, []);
+    alive.current = true;
+    void recoverBooking();
+    return () => { alive.current = false; };
+  }, [recoverBooking]);
 
   const setPickup = useCallback((pickup: ResolvedPlace) => {
     setDraft((d) => ({ ...d, pickup, quote: undefined }));
@@ -160,7 +241,7 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
       specialInstructions?: string;
     }) => {
       // Weight feeds the fare, so a change invalidates the quote.
-      setDraft((d) => ({ ...d, ...goods, quote: undefined }));
+      setDraft((d) => ({ ...d, ...goods, quote: goods.weightKg !== undefined && goods.weightKg !== d.weightKg ? undefined : d.quote }));
     },
     []
   );
@@ -183,7 +264,7 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
   }, []);
 
   const setQuote = useCallback((quote: FareQuote | undefined) => {
-    setDraft((d) => ({ ...d, quote }));
+    setDraft((d) => !quote || quoteMatchesDraft(quote, d) ? ({ ...d, quote }) : d);
   }, []);
 
   const setPaymentMethod = useCallback((paymentMethod: PaymentMethod | undefined) => {
@@ -208,12 +289,6 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
       }
       return undefined;
     });
-    setRide((currentRide) => {
-      return currentRide;
-    });
-    setAssignedDriver((currentDriver) => {
-      return currentDriver;
-    });
   }, []);
 
   const clearActiveRide = useCallback(() => {
@@ -221,13 +296,17 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
     setTrip(undefined);
     setAssignedDriver(undefined);
     setDraft(EMPTY_DRAFT);
+    recoveryVersion.current += 1;
+    setRecoveringBooking(false);
+    setPendingInput(undefined);
+    setBookingRecoveryError(undefined);
   }, []);
 
   const primaryDrop = draft.drops[0];
 
   const value = useMemo<BookingContextValue>(
     () => ({
-      customerId,
+      customerId, pendingInput, rememberPendingInput: setPendingInput, recoveringBooking, bookingRecoveryError, recoverBooking,
       draft,
       primaryDrop,
       canEstimate: Boolean(draft.pickup && draft.drops.length > 0),
@@ -255,7 +334,7 @@ export const BookingProvider: React.FC<{ readonly children: React.ReactNode }> =
       clearActiveRide,
     }),
     [
-      customerId,
+      customerId, pendingInput, recoveringBooking, bookingRecoveryError, recoverBooking,
       draft,
       primaryDrop,
       setPickup,

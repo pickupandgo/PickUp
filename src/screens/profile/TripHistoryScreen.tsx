@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useContext, useRef } from 'react';
 import {
   View,
   Text,
@@ -32,7 +32,13 @@ export interface TripHistoryScreenProps {
   readonly navigation?: any;
 }
 
-const TripHistoryScreen: React.FC<TripHistoryScreenProps> = ({
+const TripHistoryScreen: React.FC<TripHistoryScreenProps> = (props) => {
+  const booking = useContext(BookingContext);
+  const owner = props.customerId ?? booking?.customerId;
+  return <AccountTripHistoryScreen key={owner ?? 'signed-out'} {...props} />;
+};
+
+const AccountTripHistoryScreen: React.FC<TripHistoryScreenProps> = ({
   onBack,
   onTripSelect,
   onBookRide,
@@ -51,6 +57,9 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps> = ({
   const [loading, setLoading] = useState<boolean>(initialTrips === undefined && Boolean(effectiveCustomerId));
   const [error, setError] = useState<string | null>(null);
 
+  const requestRef = useRef<AbortController | null>(null);
+  useEffect(() => () => { requestRef.current?.abort(); }, []);
+
   const TRIPS_CACHE_KEY = `pickup.trips.${effectiveCustomerId ?? 'guest'}`;
 
   // Account-specific cache read: immediately render cached data if available
@@ -59,7 +68,7 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps> = ({
     let isMounted = true;
     AsyncStorage.getItem(TRIPS_CACHE_KEY)
       .then((raw) => {
-        if (!isMounted || !raw) return;
+        if (!isMounted || !raw || requestRef.current) return;
         try {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
@@ -81,21 +90,26 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps> = ({
       setLoading(false);
       return;
     }
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     setLoading(true);
     setError(null);
     try {
-      const data = await getCustomerHistory(effectiveCustomerId);
+      const data = await getCustomerHistory(effectiveCustomerId, controller.signal);
+      if (controller.signal.aborted || requestRef.current !== controller) return;
       const safeData = Array.isArray(data) ? data : [];
       setTrips(safeData);
       AsyncStorage.setItem(TRIPS_CACHE_KEY, JSON.stringify(safeData)).catch(() => {});
     } catch (err: any) {
+      if (controller.signal.aborted || requestRef.current !== controller) return;
       const message =
         err?.userMessage ||
         err?.message ||
         'Failed to load trip history. Please check your connection and try again.';
       setError(message);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted && requestRef.current === controller) setLoading(false);
     }
   }, [TRIPS_CACHE_KEY, effectiveCustomerId]);
 

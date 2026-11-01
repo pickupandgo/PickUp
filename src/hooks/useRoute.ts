@@ -1,54 +1,59 @@
 import { useEffect, useState } from 'react';
-import { getRoute, type RouteResult } from '../api/directions';
+import { getRoute } from '../api/directions';
 import type { GeoPoint } from '../api/types';
-
-/**
- * Road-following route between two points, fetched from Google Directions.
- *
- * Refetches only when a coordinate crosses a ~10-metre boundary, so tiny GPS
- * jitter on the driver's location doesn't spend a Directions call per tick.
- * The endpoint pair is normally pickup + drop, which is stable across a trip,
- * so most rides make one Directions request.
- */
-
-/** Rounding coordinates to 4 decimals is ~11m — well below map noise. */
-const round = (n: number): number => Math.round(n * 1e4) / 1e4;
-
-export const useRoute = (
+const keyFor = (p?: GeoPoint) =>
+  p ? `${Math.round(p.latitude * 1e4)},${Math.round(p.longitude * 1e4)}` : '';
+export const useRoadRoute = (
   origin: GeoPoint | undefined,
-  destination: GeoPoint | undefined
-): readonly GeoPoint[] | undefined => {
-  const [route, setRoute] = useState<readonly GeoPoint[]>();
-
-  const originKey = origin ? `${round(origin.latitude)},${round(origin.longitude)}` : '';
-  const destKey = destination ? `${round(destination.latitude)},${round(destination.longitude)}` : '';
-
+  destination: GeoPoint | undefined,
+  waypoints: readonly GeoPoint[] = [],
+) => {
+  const key = [
+    keyFor(origin),
+    ...waypoints.map(keyFor),
+    keyFor(destination),
+  ].join('|');
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<{
+    key: string;
+    polyline?: readonly GeoPoint[];
+    status: 'idle' | 'loading' | 'ready' | 'error';
+  }>({ key: '', status: 'idle' });
   useEffect(() => {
     if (!origin || !destination) {
-      setRoute(undefined);
+      setState({ key, status: 'idle' });
       return;
     }
-
     const controller = new AbortController();
     let cancelled = false;
-
-    getRoute(origin, destination, { signal: controller.signal })
-      .then((result: RouteResult) => {
-        if (!cancelled) setRoute(result.polyline);
+    setState({ key, status: 'loading' });
+    getRoute(origin, destination, { waypoints, signal: controller.signal })
+      .then((result) => {
+        if (!cancelled)
+          setState({ key, status: 'ready', polyline: result.polyline });
       })
       .catch(() => {
-        // Fall back to no route on failure. Screens can then draw a straight
-        // line as a last resort, or nothing at all — their choice.
-        if (!cancelled) setRoute(undefined);
+        if (!cancelled) setState({ key, status: 'error' });
       });
-
     return () => {
       cancelled = true;
       controller.abort();
     };
-    // Keying on the rounded strings avoids refetches for sub-11m movement.
+    // Coordinate keys avoid refetches caused by object identity / small GPS jitter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [originKey, destKey]);
-
-  return route;
+  }, [key, attempt]);
+  return {
+    polyline: state.key === key ? state.polyline : undefined,
+    status:
+      !origin || !destination
+        ? ('idle' as const)
+        : state.key === key
+          ? state.status
+          : ('loading' as const),
+    retry: () => setAttempt((n) => n + 1),
+  };
 };
+export const useRoute = (
+  origin: GeoPoint | undefined,
+  destination: GeoPoint | undefined,
+) => useRoadRoute(origin, destination).polyline;

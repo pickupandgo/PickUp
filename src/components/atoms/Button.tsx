@@ -21,6 +21,8 @@ export interface ButtonProps {
   readonly accessibilityHint?: string;
   readonly icon?: React.ReactNode;
   readonly style?: ViewStyle;
+  readonly disabledStyle?: ViewStyle;
+  readonly disabledTextStyle?: TextStyle;
 }
 
 const Button: React.FC<ButtonProps> = ({
@@ -34,6 +36,8 @@ const Button: React.FC<ButtonProps> = ({
   accessibilityHint,
   icon,
   style: customStyle,
+  disabledStyle,
+  disabledTextStyle,
 }) => {
   const containerStyle: ViewStyle[] = [
     styles.base,
@@ -42,12 +46,14 @@ const Button: React.FC<ButtonProps> = ({
     fullWidth && styles.fullWidth,
     disabled && styles.disabled,
     customStyle,
+    disabled && disabledStyle,
   ].filter(Boolean) as ViewStyle[];
 
   const textStyle: TextStyle[] = [
     styles.text,
     styles[`text_${variant}`],
     styles[`textSize_${size}`],
+    ...(disabled && disabledTextStyle ? [disabledTextStyle] : []),
   ];
 
   return (

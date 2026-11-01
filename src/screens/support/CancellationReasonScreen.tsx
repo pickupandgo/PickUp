@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import Button from '../../components/atoms/Button';
-import { cancelRide, cancelTrip } from '../../api/engine';
+import { executeTripCancellation } from '../../services/cancellationService';
 import { toApiError } from '../../api/http';
 import { useBooking } from '../../state/BookingContext';
 
@@ -38,29 +38,34 @@ const CancellationReasonScreen: React.FC<CancellationReasonScreenProps & { navig
 }) => {
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
   const [otherText, setOtherText] = useState('');
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
+  const submitLock = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
   const { ride, trip, clearActiveRide } = useBooking();
 
   const handleSubmit = async () => {
-    if (!selectedReason || submitting) return;
+    if (!selectedReason || submitting || submitLock.current) return;
     const selected = CANCELLATION_REASONS.find((reason) => reason.id === selectedReason);
     const reason = selectedReason === 'other' ? otherText.trim() : selected?.label;
-    if (!reason) return;
+    if (!reason || reason.length < 3 || reason.length > 200) { setError('Use a cancellation reason between 3 and 200 characters.'); return; }
 
+    submitLock.current = true;
     setSubmitting(true);
     setError(undefined);
     try {
-      // Before acceptance the engine cancels the ride; after assignment it owns trip cancellation.
-      if (trip) await cancelTrip(trip.id, reason);
-      else if (ride) await cancelRide(ride.id, reason);
-      else throw new Error('There is no active booking to cancel.');
+      const result = await executeTripCancellation({ trip, ride, reason });
+      if (!mounted.current) return;
       onSubmit?.(selectedReason, selectedReason === 'other' ? otherText : undefined);
+      navigation?.navigate('CancellationResultScreen', {
+        tripId: result.tripId, cancelledTrip: result.cancelledTrip, feeAmount: result.feeAmount,
+      });
       clearActiveRide();
-      navigation?.navigate('CancellationResultScreen');
     } catch (caught) {
       setError(toApiError(caught).userMessage);
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
     }
   };
@@ -134,6 +139,7 @@ const CancellationReasonScreen: React.FC<CancellationReasonScreenProps & { navig
               value={otherText}
               onChangeText={setOtherText}
               multiline
+              maxLength={200}
               numberOfLines={4}
               textAlignVertical="top"
             />

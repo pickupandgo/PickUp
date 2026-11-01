@@ -143,3 +143,11 @@ jest.mock('react-native/Libraries/Utilities/Platform', () => ({
   OS: 'android',
   select: (objs) => objs.android ?? objs.default,
 }));
+
+// Native push module is unavailable in Node tests.
+jest.mock('@react-native-firebase/messaging', () => ({
+ getMessaging: jest.fn(() => ({})), getToken: jest.fn(async () => 'fake-fcm-test-token'), deleteToken: jest.fn(async () => undefined),
+ hasPermission: jest.fn(async () => 1), AuthorizationStatus: { AUTHORIZED: 1, DENIED: 0 },
+ onMessage: jest.fn(() => jest.fn()), onNotificationOpenedApp: jest.fn(() => jest.fn()), onTokenRefresh: jest.fn(() => jest.fn()),
+ getInitialNotification: jest.fn(async () => null), setBackgroundMessageHandler: jest.fn(),
+}));

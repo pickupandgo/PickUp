@@ -56,3 +56,14 @@ fix.js
 new_place.txt
 update*.py
 update*.js
+
+# Local Firebase project configuration; copy the example when setting up a clone.
+/android/app/google-services.json
+.env.*
+!.env.example
+
+# JVM crash reports and generated React Native bundle images
+/android/hs_err_pid*.log
+/android/replay_pid*.log
+/android/app/src/main/res/drawable*/assets_*
+/android/app/src/main/res/drawable*/src_assets_*

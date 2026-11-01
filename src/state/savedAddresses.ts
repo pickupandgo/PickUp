@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getAuth } from '@react-native-firebase/auth';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 
 export type SavedAddressIcon = 'home' | 'briefcase' | 'box' | 'map-pin';
 
@@ -88,21 +88,6 @@ export const getSavedAddresses = async (userId?: string | null): Promise<SavedAd
   try {
     const raw = await AsyncStorage.getItem(key);
     if (!raw) {
-      // Check if user had addresses saved in guest session to migrate
-      if (userId && userId.trim().length > 0) {
-        const guestKey = `${SAVED_ADDRESSES_STORAGE_KEY_PREFIX}guest`;
-        const guestRaw = await AsyncStorage.getItem(guestKey);
-        if (guestRaw) {
-          const guestParsed = JSON.parse(guestRaw);
-          if (Array.isArray(guestParsed)) {
-            const cleanGuest = purgeLegacyMockAddresses(guestParsed);
-            if (cleanGuest.length > 0) {
-              await AsyncStorage.setItem(key, JSON.stringify(cleanGuest));
-              return cleanGuest;
-            }
-          }
-        }
-      }
       return [];
     }
     const parsed = JSON.parse(raw);
@@ -263,65 +248,77 @@ export const useSavedAddresses = (userId?: string | null) => {
   const [isLoading, setIsLoading] = useState(true);
 
   const key = getSavedAddressesStorageKey(userId);
+  const activeKey = useRef(key);
+  activeKey.current = key;
+  const [dataKey, setDataKey] = useState(key);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  // Resolve the owner before any await; omitted userId must not drift to a new Firebase account.
+  const owner = key.slice('pickup.savedAddresses.'.length);
+  const accept = useCallback((list: SavedAddress[]) => {
+    if (!mounted.current || activeKey.current !== key) return;
+    setDataKey(key);
+    setAddresses(list);
+  }, [key]);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const list = await getSavedAddresses(userId);
-      setAddresses(list);
+      const list = await getSavedAddresses(owner);
+      accept(list);
     } finally {
-      setIsLoading(false);
+      if (mounted.current && activeKey.current === key) setIsLoading(false);
     }
-  }, [userId]);
+  }, [owner, key, accept]);
 
   const addAddress = useCallback(
     async (input: SavedAddressInput) => {
-      const updated = await saveAddress(input, userId);
-      setAddresses(updated);
+      const updated = await saveAddress(input, owner);
+      accept(updated);
       return updated;
     },
-    [userId]
+    [owner, key, accept]
   );
 
   const updateAddress = useCallback(
     async (id: string, updates: Partial<SavedAddressInput>) => {
-      const updated = await updateSavedAddress(id, updates, userId);
-      setAddresses(updated);
+      const updated = await updateSavedAddress(id, updates, owner);
+      accept(updated);
       return updated;
     },
-    [userId]
+    [owner, key, accept]
   );
 
   const removeAddress = useCallback(
     async (id: string) => {
-      const updated = await deleteSavedAddress(id, userId);
-      setAddresses(updated);
+      const updated = await deleteSavedAddress(id, owner);
+      accept(updated);
       return updated;
     },
-    [userId]
+    [owner, key, accept]
   );
 
   const setPrimary = useCallback(
     async (id: string) => {
-      const updated = await setPrimarySavedAddress(id, userId);
-      setAddresses(updated);
+      const updated = await setPrimarySavedAddress(id, owner);
+      accept(updated);
       return updated;
     },
-    [userId]
+    [owner, key, accept]
   );
 
   useEffect(() => {
     void refresh();
     return subscribeSavedAddresses((updatedList, updatedKey) => {
       if (updatedKey === key) {
-        setAddresses(updatedList);
-        setIsLoading(false);
+        accept(updatedList);
+        if (mounted.current && activeKey.current === key) setIsLoading(false);
       }
     });
   }, [key, refresh]);
 
   return {
-    addresses,
+    addresses: dataKey === key ? addresses : [],
     isLoading,
     refresh,
     addAddress,

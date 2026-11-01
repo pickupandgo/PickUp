@@ -60,6 +60,12 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
     route?.params?.editTarget
   );
 
+  // React Navigation can reuse this screen for a different stop.
+  useEffect(() => {
+    setMode(route?.params?.mode ?? 'pickup');
+    setEditTarget(route?.params?.editTarget);
+  }, [route?.params]);
+
   // Determine what we're currently resolving/editing.
   const activeType = useMemo(() => {
     if (mode === 'edit' && !editTarget) return 'none'; // showing timeline

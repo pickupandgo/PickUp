@@ -18,46 +18,50 @@ import MapCanvas, { NEIGHBORHOOD_DELTA } from '../../components/map/MapCanvas';
 import { useBooking } from '../../state/BookingContext';
 import { findDriverAndCreateRide, NoDriversAvailableError } from '../../api/matching';
 import { getDriver, getRideTrip } from '../../api/engine';
+import { quoteMatchesDraft } from '../../state/quoteValidation';
 import { isQuoteBookable } from '../../api/payments';
 import { toApiError } from '../../api/http';
 import { vehicleLabelFor } from '../../data/mockData';
 import { getVehicleImage } from '../../utils/vehicleAssets';
 
-import { MIN_DRIVER_SEARCH_DURATION_MS } from '../../config/constants';
 
 export interface FindingDriverScreenProps {
   readonly onCancel?: () => void;
   readonly onBack?: () => void;
 }
 
-const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: any }> = ({
+const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: any; route?: any }> = ({
   onCancel,
   onBack,
-  navigation,
+  navigation, route,
 }) => {
   const [pulseAnim] = useState(new Animated.Value(0));
   const [progressAnim] = useState(new Animated.Value(0));
 
-  const { draft, primaryDrop, customerId, setRide, setTrip, setAssignedDriver, ride, trip } = useBooking();
+  const { draft, primaryDrop, customerId, setRide, setTrip, setAssignedDriver, ride: currentRide, trip, pendingInput, rememberPendingInput, recoverBooking } = useBooking();
   const [statusText, setStatusText] = useState('Searching for nearby drivers…');
+  const [retryKey, setRetryKey] = useState(0);
   const [failure, setFailure] = useState<string>();
+  const pausedForCancellation = useRef(false);
+  useEffect(() => navigation?.addListener?.('focus', () => {
+    if (pausedForCancellation.current) { pausedForCancellation.current = false; setFailure(undefined); setRetryKey(n => n + 1); }
+  }), [navigation]);
   const abortRef = useRef<AbortController | undefined>(undefined);
 
   /**
-   * Runs the client-side dispatch: nearby drivers, then offer the ride to each
-   * in turn until one accepts. The engine has no server-side matching.
+   * Creates or recovers one booking, then observes server-owned dispatch.
    */
   useEffect(() => {
     const pickup = draft.pickup;
     const quote = draft.quote;
     const paymentMethod = draft.paymentMethod;
-    if (!pickup || !primaryDrop || !customerId) {
+    if (!currentRide && !pendingInput && (!pickup || !primaryDrop || !customerId)) {
       setFailure('Pickup and drop are required before booking.');
       return;
     }
     // The server fare quote and a chosen payment method are mandatory: no quote, no booking,
     // and the client never sends a fare. A stale quote is refused rather than silently booked.
-    if (!quote || !isQuoteBookable(quote) || !paymentMethod) {
+    if (!currentRide && !pendingInput && (!quote || !isQuoteBookable(quote) || !quoteMatchesDraft(quote, draft) || !paymentMethod)) {
       setFailure('Your fare has expired. Go back and get a new one.');
       return;
     }
@@ -66,19 +70,25 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
     abortRef.current = controller;
     let cancelled = false;
 
-    // 4. Record search start time precisely once when backend search begins
-    const searchStartedAt = Date.now();
 
     (async () => {
       try {
         const { ride } = await findDriverAndCreateRide(
-          {
+          pendingInput ?? (quote && pickup && paymentMethod && !currentRide ? {
             quoteId: quote.quoteId,
             paymentMethod,
-            pickup: { address: pickup.address },
+            metadata: {
+              goodsType: draft.goodsType, goodsDescription: draft.goodsDescription,
+              declaredValue: draft.declaredValue, specialInstructions: draft.specialInstructions,
+              sender: { name: draft.senderName, phone: draft.senderPhone },
+              pickupInstructions: draft.pickupInstructions,
+            },
+            pickup: { latitude: pickup.latitude, longitude: pickup.longitude, address: pickup.address },
             // Receiver details per drop, in the quote's order. Coordinates come from the quote.
             drops: draft.drops.map((d) => ({
+              latitude: d.latitude, longitude: d.longitude,
               address: d.address,
+              instructions: d.instructions,
               receiver:
                 d.receiverName || d.receiverPhone
                   ? { name: d.receiverName, phone: d.receiverPhone }
@@ -86,8 +96,12 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
                     ? { name: draft.receiverName, phone: draft.receiverPhone }
                     : undefined,
             })),
-          },
+          } : undefined),
           {
+            existingRide: currentRide,
+            onRequestSaved: input => { if (!cancelled && !controller.signal.aborted) rememberPendingInput?.(input); },
+            retryDispatch: route?.params?.retrySearch === true,
+            onRideCreated: current => { if (!cancelled && !controller.signal.aborted) setRide(current); },
             signal: controller.signal,
             searchCenter: pickup,
             onProgress: ({ attempt, totalCandidates, driver: candidate }) => {
@@ -128,36 +142,11 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
 
         // 1. NEVER classify network errors as No Driver
         if (!(caught instanceof NoDriversAvailableError)) {
+          void recoverBooking?.();
           setFailure(toApiError(caught).userMessage);
           return;
         }
 
-        // 6. No driver before 40 seconds: wait locally for the remaining duration
-        const elapsed = Date.now() - searchStartedAt;
-        const remaining = MIN_DRIVER_SEARCH_DURATION_MS - elapsed;
-
-        if (remaining > 0) {
-          setStatusText('Finding Driver');
-          try {
-            await new Promise<void>((resolve, reject) => {
-              const timerId = setTimeout(resolve, remaining);
-              
-              const onAbort = () => {
-                clearTimeout(timerId);
-                reject(new Error('AbortError'));
-              };
-              
-              controller.signal.addEventListener('abort', onAbort, { once: true });
-            });
-          } catch (e) {
-            // Customer cancelled during wait (or component unmounted)
-            return;
-          }
-        }
-        
-        if (cancelled || controller.signal.aborted) return;
-
-        // 7. Navigate once definitively no drivers and minimum duration met
         navigation?.navigate('NoDriversAvailableScreen');
       }
     })();
@@ -167,9 +156,10 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
       controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId, draft.pickup?.latitude, draft.pickup?.longitude]);
+  }, [customerId, retryKey, route?.params?.retrySearch]);
 
   const handleCancel = () => {
+    pausedForCancellation.current = true;
     abortRef.current?.abort();
     if (onCancel) return onCancel();
     navigation?.navigate('CancellationReasonScreen');
@@ -233,8 +223,8 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
   });
 
   const currentFare =
-    trip?.fare ?? ride?.fare ?? (draft.quote ? draft.quote.payablePaise / 100 : undefined);
-  const currentVehicle = vehicleLabelFor(ride?.vehicleType ?? draft.vehicleType);
+    trip?.fare ?? currentRide?.fare ?? (draft.quote ? draft.quote.payablePaise / 100 : undefined);
+  const currentVehicle = vehicleLabelFor(currentRide?.vehicleType ?? draft.vehicleType);
   const vehicleData = mockVehicleTypes.find(
     (v) => v.name === currentVehicle || v.id === draft.vehicleType,
   );
@@ -278,6 +268,7 @@ const FindingDriverScreen: React.FC<FindingDriverScreenProps & { navigation?: an
                 </View>
               </View>
               <Text style={styles.statusTitle}>{failure ?? statusText}</Text>
+              {failure && <Pressable accessibilityRole="button" onPress={() => { setFailure(undefined); setRetryKey(n => n + 1); }}><Text style={styles.statusTitle}>Retry booking recovery</Text></Pressable>}
               
               {/* Progress Bar */}
               <View style={styles.progressBarTrack}>

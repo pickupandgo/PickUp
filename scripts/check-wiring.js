@@ -69,7 +69,8 @@ const selfOnly = (route) => {
 };
 // The entry route needs no inbound edge, and the Gallery is a dev launcher.
 const initialRoute = /initialRouteName="([^"]+)"/.exec(appSrc)?.[1];
-const entryPoints = new Set(['Gallery', initialRoute].filter(Boolean));
+// Session-controlled roots have no navigate(...) edge; RootNavigator selects them from account state.
+const entryPoints = new Set(['Gallery', initialRoute, 'PhoneCompletionScreen', 'CreateProfileScreen', 'AccountRecoveryScreen'].filter(Boolean));
 
 const unreachable = [...registered].filter(
   (r) => !entryPoints.has(r) && (!used.has(r) || selfOnly(r))

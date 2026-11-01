@@ -69,7 +69,15 @@ export class ApiError extends Error {
           return this.serverMessage ?? 'This action is not permitted for your account.';
         }
         if (this.status === 404) return 'Not found.';
-        if (this.status === 409) return 'That action is no longer possible.';
+        if (this.status === 409) {
+          if (this.errorCode === 'PHONE_ALREADY_REGISTERED') {
+            return this.serverMessage ?? 'This mobile number is already registered to another account.';
+          }
+          if (this.errorCode === 'ACCOUNT_ROLE_CONFLICT') {
+            return this.serverMessage ?? 'This account belongs to a driver or staff member.';
+          }
+          return this.serverMessage ?? 'That action is no longer possible.';
+        }
         if (this.status === 400 || this.status === 422) return this.serverMessage ?? 'That request was rejected.';
         if (this.status === 503) {
           if (this.errorCode === 'PRICING_NOT_CONFIGURED') {

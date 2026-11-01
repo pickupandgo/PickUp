@@ -29,6 +29,7 @@ export const useRideOtps = (
   const { intervalMs = DEFAULT_INTERVAL_MS, enabled = true } = options;
 
   const [otps, setOtps] = useState<RideOtps>();
+  const [resultId, setResultId] = useState<string>();
   const [error, setError] = useState<ApiError>();
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -52,18 +53,24 @@ export const useRideOtps = (
     abortRef.current = controller;
     try {
       const next = await getRideOtps(id, controller.signal);
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || controller.signal.aborted || abortRef.current !== controller) return;
+      setResultId(id);
       setOtps(next);
       setError(undefined);
     } catch (caught) {
-      if (!isMountedRef.current || controller.signal.aborted) return;
-      // Keep the last good OTP state; surface the error but keep polling.
+      if (!isMountedRef.current || controller.signal.aborted || abortRef.current !== controller) return;
+      // A failed read is not current authorization to display a handover code.
+      setOtps(undefined);
+      setResultId(id);
       setError(toApiError(caught));
     }
   }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
+    setError(undefined);
+    setOtps(undefined);
+    setResultId(undefined);
     if (!rideId || !enabled || !appActive) {
       clearTimer();
       return () => clearTimer();
@@ -92,8 +99,8 @@ export const useRideOtps = (
   );
 
   const refresh = useCallback(() => {
-    if (rideId) void fetchOnce(rideId);
-  }, [rideId, fetchOnce]);
+    if (rideId && enabled && appActive) void fetchOnce(rideId);
+  }, [rideId, enabled, appActive, fetchOnce]);
 
-  return { otps, error, refresh };
+  return { otps: enabled && appActive && resultId === rideId ? otps : undefined, error, refresh };
 };

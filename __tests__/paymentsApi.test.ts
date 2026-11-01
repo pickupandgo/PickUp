@@ -18,6 +18,7 @@ jest.mock('@react-native-firebase/auth', () => ({
 
 import {
   createFareQuote,
+  updateCustomerProfile,
   getBookingPayment,
   registerCustomer,
   isQuoteBookable,
@@ -274,3 +275,54 @@ describe('ApiError userMessage handling', () => {
 });
 
 
+
+
+describe('account availability recovery', () => {
+  afterEach(() => jest.useRealTimers());
+
+  it('recovers once from 503 without signing out', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValueOnce(httpError(503)).mockResolvedValueOnce(ok({ name: 'Saved' }));
+    await expect(registerCustomer()).resolves.toEqual({ name: 'Saved' });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a phone conflict', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue(httpError(409));
+    await expect(registerCustomer()).rejects.toMatchObject({ status: 409 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds a stalled token read and never sends an anonymous request', async () => {
+    jest.useFakeTimers();
+    mockGetIdToken.mockImplementation(() => new Promise(() => {}));
+    globalThis.fetch = jest.fn();
+    const pending = expect(registerCustomer()).rejects.toMatchObject({ kind: 'timeout' });
+    await jest.advanceTimersByTimeAsync(60_000);
+    await pending;
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('times out stalled response bodies and stops after one retry', async () => {
+    jest.useFakeTimers();
+    globalThis.fetch = jest.fn().mockResolvedValue({ ok: true, text: () => new Promise(() => {}) });
+    const pending = expect(registerCustomer()).rejects.toMatchObject({ kind: 'timeout' });
+    await jest.advanceTimersByTimeAsync(60_000);
+    await pending;
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not send a pre-cancelled account request', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    globalThis.fetch = jest.fn();
+    await expect(registerCustomer(controller.signal)).rejects.toMatchObject({ kind: 'network' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+
+it('never automatically replays a profile mutation on service failure', async () => {
+  globalThis.fetch = jest.fn().mockResolvedValue(httpError(503));
+  await expect(updateCustomerProfile({ name: 'Name', email: 'n@example.com', age: 29, address: 'Jaipur' })).rejects.toMatchObject({ status: 503 });
+  expect(fetch).toHaveBeenCalledTimes(1);
+});

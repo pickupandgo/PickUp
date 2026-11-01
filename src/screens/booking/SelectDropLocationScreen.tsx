@@ -7,11 +7,7 @@ import UnifiedLocationScreen, { type UnifiedLocationScreenProps } from './Unifie
  */
 const SelectDropLocationScreen: React.FC<UnifiedLocationScreenProps> = (props) => {
   // If not explicitly provided a mode, default to 'drop' since this was the old drop screen.
-  const routeParams = props.route?.params ?? {};
-  if (!routeParams.mode) {
-    routeParams.mode = 'drop';
-  }
-  
+  const routeParams = { ...props.route?.params, mode: props.route?.params?.mode ?? 'drop' as const };
   return <UnifiedLocationScreen {...props} route={{ ...props.route, params: routeParams }} />;
 };
 

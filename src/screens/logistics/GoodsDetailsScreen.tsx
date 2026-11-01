@@ -32,13 +32,13 @@ export const isValidWeight = (val: string): boolean => {
 export const isValidDeclaredValue = (val: string): boolean => {
   const trimmed = val.trim().replace(/,/g, '');
   if (!trimmed) return false;
-  if (!/^\d+(\.\d+)?$/.test(trimmed)) return false;
+  if (!/^\d{1,12}(\.\d{1,2})?$/.test(trimmed)) return false;
   const parsed = Number.parseFloat(trimmed);
   return Number.isFinite(parsed) && parsed > 0;
 };
 
 export const isValidDescription = (val: string): boolean => {
-  return val.trim().length > 0;
+  return val.trim().length > 0 && val.trim().length <= 1000;
 };
 
 export const isValidGoodsType = (val: string, allowedTypes: readonly string[] = GOODS_CATEGORIES): boolean => {
@@ -65,11 +65,11 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
   const [selectedType, setSelectedType] = useState<string>(() => draft.goodsType ?? '');
 
   const [description, setDescription] = useState<string>(() => draft.goodsDescription ?? '');
-  const [weight, setWeight] = useState<string>(() => (draft.weightKg !== undefined ? String(draft.weightKg) : ''));
+  const [weight, setWeight] = useState<string>(() => (draft.weightKg !== undefined ? String(draft.weightUnit === 'lbs' ? Number((draft.weightKg / 0.45359237).toFixed(3)) : draft.weightKg) : ''));
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lbs'>(() => draft.weightUnit ?? 'kg');
   const [declaredValue, setDeclaredValue] = useState<string>(() => {
     const raw = draft.declaredValue?.trim();
-    if (!raw || raw === '0' || raw === '0.00' || raw === '2') return '';
+    if (!raw || raw === '0' || raw === '0.00') return '';
     return raw;
   });
   const [instructions, setInstructions] = useState<string>(() => draft.specialInstructions ?? draft.pickupInstructions ?? '');
@@ -272,6 +272,7 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
           </Text>
           <TextInput
             testID="input-goods-description"
+            maxLength={1000}
             style={[
               styles.textInput,
               styles.textArea,
@@ -383,6 +384,7 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
           </View>
           <TextInput
             testID="input-special-instructions"
+            maxLength={1000}
             style={[styles.textInput, styles.textAreaSmall]}
             placeholder="Any specific handling instructions..."
             placeholderTextColor={colors.outline}

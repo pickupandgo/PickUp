@@ -48,7 +48,7 @@ const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any; route?: a
   navigation,
   route,
 }) => {
-  const { userProfile, refreshProfile } = useSession();
+  const { userProfile, refreshProfile, registrationError } = useSession();
   const currentUser = getAuth().currentUser;
   const effectiveLoading = isLoading || route?.params?.isLoading;
   const hasData = Boolean(userProfile || currentUser?.displayName || currentUser?.phoneNumber);
@@ -106,6 +106,11 @@ const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any; route?: a
           showsVerticalScrollIndicator={false}
         >
           {/* Profile Header */}
+          {registrationError && <View style={styles.refreshError}>
+            <Text style={styles.refreshErrorText} accessibilityRole="alert">{registrationError}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Refresh profile" style={styles.retryRefresh}
+              onPress={() => void refreshProfile()}><Text style={styles.refreshErrorText}>Retry</Text></Pressable>
+          </View>}
           <View style={styles.profileHeader}>
             <View style={styles.avatarLarge}>
               {photoUri ? (
@@ -181,6 +186,10 @@ const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any; route?: a
 };
 
 const styles = StyleSheet.create({
+  refreshError: { backgroundColor: colors.errorContainer, borderRadius: borderRadius.md, padding: spacing.md,
+    marginBottom: spacing.lg },
+  refreshErrorText: { ...typography.bodyMd, color: colors.onErrorContainer },
+  retryRefresh: { minHeight: spacing.rowHeightStandard, justifyContent: 'center' },
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,

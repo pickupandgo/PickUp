@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useBooking } from '../../state/BookingContext';
+import { isValidDeclaredValue } from '../logistics/GoodsDetailsScreen';
 import Button from '../../components/atoms/Button';
 import { KeyboardAwareScrollView, type KeyboardAwareScrollViewRef } from '../../components/organisms';
 
@@ -35,21 +37,20 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
   onNext,
   navigation,
 }) => {
+  const { draft, setGoods } = useBooking();
   const scrollRef = useRef<KeyboardAwareScrollViewRef>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [customValue, setCustomValue] = useState('');
+  const [customValue, setCustomValue] = useState(draft.declaredValue ?? '');
 
-  const selectedOption = DECLARED_VALUE_OPTIONS.find(opt => opt.id === selectedId);
 
+  const isNextDisabled = !isValidDeclaredValue(customValue);
   const handleNext = () => {
-    if (selectedOption?.requiresCustom) {
-      onNext?.(customValue);
-    } else if (selectedOption) {
-      onNext?.(selectedOption.label);
-    }
+    if (isNextDisabled) return;
+    const value = customValue.trim().replace(/,/g, '');
+    setGoods({ declaredValue: value });
+    if (onNext) onNext(value);
+    else navigation?.goBack();
   };
-
-  const isNextDisabled = !selectedId || (selectedOption?.requiresCustom && !customValue);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -72,10 +73,7 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
           <View style={styles.footer}>
             <Button
               label="Next"
-              onPress={() => {
-                handleNext();
-                navigation?.goBack();
-              }}
+              onPress={handleNext}
               variant="primary"
               icon={<Feather name="arrow-right" size={20} color={colors.onPrimary} />}
               disabled={isNextDisabled}
@@ -118,7 +116,7 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
           })}
         </View>
 
-        {selectedOption?.requiresCustom && (
+        {(
           <View style={styles.customValueSection}>
             <Text style={styles.customValueLabel}>Enter exact value</Text>
             <View style={styles.inputContainer}>

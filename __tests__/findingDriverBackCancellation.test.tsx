@@ -23,7 +23,7 @@ jest.mock('../src/api/matching', () => ({
   NoDriversAvailableError: class NoDriversAvailableError extends Error {},
 }));
 
-jest.mock('../src/api/engine', () => ({
+jest.mock('../src/api/engine', () => ({ recoverRide: jest.fn(async () => null),
   getRideTrip: jest.fn(),
   cancelRide: jest.fn(),
   cancelTrip: jest.fn(),

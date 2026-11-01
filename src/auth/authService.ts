@@ -10,6 +10,8 @@ import {
   signInWithPopup,
   signInWithRedirect,
   GoogleAuthProvider,
+  PhoneAuthProvider,
+  linkWithCredential,
   AppleAuthProvider,
   OAuthProvider,
   type User,
@@ -27,6 +29,15 @@ let currentConfirmationResult: ConfirmationResult | null = null;
 let activePhoneNumber: string | null = null;
 let isRequestingSms = false;
 let isGoogleConfigured = false;
+let phoneLinkSession: { phone: string; verificationId: string; uid: string } | null = null;
+let linkRequestInFlight = false;
+
+export const getPhoneLinkSession = (phone: string) => {
+  const session = phoneLinkSession;
+  try {
+    return session?.phone === formatToE164(phone) && session.uid === getAuth().currentUser?.uid ? session : null;
+  } catch { return null; }
+};
 
 export const getActivePhoneNumber = (): string | null => activePhoneNumber;
 
@@ -106,6 +117,9 @@ export const mapFirebaseAuthError = (error: any): string => {
       return 'App verification failed. Please try again.';
     case 'auth/email-already-in-use':
       return 'An account already exists with this email address. Please log in instead.';
+    case 'auth/credential-already-in-use':
+    case 'auth/account-exists-with-different-credential':
+      return 'This mobile number belongs to a different sign-in. Use that account or contact support.';
     case 'auth/invalid-email':
       return 'Please enter a valid email address.';
     case 'auth/wrong-password':
@@ -125,6 +139,52 @@ export const mapFirebaseAuthError = (error: any): string => {
     default:
       return error?.message || 'Authentication failed. Please try again.';
   }
+};
+
+/** Verifies a phone without replacing the current Google/Firebase identity. */
+export const sendPhoneLinkOTP = async (phone: string, resend = false): Promise<{ verificationId: string; uid: string }> => {
+  const auth = getAuth();
+  const user = auth.currentUser;
+  if (!user) throw new Error('Sign in before verifying your mobile number.');
+  const normalized = formatToE164(phone);
+  const remaining = getRemainingCooldown(normalized);
+  const active = getPhoneLinkSession(normalized);
+  if (!resend && active) return { verificationId: active.verificationId, uid: active.uid };
+  if (remaining > 0) throw new Error(`Please wait ${remaining} seconds before requesting another code.`);
+  if (linkRequestInFlight) throw new Error('Verification request already in progress.');
+  linkRequestInFlight = true;
+  try {
+    // Native Firebase handles app verification. This verifies without signing into another UID.
+    const verificationId = await new PhoneAuthProvider(auth).verifyPhoneNumber(normalized, undefined as any);
+    if (auth.currentUser?.uid !== user.uid) throw new Error('Your sign-in changed. Please sign in again.');
+    phoneLinkSession = { phone: normalized, verificationId, uid: user.uid };
+    OtpCooldownManager.getInstance().setCooldown(normalized, RESEND_COOLDOWN_SECONDS);
+    return { verificationId, uid: user.uid };
+  } catch (error: any) {
+    if (error?.code === 'auth/too-many-requests') {
+      OtpCooldownManager.getInstance().setCooldown(normalized, RESEND_COOLDOWN_SECONDS);
+    }
+    throw error;
+  } finally { linkRequestInFlight = false; }
+};
+
+/** Links the OTP credential to the original UID; never signs into a second account. */
+export const confirmPhoneLinkOTP = async (
+  verificationId: string, code: string, expectedUid: string,
+): Promise<string> => {
+  const auth = getAuth();
+  const user = auth.currentUser;
+  if (!user || user.uid !== expectedUid) throw new Error('Your sign-in changed. Please sign in again.');
+  if (!/^\d{6}$/.test(code.trim())) throw new Error('Please enter a complete 6-digit OTP.');
+  const credential = PhoneAuthProvider.credential(verificationId, code.trim());
+  const result = await linkWithCredential(user, credential);
+  if (result.user.uid !== expectedUid || auth.currentUser?.uid !== expectedUid) {
+    throw new Error('Your sign-in changed during mobile verification. Please sign in again.');
+  }
+  await result.user.getIdToken(true);
+  if (!result.user.phoneNumber) throw new Error('Verified mobile number is missing. Please retry.');
+  phoneLinkSession = null;
+  return result.user.phoneNumber;
 };
 
 /** Email sign-up: createUserWithEmailAndPassword */
@@ -203,6 +263,10 @@ export const signInWithGoogle = async (): Promise<UserCredential> => {
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
     console.log('[AUTH] Google Sign-In prompt started');
     const signInResult: any = await GoogleSignin.signIn();
+    if (signInResult?.type === 'cancelled') {
+      const cancelled = Object.assign(new Error('Google Sign-In was cancelled.'), { code: 'auth/cancelled' });
+      throw cancelled;
+    }
 
     // In modern @react-native-google-signin/google-signin versions (v13+), idToken is at data.idToken
     const idToken = signInResult?.data?.idToken || signInResult?.idToken;
@@ -317,7 +381,7 @@ export const sendPhoneOTP = async (
     return currentConfirmationResult!;
   }
 
-  if (remaining > 0 && !forceResend) {
+  if (remaining > 0) {
     console.log(`[AUTH] Request blocked by cooldown (${remaining}s remaining)`);
     throw new Error(`Please wait ${remaining} seconds before requesting another code.`);
   }
@@ -368,7 +432,7 @@ export const sendPhoneOTP = async (
 
 export const verifyOTP = async (otp: string, phoneNumber?: string): Promise<void> => {
   const cleanOtp = otp.trim();
-  if (!cleanOtp || cleanOtp.length !== 6) {
+  if (!/^\d{6}$/.test(cleanOtp)) {
     throw new Error('Please enter a complete 6-digit OTP.');
   }
   if (!currentConfirmationResult) {
@@ -398,9 +462,18 @@ export const verifyOTP = async (otp: string, phoneNumber?: string): Promise<void
 
 export const signOut = async (): Promise<void> => {
   try {
-    await fbSignOut(getAuth());
+    const auth = getAuth();
+    if (auth.currentUser) {
+      try {
+        await fbSignOut(auth);
+      } catch (error: any) {
+        // The auth listener can clear the user while logout is in flight.
+        if (error?.code !== 'auth/no-current-user') throw error;
+      }
+    }
     currentConfirmationResult = null;
     activePhoneNumber = null;
+    phoneLinkSession = null;
     try {
       if (GoogleSignin) {
         await GoogleSignin.signOut();

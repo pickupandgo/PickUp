@@ -444,7 +444,7 @@ export class LocationPermissionDeniedError extends Error {
  * Requests foreground permission on first call. Reverse geocodes the coordinates into a
  * readable address, falling back to clean coordinate notation if geocoding is unavailable.
  */
-export const getCurrentPlace = async (signal?: AbortSignal): Promise<ResolvedPlace> => {
+const readDevicePosition = async (): Promise<any> => {
   console.log('[CUSTOMER_LOCATION] getCurrentPosition started');
   if (Platform.OS === 'android') {
     console.log('[CUSTOMER_LOCATION] permission status: requesting');
@@ -495,6 +495,33 @@ export const getCurrentPlace = async (signal?: AbortSignal): Promise<ResolvedPla
     throw new ApiError('location_unavailable', 'Invalid coordinates received from GPS.');
   }
 
+  return position;
+};
+
+// Screens can request location together (mount, focus, locate button). Share only the
+// native position request; each caller keeps its own cancellation/geocoding lifecycle.
+let positionRequest: Promise<any> | null = null;
+const getDevicePosition = (): Promise<any> => {
+  if (positionRequest) return positionRequest;
+  const pending = readDevicePosition();
+  positionRequest = pending;
+  const clear = () => { if (positionRequest === pending) positionRequest = null; };
+  void pending.then(clear, clear);
+  return pending;
+};
+
+const checkLocationAbort = (signal?: AbortSignal) => {
+  if (signal?.aborted) {
+    const error = new Error('Location request cancelled');
+    error.name = 'AbortError';
+    throw error;
+  }
+};
+
+export const getCurrentPlace = async (signal?: AbortSignal): Promise<ResolvedPlace> => {
+  checkLocationAbort(signal);
+  const position = await getDevicePosition();
+  checkLocationAbort(signal);
   const point: GeoPoint = {
     latitude: position.coords.latitude,
     longitude: position.coords.longitude,
@@ -502,10 +529,12 @@ export const getCurrentPlace = async (signal?: AbortSignal): Promise<ResolvedPla
 
   try {
     const address = await reverseGeocode(point, signal);
+    checkLocationAbort(signal);
     if (address && address.trim().length > 0) {
       return { ...point, address };
     }
-  } catch {
+  } catch (error: any) {
+    if (error?.name === 'AbortError') throw error;
     // Reverse geocoding failed; fall back to coordinate string.
   }
 

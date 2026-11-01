@@ -13,6 +13,10 @@ import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
 
+import { useSelectedTrip } from '../../hooks/useSelectedTrip';
+import { useBookingPayment } from '../../hooks/useBookingPayment';
+import BookingPaymentStatus from '../../components/organisms/BookingPaymentStatus';
+import { formatPaise, paymentLabel } from '../../utils/paymentPresentation';
 import { useBooking } from '../../state/BookingContext';
 import { getVehicleDisplayName } from '../../utils/vehicleAssets';
 
@@ -32,132 +36,28 @@ export interface DigitalReceiptScreenProps {
   readonly onBack?: () => void;
 }
 
-const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: any }> = ({
-  tripId = '#TRP-8472-X',
-  date = 'Oct 24, 2023 • 11:30 AM',
-  vehicle = 'Tata Ace (RJ 19 XX 1234)',
-  baseFare = '₹380.00',
-  insurance = '₹25.00',
-  surcharges = '₹45.00',
-  totalAmount = '₹450.00',
-  paymentMethod = 'UPI (Secure Gateway)',
-  paymentStatus = 'Paid',
-  onShareReceipt,
-  onHome,
-  onHelp,
-  onBack,
-  navigation,
+const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: any; route?: any }> = ({
+  tripId: requestedTripId, onShareReceipt, onHome, onHelp, onBack, navigation, route,
 }) => {
-  const { ride, trip, draft, assignedDriver } = useBooking();
-  // Display only, from the server's quote figure; the backend is authoritative for what was paid.
-  const currentFare =
-    trip?.fare ?? ride?.fare ?? (draft.quote ? draft.quote.payablePaise / 100 : undefined);
-
-  const actualTotal = currentFare ? `₹${Math.round(currentFare)}` : (totalAmount || '₹349');
-  const actualBase = currentFare ? `₹${(currentFare * 0.8).toFixed(2)}` : baseFare; // Simplified breakup
-  const actualTaxes = currentFare ? `₹${(currentFare * 0.2).toFixed(2)}` : surcharges;
-
-  const actualTripId =
-    trip?.externalRef ||
-    ride?.externalRef ||
-    (trip?.id ? `#TRP-${trip.id.substring(0, 6).toUpperCase()}` : undefined) ||
-    (ride?.id ? `#TRP-${ride.id.substring(0, 6).toUpperCase()}` : undefined) ||
-    tripId;
-
-  const actualDate = useMemo(() => {
-    const rawTime = trip?.completedAt || trip?.updatedAt || (trip as any)?.deliveredAt;
-    if (rawTime) {
-      const d = new Date(rawTime);
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const month = months[d.getMonth()];
-      const day = d.getDate();
-      const year = d.getFullYear();
-      let hours = d.getHours();
-      const minutes = d.getMinutes().toString().padStart(2, '0');
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      hours = hours % 12;
-      hours = hours ? hours : 12;
-      return `${month} ${day}, ${year} • ${hours}:${minutes} ${ampm}`;
-    }
-    return date;
-  }, [trip?.completedAt, trip?.updatedAt, date]);
-
-  const rawVehicleType =
-    assignedDriver?.vehicleType ||
-    (trip as any)?.vehicleType ||
-    ride?.vehicleType ||
-    draft.vehicleType;
-  const vehicleName = getVehicleDisplayName(rawVehicleType);
-  const vehiclePlate =
-    (assignedDriver as any)?.vehicleNumber ||
-    (assignedDriver as any)?.vehicleRegistrationNumber ||
-    (trip as any)?.vehicleNumber ||
-    (ride as any)?.vehicleNumber ||
-    'KA 01 AB 1234';
-  const actualVehicle = `${vehicleName} (${vehiclePlate})`;
-
-  const actualPaymentMethod = useMemo(() => {
-    const method = trip?.paymentMethod || ride?.paymentMethod || draft.paymentMethod;
-    if (method === 'PAY_AT_PICKUP') return 'Cash / UPI (Pay at Pickup)';
-    if (method === 'PAY_AT_DELIVERY') return 'Cash / UPI (Pay at Delivery)';
-    return paymentMethod;
-  }, [trip?.paymentMethod, ride?.paymentMethod, draft.paymentMethod, paymentMethod]);
-
-  const stops = useMemo<Array<{ label: string; address: string }>>(() => {
-    if (trip?.pickup?.address || (trip?.stops && trip.stops.length > 0)) {
-      const list: Array<{ label: string; address: string }> = [];
-      const pickupAddr = trip.pickup?.address || draft.pickup?.address;
-      if (pickupAddr) list.push({ label: 'Pickup', address: pickupAddr });
-      if (trip.stops && trip.stops.length > 0) {
-        trip.stops.forEach((s, i) => {
-          const isSingle = trip.stops.length === 1;
-          const isLast = i === trip.stops.length - 1;
-          const label = isSingle ? 'Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
-          list.push({ label, address: s.location?.address || `Drop Location ${i + 1}` });
-        });
-      } else if (trip.drop?.address) {
-        list.push({ label: 'Drop', address: trip.drop.address });
-      }
-      if (list.length >= 2) return list;
-    }
-
-    const rideDrops = ride?.drops;
-    if (ride?.pickup?.address || (rideDrops && rideDrops.length > 0)) {
-      const list: Array<{ label: string; address: string }> = [];
-      const pickupAddr = ride.pickup?.address || draft.pickup?.address;
-      if (pickupAddr) list.push({ label: 'Pickup', address: pickupAddr });
-      if (rideDrops && rideDrops.length > 0) {
-        rideDrops.forEach((d, i) => {
-          const isSingle = rideDrops.length === 1;
-          const isLast = i === rideDrops.length - 1;
-          const label = isSingle ? 'Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
-          list.push({ label, address: d.address || `Drop Location ${i + 1}` });
-        });
-      } else if (ride.drop?.address) {
-        list.push({ label: 'Drop', address: ride.drop.address });
-      }
-      if (list.length >= 2) return list;
-    }
-
-    if (draft.pickup?.address && draft.drops && draft.drops.length > 0) {
-      const list: Array<{ label: string; address: string }> = [
-        { label: 'Pickup', address: draft.pickup.address },
-      ];
-      draft.drops.forEach((d, i) => {
-        const isSingle = draft.drops.length === 1;
-        const isLast = i === draft.drops.length - 1;
-        const label = isSingle ? 'Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
-        list.push({ label, address: d.address });
-      });
-      return list;
-    }
-
-    return [
-      { label: 'Pickup', address: '42 MG Road, Bangalore' },
-      { label: 'Drop 1', address: 'HSR Layout, Bangalore' },
-      { label: 'Final Drop', address: 'Koramangala, Bangalore' },
-    ];
-  }, [trip, ride, draft]);
+  const context = useBooking();
+  const params = route?.params ?? (requestedTripId ? { tripId: requestedTripId } : undefined);
+  const trip = useSelectedTrip(params, context.trip);
+  const explicit = !!params && ('trip' in params || 'tripId' in params || 'paymentBookingId' in params);
+  const ride = !explicit ? context.ride : undefined;
+  const payment = useBookingPayment(trip?.paymentBookingId ?? (!params?.tripId && !params?.trip ? params?.paymentBookingId : undefined) ?? ride?.paymentBookingId);
+  const actualTotal = formatPaise(payment.booking?.farePaise);
+  const actualTripId = trip?.externalRef ?? ride?.externalRef ?? payment.booking?.externalRef ?? trip?.id ?? params?.tripId ?? 'Not available';
+  const rawDate = trip?.completedAt ?? trip?.createdAt ?? payment.booking?.confirmedAt;
+  const actualDate = rawDate && Number.isFinite(Date.parse(rawDate)) ? new Date(rawDate).toLocaleString('en-IN') : 'Not available';
+  const category = trip?.vehicleType ?? ride?.vehicleType;
+  const actualVehicle = category ? getVehicleDisplayName(category) : 'Not available';
+  const method = payment.booking?.paymentMethod;
+  const actualPaymentMethod = method === 'PAY_AT_PICKUP' ? 'Pay at pickup' : method === 'PAY_AT_DELIVERY' ? 'Pay at delivery' : 'Not available';
+  const stops = [
+    ...(trip?.pickup?.address || ride?.pickup?.address ? [{ label: 'Pickup', address: trip?.pickup?.address ?? ride?.pickup?.address ?? '' }] : []),
+    ...(trip?.stops?.map(stop => ({ label: `Drop ${stop.sequence}`, address: stop.location.address ?? 'Not available' })) ?? ride?.drops?.map((drop, i) => ({ label: `Drop ${i + 1}`, address: drop.address ?? 'Not available' })) ?? []),
+  ];
+  const selectedParams = { trip, tripId: trip?.id, bookingId: trip?.paymentBookingId ?? ride?.paymentBookingId };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -169,10 +69,10 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Precision Mobility</Text>
+        <Text style={styles.headerTitle}>PICKUP</Text>
         <Pressable
           style={styles.iconButton}
-          onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}
+          onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripStack', { screen: 'ActiveTripChatScreen', params: selectedParams }))}
         >
           <Feather name="help-circle" size={24} color={colors.primary} />
         </Pressable>
@@ -182,10 +82,10 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
         {/* Header Section */}
         <View style={styles.headerSection}>
           <View style={styles.successIconBox}>
-            <MaterialIcons name="check-circle" size={32} color={colors.onSecondaryContainer} />
+            <MaterialIcons name={payment.booking?.paymentStatus === 'PAID' ? 'check-circle' : 'info'} size={32} color={colors.onSecondaryContainer} />
           </View>
-          <Text style={styles.statusTitle}>Payment Successful</Text>
-          <Text style={styles.statusSubtitle}>Trip Receipt</Text>
+          <Text style={styles.statusTitle}>{paymentLabel(payment.booking)}</Text>
+          <Text style={styles.statusSubtitle}>Booking payment details</Text>
         </View>
 
         {/* Receipt Card */}
@@ -247,14 +147,7 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
           {/* Fare Summary */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>FARE SUMMARY</Text>
-            <View style={styles.row}>
-              <Text style={styles.detailLabel}>Base Fare</Text>
-              <Text style={styles.monoValue}>{actualBase}</Text>
-            </View>
-            <View style={styles.row}>
-              <Text style={styles.detailLabel}>Taxes & Fees</Text>
-              <Text style={styles.monoValue}>{actualTaxes}</Text>
-            </View>
+            <Text style={styles.detailLabel}>Detailed fare breakdown is not available.</Text>
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total Amount</Text>
               <Text style={styles.totalValue}>{actualTotal}</Text>
@@ -271,19 +164,22 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
                 <MaterialIcons name="account-balance" size={24} color={colors.onSurfaceVariant} />
                 <View style={styles.paymentMethodTexts}>
                   <Text style={styles.paymentMethodName}>{actualPaymentMethod}</Text>
-                  <Text style={styles.paymentMethodStatus}>Status: {paymentStatus}</Text>
+                  <Text style={styles.paymentMethodStatus}>Status: {paymentLabel(payment.booking)}</Text>
                 </View>
               </View>
-              <Feather name="check" size={20} color={colors.secondary} />
+              <Feather name={payment.booking?.paymentStatus === 'PAID' ? 'check' : 'info'} size={20} color={colors.onSurfaceVariant} />
             </View>
           </View>
 
         </View>
 
+        <BookingPaymentStatus state={payment} />
+
         {/* Actions */}
         <View style={styles.actionsContainer}>
           <Button
             label="SHARE RECEIPT"
+            disabled={!onShareReceipt}
             onPress={() =>
               onShareReceipt
                 ? onShareReceipt()
@@ -300,7 +196,8 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
               if (onHome) {
                 onHome();
               } else {
-                navigation?.dispatch(
+                const root = navigation?.getParent?.() ?? navigation;
+                root?.dispatch(
                   CommonActions.reset({
                     index: 0,
                     routes: [{ name: 'MainTabs', params: { screen: 'HomeScreen' } }],

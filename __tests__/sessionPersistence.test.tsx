@@ -1,168 +1,123 @@
-import React from 'react';
-import TestRenderer, { act } from 'react-test-renderer';
-import { Text } from 'react-native';
+﻿import React from 'react';
+import TestRenderer, { act, type ReactTestRenderer } from 'react-test-renderer';
 import { SessionProvider, useSession } from '../src/state/SessionContext';
-import * as sessionModule from '../src/state/session';
-import * as userProfileApi from '../src/api/userProfile';
-import * as authService from '../src/auth/authService';
+import { fetchUserProfileApi, saveUserProfileApi } from '../src/api/userProfile';
+import { registerCustomer } from '../src/api/payments';
+import { ApiError } from '../src/api/http';
+import { signOut } from '../src/auth/authService';
+import { setProfileComplete } from '../src/state/session';
 
-let authStateCallback: ((user: any) => Promise<void>) | null = null;
-
+let mockUser: any;
+let mockAuthListener: (user: any) => void;
 jest.mock('@react-native-firebase/auth', () => ({
-  getAuth: () => ({
-    currentUser: { uid: 'test-user-456', phoneNumber: '+919876543210' },
-  }),
-  onAuthStateChanged: jest.fn((_auth, cb) => {
-    authStateCallback = cb;
-    return jest.fn(); // unsubscribe
-  }),
+  getAuth: () => ({ currentUser: mockUser }),
+  onAuthStateChanged: (_auth: any, callback: any) => { mockAuthListener = callback; return jest.fn(); },
 }));
-
-jest.mock('../src/config/env', () => ({
-  env: {
-    apiBaseUrl: 'https://engine.test',
-    paymentsApiBaseUrl: 'https://pay.test',
-  },
-  hasPaymentsConfig: () => false,
-}));
-
-jest.mock('../src/api/payments', () => ({
-  registerCustomer: jest.fn().mockResolvedValue(undefined),
-}));
-
-jest.mock('../src/auth/authService', () => ({
-  signOut: jest.fn().mockResolvedValue(undefined),
-}));
-
-jest.mock('../src/api/userProfile', () => ({
-  fetchUserProfileApi: jest.fn(),
-  saveUserProfileApi: jest.fn(),
-}));
-
+jest.mock('../src/config/env', () => ({ hasPaymentsConfig: () => true }));
+jest.mock('../src/api/payments', () => ({ registerCustomer: jest.fn(async () => undefined) }));
+jest.mock('../src/api/userProfile', () => ({ fetchUserProfileApi: jest.fn(), saveUserProfileApi: jest.fn() }));
+jest.mock('../src/auth/authService', () => ({ signOut: jest.fn(async () => { mockUser = null; mockAuthListener(null); }) }));
 jest.mock('../src/state/session', () => ({
-  isProfileComplete: jest.fn(),
-  setProfileComplete: jest.fn().mockResolvedValue(undefined),
-  getCustomerProfile: jest.fn(),
-  clearSession: jest.fn().mockResolvedValue(undefined),
-  setLoggedIn: jest.fn().mockResolvedValue(undefined),
+  setProfileComplete: jest.fn(async () => undefined), clearSession: jest.fn(async () => undefined),
 }));
+const complete = { uid: 'backend-customer-id', fullName: 'Chosen name', email: 'chosen@example.com',
+  phone: '+919876543210', age: '29', address: 'Jaipur' };
+let api: ReturnType<typeof useSession>;
+let renderer: ReactTestRenderer;
+function Capture() { api = useSession(); return null; }
+async function emit(user: any) { await act(async () => { mockUser = user; mockAuthListener(user); }); }
+beforeEach(async () => {
+  jest.clearAllMocks(); mockUser = { uid: 'firebase-A', phoneNumber: complete.phone };
+  (fetchUserProfileApi as jest.Mock).mockResolvedValue(complete);
+  (saveUserProfileApi as jest.Mock).mockResolvedValue(complete);
+  await act(async () => { renderer = TestRenderer.create(<SessionProvider><Capture /></SessionProvider>); });
+});
+afterEach(() => { act(() => renderer.unmount()); });
+it('restores a complete backend profile before admitting a returning account', async () => {
+  await emit(mockUser); expect(api.registrationStatus).toBe('ready'); expect(api.hasProfile).toBe(true);
+  expect(api.userProfile?.fullName).toBe('Chosen name'); expect(registerCustomer).toHaveBeenCalledTimes(1);
+});
+it('routes a Google-only account to phone completion before backend registration', async () => {
+  await emit({ uid: 'google-A', phoneNumber: null, displayName: 'Google name' });
+  expect(api.registrationStatus).toBe('needs_phone'); expect(registerCustomer).not.toHaveBeenCalled();
+});
+it('requires missing age/address on existing profiles', async () => {
+  (fetchUserProfileApi as jest.Mock).mockResolvedValue({ ...complete, age: undefined, address: '' });
+  await emit(mockUser); expect(api.registrationStatus).toBe('needs_profile'); expect(api.hasProfile).toBe(false);
+  expect(api.userProfile?.fullName).toBe('Chosen name');
+});
+it('uses a recovery state for offline registration rather than pretending profile is missing', async () => {
+  (registerCustomer as jest.Mock).mockRejectedValueOnce(new ApiError('network', 'offline'));
+  await emit(mockUser); expect(api.registrationStatus).toBe('error'); expect(api.registrationError).toContain('connection');
+});
+it.each(['PHONE_ALREADY_REGISTERED', 'ACCOUNT_ROLE_CONFLICT', 'ACCOUNT_DISABLED'])('blocks %s truthfully', async errorCode => {
+  (registerCustomer as jest.Mock).mockRejectedValueOnce(new ApiError('http', 'blocked', 409, { error: { code: errorCode } }));
+  await emit(mockUser); expect(api.registrationStatus).toBe('blocked'); expect(api.hasProfile).toBe(false);
+});
+it('requires server-confirmed complete fields and retains failed-save state', async () => {
+  await emit(mockUser);
+  (saveUserProfileApi as jest.Mock).mockRejectedValueOnce(new ApiError('network', 'offline'));
+  await expect(api.markProfileDone(complete)).rejects.toMatchObject({ kind: 'network' });
+  expect(api.userProfile?.fullName).toBe('Chosen name');
+  await expect(api.markProfileDone({ ...complete, age: '' })).rejects.toThrow('required');
+  (saveUserProfileApi as jest.Mock).mockResolvedValueOnce({ ...complete, address: '' });
+  await expect(api.markProfileDone(complete)).rejects.toThrow('server did not save');
+});
+it('preserves a previously confirmed profile during a transient refresh failure', async () => {
+  await emit(mockUser);
+  (fetchUserProfileApi as jest.Mock).mockRejectedValueOnce(new ApiError('network', 'offline'));
+  await act(async () => { await api.refreshProfile(); });
+  expect(api.hasProfile).toBe(true); expect(api.registrationStatus).toBe('ready');
+  expect(api.registrationError).toContain('connection');
+});
+it('ignores late registration results after switching accounts', async () => {
+  let finish!: (value: any) => void;
+  (fetchUserProfileApi as jest.Mock).mockImplementationOnce(() => new Promise(r => { finish = r; }));
+  await emit(mockUser);
+  await emit({ uid: 'google-B', phoneNumber: null });
+  await act(async () => { finish(complete); });
+  expect(api.authUid).toBe('google-B'); expect(api.registrationStatus).toBe('needs_phone'); expect(api.userProfile).toBeNull();
+});
+it('routes a confirmed disabled account to recovery on profile refresh', async () => {
+  await emit(mockUser);
+  (fetchUserProfileApi as jest.Mock).mockRejectedValueOnce(new ApiError('http', 'disabled', 403,
+    { error: { code: 'ACCOUNT_DISABLED', message: 'This account is disabled' } }));
+  await act(async () => { await api.refreshProfile(); });
+  expect(api.hasProfile).toBe(false); expect(api.registrationStatus).toBe('blocked');
+});
+it('ignores late save responses after logout', async () => {
+  await emit(mockUser);
+  let finish!: (value: any) => void;
+  (saveUserProfileApi as jest.Mock).mockImplementationOnce(() => new Promise(r => { finish = r; }));
+  let result!: Promise<any>;
+  await act(async () => { result = api.markProfileDone(complete).catch(e => e); });
+  await act(async () => { await api.logout(); });
+  const callsAfterLogout = (setProfileComplete as jest.Mock).mock.calls.length;
+  await act(async () => { finish(complete); await result; });
+  expect(await result).toBeInstanceOf(Error); expect(api.isLoggedIn).toBe(false); expect(api.userProfile).toBeNull();
+  expect(setProfileComplete).toHaveBeenCalledTimes(callsAfterLogout); expect(signOut).toHaveBeenCalledTimes(1);
+});
+it('coalesces registration retries and keeps one backend operation in flight', async () => {
+  let finish!: () => void;
+  (registerCustomer as jest.Mock).mockImplementationOnce(() => new Promise<void>(r => { finish = r; }));
+  let first!: Promise<void>; let second!: Promise<void>;
+  await act(async () => { first = api.retryRegistration(); second = api.retryRegistration(); });
+  expect(first).toBe(second); expect(registerCustomer).toHaveBeenCalledTimes(1);
+  await act(async () => { finish(); await first; });
+  expect(api.registrationStatus).toBe('ready');
+});
 
-const TestConsumer: React.FC = () => {
-  const { isLoggedIn, hasProfile, userProfile } = useSession();
-  return (
-    <>
-      <Text testID="isLoggedIn">{String(isLoggedIn)}</Text>
-      <Text testID="hasProfile">{String(hasProfile)}</Text>
-      <Text testID="userName">{userProfile?.fullName || 'none'}</Text>
-    </>
-  );
-};
 
-describe('SessionContext — App Reopen Without Registration Form Flash', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
+
+it('aborts old profile requests when the Firebase account changes', async () => {
+  let signal: AbortSignal | undefined;
+  (fetchUserProfileApi as jest.Mock).mockImplementationOnce((s: AbortSignal) => {
+    signal = s;
+    return new Promise(() => {});
   });
-
-  it('1. immediately resolves hasProfile: true when local profile exists upon reopening app', async () => {
-    (sessionModule.getCustomerProfile as jest.Mock).mockResolvedValue({
-      fullName: 'Rajesh Sharma',
-      email: 'rajesh@example.com',
-      phone: '+919876543210',
-    });
-    (sessionModule.isProfileComplete as jest.Mock).mockResolvedValue(true);
-    (userProfileApi.fetchUserProfileApi as jest.Mock).mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve(null), 100))
-    );
-
-    let renderer: any;
-    await act(async () => {
-      renderer = TestRenderer.create(
-        <SessionProvider>
-          <TestConsumer />
-        </SessionProvider>
-      );
-    });
-
-    // Trigger Firebase auth state restoration
-    await act(async () => {
-      if (authStateCallback) {
-        await authStateCallback({ uid: 'test-user-456', phoneNumber: '+919876543210' });
-      }
-    });
-
-    const root = renderer.root;
-    const isLoggedInNode = root.findByProps({ testID: 'isLoggedIn' });
-    const hasProfileNode = root.findByProps({ testID: 'hasProfile' });
-    const userNameNode = root.findByProps({ testID: 'userName' });
-
-    // Both must be true IMMEDIATELY without waiting for remote fetch or showing onboarding form
-    expect(isLoggedInNode.props.children).toBe('true');
-    expect(hasProfileNode.props.children).toBe('true');
-    expect(userNameNode.props.children).toBe('Rajesh Sharma');
-  });
-
-  it('2. sets hasProfile: false for truly new user with no local or remote profile', async () => {
-    (sessionModule.getCustomerProfile as jest.Mock).mockResolvedValue(null);
-    (sessionModule.isProfileComplete as jest.Mock).mockResolvedValue(false);
-    (userProfileApi.fetchUserProfileApi as jest.Mock).mockResolvedValue(null);
-
-    let renderer: any;
-    await act(async () => {
-      renderer = TestRenderer.create(
-        <SessionProvider>
-          <TestConsumer />
-        </SessionProvider>
-      );
-    });
-
-    await act(async () => {
-      if (authStateCallback) {
-        await authStateCallback({ uid: 'new-user-789', phoneNumber: '+919999999999' });
-      }
-    });
-
-    const root = renderer.root;
-    const isLoggedInNode = root.findByProps({ testID: 'isLoggedIn' });
-    const hasProfileNode = root.findByProps({ testID: 'hasProfile' });
-
-    expect(isLoggedInNode.props.children).toBe('true');
-    expect(hasProfileNode.props.children).toBe('false');
-  });
-
-  it('3. updates profile and retains hasProfile: true when markProfileDone is called', async () => {
-    (sessionModule.getCustomerProfile as jest.Mock).mockResolvedValue(null);
-    (sessionModule.isProfileComplete as jest.Mock).mockResolvedValue(false);
-    (userProfileApi.saveUserProfileApi as jest.Mock).mockResolvedValue({
-      fullName: 'Anita Roy',
-      email: 'anita@example.com',
-    });
-
-    let contextRef: any;
-    const ActionConsumer: React.FC = () => {
-      const session = useSession();
-      contextRef = session;
-      return <Text testID="status">{String(session.hasProfile)}</Text>;
-    };
-
-    let renderer: any;
-    await act(async () => {
-      renderer = TestRenderer.create(
-        <SessionProvider>
-          <ActionConsumer />
-        </SessionProvider>
-      );
-    });
-
-    await act(async () => {
-      await contextRef.markProfileDone({
-        fullName: 'Anita Roy',
-        email: 'anita@example.com',
-      });
-    });
-
-    const statusNode = renderer.root.findByProps({ testID: 'status' });
-    expect(statusNode.props.children).toBe('true');
-    expect(contextRef.userProfile?.fullName).toBe('Anita Roy');
-    expect(sessionModule.setProfileComplete).toHaveBeenCalled();
-  });
+  await emit(mockUser);
+  expect(signal?.aborted).toBe(false);
+  await emit({ uid: 'firebase-B', phoneNumber: complete.phone });
+  expect(signal?.aborted).toBe(true);
+  expect(api.authUid).toBe('firebase-B');
 });

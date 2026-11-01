@@ -85,6 +85,9 @@ export type RideStatus =
 
 /** A drop as the customer books it: who receives it and (optionally) the address label. */
 export interface DropDetailInput {
+  readonly latitude?: number;
+  readonly longitude?: number;
+  readonly instructions?: string;
   readonly address?: string;
   readonly receiver?: { readonly name?: string; readonly phone?: string };
 }
@@ -94,16 +97,27 @@ export interface DropDetailInput {
  * signed-in user (the token), never a body field. The engine owns dispatch and chooses the
  * driver; no amount is ever sent.
  */
+export interface BookingMetadata {
+  readonly goodsType?: string;
+  readonly goodsDescription?: string;
+  readonly declaredValue?: string;
+  readonly specialInstructions?: string;
+  readonly sender?: { readonly name?: string; readonly phone?: string };
+  readonly pickupInstructions?: string;
+}
+
 export interface CreateRideInput {
+  readonly metadata?: BookingMetadata;
   readonly quoteId: string;
   readonly paymentMethod: PaymentMethod;
   /** Optional address label for the pickup; coordinates come from the quote. */
-  readonly pickup?: { readonly address?: string };
+  readonly pickup?: { readonly address?: string; readonly latitude?: number; readonly longitude?: number };
   /** Receiver details per drop, in the quote's order. Coordinates come from the quote. */
   readonly drops?: readonly DropDetailInput[];
 }
 
 export interface RideDrop {
+  readonly instructions?: string;
   readonly sequence?: number;
   readonly latitude: number;
   readonly longitude: number;
@@ -114,6 +128,7 @@ export interface RideDrop {
 
 /** The customer's view of a ride (engine rideView). No OTP: see RideOtps. */
 export interface Ride {
+  readonly metadata?: BookingMetadata;
   readonly id: string;
   readonly status: RideStatus;
   readonly bookingStatus?: string;
@@ -193,6 +208,7 @@ export interface StopReceiver {
 }
 
 export interface TripStop {
+  readonly instructions?: string;
   readonly id: string;
   readonly sequence: number;
   readonly location: GeoPoint;
@@ -210,6 +226,8 @@ export interface TripStop {
 
 /** The customer's view of a trip (engine tripView). No OTP. */
 export interface Trip {
+  readonly vehicleType?: string;
+  readonly metadata?: BookingMetadata;
   readonly id: string;
   readonly rideId: string;
   readonly customerId: string;
@@ -313,4 +331,8 @@ export interface CustomerAccount {
   readonly phone: string;
   readonly status: string;
   readonly createdAt: string;
+  readonly name?: string | null;
+  readonly email?: string | null;
+  readonly age?: number | null;
+  readonly address?: string | null;
 }

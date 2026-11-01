@@ -14,7 +14,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import { useBooking } from '../../state/BookingContext';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
-import { useRoute } from '../../hooks/useRoute';
+import { useRoadRoute } from '../../hooks/useRoute';
 
 export interface BookingConfirmedScreenProps {
   readonly onCancel?: () => void;
@@ -25,7 +25,7 @@ const BookingConfirmedScreen: React.FC<BookingConfirmedScreenProps & { navigatio
   navigation,
 }) => {
   const { draft, primaryDrop } = useBooking();
-  const roadRoute = useRoute(draft.pickup, primaryDrop);
+  const road = useRoadRoute(draft.pickup, draft.drops[draft.drops.length - 1] ?? primaryDrop, draft.drops.slice(0, -1));
 
   useEffect(() => {
     if (BackHandler && typeof BackHandler.addEventListener === 'function') {
@@ -60,11 +60,9 @@ const BookingConfirmedScreen: React.FC<BookingConfirmedScreenProps & { navigatio
     if (draft.pickup) {
       built.push({ id: 'pickup', kind: 'pickup', coordinate: draft.pickup, title: 'Pickup' });
     }
-    if (primaryDrop) {
-      built.push({ id: 'drop', kind: 'drop', coordinate: primaryDrop, title: 'Drop' });
-    }
+    draft.drops.forEach((drop, index) => built.push({ id: `drop-${index}`, kind: 'drop', coordinate: drop, title: `Drop ${index + 1}` }));
     return built;
-  }, [draft.pickup, primaryDrop]);
+  }, [draft.pickup, draft.drops]);
 
   const progressAnim = useRef(new Animated.Value(0)).current;
 
@@ -119,7 +117,9 @@ const BookingConfirmedScreen: React.FC<BookingConfirmedScreenProps & { navigatio
         center={draft.pickup}
         markers={markers}
         fitToMarkers={markers.length > 1}
-        polyline={roadRoute}
+        polyline={road.polyline}
+        routeStatus={road.status}
+        onRetryRoute={road.retry}
         scrollEnabled={false}
       >
         <View style={styles.overlay} />
