@@ -124,6 +124,8 @@ export interface AppConfig {
   readonly fare: {
     /** Seconds a fare quote stays bookable. */
     readonly quoteTtlSeconds: number;
+    /** Customer surcharge, separate from driver commission. */
+    readonly customerPlatformFeeBps?: number;
     /** Most drops a quote (and so a booking) may have. Technical default 5 (open: D-29). */
     readonly maxDrops: number;
   };
@@ -373,6 +375,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     googleRoutes: env.GOOGLE_ROUTES_API_KEY ? { apiKey: env.GOOGLE_ROUTES_API_KEY } : undefined,
     fare: {
       quoteTtlSeconds: env.FARE_QUOTE_TTL_SECONDS,
+      customerPlatformFeeBps: env.FARE_CUSTOMER_PLATFORM_FEE_BPS,
       maxDrops: env.FARE_MAX_DROPS,
     },
     readiness: {

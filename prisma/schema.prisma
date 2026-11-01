@@ -1562,6 +1562,11 @@ model FareQuote {
   taxPaise         BigInt    @map("tax_paise")
   /// What the customer (or the receivers together) pays: fare + tax.
   payablePaise     BigInt    @map("payable_paise")
+  /// Frozen customer-only surcharge. Null for historical quotes.
+  deliveryFarePaise BigInt? @map("delivery_fare_paise")
+  customerPlatformFeePaise BigInt? @map("customer_platform_fee_paise")
+  customerPlatformFeeBps Int? @map("customer_platform_fee_bps")
+  surgeChargePaise BigInt? @map("surge_charge_paise")
   expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
   /// Set once, when a booking is registered from this quote.
   redeemedAt       DateTime? @map("redeemed_at") @db.Timestamptz(6)

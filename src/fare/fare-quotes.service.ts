@@ -12,6 +12,7 @@ import type {
   InternalFareQuoteResponse,
 } from './fare.dto';
 import { toFareQuoteResponse, type QuoteWithStops } from './fare.mapper';
+import { applyCustomerCharges } from './customer-charges';
 import { FarePricer } from './fare-pricer';
 import { coordinateText } from './pricing/geo';
 import { findPricingVersionInEffect } from './pricing-versions';
@@ -57,7 +58,10 @@ export class FareQuotesService {
         'Fares are not available right now. Please try again later',
       );
     }
-    const priced = this.pricer.price(inEffect.version, inEffect.pricing, request);
+    const priced = applyCustomerCharges(
+      this.pricer.price(inEffect.version, inEffect.pricing, request),
+      this.config.fare.customerPlatformFeeBps ?? 1000,
+    );
     const expiresAt = new Date(now.getTime() + this.config.fare.quoteTtlSeconds * 1000);
 
     const quote = await this.prisma.runInTransaction(async (tx) => {
@@ -72,6 +76,10 @@ export class FareQuotesService {
           distanceMeters: priced.distanceMeters,
           farePaise: priced.farePaise,
           taxPaise: priced.taxPaise,
+          deliveryFarePaise: priced.deliveryFarePaise,
+          customerPlatformFeePaise: priced.customerPlatformFeePaise,
+          customerPlatformFeeBps: priced.customerPlatformFeeBps,
+          surgeChargePaise: priced.surgeChargePaise,
           payablePaise: priced.payablePaise,
           expiresAt,
           createdAt: now,

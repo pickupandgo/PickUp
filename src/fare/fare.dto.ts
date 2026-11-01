@@ -85,13 +85,19 @@ export class PricingVersionRef {
 }
 
 export class FareQuoteResponse {
+  /** Customer-only snapshot. Absent for historical quotes; driver commission is separate. */
+  deliveryFarePaise?: number;
+  customerPlatformFeePaise?: number;
+  customerPlatformFeeBps?: number;
+  surgeChargePaise?: number;
+
   quoteId!: string;
   pricingVersion!: PricingVersionRef;
   vehicleCategory!: string;
   weightKg!: number;
   pickup!: LocationInput;
   distanceMeters!: number;
-  /** Fare excluding taxes, in paise. */
+  /** Pre-tax subtotal, including customer charges. deliveryFarePaise is the base delivery amount. */
   farePaise!: number;
   taxPaise!: number;
   /** Total to pay: fare + taxes. The sender pays this at once when the sender pays. */
@@ -172,6 +178,12 @@ export class CreatePricingVersionResponse {
 }
 
 export class PricingPreviewResponse {
+  /** Customer-only snapshot. Absent for historical quotes; driver commission is separate. */
+  deliveryFarePaise?: number;
+  customerPlatformFeePaise?: number;
+  customerPlatformFeeBps?: number;
+  surgeChargePaise?: number;
+
   pricingVersion!: PricingVersionRef;
   distanceMeters!: number;
   farePaise!: number;

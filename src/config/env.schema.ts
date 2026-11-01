@@ -220,6 +220,7 @@ export const envSchema = z
     // How long a fare quote can be booked (seconds). After that the app must ask for a new
     // quote, so a customer always pays a price calculated by the current pricing version.
     GOOGLE_ROUTES_API_KEY: z.string().min(1).optional(),
+    FARE_CUSTOMER_PLATFORM_FEE_BPS: z.coerce.number().int().min(0).max(10000).default(1000),
     FARE_QUOTE_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
     // Most drops one booking may have. 5 is a technical default, not a business decision: the
     // final maximum is open (OPEN_DECISIONS D-29). The database allows up to 25 so a change

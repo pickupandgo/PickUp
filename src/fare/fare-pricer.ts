@@ -22,6 +22,10 @@ export interface PricedQuoteDrop {
 }
 
 export interface PricedQuote {
+  readonly deliveryFarePaise?: bigint;
+  readonly customerPlatformFeePaise?: bigint;
+  readonly customerPlatformFeeBps?: number;
+  readonly surgeChargePaise?: bigint;
   readonly version: PricingVersion;
   readonly vehicleCategory: string;
   readonly weightGrams: number;

@@ -500,41 +500,45 @@ describe('loadConfig', () => {
     expect(problemsFor(validEnv({ MANUAL_KYC_ENABLED: 'true' })).join()).toMatch(
       /MANUAL_KYC_ENABLED/,
     );
-    const configured = loadConfig(validEnv({
-      DOCUMENT_STORAGE_PROVIDER: 's3',
-      DOCUMENT_STORAGE_ENDPOINT: 'https://s3.example.test',
-      DOCUMENT_STORAGE_REGION: 'test-1',
-      DOCUMENT_STORAGE_BUCKET: 'private-documents',
-      DOCUMENT_STORAGE_ACCESS_KEY_ID: 'access-key',
-      DOCUMENT_STORAGE_SECRET_ACCESS_KEY: 'secret-access-key-value',
-      DOCUMENT_SCANNER_PROVIDER: 'http',
-      DOCUMENT_SCANNER_URL: 'https://scanner.example.test',
-      DOCUMENT_SCANNER_TOKEN: 'scanner-token-value-123456789',
-      MANUAL_KYC_ENABLED: 'true',
-      MANUAL_KYC_POLICY_VERSION: 'POLICY_1',
-      MANUAL_KYC_REQUIRED_DOCUMENTS: 'IDENTITY,LICENSE',
-      MANUAL_KYC_CHECKLIST: 'FACE_MATCH,NAME_MATCH',
-      VEHICLE_REQUIRED_DOCUMENTS: 'RC,INSURANCE',
-    }));
+    const configured = loadConfig(
+      validEnv({
+        DOCUMENT_STORAGE_PROVIDER: 's3',
+        DOCUMENT_STORAGE_ENDPOINT: 'https://s3.example.test',
+        DOCUMENT_STORAGE_REGION: 'test-1',
+        DOCUMENT_STORAGE_BUCKET: 'private-documents',
+        DOCUMENT_STORAGE_ACCESS_KEY_ID: 'access-key',
+        DOCUMENT_STORAGE_SECRET_ACCESS_KEY: 'secret-access-key-value',
+        DOCUMENT_SCANNER_PROVIDER: 'http',
+        DOCUMENT_SCANNER_URL: 'https://scanner.example.test',
+        DOCUMENT_SCANNER_TOKEN: 'scanner-token-value-123456789',
+        MANUAL_KYC_ENABLED: 'true',
+        MANUAL_KYC_POLICY_VERSION: 'POLICY_1',
+        MANUAL_KYC_REQUIRED_DOCUMENTS: 'IDENTITY,LICENSE',
+        MANUAL_KYC_CHECKLIST: 'FACE_MATCH,NAME_MATCH',
+        VEHICLE_REQUIRED_DOCUMENTS: 'RC,INSURANCE',
+      }),
+    );
     expect(configured.manualKyc).toMatchObject({ enabled: true, policyVersion: 'POLICY_1' });
     expect(configured.documents.storage?.bucket).toBe('private-documents');
   });
 
   it('requires TLS for production document storage and scanner endpoints', () => {
-    const problems = problemsFor(validEnv({
-      NODE_ENV: 'production',
-      RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456',
-      SETTLEMENT_PROVIDER: 'disabled',
-      DOCUMENT_STORAGE_PROVIDER: 's3',
-      DOCUMENT_STORAGE_ENDPOINT: 'http://s3.example.test',
-      DOCUMENT_STORAGE_REGION: 'test-1',
-      DOCUMENT_STORAGE_BUCKET: 'private-documents',
-      DOCUMENT_STORAGE_ACCESS_KEY_ID: 'access-key',
-      DOCUMENT_STORAGE_SECRET_ACCESS_KEY: 'secret-access-key-value',
-      DOCUMENT_SCANNER_PROVIDER: 'http',
-      DOCUMENT_SCANNER_URL: 'http://scanner.example.test',
-      DOCUMENT_SCANNER_TOKEN: 'scanner-token-value-123456789',
-    })).join();
+    const problems = problemsFor(
+      validEnv({
+        NODE_ENV: 'production',
+        RAZORPAY_KEY_ID: 'rzp_live_AbCdEf123456',
+        SETTLEMENT_PROVIDER: 'disabled',
+        DOCUMENT_STORAGE_PROVIDER: 's3',
+        DOCUMENT_STORAGE_ENDPOINT: 'http://s3.example.test',
+        DOCUMENT_STORAGE_REGION: 'test-1',
+        DOCUMENT_STORAGE_BUCKET: 'private-documents',
+        DOCUMENT_STORAGE_ACCESS_KEY_ID: 'access-key',
+        DOCUMENT_STORAGE_SECRET_ACCESS_KEY: 'secret-access-key-value',
+        DOCUMENT_SCANNER_PROVIDER: 'http',
+        DOCUMENT_SCANNER_URL: 'http://scanner.example.test',
+        DOCUMENT_SCANNER_TOKEN: 'scanner-token-value-123456789',
+      }),
+    ).join();
     expect(problems).toMatch(/DOCUMENT_STORAGE_ENDPOINT/);
     expect(problems).toMatch(/DOCUMENT_SCANNER_URL/);
   });
@@ -555,7 +559,9 @@ describe('loadConfig', () => {
       storage: { endpoint: undefined, region: 'ap-south-1' },
       scanner: { kind: 'guardduty', region: 'ap-south-1' },
     });
-    expect(problemsFor({ ...env, GUARDDUTY_REGION: 'us-east-1' }).join()).toMatch(/match DOCUMENT_STORAGE_REGION/);
+    expect(problemsFor({ ...env, GUARDDUTY_REGION: 'us-east-1' }).join()).toMatch(
+      /match DOCUMENT_STORAGE_REGION/,
+    );
   });
 
   it('rejects non-postgres database URLs', () => {
@@ -563,4 +569,14 @@ describe('loadConfig', () => {
       /DATABASE_URL/,
     );
   });
+});
+
+it('validates the independent customer platform fee policy and default 10 percent', () => {
+  expect(loadConfig(validEnv()).fare.customerPlatformFeeBps).toBe(1000);
+  expect(
+    loadConfig(validEnv({ FARE_CUSTOMER_PLATFORM_FEE_BPS: '0' })).fare.customerPlatformFeeBps,
+  ).toBe(0);
+  expect(() => loadConfig(validEnv({ FARE_CUSTOMER_PLATFORM_FEE_BPS: '-1' }))).toThrow(
+    ConfigurationError,
+  );
 });

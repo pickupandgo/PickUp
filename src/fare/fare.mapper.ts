@@ -8,16 +8,30 @@ import type {
 } from './fare.dto';
 import type { PricedQuote } from './fare-pricer';
 
-export type QuoteWithStops = FareQuote & {
-  stops: FareQuoteStop[];
-  pricingVersion: Pick<PricingVersion, 'id' | 'code'>;
-};
+type CustomerChargeKeys =
+  'deliveryFarePaise' | 'customerPlatformFeePaise' | 'customerPlatformFeeBps' | 'surgeChargePaise';
+export type QuoteWithStops = Omit<FareQuote, CustomerChargeKeys> &
+  Partial<Pick<FareQuote, CustomerChargeKeys>> & {
+    stops: FareQuoteStop[];
+    pricingVersion: Pick<PricingVersion, 'id' | 'code'>;
+  };
 
 const iso = (value: Date | null): string | null => (value ? value.toISOString() : null);
 
 export function toFareQuoteResponse(quote: QuoteWithStops): FareQuoteResponse {
   return {
     quoteId: quote.id,
+    ...(quote.deliveryFarePaise != null &&
+    quote.customerPlatformFeePaise != null &&
+    quote.customerPlatformFeeBps != null &&
+    quote.surgeChargePaise != null
+      ? {
+          deliveryFarePaise: paiseToNumber(quote.deliveryFarePaise),
+          customerPlatformFeePaise: paiseToNumber(quote.customerPlatformFeePaise),
+          customerPlatformFeeBps: quote.customerPlatformFeeBps,
+          surgeChargePaise: paiseToNumber(quote.surgeChargePaise),
+        }
+      : {}),
     pricingVersion: { pricingVersionId: quote.pricingVersion.id, code: quote.pricingVersion.code },
     vehicleCategory: quote.vehicleCategory,
     weightKg: quote.weightGrams / 1000,
@@ -75,6 +89,14 @@ export function toPricingPreviewResponse(priced: PricedQuote): PricingPreviewRes
   return {
     pricingVersion: { pricingVersionId: priced.version.id, code: priced.version.code },
     distanceMeters: priced.distanceMeters,
+    ...(priced.deliveryFarePaise !== undefined && priced.customerPlatformFeePaise !== undefined
+      ? {
+          deliveryFarePaise: paiseToNumber(priced.deliveryFarePaise),
+          customerPlatformFeePaise: paiseToNumber(priced.customerPlatformFeePaise),
+          customerPlatformFeeBps: priced.customerPlatformFeeBps,
+          surgeChargePaise: paiseToNumber(priced.surgeChargePaise ?? 0n),
+        }
+      : {}),
     farePaise: paiseToNumber(priced.farePaise),
     taxPaise: paiseToNumber(priced.taxPaise),
     payablePaise: paiseToNumber(priced.payablePaise),

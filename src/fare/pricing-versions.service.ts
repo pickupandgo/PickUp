@@ -8,6 +8,7 @@ import { ErrorCode } from '../common/errors/error-codes';
 import type { PricingVersion } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateFareQuoteRequest } from './fare.dto';
+import { applyCustomerCharges } from './customer-charges';
 import { FarePricer, type PricedQuote } from './fare-pricer';
 import { parsePricingConfig } from './pricing/pricing-config';
 import {
@@ -95,7 +96,10 @@ export class PricingVersionsService {
   /** What a route would cost under a given version (in effect or not); nothing is stored. */
   async preview(versionId: string, request: CreateFareQuoteRequest): Promise<PricedQuote> {
     const version = await this.get(versionId);
-    return this.pricer.price(version, parsePricingConfig(version.model, version.config), request);
+    return applyCustomerCharges(
+      this.pricer.price(version, parsePricingConfig(version.model, version.config), request),
+      this.config.fare.customerPlatformFeeBps ?? 1000,
+    );
   }
 
   /** Kill switch for a version created by mistake. Idempotent. Quotes already given keep it. */
