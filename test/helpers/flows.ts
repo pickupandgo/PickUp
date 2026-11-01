@@ -62,6 +62,12 @@ export interface RideOptions {
 }
 
 export async function goOnline(ctx: TestContext, driver: string) {
+  await call(ctx, 'patch', `/drivers/${driver}/location`, driver, {
+    latitude: 26.2389,
+    longitude: 73.0243,
+    capturedAt: Date.now(),
+    accuracy: 5,
+  }).expect(200);
   await call(ctx, 'patch', `/drivers/${driver}/availability`, driver, {
     isAvailable: true,
   }).expect(200);

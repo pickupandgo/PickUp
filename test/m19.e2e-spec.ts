@@ -60,6 +60,8 @@ describe('M19 E2E Testing - Multi-Drop Hardening', () => {
     await call(ctx, 'patch', `/drivers/${driverId}/location`, driverId, {
       latitude: 26.2967,
       longitude: 73.0351,
+      capturedAt: Date.now(),
+      accuracy: 5,
     }).expect(200);
   });
 

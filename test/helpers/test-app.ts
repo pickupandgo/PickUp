@@ -83,6 +83,6 @@ export async function createTestApp(
 /** Empties the engine tables between tests (TRUNCATE fires no row trigger). */
 export async function resetDatabase(prisma: PrismaService): Promise<void> {
   await prisma.$executeRaw`
-    TRUNCATE engine_outbox, engine_trips, engine_offers, engine_stops, engine_bookings
+    TRUNCATE engine_driver_positions, engine_outbox, engine_trips, engine_offers, engine_stops, engine_bookings
     RESTART IDENTITY CASCADE`;
 }

@@ -120,13 +120,32 @@ function setup() {
       return result;
     }),
   };
-  const drivers = new DriversService(prisma as never, backend as never);
-  for (const [id, latitude] of [
-    ['near', 1.0001],
-    ['first', 1.001],
-    ['second', 1.002],
-  ] as const) {
-    drivers.updateLocation(id, latitude, 2);
+  const positions = [
+    {
+      subject: 'near',
+      latitude: 1.0001,
+      longitude: 2,
+      capturedAt: BigInt(Date.now()),
+    },
+    {
+      subject: 'first',
+      latitude: 1.001,
+      longitude: 2,
+      capturedAt: BigInt(Date.now()),
+    },
+    {
+      subject: 'second',
+      latitude: 1.002,
+      longitude: 2,
+      capturedAt: BigInt(Date.now()),
+    },
+  ];
+  const drivers = new DriversService(
+    prisma as never,
+    backend as never,
+    { fresh: () => Promise.resolve(positions) } as never,
+  );
+  for (const id of ['near', 'first', 'second']) {
     drivers.markAvailable(id);
     // Client-supplied labels must not override the backend category.
     drivers.updateVehicleType(id, 'Mini Truck');

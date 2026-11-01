@@ -15,6 +15,8 @@ import { haversineDistance } from '../utils/distance';
 import { PrismaService } from '../prisma/prisma.service';
 import { engineError } from '../common/errors';
 import { PaymentBackendClient } from '../payment-backend/payment-backend.client';
+import { DriverLocationStore } from './driver-location.store';
+import { DriverFix, validateFix } from './location-policy';
 
 export type DriverEligibilityResult =
   | { readonly kind: 'ELIGIBLE'; readonly vehicleCategory: string | null }
@@ -22,9 +24,8 @@ export type DriverEligibilityResult =
   | { readonly kind: 'UNAVAILABLE' };
 
 /**
- * Driver presence (online, location, vehicle) stays in memory: it is live state that drivers
- * re-send after a restart. Whether a driver is busy comes from the database (an active trip), so
- * a restart never makes a driver on a trip look free.
+ * Dispatch presence/vehicle metadata remain local. Latest GPS is shared in PostgreSQL and
+ * expires independently. Busy status comes from durable trips, including after a restart.
  */
 @Injectable()
 export class DriversService {
@@ -34,6 +35,7 @@ export class DriversService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly backend: PaymentBackendClient,
+    private readonly locations: DriverLocationStore,
   ) {}
 
   findAll(): Driver[] {
@@ -43,17 +45,15 @@ export class DriversService {
   findById(id: string): Driver {
     let driver = this.drivers.find((d) => d.id === id);
     if (!driver) {
-      // Lazily create driver for the prototype
-      // Deterministically pick a vehicle based on the last char of the ID
+      // Preserve legacy display metadata; dispatch eligibility/category comes from the backend.
       const vehicles = ['2 Wheeler', '3 Wheeler', 'Mini Truck', 'Pickup Truck'];
-      const vIndex = id.charCodeAt(id.length - 1) % vehicles.length;
-
+      const vehicleIndex = id.charCodeAt(id.length - 1) % vehicles.length;
       driver = {
         id,
         name: `Driver ${id.slice(-4)}`,
-        vehicleType: vehicles[vIndex],
-        latitude: 26.2389,
-        longitude: 73.0243,
+        vehicleType: vehicles[vehicleIndex],
+        latitude: Number.NaN, // Internal metadata only; never returned as a GPS position.
+        longitude: Number.NaN,
         isAvailable: false,
       };
       this.drivers.push(driver);
@@ -64,6 +64,9 @@ export class DriversService {
   async updateAvailability(id: string, isAvailable: boolean): Promise<Driver> {
     if (isAvailable) {
       await this.requireEligibleForNewWork(id);
+      if (await this.hasActiveTrip(id)) {
+        return this.setAvailability(id, false);
+      }
     }
     return this.setAvailability(id, isAvailable);
   }
@@ -164,19 +167,65 @@ export class DriversService {
     return active !== null;
   }
 
-  updateLocation(id: string, latitude: number, longitude: number): Driver {
-    if (latitude < -90 || latitude > 90) {
-      throw new BadRequestException('Invalid latitude');
+  async updateLocation(id: string, fix: DriverFix) {
+    validateFix(fix);
+    const trip = await this.prisma.engineTrip.findFirst({
+      where: {
+        driverSubject: id,
+        status: { notIn: ['COMPLETED', 'CANCELLED'] },
+      },
+      select: { id: true },
+    });
+    if (fix.tripId && fix.tripId !== trip?.id) {
+      throw engineError(
+        HttpStatus.FORBIDDEN,
+        'TRIP_ACCESS_DENIED',
+        'Trip ownership could not be confirmed',
+      );
     }
-    if (longitude < -180 || longitude > 180) {
-      throw new BadRequestException('Invalid longitude');
-    }
+    // An assigned trip proves the driver's identity/ownership. New-work eligibility remains
+    // mandatory outside a trip; expired KYC must not strand tracking of an existing trip.
+    if (!trip) await this.requireEligibleForNewWork(id);
+    if (trip) this.markUnavailable(id);
+    const accepted = await this.locations.put(id, fix);
+    return { id, accepted, capturedAt: fix.capturedAt };
+  }
 
-    const driver = this.findById(id);
-    driver.latitude = latitude;
-    driver.longitude = longitude;
-    driver.lastSeen = Date.now();
-    return driver;
+  async positionFor(id: string, viewer: string) {
+    if (viewer !== id) {
+      const allowed = await this.prisma.engineTrip.findFirst({
+        where: {
+          driverSubject: id,
+          status: { notIn: ['COMPLETED', 'CANCELLED'] },
+          booking: { customerSubject: viewer },
+        },
+        select: { id: true },
+      });
+      if (!allowed)
+        throw engineError(
+          HttpStatus.FORBIDDEN,
+          'LOCATION_ACCESS_DENIED',
+          'Driver location is not accessible',
+        );
+    }
+    const [position] = await this.locations.fresh(id);
+    if (!position)
+      throw engineError(
+        HttpStatus.NOT_FOUND,
+        'LOCATION_UNAVAILABLE',
+        'A current driver position is unavailable',
+      );
+    const metadata = this.findById(id);
+    return {
+      ...metadata,
+      latitude: position.latitude,
+      longitude: position.longitude,
+      accuracy: position.accuracy,
+      capturedAt: Number(position.capturedAt),
+      receivedAt: position.receivedAt.toISOString(),
+      lastSeen: Number(position.capturedAt),
+      locationStatus: 'LIVE' as const,
+    };
   }
 
   updateVehicleType(id: string, vehicleType: string): Driver {
@@ -207,6 +256,27 @@ export class DriversService {
     let availableDrivers = this.drivers.filter(
       (d) => d.isAvailable && d.lastSeen && now - d.lastSeen < STALE_MS,
     );
+    const fresh = new Map(
+      (await this.locations.fresh()).map((position) => [
+        position.subject,
+        position,
+      ]),
+    );
+    availableDrivers = availableDrivers
+      .filter((driver) => {
+        if (fresh.has(driver.id)) return true;
+        this.markUnavailable(driver.id);
+        return false;
+      })
+      .map((driver) => {
+        const position = fresh.get(driver.id)!;
+        return {
+          ...driver,
+          latitude: position.latitude,
+          longitude: position.longitude,
+          lastSeen: Number(position.capturedAt),
+        };
+      });
 
     // 2. Filter by vehicleType if specified
     if (vehicleType) {

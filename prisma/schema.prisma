@@ -21,6 +21,19 @@ datasource db {
   provider = "postgresql"
 }
 
+/// Latest fix only. Driver identity is verified by Firebase and the owning Engine trip/backend.
+model EngineDriverPosition {
+  subject    String   @id @db.VarChar(128)
+  latitude   Float
+  longitude  Float
+  accuracy   Float
+  capturedAt BigInt   @map("captured_at")
+  receivedAt DateTime @default(dbgenerated("clock_timestamp()")) @map("received_at") @db.Timestamptz(6)
+
+  @@index([capturedAt], map: "idx_engine_driver_positions_captured")
+  @@map("engine_driver_positions")
+}
+
 /// An engine booking. PENDING_REGISTRATION until the payment backend registered it; it is
 /// offered to drivers only once REGISTERED (status OPEN).
 enum EngineBookingStatus {

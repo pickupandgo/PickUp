@@ -11,6 +11,7 @@ import {
 import { DriversService } from './drivers.service';
 import { CurrentSubject } from '../auth/decorators';
 import { assertSameIdentity } from '../auth/identity';
+import type { DriverFix } from './location-policy';
 
 /**
  * Every route needs a verified Firebase token (global guard). A driver changes only their own
@@ -21,10 +22,10 @@ export class DriversController {
   constructor(private readonly driversService: DriversService) {}
 
   @Get()
-  findAll() {
+  async findAll(@CurrentSubject() subject: string) {
     return {
       success: true,
-      drivers: this.driversService.findAll(),
+      drivers: [await this.driversService.positionFor(subject, subject)],
     };
   }
 
@@ -64,8 +65,8 @@ export class DriversController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    const driver = this.driversService.findById(id);
+  async findOne(@CurrentSubject() subject: string, @Param('id') id: string) {
+    const driver = await this.driversService.positionFor(id, subject);
     return {
       success: true,
       driver,
@@ -83,7 +84,10 @@ export class DriversController {
       throw new BadRequestException('isAvailable must be a boolean');
     }
 
-    const driver = await this.driversService.updateAvailability(id, isAvailable);
+    const driver = await this.driversService.updateAvailability(
+      id,
+      isAvailable,
+    );
     return {
       success: true,
       driver: {
@@ -94,25 +98,16 @@ export class DriversController {
   }
 
   @Patch(':id/location')
-  updateLocation(
+  async updateLocation(
     @CurrentSubject() subject: string,
     @Param('id') id: string,
-    @Body('latitude') latitude: number,
-    @Body('longitude') longitude: number,
+    @Body() fix: DriverFix,
   ) {
     assertSameIdentity(subject, id, 'id');
-    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
-      throw new BadRequestException('Latitude and longitude must be numbers');
-    }
-
-    const driver = this.driversService.updateLocation(id, latitude, longitude);
+    const driver = await this.driversService.updateLocation(id, fix);
     return {
       success: true,
-      driver: {
-        id: driver.id,
-        latitude: driver.latitude,
-        longitude: driver.longitude,
-      },
+      driver,
     };
   }
 
