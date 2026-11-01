@@ -53,6 +53,14 @@ it('keeps provider credentials server-only and preserves stop order', async () =
   });
   expect(JSON.stringify(result)).not.toContain('server-test-key');
 });
+it('accepts a zero distance omitted by Google while keeping the supplied road geometry', async () => {
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve({ routes: [{ duration: '0s', polyline: { encodedPolyline: 'oashCsvmuMnAf@' } }] }),
+  });
+  await expect(new RoutingService(cfg).route(input)).resolves.toMatchObject({ distanceMeters: 0, durationSeconds: 0 });
+});
 it('does not contact Google when the server key is missing', async () => {
   await expect(new RoutingService({} as AppConfig).route(input)).rejects.toMatchObject({
     code: 'ROUTING_NOT_CONFIGURED',

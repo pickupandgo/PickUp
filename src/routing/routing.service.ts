@@ -1,4 +1,4 @@
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import { AppError } from '../common/errors/app-error';
 import { ErrorCode } from '../common/errors/error-codes';
@@ -8,6 +8,7 @@ const fail = (code: ErrorCode, status: HttpStatus, message: string) =>
   new AppError(code, status, message);
 @Injectable()
 export class RoutingService {
+  private readonly logger = new Logger(RoutingService.name);
   // Coalesce concurrent identical requests, without persisting Google results or location history.
   private readonly inflight = new Map<string, Promise<RoadRouteResponse>>();
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
@@ -130,10 +131,11 @@ export class RoutingService {
       polyline?: { encodedPolyline?: unknown };
     };
     const encodedPolyline = route?.polyline?.encodedPolyline;
-    const distanceMeters = route?.distanceMeters;
+    // Proto3 may omit a numeric field when its value is zero, even with a field mask.
+    const distanceMeters = route?.distanceMeters === undefined ? 0 : route.distanceMeters;
     const duration =
       typeof route?.duration === 'string' ? route.duration.match(/^(\d+(?:\.\d+)?)s$/) : null;
-    if (
+    const invalid =
       typeof encodedPolyline !== 'string' ||
       !encodedPolyline.length ||
       encodedPolyline.length > 500000 ||
@@ -142,13 +144,20 @@ export class RoutingService {
       !Number.isSafeInteger(distanceMeters) ||
       distanceMeters < 0 ||
       !duration ||
-      !Number.isFinite(Number(duration[1]))
-    )
+      !Number.isFinite(Number(duration[1]));
+    if (invalid) {
+      this.logger.warn({
+        event: 'routing_provider_invalid_shape',
+        hasPolyline: typeof encodedPolyline === 'string' && encodedPolyline.length > 0,
+        distanceType: typeof route?.distanceMeters,
+        durationValid: Boolean(duration),
+      });
       throw fail(
         ErrorCode.ROUTING_UNAVAILABLE,
         HttpStatus.BAD_GATEWAY,
         'Road routing returned an invalid response.',
       );
+    }
     return { encodedPolyline, distanceMeters, durationSeconds: Number(duration[1]) };
   }
 }
