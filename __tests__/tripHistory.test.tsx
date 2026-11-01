@@ -81,7 +81,7 @@ describe('TripHistoryScreen — Empty States & Lifecycle Handling', () => {
   });
 
   // 2. Scheduled tab — no scheduled rides
-  it('2. displays "No scheduled rides" and "Schedule a Ride" button when Scheduled tab has zero rides', async () => {
+  it('2. labels unsupported scheduling and offers explicit Book now', async () => {
     let renderer: ReactTestRenderer;
     await act(async () => {
       renderer = TestRenderer.create(
@@ -96,11 +96,11 @@ describe('TripHistoryScreen — Empty States & Lifecycle Handling', () => {
     const textNodes = root.findAllByType('Text');
     const allText = textNodes.map((n: any) => n.props.children).flat().join(' ');
 
-    expect(allText).toContain('No scheduled rides');
+    expect(allText).toContain('Scheduling unavailable');
     expect(allText).toContain(
-      "You don't have any upcoming scheduled rides. Plan your next trip with MultipleRide."
+      "Scheduled bookings are not available yet. You can book a ride for now."
     );
-    expect(allText).toContain('Schedule a Ride');
+    expect(allText).toContain('Book now');
   });
 
   // 3. Loading state displays loader rather than empty state
@@ -326,7 +326,7 @@ describe('TripHistoryScreen — Empty States & Lifecycle Handling', () => {
       .map((n: any) => n.props.children)
       .flat()
       .join(' ');
-    expect(scheduledText).toContain('No scheduled rides');
+    expect(scheduledText).toContain('Scheduling unavailable');
 
     // Switch back to Recent tab
     const recentTab = root.findByProps({ testID: 'tab-recent' });

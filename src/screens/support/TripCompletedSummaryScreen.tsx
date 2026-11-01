@@ -158,7 +158,7 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
           <Pressable
             style={styles.iconButton}
             onPress={() =>
-              onMore ? onMore() : scoped ? navigation?.navigate('ShareTrackingSheetScreen') : undefined
+              onMore ? onMore() : navigation?.navigate('ShareTrackingSheetScreen', selected)
             }
           >
             <Feather name="more-vertical" size={24} color={colors.primary} />
@@ -256,7 +256,7 @@ const TripCompletedSummaryScreen: React.FC<TripCompletedSummaryScreenProps & { n
             }
           >
             <Feather name="star" size={20} color={colors.onPrimary} />
-            <Text style={styles.rateButtonText}>RATE DRIVER</Text>
+            <Text style={styles.rateButtonText}>{onRateDriver ? 'RATE DRIVER' : 'RATINGS UNAVAILABLE'}</Text>
           </Pressable>
           
           <Pressable

@@ -149,7 +149,7 @@ const AccountTripHistoryScreen: React.FC<TripHistoryScreenProps> = ({
       onScheduleRide();
       return;
     }
-    // No separate scheduling service in this app; navigate to the existing booking entry point
+    // The default action is explicitly labelled Book now, never a scheduled booking.
     handleBookRide();
   };
 
@@ -333,15 +333,15 @@ const AccountTripHistoryScreen: React.FC<TripHistoryScreenProps> = ({
             />
           </View>
           <Text style={styles.stateTitle}>
-            {activeTab === 'Recent' ? 'No rides yet' : 'No scheduled rides'}
+            {activeTab === 'Recent' ? 'No rides yet' : 'Scheduling unavailable'}
           </Text>
           <Text style={styles.stateDescription}>
             {activeTab === 'Recent'
               ? 'Your completed and previous rides will appear here once you start riding with MultipleRide.'
-              : "You don't have any upcoming scheduled rides. Plan your next trip with MultipleRide."}
+              : 'Scheduled bookings are not available yet. You can book a ride for now.'}
           </Text>
           <Button
-            label={activeTab === 'Recent' ? 'Book a Ride' : 'Schedule a Ride'}
+            label={activeTab === 'Recent' ? 'Book a Ride' : onScheduleRide ? 'Schedule a Ride' : 'Book now'}
             onPress={activeTab === 'Recent' ? handleBookRide : handleScheduleRide}
             variant="primary"
             size="md"

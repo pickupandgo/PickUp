@@ -43,7 +43,7 @@ it('shows selected A payment details while B is active, without synthetic paid/t
 it('routes historical invoice/help/rating with selected identity', async () => {
  const navigation = { navigate: jest.fn() };
  await act(async () => { renderer = TestRenderer.create(<HistoricalTripDetailScreen navigation={navigation} route={{ params: { trip: selected } }} />); });
- for (const label of ['View payment details', 'Need Help', 'Rate']) {
+ for (const label of ['View payment details', 'Need Help', 'Ratings unavailable']) {
    const node = renderer!.root.findAllByType(Text).find(n => String(n.props.children).toLowerCase().includes(label.toLowerCase()));
    if (!node) continue;
    let target: any = (node as any).parent;

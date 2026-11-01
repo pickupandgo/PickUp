@@ -166,7 +166,7 @@ const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { n
               style={styles.rateButton}
               onPress={() => (onRateTrip ? onRateTrip() : navigation?.navigate('ActiveTripStack', { screen: 'DriverRatingScreen', params: selected }))}
             >
-              <Text style={styles.rateButtonText}>Rate Trip</Text>
+              <Text style={styles.rateButtonText}>{onRateTrip ? 'Rate Trip' : 'Ratings unavailable'}</Text>
             </Pressable>
           </View>
         </View>

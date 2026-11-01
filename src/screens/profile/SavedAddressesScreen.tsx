@@ -429,7 +429,7 @@ const SavedAddressesScreen: React.FC<SavedAddressesScreenProps & { navigation?: 
           onPress={() =>
             onHelp
               ? onHelp()
-              : navigation?.navigate('ActiveTripStack', { screen: 'ActiveTripChatScreen' })
+              : Alert.alert('Saved addresses', 'Addresses are saved on this device only. They are not synced to another phone or restored after clearing app data.')
           }
           accessibilityRole="button"
           accessibilityLabel="Help"
@@ -437,6 +437,8 @@ const SavedAddressesScreen: React.FC<SavedAddressesScreenProps & { navigation?: 
           <Feather name="help-circle" size={24} color={colors.primary} />
         </Pressable>
       </View>
+
+      <Text style={{ ...typography.bodyMd, color: colors.onSurfaceVariant, paddingHorizontal: spacing.lg }}>Saved on this device only. Not synced to other devices.</Text>
 
       {/* Main Content List */}
       <ScrollView

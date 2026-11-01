@@ -178,7 +178,7 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
         {/* Actions */}
         <View style={styles.actionsContainer}>
           <Button
-            label="SHARE RECEIPT"
+            label={onShareReceipt ? 'SHARE RECEIPT' : 'Receipt sharing unavailable'}
             disabled={!onShareReceipt}
             onPress={() =>
               onShareReceipt

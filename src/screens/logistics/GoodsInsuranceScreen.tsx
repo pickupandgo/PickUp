@@ -66,7 +66,7 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
         >
           <Feather name="arrow-left" size={22} color={colors.onSurfaceVariant} />
         </Pressable>
-        <Text style={styles.headerTitle}>Goods Insurance</Text>
+        <Text style={styles.headerTitle}>Declared goods value</Text>
         <Pressable
           style={styles.iconButton}
           onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}

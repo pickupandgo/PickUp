@@ -237,7 +237,7 @@ const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: an
       {/* Footer */}
       <View style={styles.footer}>
         <Button
-          label="Write a Review"
+          label={onWriteReview ? 'Write a Review' : 'Reviews unavailable'}
           onPress={() =>
             onWriteReview ? onWriteReview() : navigation?.navigate('DriverRatingScreen', selected)
           }
