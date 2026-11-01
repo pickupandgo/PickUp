@@ -6,6 +6,7 @@ export type NodeEnv = 'development' | 'test' | 'production';
 export type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
 
 export interface AppConfig {
+  readonly googleRoutes?: { readonly apiKey: string };
   readonly nodeEnv: NodeEnv;
   readonly port: number;
   readonly logLevel: LogLevel;
@@ -369,6 +370,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       autoOnCancel: false,
       allowedCases: parseRefundCases(env.REFUND_ALLOWED_CASES).filter(isRefundCase),
     },
+    googleRoutes: env.GOOGLE_ROUTES_API_KEY ? { apiKey: env.GOOGLE_ROUTES_API_KEY } : undefined,
     fare: {
       quoteTtlSeconds: env.FARE_QUOTE_TTL_SECONDS,
       maxDrops: env.FARE_MAX_DROPS,

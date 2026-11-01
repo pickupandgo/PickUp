@@ -1,0 +1,41 @@
+{
+  "currency": "INR",
+  "distanceModel": "HAVERSINE",
+  "vehicles": {
+    "TWO_WHEELER": {
+      "firstLegBasePaise": 3500,
+      "additionalLegBasePaise": 1500,
+      "perKmPaise": 800,
+      "minimumLegFarePaise": 5000
+    },
+    "THREE_WHEELER": {
+      "firstLegBasePaise": 10000,
+      "additionalLegBasePaise": 4000,
+      "perKmPaise": 1800,
+      "minimumLegFarePaise": 15000
+    },
+    "MINI_TRUCK": {
+      "firstLegBasePaise": 18000,
+      "additionalLegBasePaise": 6000,
+      "perKmPaise": 2500,
+      "minimumLegFarePaise": 25000
+    },
+    "PICKUP_TRUCK": {
+      "firstLegBasePaise": 25000,
+      "additionalLegBasePaise": 8000,
+      "perKmPaise": 3000,
+      "minimumLegFarePaise": 35000
+    }
+  },
+  "weightBands": [
+    {
+      "upToGrams": null,
+      "multiplierBps": 10000
+    }
+  ],
+  "legRounding": {
+    "incrementPaise": 100,
+    "mode": "UP"
+  },
+  "taxes": []
+}
