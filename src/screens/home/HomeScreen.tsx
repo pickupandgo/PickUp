@@ -210,7 +210,9 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
   }, [draft.pickup, setPickup]);
 
   useEffect(() => {
-    if (!draft.pickup) void centerOnUser();
+    // Keep the device fix available even when a previously selected pickup is restored.
+    // The location read does not replace an existing pickup.
+    void centerOnUser();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

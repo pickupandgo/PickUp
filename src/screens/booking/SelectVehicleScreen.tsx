@@ -334,6 +334,7 @@ const SelectVehicleScreen: React.FC<SelectVehicleScreenProps & { navigation?: an
         <>
           <MapCanvas style={{ height: Math.max(spacing.rowHeightStandard * 3, Math.min(300, windowHeight * (windowHeight < 720 ? 0.28 : 0.34))) }} appearance="home"
             markers={[...routeMarkers, ...previewMarkers]} fitToMarkers={routeMarkers.length > 0} fitRouteOnly
+            showsUserLocation
             contentInsets={{ top: spacing.rowHeightStandard + spacing.sm, bottom: spacing.xxl }}
             polyline={road.polyline} routeStatus={road.status} onRetryRoute={road.retry}>
             {preview.status === 'error' && <Pressable style={styles.previewNotice} accessibilityRole="button" accessibilityLabel="Retry nearby vehicle preview" onPress={preview.refresh}><Text style={styles.previewNoticeText}>Nearby vehicles unavailable. Retry</Text></Pressable>}

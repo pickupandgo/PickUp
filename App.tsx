@@ -2,7 +2,7 @@ import TripRouteDetailsScreen from './src/screens/logistics/TripRouteDetailsScre
 import { usePushNotifications } from './src/hooks/usePushNotifications';
 import { pushNavigationRef, flushPendingPush } from './src/services/pushNavigation';
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, FlatList, ActivityIndicator, StatusBar } from 'react-native';
+import { View, Text, Image, StyleSheet, Pressable, FlatList, ActivityIndicator, StatusBar } from 'react-native';
 
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
@@ -285,8 +285,15 @@ function RootNavigator() {
   if (isLoggedIn === null || (isLoggedIn && hasProfile === null)) {
     return (
       <View style={styles.splash}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.splashLabel}>{isLoggedIn ? 'Checking your account…' : 'Opening PICKUP…'}</Text>
+        <View style={styles.splashBrand}>
+          <Image source={require('./assets/logo.png')} style={styles.splashLogo} resizeMode="contain" />
+          <Text style={styles.splashTitle}>PICKUP</Text>
+          <Text style={styles.splashTagline}>Your goods, on the move.</Text>
+        </View>
+        <View style={styles.splashProgress}>
+          <ActivityIndicator size="small" color="#10234B" />
+          <Text style={styles.splashLabel}>{isLoggedIn ? 'Checking your account…' : 'Getting things ready…'}</Text>
+        </View>
       </View>
     );
   }
@@ -325,8 +332,13 @@ function SessionContent() {
 }
 
 const styles = StyleSheet.create({
-  splash: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  splashLabel: { marginTop: spacing.lg, ...typography.bodyMd, color: colors.onSurfaceVariant },
+  splash: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
+  splashBrand: { alignItems: 'center', marginBottom: 82 },
+  splashLogo: { width: 96, height: 96 },
+  splashTitle: { marginTop: 18, fontSize: 30, lineHeight: 36, fontWeight: '800', letterSpacing: 2.4, color: '#091537' },
+  splashTagline: { marginTop: 7, fontSize: 13, color: '#687588' },
+  splashProgress: { position: 'absolute', bottom: 72, alignItems: 'center' },
+  splashLabel: { marginTop: 12, fontSize: 12, color: '#687588' },
   galleryContainer: { flex: 1, backgroundColor: '#fff' },
   header: { fontSize: 24, fontWeight: 'bold', padding: 20, borderBottomWidth: 1, borderColor: '#eee' },
   item: { padding: 16, borderBottomWidth: 1, borderColor: '#f0f0f0' },
