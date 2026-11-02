@@ -1,15 +1,17 @@
 import React from 'react';
 import Renderer, { act, type ReactTestRenderer } from 'react-test-renderer';
-import { Text } from 'react-native';
+import { Alert, Text } from 'react-native';
 import MultiDropOverviewScreen from '../src/screens/logistics/MultiDropOverviewScreen';
 import { useRoadRoute } from '../src/hooks/useRoute';
 import { getRoute } from '../src/api/directions';
 import TripRouteDetailsScreen from '../src/screens/logistics/TripRouteDetailsScreen';
 let mockTrip: any;
 let mockLive: any;
+let mockDrops: any[] = [{ address: 'First drop', receiverName: 'First receiver' }, { address: 'Second drop', receiverName: 'Second receiver' }];
+const mockRemoveDrop = jest.fn();
 jest.mock('../src/api/directions', () => ({ getRoute: jest.fn() }));
 jest.mock('../src/state/BookingContext', () => ({
-  useBooking: () => ({ trip: mockTrip, draft: { pickup: { address: 'Pickup' }, drops: [{ address: 'First drop', receiverName: 'First receiver' }, { address: 'Second drop', receiverName: 'Second receiver' }] } }),
+  useBooking: () => ({ trip: mockTrip, removeDrop: mockRemoveDrop, draft: { pickup: { address: 'Pickup' }, drops: mockDrops } }),
 }));
 jest.mock('../src/hooks/useTripStatus', () => ({
   useTripStatus: () => mockLive,
@@ -21,6 +23,7 @@ let tree: ReactTestRenderer;
 afterEach(() => {
   if (tree) act(() => tree.unmount());
   jest.clearAllMocks();
+  mockDrops = [{ address: 'First drop', receiverName: 'First receiver' }, { address: 'Second drop', receiverName: 'Second receiver' }];
 });
 it('drops old geometry immediately when waypoints change and ignores late results', async () => {
   let resolveOld!: (v: any) => void;
@@ -135,4 +138,20 @@ it('edits the selected existing drop with its own receiver and index', async () 
  expect(navigation.navigate).toHaveBeenCalledWith('SelectDropLocationScreen', { mode: 'edit', editTarget: { type: 'drop', index: 1 } });
  const text = tree.root.findAllByType(Text).map(n => n.props.children).flat().join(' ');
  expect(text).toContain('Second receiver');
+});
+it('confirms drop deletion and requires a replacement before continuing from an empty route', async () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  await act(async () => { tree = Renderer.create(<MultiDropOverviewScreen />); });
+  const remove = (tree.root as any).findByProps({ accessibilityLabel: 'Delete Drop 2' });
+  expect((tree.root as any).findAllByProps({ accessibilityLabel: 'Delete Pickup' })).toHaveLength(0);
+  act(() => remove.props.onPress());
+  expect(mockRemoveDrop).not.toHaveBeenCalled();
+  const actions = alert.mock.calls[0][2] as any[];
+  act(() => actions.find(action => action.text === 'Remove').onPress());
+  expect(mockRemoveDrop).toHaveBeenCalledWith(1);
+  act(() => tree.unmount());
+  mockDrops = [];
+  await act(async () => { tree = Renderer.create(<MultiDropOverviewScreen />); });
+  expect((tree.root as any).findByProps({ accessibilityLabel: 'Continue' }).props.disabled).toBe(true);
+  alert.mockRestore();
 });

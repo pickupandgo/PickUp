@@ -5,6 +5,7 @@ import {
   ScrollView,
   Pressable,
   StyleSheet,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
@@ -36,7 +37,8 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
   stops: stopsProp,
   navigation,
 }) => {
-  const { draft } = useBooking();
+  const { draft, removeDrop } = useBooking();
+  const canConfirm = Boolean(stopsProp || draft.drops.length > 0);
 
   // Build the timeline from the real booking when there is one, so the review
   // reflects what the user actually chose. Falls back to sample stops for the
@@ -142,6 +144,15 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
                   >
                     <Feather name="edit-2" size={18} color={colors.primary} />
                   </Pressable>
+                  {!isPickup && !stopsProp && <Pressable
+                    style={styles.deleteButton}
+                    onPress={() => Alert.alert('Remove drop?', `Remove ${stop.label} from this route?`, [
+                      { text: 'Keep drop', style: 'cancel' },
+                      { text: 'Remove', style: 'destructive', onPress: () => removeDrop(Number(stop.id.replace('drop-', ''))) },
+                    ])}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Delete ${stop.label}`}
+                  ><Feather name="trash-2" size={18} color={colors.error} /></Pressable>}
                 </View>
               </View>
             );
@@ -156,8 +167,10 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
             </View>
             <Pressable
               style={styles.addStopButton}
+              disabled={!stopsProp && draft.drops.length >= 5}
               onPress={() => (onAddStop ? onAddStop() : navigation?.navigate('SelectDropLocationScreen', { mode: 'stop' }))}
               accessibilityRole="button"
+              accessibilityLabel="Add drop location"
             >
               <Text style={styles.addStopText}>Add Drop Location</Text>
             </Pressable>
@@ -167,14 +180,17 @@ const MultiDropOverviewScreen: React.FC<MultiDropOverviewScreenProps & { navigat
 
       {/* Bottom Action Bar */}
       <View style={styles.bottomBar}>
+        {!canConfirm && <Text style={styles.emptyRouteHint}>Add at least one drop to continue.</Text>}
         <Pressable
-          style={styles.continueButton}
+          style={[styles.continueButton, !canConfirm && styles.continueButtonDisabled]}
+          disabled={!canConfirm}
           onPress={() => {
             if (onContinue) onContinue();
             else navigation?.navigate('SelectVehicleScreen');
           }}
           accessibilityRole="button"
           accessibilityLabel="Continue"
+          accessibilityState={{ disabled: !canConfirm }}
         >
           <Text style={styles.continueText}>CONFIRM ROUTE</Text>
         </Pressable>
@@ -333,6 +349,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  deleteButton: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.errorContainer,
+    marginLeft: spacing.xs,
+  },
 
   // Add Stop
   addStopButton: {
@@ -375,6 +400,8 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
     paddingVertical: spacing.marginMobile,
   },
+  continueButtonDisabled: { backgroundColor: colors.surfaceContainerHighest },
+  emptyRouteHint: { ...typography.labelSm, color: colors.error, textAlign: 'center', marginBottom: spacing.sm },
   continueText: {
     fontSize: typography.headlineSm.fontSize,
     fontWeight: typography.headlineSm.fontWeight,
