@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsOptional, IsString, MaxLength, Matches } from 'class-validator';
+import { IsEmpty, IsNotEmpty, IsOptional, IsString, MaxLength, Matches } from 'class-validator';
 
 export class SendChatMessageDto {
   @IsOptional()
@@ -16,6 +16,7 @@ export class SendChatMessageDto {
   @IsString()
   @IsOptional()
   @MaxLength(500)
+  @IsEmpty({ message: 'Chat attachments are not enabled.' })
   imageUrl?: string;
 }
 

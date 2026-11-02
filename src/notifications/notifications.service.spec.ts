@@ -282,4 +282,17 @@ describe('NotificationsService', () => {
     ).rejects.toMatchObject({ status: 503 });
     await expect(service.unregisterToken('token', 'user-A')).rejects.toMatchObject({ status: 503 });
   });
+  it('does not copy private chat text into persisted inbox notifications', async () => {
+    mockPrisma.notificationPreference.findUnique.mockResolvedValue({ pushEnabled: false });
+    await service.sendNotification(
+      'user-A',
+      'CUSTOMER',
+      'NEW_CHAT_MESSAGE',
+      { senderName: 'Driver', text: 'Private text must not persist here' },
+      { bookingId: 'b-123' },
+    );
+    const stored = mockPrisma.inboxNotification.create.mock.calls[0]?.[0]?.data;
+    expect(stored.body).toBe('Open your active trip to view the message.');
+    expect(JSON.stringify(stored)).not.toContain('Private text');
+  });
 });

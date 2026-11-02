@@ -222,19 +222,11 @@ export class NotificationsService {
     NEW_CHAT_MESSAGE: {
       en: (v) => ({
         title: `New message from ${v.senderName || 'Driver'}`,
-        body: v.text
-          ? v.text.length > 80
-            ? `${v.text.slice(0, 77)}...`
-            : v.text
-          : 'New message received',
+        body: 'Open your active trip to view the message.',
       }),
       hi: (v) => ({
         title: `${v.senderName || 'चालक'} से नया संदेश`,
-        body: v.text
-          ? v.text.length > 80
-            ? `${v.text.slice(0, 77)}...`
-            : v.text
-          : 'नया संदेश प्राप्त हुआ',
+        body: 'अपनी चालू ट्रिप में संदेश देखें।',
       }),
       channelId: 'chat_messages',
     },

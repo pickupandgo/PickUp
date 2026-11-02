@@ -182,6 +182,7 @@ GRANT UPDATE (profile_name, profile_version, email, date_of_birth, gender,
 -- Chat and push storage (apply after migration 20261031210000).
 GRANT SELECT, INSERT ON chat_messages, device_tokens, notification_preferences TO mr_app;
 GRANT UPDATE(status, read_at, updated_at) ON chat_messages TO mr_app;
+GRANT EXECUTE ON FUNCTION public.purge_closed_chat_conversations(integer) TO mr_app;
 GRANT UPDATE(token, role, platform, language, is_active, last_seen_at, updated_at) ON device_tokens TO mr_app;
 GRANT UPDATE(push_enabled, sound_enabled, language, updated_at) ON notification_preferences TO mr_app;
 

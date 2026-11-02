@@ -7,6 +7,9 @@ import { AppError } from '../common/errors/app-error';
 describe('ChatService', () => {
   let service: ChatService;
   let mockPrisma: {
+    runInTransaction: jest.Mock;
+    $queryRaw: jest.Mock;
+    $executeRaw: jest.Mock;
     booking: { findUnique: jest.Mock };
     trip: { findUnique: jest.Mock };
     chatMessage: {
@@ -31,6 +34,9 @@ describe('ChatService', () => {
 
   beforeEach(() => {
     mockPrisma = {
+      runInTransaction: jest.fn((work) => work(mockPrisma)),
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 't-123' }]),
+      $executeRaw: jest.fn().mockResolvedValue(0),
       booking: {
         findUnique: jest.fn(),
       },
@@ -128,7 +134,7 @@ describe('ChatService', () => {
         'driver-user-1',
         'DRIVER',
         'NEW_CHAT_MESSAGE',
-        expect.objectContaining({ text: 'Where are you?' }),
+        expect.objectContaining({ senderName: 'Customer' }),
         expect.objectContaining({ bookingId: 'b-123', tripId: 't-123' }),
       );
     });
@@ -214,5 +220,60 @@ describe('ChatService', () => {
     await expect(
       service.sendMessage('b-123', makePrincipal('cust-user-1', 'CUSTOMER'), { text: 'Hello' }),
     ).resolves.toMatchObject({ id: 'saved', status: 'sent' });
+  });
+  it.each(['COMPLETED', 'CANCELLED'])(
+    'denies every operation on a %s booking before touching messages',
+    async (status) => {
+      mockPrisma.booking.findUnique.mockResolvedValue({ ...mockBooking, status });
+      const principal = makePrincipal('cust-user-1', 'CUSTOMER');
+      for (const operation of [
+        () => service.getMessages('b-123', principal),
+        () => service.sendMessage('b-123', principal, { text: 'Hello' }),
+        () => service.markAsRead('b-123', principal),
+      ]) {
+        await expect(operation()).rejects.toMatchObject({ status: 410, code: 'CHAT_CLOSED' });
+      }
+      expect(mockPrisma.chatMessage.create).not.toHaveBeenCalled();
+      expect(mockPrisma.chatMessage.findMany).not.toHaveBeenCalled();
+      expect(mockPrisma.chatMessage.updateMany).not.toHaveBeenCalled();
+      expect(mockNotifications.sendNotification).not.toHaveBeenCalled();
+    },
+  );
+  it('denies a closed trip even if its booking projection is not yet closed', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue({
+      ...mockBooking,
+      trip: { ...mockBooking.trip, status: 'CANCELLED' },
+    });
+    await expect(
+      service.getMessages('b-123', makePrincipal('driver-user-1', 'DRIVER')),
+    ).rejects.toMatchObject({ status: 410 });
+  });
+  it('requires confirmed assignment and rejects a trip created after the lock snapshot', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue({ ...mockBooking, trip: null });
+    await expect(
+      service.getMessages('b-123', makePrincipal('cust-user-1', 'CUSTOMER')),
+    ).rejects.toMatchObject({ status: 409 });
+    mockPrisma.booking.findUnique.mockResolvedValue(mockBooking);
+    mockPrisma.$queryRaw.mockResolvedValue([]);
+    await expect(
+      service.getMessages('b-123', makePrincipal('cust-user-1', 'CUSTOMER')),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(mockPrisma.chatMessage.findMany).not.toHaveBeenCalled();
+  });
+  it('never exposes messages to another driver or customer', async () => {
+    mockPrisma.booking.findUnique.mockResolvedValue(mockBooking);
+    for (const role of ['CUSTOMER', 'DRIVER'] as const) {
+      await expect(
+        service.getMessages('b-123', makePrincipal('stranger', role)),
+      ).rejects.toMatchObject({ status: 403 });
+    }
+    expect(mockPrisma.chatMessage.findMany).not.toHaveBeenCalled();
+  });
+  it('only delegates bounded cleanup to the restricted database function', async () => {
+    mockPrisma.$queryRaw.mockResolvedValue([{ count: 3 }]);
+    await expect(service.purgeClosedConversations()).resolves.toBe(3);
+    expect(mockPrisma.$queryRaw).toHaveBeenCalledWith([
+      'SELECT public.purge_closed_chat_conversations(100) AS count',
+    ]);
   });
 });
