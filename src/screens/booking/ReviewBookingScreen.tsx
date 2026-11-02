@@ -33,6 +33,21 @@ export default function ReviewBookingScreen({ navigation, onBack, onConfirm, onC
   const [finding, setFinding] = useState(() => route?.params?.searchMode === true);
   const search = useBookingSearch(finding, navigation, route?.params?.retrySearch === true);
   const responseProgress = useSearchProgress(search.observation, finding && !search.failure && !search.noDrivers && !search.leaving);
+  const [offerCount, setOfferCount] = useState(0);
+  const [offerFill, setOfferFill] = useState(0);
+  const lastOfferAt = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!finding) { lastOfferAt.current = undefined; setOfferCount(0); setOfferFill(0); return; }
+    const offeredAt = search.observation?.ride.offerRequestedAt;
+    if (offeredAt && offeredAt !== lastOfferAt.current) {
+      lastOfferAt.current = offeredAt;
+      setOfferCount(count => count + 1);
+      setOfferFill(0);
+    }
+  }, [finding, search.observation]);
+  useEffect(() => {
+    if (responseProgress) setOfferFill(responseProgress.fraction);
+  }, [responseProgress?.fraction]);
   const searchVehicleType = ride?.vehicleType ?? draft.vehicleType;
   const preview = useVehiclePreview(draft.pickup, vehicleCategoryFor(finding ? searchVehicleType : draft.vehicleType), !search.failure && !search.noDrivers && !search.leaving && (!finding || !ride || ['REQUESTED', 'PENDING_REGISTRATION'].includes(ride.status)));
   const previewMarkers = useMemo<readonly MapMarker[]>(() => preview.vehicles.map(vehicle => ({ id: `search-preview-${vehicle.vehicleCategory}-${vehicle.key}`, kind: 'nearby', coordinate: vehicle, vehicleType: vehicle.vehicleCategory, preview: true })), [preview.vehicles]);
@@ -84,17 +99,16 @@ export default function ReviewBookingScreen({ navigation, onBack, onConfirm, onC
 
     </View>
     <View style={styles.sheet}>
-      {finding && !search.failure && !search.noDrivers && !search.leaving && <View style={styles.scanTrack} onLayout={event => setScanWidth(event.nativeEvent.layout.width)} accessibilityLabel="Searching for a driver"><Animated.View style={[styles.scanSegment, { width: scanWidth * 0.3, transform: [{ translateX: scan.interpolate({ inputRange: [0, 1], outputRange: [scanWidth * 0.5, scanWidth] }) }] }]} /></View>}
+      {finding && !search.failure && !search.noDrivers && !search.leaving && <View style={styles.scanTrack} onLayout={event => setScanWidth(event.nativeEvent.layout.width)} accessibilityLabel="Searching for a driver"><Animated.View style={[styles.scanSegment, { width: scanWidth * 0.3, transform: [{ translateX: scan.interpolate({ inputRange: [0, 1], outputRange: [-scanWidth * 0.3, scanWidth] }) }] }]} /></View>}
       <View style={styles.handle} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={[styles.vehicleCard, finding && !search.noDrivers && styles.searchVehicleCard]}>
-          {finding && !search.noDrivers && responseProgress && <View pointerEvents="none" style={[styles.cardProgressTint, { width: `${responseProgress.fraction * 100}%` }]} />}
           <Image source={getVehicleImage(displayedVehicle)} style={styles.vehicleImage} resizeMode="contain" />
           <View style={styles.flex}><View style={styles.vehicleTitleRow}><Text style={styles.vehicleName} numberOfLines={1}>{name}</Text><Text style={styles.badge}>SELECTED</Text></View><Text style={styles.secondary}>{vehicle?.capacity ?? 'Selected vehicle'}</Text></View>
           <View style={styles.priceColumn}><Text style={styles.price}>{finding ? quote ? money(quote.payablePaise) : trip?.fare != null ? money(trip.fare * 100) : ride?.fare != null ? money(ride.fare * 100) : '\u2014' : fare.loading ? '...' : valid && quote ? money(quote.payablePaise) : '\u2014'}</Text>{!finding && <Pressable style={styles.smallAction} accessibilityRole="button" accessibilityLabel="Change vehicle" onPress={changeVehicle}><Text style={styles.link}>Change</Text></Pressable>}</View>
           {finding && !search.failure && !search.noDrivers && !search.leaving && <View style={styles.responseProgress}>
-            <View style={styles.responseTrack}>{responseProgress ? <View testID="driver-response-progress" style={[styles.responseFill, { width: `${responseProgress.fraction * 100}%` }]} /> : <Animated.View style={[styles.responseFill, { width: scanWidth * 0.3, transform: [{ translateX: scan.interpolate({ inputRange: [0, 1], outputRange: [scanWidth * 0.5, scanWidth] }) }] }]} />}</View>
-            <View style={styles.spread}><Text style={styles.responseCaption}>{responseProgress ? responseProgress.remainingSeconds > 0 ? 'Waiting for driver response' : 'Checking next driver' : 'Searching nearby drivers'}</Text><Text style={styles.responseCaption}>{responseProgress && responseProgress.remainingSeconds > 0 ? `${Math.floor(responseProgress.remainingSeconds / 60).toString().padStart(2, '0')}:${(responseProgress.remainingSeconds % 60).toString().padStart(2, '0')} response window` : 'Live search'}</Text></View>
+            <View style={styles.responseTrack}><View testID="driver-response-progress" style={[styles.responseFill, { width: `${offerFill * 100}%` }]} /></View>
+            <Text style={styles.responseCaption}>{responseProgress?.remainingSeconds === 0 || offerFill >= 1 ? 'Checking the next driver…' : responseProgress ? offerCount > 1 ? 'Request sent to another driver' : 'Request sent to a nearby driver' : offerCount > 0 ? 'Checking driver response…' : 'Checking nearby drivers…'}</Text>
           </View>}
         </View>
         {finding && preview.status === 'error' && <Pressable accessibilityRole="button" accessibilityLabel="Retry live vehicle preview" onPress={preview.refresh}><Text style={styles.responseCaption}>Live vehicle preview unavailable. Retry</Text></Pressable>}
@@ -130,7 +144,7 @@ export default function ReviewBookingScreen({ navigation, onBack, onConfirm, onC
         <Button label="Try again" icon={<Feather name="refresh-cw" size={spacing.xl} color={colors.onPrimary} />} onPress={search.retry} disabled={search.leaving} fullWidth style={styles.bookButton} />
         <Button label="Change vehicle" icon={<Feather name="truck" size={spacing.xl} color={colors.homeAction} />} onPress={() => void search.leave('vehicle')} disabled={search.leaving} variant="outline" fullWidth style={styles.changeVehicleButton} />
         <Pressable accessibilityRole="button" accessibilityLabel="Back to Home" disabled={search.leaving} onPress={() => void search.leave('home')} style={styles.homeLink}>{search.leaving ? <ActivityIndicator size="small" color={colors.homeAction} /> : <Text style={styles.homeLinkText}>Back to Home</Text>}</Pressable>
-      </View> : finding ? <View style={styles.footer}><Button label={search.failure ? 'Search paused' : 'Finding driver...'} icon={!search.failure ? <ActivityIndicator color={colors.onPrimary} size="small" /> : undefined} onPress={() => {}} disabled fullWidth style={styles.findButton} disabledStyle={styles.findDisabled} /><Text style={styles.terms}>{search.failure ? 'Your booking reference is retained. Retry to check its status.' : 'Please keep this screen open'}</Text></View> : <View style={styles.footer}><Button label={`Book ${name.split(' /')[0]}`} trailing={<View style={styles.bookTrailing}><Text style={styles.bookAmount}>{valid && quote ? money(quote.payablePaise) : '\u2014'}</Text><Feather name="arrow-right" size={spacing.xl} color={colors.onPrimary} /></View>} onPress={confirm} disabled={!canBook} loading={submitting} fullWidth style={styles.bookButton} /><Text style={styles.terms}>By booking, you agree to our <Text style={styles.termsStrong}>Terms of Service and Safety Guidelines.</Text></Text></View>}
+      </View> : finding ? <View style={styles.footer}><Button label={search.failure ? 'Search paused' : 'Finding driver...'} onPress={() => {}} disabled fullWidth style={styles.findButton} disabledStyle={styles.findDisabled} /><Text style={styles.terms}>{search.failure ? 'Your booking reference is retained. Retry to check its status.' : 'Please keep this screen open'}</Text></View> : <View style={styles.footer}><Button label={`Book ${name.split(' /')[0]}`} trailing={<View style={styles.bookTrailing}><Text style={styles.bookAmount}>{valid && quote ? money(quote.payablePaise) : '\u2014'}</Text><Feather name="arrow-right" size={spacing.xl} color={colors.onPrimary} /></View>} onPress={confirm} disabled={!canBook} loading={submitting} fullWidth style={styles.bookButton} /><Text style={styles.terms}>By booking, you agree to our <Text style={styles.termsStrong}>Terms of Service and Safety Guidelines.</Text></Text></View>}
     </View>
 
   </SafeAreaView>;
@@ -150,7 +164,6 @@ const styles = StyleSheet.create({
   homeLink: { minHeight: spacing.rowHeightSm + spacing.xs, alignItems: 'center', justifyContent: 'center' },
   homeLinkText: { ...typography.bodyMd, fontWeight: '600', color: colors.homeAction },
   searchVehicleCard: { paddingBottom: spacing.rowHeightStandard, overflow: 'hidden' },
-  cardProgressTint: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: colors.selectionTint },
   responseProgress: { position: 'absolute', left: spacing.md, right: spacing.md, bottom: spacing.sm, gap: spacing.xs },
   responseTrack: { height: spacing.xs, borderRadius: borderRadius.full, backgroundColor: colors.outlineHairline, overflow: 'hidden' },
   responseFill: { height: spacing.xs, borderRadius: borderRadius.full, backgroundColor: colors.homePickup },

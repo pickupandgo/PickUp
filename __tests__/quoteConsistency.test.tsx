@@ -175,14 +175,14 @@ jest.mock('../src/hooks/useBookingSearch', () => ({ useBookingSearch: () => ({ f
 jest.mock('../src/hooks/useVehiclePreview', () => ({ useVehiclePreview: jest.fn((_point, category, enabled) => ({ vehicles: enabled ? [{ key: 'a'.repeat(20), vehicleCategory: category, latitude: 1.01, longitude: 2.01 }] : [], status: 'ready', refresh: jest.fn() })) }));
 
 jest.mock('../src/components/map/MapCanvas', () => { const { View } = require('react-native'); return (props: any) => <View testID="review-route-map" {...props} />; });
-it('shows selected-category preview only while searching and hides it immediately on assignment', async () => {
+it('shows selected-category preview on review and search, then hides it on assignment', async () => {
   (createFareQuote as jest.Mock).mockImplementation(async () => quote());
   let state!: ReturnType<typeof useBooking>;
   function Capture() { state = useBooking(); return <ReviewBookingScreen />; }
   await act(async () => { renderer = TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
   await act(async () => { state.setPickup({ latitude: 1, longitude: 2, address: 'Pickup' }); state.addDrop({ latitude: 3, longitude: 4, address: 'Drop' }); state.setVehicleType('Mini Truck / Tata Ace'); });
   const map = () => (renderer.root as any).findByProps({ testID: 'review-route-map' });
-  expect(map().props.markers).toHaveLength(2);
+  expect(map().props.markers).toHaveLength(3);
   expect(map().props.markers[1].stopNumber).toBe(1);
   act(() => (renderer.root.findByType(Button).props.onPress as () => void)());
   expect(map().props.markers).toHaveLength(3);
