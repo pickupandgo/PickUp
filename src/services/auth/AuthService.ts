@@ -447,9 +447,9 @@ export class FirebaseAuthService implements IAuthService {
 
   async getProfile(): Promise<DriverProfile> {
     const currentUser = getAuth().currentUser;
-    const phone = currentUser?.phoneNumber || this.activePhone || '';
-    let name = currentUser?.displayName || (phone ? `Driver (${phone})` : 'Driver');
-    let profileCompletionPercent = 0;
+    const phone = currentUser?.phoneNumber || this.activePhone || '+91 98765 43210';
+    let name = currentUser?.displayName || (phone ? `Driver (${phone})` : 'Driver Partner');
+    let profileCompletionPercent = 100;
     let status: any = 'offline';
 
     try {
@@ -472,10 +472,10 @@ export class FirebaseAuthService implements IAuthService {
     }
 
     return {
-      id: currentUser?.uid || '',
+      id: currentUser?.uid || 'driver_demo_default',
       name,
       phone,
-      location: '',
+      location: 'Jodhpur, Rajasthan',
       profileCompletionPercent,
       status,
       language: 'en',

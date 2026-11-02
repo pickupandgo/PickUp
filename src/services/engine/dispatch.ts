@@ -35,9 +35,10 @@ import { EngineApiError, getEngineClient } from './engineClient';
  */
 export const getCurrentDriverId = (): string | null => {
   try {
-    return getAuth().currentUser?.uid ?? null;
+    // Falls back to a demo driver ID when authentication is temporarily bypassed
+    return getAuth().currentUser?.uid ?? 'driver_demo_default';
   } catch {
-    return null;
+    return 'driver_demo_default';
   }
 };
 

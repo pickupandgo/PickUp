@@ -11,11 +11,17 @@ import { perfMetrics } from '../utils/perfMetrics';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+// TEMPORARY: Driver login and sign-up bypassed for development/testing.
+// Toggle this to false when restoring the normal authentication and registration flow.
+export const TEMPORARY_BYPASS_AUTH = true;
+
 export const RootNavigator: React.FC = () => {
-  const [initializing, setInitializing] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [onboardingComplete, setOnboardingComplete] = useState(false);
-  const [driverApprovalStatus, setDriverApprovalStatus] = useState<string | null>(null);
+  const [initializing, setInitializing] = useState(!TEMPORARY_BYPASS_AUTH);
+  const [isAuthenticated, setIsAuthenticated] = useState(TEMPORARY_BYPASS_AUTH);
+  const [onboardingComplete, setOnboardingComplete] = useState(TEMPORARY_BYPASS_AUTH);
+  const [driverApprovalStatus, setDriverApprovalStatus] = useState<string | null>(
+    TEMPORARY_BYPASS_AUTH ? 'APPROVED' : null
+  );
   const currentUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -131,9 +137,11 @@ export const RootNavigator: React.FC = () => {
         } else {
           // Signed out: reset navigation state without wiping saved onboarding progress
           currentUserIdRef.current = null;
-          setIsAuthenticated(false);
-          setOnboardingComplete(false);
-          setDriverApprovalStatus(null);
+          if (!TEMPORARY_BYPASS_AUTH) {
+            setIsAuthenticated(false);
+            setOnboardingComplete(false);
+            setDriverApprovalStatus(null);
+          }
           setInitializing(false);
         }
       });
@@ -193,7 +201,7 @@ export const RootNavigator: React.FC = () => {
     />
   ), []);
 
-  if (initializing) {
+  if (initializing && !TEMPORARY_BYPASS_AUTH) {
     return (
       <View style={styles.splashContainer}>
         <Image
@@ -211,17 +219,20 @@ export const RootNavigator: React.FC = () => {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {!isAuthenticated ? (
-        <Stack.Screen name="Auth" children={renderAuthStack} />
-      ) : driverApprovalStatus === 'UNPROVISIONED' ? (
-        <Stack.Screen name="Onboarding" children={renderRegistrationStack} />
-      ) : driverApprovalStatus && driverApprovalStatus !== 'APPROVED' ? (
-        <Stack.Screen name="PendingVerification" children={renderPendingVerificationStack} />
-      ) : onboardingComplete ? (
-        <Stack.Screen name="Main" component={MainTabNavigator} />
-      ) : (
-        <Stack.Screen name="Onboarding" children={renderOnboardingStack} />
+    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Main">
+      <Stack.Screen name="Main" component={MainTabNavigator} />
+      {!TEMPORARY_BYPASS_AUTH && (
+        <>
+          {!isAuthenticated ? (
+            <Stack.Screen name="Auth" children={renderAuthStack} />
+          ) : driverApprovalStatus === 'UNPROVISIONED' ? (
+            <Stack.Screen name="Onboarding" children={renderRegistrationStack} />
+          ) : driverApprovalStatus && driverApprovalStatus !== 'APPROVED' ? (
+            <Stack.Screen name="PendingVerification" children={renderPendingVerificationStack} />
+          ) : (
+            <Stack.Screen name="Onboarding" children={renderOnboardingStack} />
+          )}
+        </>
       )}
     </Stack.Navigator>
   );
