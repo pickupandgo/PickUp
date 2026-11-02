@@ -27,6 +27,8 @@ export const colors = {
   reviewAction: '#082B54',
   selectionTint: '#EFF8F3',
   selectionOutline: '#B9D7C6',
+  splashBackground: '#EAF4FF',
+  splashHalo: '#D5EBFF',
 
   // Secondary
   secondary: '#525E79',
