@@ -9,6 +9,9 @@ export interface NotificationCardProps {
   readonly timestamp: string;
   readonly iconName: string;
   readonly isRead: boolean;
+  readonly category?: string;
+  readonly reference?: string;
+  readonly expanded?: boolean;
   readonly onPress?: () => void;
   readonly style?: ViewStyle;
   readonly testID?: string;
@@ -20,6 +23,9 @@ export const NotificationCard: React.FC<NotificationCardProps> = ({
   timestamp,
   iconName,
   isRead,
+  category,
+  reference,
+  expanded,
   onPress,
   style,
   testID,
@@ -38,14 +44,16 @@ export const NotificationCard: React.FC<NotificationCardProps> = ({
       testID={testID}
     >
       <View style={[styles.iconContainer, !isRead && styles.iconUnread]}>
-        <Icon name={iconName} />
+        <Icon name={iconName} size={20} color={colors.navigationIcon} />
       </View>
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={[styles.title, !isRead && styles.titleUnread]}>{title}</Text>
-          <Text style={styles.timestamp}>{timestamp}</Text>
         </View>
-        <Text style={styles.description} numberOfLines={2}>{description}</Text>
+        {category ? <Text style={styles.timestamp}>{category}{!isRead ? ' · Unread' : ''}</Text> : null}
+        <Text style={styles.description} numberOfLines={expanded ? undefined : 3}>{description}</Text>
+        {reference ? <Text style={styles.timestamp}>{reference}</Text> : null}
+        <Text style={styles.timestamp}>{timestamp}</Text>
       </View>
     </Pressable>
   );
@@ -73,7 +81,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconUnread: {
-    backgroundColor: colors.secondaryContainer,
+    backgroundColor: colors.surfaceContainerLow,
   },
   icon: {
     fontSize: 20,

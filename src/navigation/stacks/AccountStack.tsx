@@ -3,8 +3,11 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { AccountStackParamList } from '../../types/navigation';
 
 import { ProfileScreen } from '../../screens/account/ProfileScreen';
-import { KYCDocumentsScreen } from '../../screens/account/KYCDocumentsScreen';
+import { PersonalDocumentsScreen } from '../../screens/account/PersonalDocumentsScreen';
+import { DocumentsHubScreen } from '../../screens/account/DocumentsHubScreen';
+import { KYCStatusScreen } from '../../screens/account/KYCStatusScreen';
 import { VehicleDocumentsScreen } from '../../screens/account/VehicleDocumentsScreen';
+import { DocumentPreviewScreen } from '../../screens/account/DocumentPreviewScreen';
 import { VehicleStatusScreen } from '../../screens/account/VehicleStatusScreen';
 import { SettingsScreen } from '../../screens/account/SettingsScreen';
 import { SubscriptionScreen } from '../../screens/account/SubscriptionScreen';
@@ -24,8 +27,11 @@ export const AccountStack: React.FC = () => {
       }}
     >
       <Stack.Screen name="Profile" component={ProfileScreen} />
-      <Stack.Screen name="KYCDocuments" component={KYCDocumentsScreen} />
+      <Stack.Screen name="DocumentsHub" component={DocumentsHubScreen} />
+      <Stack.Screen name="PersonalDocuments" component={PersonalDocumentsScreen} />
+      <Stack.Screen name="KYCStatus" component={KYCStatusScreen} />
       <Stack.Screen name="VehicleDocuments" component={VehicleDocumentsScreen} />
+      <Stack.Screen name="DocumentPreview" component={DocumentPreviewScreen} options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="VehicleStatus" component={VehicleStatusScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="Subscription" component={SubscriptionScreen} />

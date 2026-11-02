@@ -177,6 +177,10 @@ const parseError = (payload: unknown, fallback: string): string => {
   return fallback;
 };
 
+export class OnboardingRequestError extends Error {
+  constructor(message: string, public readonly status: number) { super(message); }
+}
+
 export class DriverOnboardingService {
   private static instance: DriverOnboardingService;
 
@@ -214,8 +218,9 @@ export class DriverOnboardingService {
       });
       const payload: unknown = await response.json().catch(() => null);
       if (!response.ok)
-        throw new Error(
+        throw new OnboardingRequestError(
           parseError(payload, 'The onboarding request could not be completed.'),
+          response.status,
         );
       return payload as T;
     } catch (error) {

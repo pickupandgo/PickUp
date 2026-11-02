@@ -20,7 +20,6 @@ export type AuthStackParamList = {
 
 export type HomeStackParamList = {
   DriverHome: undefined;
-  NotificationCenter: undefined;
   ActiveTrip: { readonly tripId: string };
   Navigation: { readonly tripId: string };
   MultiStopJourney: { readonly tripId: string };
@@ -82,8 +81,11 @@ export type WalletStackParamList = {
 
 export type AccountStackParamList = {
   Profile: undefined;
-  KYCDocuments: undefined;
-  VehicleDocuments: undefined;
+  DocumentsHub: undefined;
+  PersonalDocuments: { readonly documentId?: string } | undefined;
+  KYCStatus: undefined;
+  VehicleDocuments: { readonly vehicleId?: string } | undefined;
+  DocumentPreview: import('../services/documents/DocumentPreviewService').DocumentReference;
   VehicleStatus: undefined;
   Settings: undefined;
   Subscription: undefined;
@@ -109,6 +111,7 @@ export type RootStackParamList = {
   Auth: NavigatorScreenParams<AuthStackParamList>;
   Onboarding: NavigatorScreenParams<AuthStackParamList>;
   Main: NavigatorScreenParams<MainTabParamList>;
+  Notifications: { readonly notificationId?: string } | undefined;
 };
 
 // ─── Screen Props Helpers ──────────────────────────────────────────
@@ -119,7 +122,7 @@ export type AuthScreenProps<T extends keyof AuthStackParamList> =
 export type HomeScreenProps<T extends keyof HomeStackParamList> =
   CompositeScreenProps<
     NativeStackScreenProps<HomeStackParamList, T>,
-    BottomTabScreenProps<MainTabParamList>
+    CompositeScreenProps<BottomTabScreenProps<MainTabParamList>, NativeStackScreenProps<RootStackParamList>>
   >;
 
 export type TripsScreenProps<T extends keyof TripsStackParamList> =
@@ -137,13 +140,13 @@ export type EarningsScreenProps<T extends keyof EarningsStackParamList> =
 export type WalletScreenProps<T extends keyof WalletStackParamList> =
   CompositeScreenProps<
     NativeStackScreenProps<WalletStackParamList, T>,
-    BottomTabScreenProps<MainTabParamList>
+    CompositeScreenProps<BottomTabScreenProps<MainTabParamList>, NativeStackScreenProps<RootStackParamList>>
   >;
 
 export type AccountScreenProps<T extends keyof AccountStackParamList> =
   CompositeScreenProps<
     NativeStackScreenProps<AccountStackParamList, T>,
-    BottomTabScreenProps<MainTabParamList>
+    CompositeScreenProps<BottomTabScreenProps<MainTabParamList>, NativeStackScreenProps<RootStackParamList>>
   >;
 
 export type RootScreenProps<T extends keyof RootStackParamList> =

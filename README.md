@@ -1,4 +1,4 @@
-# PickUp Driver
+# MultipleRide Partner
 
 The **driver-side** mobile app for the PickUp ride‑hailing & delivery platform, built with [React Native](https://reactnative.dev). Drivers use it to go online, receive and accept trip offers, navigate to pickups and drops, verify pickups/drops with OTP, capture delivery proof, chat with customers, and track their earnings and wallet.
 

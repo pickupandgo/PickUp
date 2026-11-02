@@ -9,9 +9,12 @@ import {
   Pressable,
   ActivityIndicator,
   ScrollView,
+  Image,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius } from '../../theme';
+import { authData } from '../../data/mockData';
 import {
   formatToE164,
   mapFirebaseAuthError,
@@ -36,12 +39,12 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
   navigation,
   initialMode = 'login',
   onSendOtp,
-  onLoginWithEmail,
-  onSignUpWithEmail,
   isLoading = false,
   error = null,
   testID,
 }) => {
+  const { width } = useWindowDimensions();
+  const logoSize = width >= 600 ? 80 : 72;
   const [authMode, setAuthMode] = useState<AuthMode>(initialMode);
   const [phone, setPhone] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
@@ -112,7 +115,7 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
       {/* Top app bar */}
       <View style={styles.header}>
         <View style={styles.headerSide} />
-        <Text style={styles.headerTitle}>Pick Up Driver</Text>
+        <Text style={styles.headerTitle}>{authData.appName}</Text>
         <View style={styles.headerSide} />
       </View>
 
@@ -149,13 +152,19 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
 
           {/* Hero / welcome */}
           <View style={styles.hero}>
+            <Image
+              source={require('../../../assets/branding/multipleride-partner-logo-transparent.png')}
+              resizeMode="contain"
+              style={[styles.logo, { width: logoSize, height: logoSize }]}
+              accessibilityLabel="MultipleRide Partner logo"
+            />
             <Text style={styles.title}>
-              {isSignUp ? 'Driver Sign Up' : 'Driver Log In'}
+              {isSignUp ? 'Partner Sign Up' : 'Partner Log In'}
             </Text>
             <Text style={styles.subtitle}>
               {isSignUp
-                ? 'Enter your mobile number to create your driver account and start accepting trips.'
-                : 'Enter your mobile number to log in to your driver account.'}
+                ? 'Enter your mobile number to create your partner account and start accepting trips.'
+                : 'Enter your mobile number to log in to your partner account.'}
             </Text>
           </View>
 
@@ -214,7 +223,7 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
           {/* Quick toggle link */}
           <View style={styles.toggleRow}>
             <Text style={styles.togglePrompt}>
-              {isSignUp ? 'Already have an account? ' : 'New Driver? '}
+              {isSignUp ? 'Already have an account? ' : 'New Partner? '}
               <Text
                 style={styles.toggleLink}
                 onPress={() => {
@@ -228,7 +237,7 @@ export const UnifiedAuthScreen: React.FC<UnifiedAuthScreenProps> = ({
           </View>
 
           <Text style={styles.terms}>
-            By continuing, you agree to Pick Up's <Text style={styles.termsLink}>Terms of Service</Text>.
+            By continuing, you agree to MultipleRide's <Text style={styles.termsLink}>Terms of Service</Text>.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -302,6 +311,13 @@ const styles = StyleSheet.create({
   hero: {
     marginBottom: spacing.lg,
     marginTop: spacing.xs,
+  },
+  logo: {
+    alignSelf: 'center',
+    aspectRatio: 1,
+    maxWidth: 80,
+    maxHeight: 80,
+    marginBottom: spacing.xs,
   },
   title: {
     ...typography.headlineMd,

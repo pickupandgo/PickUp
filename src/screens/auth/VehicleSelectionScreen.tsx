@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable,  FlatList } from 'react-native';
-import Icon from '../../components/atoms/Icon';
+import { VehicleAvatar } from '../../components/atoms/VehicleAvatar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { vehicleCategories } from '../../data/mockData';
@@ -57,7 +57,7 @@ export const VehicleSelectionScreen: React.FC<VehicleSelectionScreenProps> = ({
                 accessibilityState={{ selected: isSelected }}
               >
                 <View style={styles.iconContainer}>
-                  <Icon name={item.iconName} style={styles.icon} />
+                  <VehicleAvatar vehicle={item.id} size={64} />
                 </View>
                 <View style={styles.cardContent}>
                   <Text style={styles.cardTitle}>{item.name}</Text>
@@ -119,22 +119,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceContainerLow,
   },
   iconContainer: {
-    width: 48,
-    height: 48,
+    width: 64,
+    height: 64,
     borderRadius: borderRadius.md,
-    backgroundColor: colors.surfaceContainer,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  iconSelected: {
-    backgroundColor: colors.primaryContainer,
-  },
-  icon: {
-    fontSize: 24,
-    color: colors.onSurfaceVariant,
-  },
-  iconTextSelected: {
-    color: colors.primary,
   },
   cardContent: {
     flex: 1,

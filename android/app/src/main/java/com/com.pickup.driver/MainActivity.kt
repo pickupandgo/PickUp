@@ -1,11 +1,24 @@
 package com.multipleride.driver
 
+import android.os.Build
+import android.os.Bundle
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.swmansion.rnscreens.fragment.restoration.RNScreensFragmentFactory
 
 class MainActivity : ReactActivity() {
+
+  override fun onCreate(savedInstanceState: Bundle?) {
+    setTheme(R.style.AppTheme)
+    supportFragmentManager.fragmentFactory = RNScreensFragmentFactory()
+    super.onCreate(savedInstanceState)
+    // React owns the animated handoff; remove Android 12's second icon fade.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      splashScreen.setOnExitAnimationListener { it.remove() }
+    }
+  }
 
   /**
    * Returns the name of the main component registered from JavaScript. This is used to schedule

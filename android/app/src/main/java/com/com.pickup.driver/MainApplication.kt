@@ -1,6 +1,9 @@
 package com.multipleride.driver
 
 import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
@@ -18,12 +21,21 @@ class MainApplication : Application(), ReactApplication {
           // Manually linked packages:
           add(LocationPackage())
           add(OnboardingFilesPackage())
+          add(PrivateDocumentsPackage())
         },
     )
   }
 
   override fun onCreate() {
     super.onCreate()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      val manager = getSystemService(NotificationManager::class.java)
+      manager.createNotificationChannels(listOf(
+        NotificationChannel("ride_updates", "Trip updates", NotificationManager.IMPORTANCE_HIGH),
+        NotificationChannel("chat_messages", "Trip messages", NotificationManager.IMPORTANCE_DEFAULT),
+        NotificationChannel("partner_updates", "Partner updates", NotificationManager.IMPORTANCE_DEFAULT),
+      ))
+    }
     loadReactNative(this)
   }
 }

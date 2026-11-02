@@ -10,17 +10,27 @@ import {
   type DriverOnboardingSummary,
 } from '../services/auth/AuthService';
 import { DriverOnboardingScreen } from '../screens/onboarding/DriverOnboardingFlow';
+import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-export const RootNavigator: React.FC = () => {
-  const [initializing, setInitializing] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+// TEMPORARY: Driver login and sign-up bypassed for development/testing.
+export const TEMPORARY_BYPASS_AUTH = true;
+
+export const RootNavigator: React.FC<{
+  onReadyChange?: (ready: boolean) => void;
+}> = ({ onReadyChange }) => {
+  const [initializing, setInitializing] = useState(!TEMPORARY_BYPASS_AUTH);
+  const [isAuthenticated, setIsAuthenticated] = useState(TEMPORARY_BYPASS_AUTH);
   const [account, setAccount] = useState<DriverAccount | null>(null);
   const [onboarding, setOnboarding] = useState<DriverOnboardingSummary | null>(
     null,
   );
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onReadyChange?.(!initializing);
+  }, [initializing, onReadyChange]);
 
   const bootstrap = useCallback(async () => {
     setInitializing(true);
@@ -81,11 +91,11 @@ export const RootNavigator: React.FC = () => {
     [],
   );
 
-  if (initializing) {
+  if (initializing && !TEMPORARY_BYPASS_AUTH) {
     return null; // Don't render until Firebase auth state is determined
   }
 
-  if (bootstrapError) {
+  if (bootstrapError && !TEMPORARY_BYPASS_AUTH) {
     return (
       <AccountState
         title="We could not verify your account"
@@ -99,6 +109,7 @@ export const RootNavigator: React.FC = () => {
   }
 
   if (
+    !TEMPORARY_BYPASS_AUTH &&
     isAuthenticated &&
     account &&
     (!onboarding?.eligible || account.approvalStatus !== 'APPROVED')
@@ -125,11 +136,11 @@ export const RootNavigator: React.FC = () => {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {!isAuthenticated ? (
+    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Main">
+      <Stack.Screen name="Main" component={MainTabNavigator} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} getId={() => 'partner-notifications'} />
+      {!TEMPORARY_BYPASS_AUTH && !isAuthenticated && (
         <Stack.Screen name="Auth" children={renderAuthStack} />
-      ) : (
-        <Stack.Screen name="Main" component={MainTabNavigator} />
       )}
     </Stack.Navigator>
   );

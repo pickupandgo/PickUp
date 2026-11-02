@@ -1,12 +1,15 @@
 import React from 'react';
-import { View, Text, StyleSheet, Pressable, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, ViewStyle } from 'react-native';
+import { DashboardAction } from './DashboardAction';
 import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { formatRupees } from '../../services/payments/money';
 
 export interface WalletCardProps {
   readonly label: string;
-  readonly balance: number;
+  readonly balance: number | null;
+  readonly loading?: boolean;
+  readonly error?: string | null;
   readonly currency: string;
   /** Hidden when null (no minimum balance applies). */
   readonly minimumBalance: number | null;
@@ -20,6 +23,8 @@ export interface WalletCardProps {
 export const WalletCard: React.FC<WalletCardProps> = ({
   label,
   balance,
+  loading = false,
+  error = null,
   currency,
   minimumBalance,
   onRechargePress,
@@ -36,7 +41,12 @@ export const WalletCard: React.FC<WalletCardProps> = ({
         </View>
         <Text style={styles.label}>{label}</Text>
       </View>
-      <Text style={styles.balance}>{formatRupees(balance, currency)}</Text>
+      {loading ? <ActivityIndicator accessibilityLabel="Loading wallet balance" /> :
+        <Text style={styles.balance}>{balance === null ? '—' : formatRupees(balance, currency)}</Text>}
+      {!loading && (error || balance === null) ? (
+        <Text style={styles.minBalance} accessibilityLiveRegion="polite"
+          accessibilityLabel={error ?? 'Balance unavailable'}>Balance unavailable</Text>
+      ) : null}
       <View style={styles.footer}>
         {minimumBalance !== null ? (
           <Text style={styles.minBalance}>
@@ -46,14 +56,7 @@ export const WalletCard: React.FC<WalletCardProps> = ({
           <View />
         )}
         {onRechargePress ? (
-          <Pressable
-            onPress={onRechargePress}
-            style={styles.pillButton}
-            accessibilityRole="button"
-            accessibilityLabel={rechargeLabel}
-          >
-            <Text style={styles.pillLabel}>{rechargeLabel}</Text>
-          </Pressable>
+          <DashboardAction label={rechargeLabel} onPress={onRechargePress} style={styles.action} />
         ) : null}
       </View>
     </View>
@@ -62,11 +65,13 @@ export const WalletCard: React.FC<WalletCardProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    padding: spacing.containerPadding,
+    padding: spacing.sm,
     backgroundColor: colors.surfaceContainerLowest,
     borderRadius: borderRadius.md,
-    gap: spacing.xs,
+    gap: spacing.unit,
     flex: 1,
+    minWidth: 0,
+    minHeight: 164,
     ...shadows.sm,
   },
   header: {
@@ -75,8 +80,8 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   iconContainer: {
-    width: 28,
-    height: 28,
+    width: 24,
+    height: 24,
     borderRadius: borderRadius.sm,
     backgroundColor: colors.surfaceContainerLow,
     alignItems: 'center',
@@ -87,6 +92,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   label: {
+    flexShrink: 1,
     ...typography.labelCaps,
     color: colors.onSurfaceVariant,
   },
@@ -98,22 +104,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: 'auto',
   },
   minBalance: {
+    flexShrink: 1,
     ...typography.labelSm,
     color: colors.onSurfaceVariant,
   },
-  pillButton: {
-    backgroundColor: colors.primaryContainer,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    borderRadius: borderRadius.full,
-  },
-  pillLabel: {
-    ...typography.labelCaps,
-    fontSize: 10,
-    color: colors.onPrimaryContainer,
-  },
+  action: { maxWidth: '100%' },
 });
 
 export default WalletCard;

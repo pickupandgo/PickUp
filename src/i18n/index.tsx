@@ -43,7 +43,7 @@ const en: Dict = {
   // Language screen
   'language.title': 'Language',
   'language.subtitle':
-    'Select your preferred language for the Pick Up Driver app.',
+    'Select your preferred language for the MultipleRide Partner app.',
   'language.english': 'English',
   'language.hindi': 'Hindi',
   'language.confirm': 'Confirm',
@@ -355,7 +355,7 @@ const hi: Dict = {
 
   // Language screen
   'language.title': 'भाषा',
-  'language.subtitle': 'Pick Up ड्राइवर ऐप के लिए अपनी पसंदीदा भाषा चुनें।',
+  'language.subtitle': 'MultipleRide Partner ऐप के लिए अपनी पसंदीदा भाषा चुनें।',
   'language.english': 'अंग्रेज़ी',
   'language.hindi': 'हिन्दी',
   'language.confirm': 'पुष्टि करें',

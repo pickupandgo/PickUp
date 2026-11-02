@@ -1,9 +1,8 @@
-import type { TripOffer, ActiveTrip, TripStop, HistoricalTrip, TripEarnings } from '../types/trip';
+import type { TripOffer, ActiveTrip, HistoricalTrip } from '../types/trip';
 import type {
   Vehicle,
   KycDocument,
   Subscription,
-  Notification,
   SettingsSection,
 } from '../types/user';
 import type { ChatMessage } from '../types/chat';
@@ -19,8 +18,8 @@ import type { WalletBalance, Transaction, PaymentMethodInfo, EarningsSummary } f
 // ───  ───
 
 export const authData = {
-  appName: 'Pick Up',
-  loginTitle: 'Driver Login',
+  appName: 'MultipleRide Partner',
+  loginTitle: 'Partner Login',
   loginSubtitle: 'Enter your mobile number to securely access your logistics dashboard.',
   countryCode: '+91',
   otpTitle: 'Verify OTP',
@@ -81,7 +80,7 @@ export const homeData = {
 
 export const goLiveSheet = {
   title: 'Go Live',
-  description: "To receive nearby trip requests and support live trip operations, Pick Up needs your location while you're working.",
+  description: "To receive nearby trip requests and support live trip operations, MultipleRide Partner needs your location while you're working.",
   continueLabel: 'CONTINUE',
   cancelLabel: 'CANCEL',
 } as const;
@@ -505,7 +504,7 @@ export const mockSettingsSections: readonly SettingsSection[] = [
     title: 'Vehicle & Service',
     items: [
       { id: 's3', label: 'Vehicle Details', iconName: 'local_shipping', hasChevron: true, route: 'VehicleDocuments' },
-      { id: 's4', label: 'KYC Documents', iconName: 'description', hasChevron: true, route: 'KYCDocuments' },
+      { id: 's4', label: 'Personal Documents', iconName: 'description', hasChevron: true, route: 'PersonalDocuments' },
     ],
   },
   {
@@ -526,36 +525,6 @@ export const mockSettingsSections: readonly SettingsSection[] = [
 ];
 
 // ───  ───
-
-export const mockNotifications: readonly Notification[] = [
-  {
-    id: 'notif-1',
-    title: 'New Trip Available',
-    description: 'A new trip request is available near your location.',
-    timestamp: '2 min ago',
-    isRead: false,
-    category: 'trip',
-    iconName: 'local_shipping',
-  },
-  {
-    id: 'notif-2',
-    title: 'Wallet Recharged',
-    description: '₹1,000 has been added to your wallet.',
-    timestamp: '1 hour ago',
-    isRead: true,
-    category: 'wallet',
-    iconName: 'account_balance_wallet',
-  },
-  {
-    id: 'notif-3',
-    title: 'Document Approved',
-    description: 'Your driving license has been verified.',
-    timestamp: 'Yesterday',
-    isRead: true,
-    category: 'account',
-    iconName: 'verified',
-  },
-];
 
 export const notificationLabels = {
   title: 'Notifications',
@@ -610,7 +579,7 @@ export const errorStateLabels = {
   enableGpsLabel: 'ENABLE GPS',
 
   locationPermissionTitle: 'Location Access Required',
-  locationPermissionSubtitle: 'Pick Up needs access to your location to show nearby trip requests and support navigation.',
+  locationPermissionSubtitle: 'MultipleRide Partner needs access to your location to show nearby trip requests and support navigation.',
   grantPermissionLabel: 'GRANT PERMISSION',
   openSettingsLabel: 'OPEN SETTINGS',
 

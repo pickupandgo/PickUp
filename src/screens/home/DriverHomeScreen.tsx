@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Animated, Easing, ScrollView } from 'react-native';
+import React, { useState, useCallback, useRef, useEffect, useSyncExternalStore } from 'react';
+import { View, Text, StyleSheet, Pressable, Animated, Easing, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { EarningsCard } from '../../components/molecules/EarningsCard';
@@ -13,13 +13,14 @@ import { TrackingService } from '../../services/tracking/TrackingService';
 import type { HomeScreenProps } from '../../types/navigation';
 import type { ActiveTrip, TripStop } from '../../types/trip';
 import { useDriverDispatch } from '../../hooks/useDriverDispatch';
-import { useWallet } from '../../hooks/useWallet';
-import { useEarnings } from '../../hooks/useEarnings';
+import { useHomeDashboard } from '../../hooks/useHomeDashboard';
+import { CurrentVehicleCard } from '../../components/molecules/CurrentVehicleCard';
 import { useActiveTrip } from '../../hooks/useActiveTrip';
 import { useCollectableTrips } from '../../hooks/useCollectableTrips';
 import { CollectPaymentBanner } from '../../components/molecules/CollectPaymentBanner';
 import type { DriverTripDto } from '../../services/payments/collectionsDto';
 import { useI18n } from '../../i18n';
+import { notificationInbox } from '../../services/notifications/NotificationInbox';
 
 export type DriverMode = 'offline' | 'searching' | 'active_trip';
 
@@ -199,9 +200,8 @@ const ActiveTripHero: React.FC<{ trip: ActiveTrip; onOpen: () => void }> = ({ tr
 export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, testID }) => {
   const { requestPermission, currentLocation } = useDriverLocation();
   const { t } = useI18n();
-  const { balance } = useWallet({ includeTransactions: false });
-  const { summary } = useEarnings();
   const activeTrip = useActiveTrip();
+  const dashboard = useHomeDashboard(`${activeTrip?.id ?? ''}:${activeTrip?.status ?? ''}`);
   const collectable = useCollectableTrips();
   const [driverMode, setDriverMode] = useState<Exclude<DriverMode, 'active_trip'>>('offline');
   const [sheetMode, setSheetMode] = useState<'none' | 'go_live' | 'go_offline'>('none');
@@ -243,7 +243,7 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
   );
 
   const handleNotifications = useCallback(() => {
-    navigation.navigate('NotificationCenter');
+    navigation.navigate('Notifications');
   }, [navigation]);
 
   const handleRecharge = useCallback(() => {
@@ -329,14 +329,16 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
               </View>
             )}
           </Pressable>
-          <Pressable onPress={handleNotifications} style={styles.headerBell}>
+          <Pressable onPress={handleNotifications} style={styles.headerBell} accessibilityRole="button" accessibilityLabel="Notifications">
             <Icon name="notifications" size={24} color={colors.onSurfaceVariant} />
-            <View style={styles.redDot} />
+            <UnreadNotificationDot />
           </Pressable>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={dashboard.vehicle.loading || dashboard.wallet.loading || dashboard.today.loading}
+          onRefresh={() => { dashboard.refresh().catch(() => undefined); }} />}>
         <Animated.View style={{ opacity: fadeAnim, gap: spacing.lg }}>
           {/* Payment the driver can collect right now (payments backend) */}
           <CollectPaymentBanner trips={collectable} onPress={handleCollect} />
@@ -369,34 +371,28 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
           )}
 
           {/* Vehicle */}
-          <View style={styles.vehicleCard}>
-            <View style={styles.vehicleIconContainer}>
-              <Icon name="local_shipping" size={20} color={colors.onSurfaceVariant} />
-            </View>
-            <View style={styles.vehicleDetails}>
-              <Text style={styles.vehicleLabel}>{t('home.currentVehicle')}</Text>
-              <Text style={styles.vehicleName}>Tata Ace | RJ 19 XX 1234</Text>
-            </View>
-            <View style={styles.approvedPill}>
-              <Icon name="check_circle" size={12} color={colors.primary} />
-              <Text style={styles.approvedText}>{t('home.approved')}</Text>
-            </View>
-          </View>
+          <CurrentVehicleCard resource={dashboard.vehicle}
+            onRetry={() => { dashboard.refresh().catch(() => undefined); }}
+            onManage={() => navigation.getParent()?.navigate('AccountTab', { screen: 'VehicleStatus' })} />
 
           {/* Earnings + Wallet */}
           <View style={styles.dashboardRow}>
             <EarningsCard
               label={t('home.today')}
-              amount={summary?.netEarnings || 0}
-              currency={summary?.currency || '₹'}
-              tripCount={summary?.totalTrips || 0}
+              amount={dashboard.today.data ? dashboard.today.data.netAmountPaise / 100 : null}
+              currency="₹"
+              tripCount={dashboard.today.data?.completedTripCount}
+              loading={dashboard.today.loading}
+              error={dashboard.today.error}
               onDetailsPress={handleDetails}
             />
             <WalletCard
               label={t('home.walletLabel')}
-              balance={balance?.balance || 0}
-              currency={balance?.currency || '₹'}
-              minimumBalance={balance?.minimumBalance ?? null}
+              balance={dashboard.wallet.data?.balance ?? null}
+              currency={dashboard.wallet.data?.currency ?? '₹'}
+              minimumBalance={dashboard.wallet.data?.minimumBalance ?? null}
+              loading={dashboard.wallet.loading}
+              error={dashboard.wallet.error}
               onRechargePress={handleRecharge}
             />
           </View>
@@ -859,7 +855,8 @@ const styles = StyleSheet.create({
   },
   dashboardRow: {
     flexDirection: 'row',
-    gap: spacing.containerPadding,
+    alignItems: 'stretch',
+    gap: spacing.sm,
   },
   // Protocol
   protocolCard: {
@@ -904,5 +901,10 @@ const styles = StyleSheet.create({
     right: 0,
   },
 });
+
+function UnreadNotificationDot() {
+  const { unreadCount } = useSyncExternalStore(notificationInbox.subscribe, notificationInbox.getSnapshot);
+  return unreadCount !== null && unreadCount > 0 ? <View style={styles.redDot} accessibilityLabel={`${unreadCount} unread notifications`} /> : null;
+}
 
 export default DriverHomeScreen;

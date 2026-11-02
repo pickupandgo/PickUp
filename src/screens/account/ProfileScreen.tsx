@@ -18,12 +18,12 @@ import {
   typography,
   spacing,
   borderRadius,
-  shadows,
 } from '../../theme';
 import type { AccountScreenProps } from '../../types/navigation';
 import { useAuth } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n';
 import { useDriverOnboarding } from '../../hooks/useDriverOnboarding';
+import { DocumentNavigationCard } from '../../components/documents/DocumentNavigationCard';
 
 export interface ProfileScreenProps {
   readonly navigation: AccountScreenProps<'Profile'>['navigation'];
@@ -32,33 +32,6 @@ export interface ProfileScreenProps {
 
 const AVATAR_KEY = 'driver.avatarUri';
 
-interface DocItem {
-  readonly key: string;
-  readonly labelKey: string;
-  readonly icon: string;
-  readonly route: 'KYCDocuments' | 'VehicleDocuments';
-}
-
-const DOCUMENTS: readonly DocItem[] = [
-  {
-    key: 'identity',
-    labelKey: 'doc.aadhaar',
-    icon: 'badge',
-    route: 'KYCDocuments',
-  },
-  {
-    key: 'license',
-    labelKey: 'doc.dl',
-    icon: 'contact_mail',
-    route: 'KYCDocuments',
-  },
-  {
-    key: 'vehicle',
-    labelKey: 'doc.rc',
-    icon: 'directions_car',
-    route: 'VehicleDocuments',
-  },
-];
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   navigation,
@@ -103,10 +76,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     }
   }, []);
 
-  const handleManage = useCallback(
-    () => navigation.navigate('Subscription'),
-    [navigation],
-  );
   const handleLanguage = useCallback(
     () => navigation.navigate('LanguageSelection'),
     [navigation],
@@ -116,11 +85,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     [navigation],
   );
   const handleNotifications = useCallback(
-    () => navigation.navigate('Settings'),
-    [navigation],
-  );
-  const handleDoc = useCallback(
-    (route: DocItem['route']) => navigation.navigate(route),
+    () => navigation.navigate('Notifications'),
     [navigation],
   );
 
@@ -144,8 +109,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         <Pressable style={styles.headerBtn} onPress={handleSettings}>
           <Icon name="menu" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>PICK UP</Text>
-        <Pressable style={styles.headerBtn} onPress={handleNotifications}>
+        <Text style={styles.headerTitle}>MULTIPLERIDE PARTNER</Text>
+        <Pressable style={styles.headerBtn} onPress={handleNotifications} accessibilityRole="button" accessibilityLabel="Notifications">
           <Icon name="notifications" size={24} color={colors.primary} />
         </Pressable>
       </View>
@@ -178,78 +143,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <Text style={styles.name}>{name}</Text>
         </View>
 
-        {/* Subscription */}
-        <View style={styles.card}>
-          <View style={styles.subRow}>
-            <View style={styles.subLeft}>
-              <View style={styles.subIcon}>
-                <Icon
-                  name="workspace_premium"
-                  size={20}
-                  color={colors.onPrimaryFixed}
-                />
-              </View>
-              <View>
-                <Text style={styles.subPlan}>{t('profile.proPlan')}</Text>
-                <Text style={styles.subValidity}>
-                  {t('profile.activeUntil')}
-                </Text>
-              </View>
-            </View>
-            <Pressable onPress={handleManage} accessibilityRole="button">
-              <Text style={styles.manageText}>{t('profile.manage')}</Text>
-            </Pressable>
-          </View>
-        </View>
 
         {/* Documents */}
-        <View>
-          <Text style={styles.sectionHeading}>{t('profile.documents')}</Text>
-          <View style={styles.listCard}>
-            {DOCUMENTS.map((doc, i) => (
-              <Pressable
-                key={doc.key}
-                style={[
-                  styles.row,
-                  i < DOCUMENTS.length - 1 && styles.rowBorder,
-                ]}
-                onPress={() => handleDoc(doc.route)}
-              >
-                <View style={styles.rowLeft}>
-                  <Icon name={doc.icon} size={20} color={colors.outline} />
-                  <Text style={styles.rowLabel}>{t(doc.labelKey)}</Text>
-                </View>
-                {(
-                  doc.route === 'KYCDocuments'
-                    ? summary?.kyc?.status === 'VERIFIED'
-                    : summary?.activeVehicle?.status === 'VERIFIED'
-                ) ? (
-                  <View style={styles.badgeVerified}>
-                    <Icon
-                      name="check_circle"
-                      size={12}
-                      color={colors.onSurface}
-                    />
-                    <Text style={styles.badgeVerifiedText}>
-                      {t('profile.verified')}
-                    </Text>
-                  </View>
-                ) : (
-                  <View style={styles.badgePending}>
-                    <Icon
-                      name="pending"
-                      size={12}
-                      color={colors.onSurfaceVariant}
-                    />
-                    <Text style={styles.badgePendingText}>
-                      {t('profile.pending')}
-                    </Text>
-                  </View>
-                )}
-              </Pressable>
-            ))}
-          </View>
-        </View>
+        <DocumentNavigationCard title="Documents" icon="folder_open" onPress={() => navigation.navigate('DocumentsHub')} />
 
         {/* Account */}
         <View>
@@ -279,6 +175,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <Pressable
               style={[styles.row, styles.rowBorder]}
               onPress={handleNotifications}
+              accessibilityRole="button"
+              accessibilityLabel="Notifications"
             >
               <View style={styles.rowLeft}>
                 <Icon

@@ -1,4 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { DocumentCard } from '../../components/documents/DocumentCard';
+import { clearDocumentPreviews, savedDocuments, statusLabel } from '../../services/documents/DocumentPreviewService';
+import { useSecureDocumentScreen } from '../../hooks/useDocumentPreview';
+import { currentVehicle } from '../../services/dashboard/HomeDashboardService';
 import {
   ActivityIndicator,
   Pressable,
@@ -15,14 +19,19 @@ import type { AccountScreenProps } from '../../types/navigation';
 
 export interface VehicleDocumentsScreenProps {
   readonly navigation: AccountScreenProps<'VehicleDocuments'>['navigation'];
+  readonly route?: AccountScreenProps<'VehicleDocuments'>['route'];
   readonly testID?: string;
 }
 export const VehicleDocumentsScreen: React.FC<VehicleDocumentsScreenProps> = ({
   navigation,
+  route,
   testID,
 }) => {
   const { summary, loading, error, refresh } = useDriverOnboarding();
-  const vehicle = summary?.activeVehicle ?? summary?.vehicles[0] ?? null;
+  useSecureDocumentScreen();
+  const [revision, setRevision] = useState(0);
+  const vehicle = route?.params?.vehicleId ? summary?.vehicles.find(item => item.id === route.params?.vehicleId) ?? null : summary ? currentVehicle(summary) : null;
+  const documents = summary && vehicle ? savedDocuments(summary, 'VEHICLE', vehicle.id) : [];
   return (
     <SafeAreaView style={styles.safe} testID={testID}>
       <AppHeader
@@ -41,28 +50,24 @@ export const VehicleDocumentsScreen: React.FC<VehicleDocumentsScreenProps> = ({
                 {vehicle.registrationNumber} ·{' '}
                 {vehicle.category.replace(/_/g, ' ')}
               </Text>
-              <Text style={styles.status}>
-                {vehicle.status.replace(/_/g, ' ')}
+              <Text style={vehicle.status === 'VERIFIED' ? styles.status : styles.body}>
+                {statusLabel(vehicle.status)}
               </Text>
             </View>
-            {vehicle.documents.map(document => (
-              <View key={document.id} style={styles.card}>
-                <Text style={styles.title}>
-                  {document.documentType.replace(/_/g, ' ')}
-                </Text>
-                <Text style={styles.body}>
-                  {document.status.replace(/_/g, ' ')}
-                </Text>
-                {document.rejectionReason ? (
-                  <Text style={styles.error}>{document.rejectionReason}</Text>
-                ) : null}
-              </View>
-            ))}
+            {documents.map(document => <DocumentCard key={document.record.id} document={document} revision={revision}
+              onView={() => navigation.navigate('DocumentPreview', document.ref)} />)}
+            {!loading && !documents.length ? <Text style={styles.body}>No documents uploaded for this vehicle.</Text> : null}
           </>
         ) : !loading ? (
-          <Text style={styles.body}>No vehicle is registered.</Text>
+          <Text style={styles.body}>{summary?.vehicles.length ? 'Select a vehicle to view its documents.' : 'No vehicle is registered.'}</Text>
         ) : null}
-        <Pressable style={styles.button} onPress={() => void refresh()}>
+        {summary?.vehicles.length && summary.vehicles.length > 1 ? summary.vehicles.map(item => <Pressable key={item.id} style={styles.button}
+          onPress={() => navigation.navigate('VehicleDocuments', { vehicleId: item.id })}>
+          <Text style={styles.buttonText}>{item.makeModel} · {item.registrationNumber}</Text>
+        </Pressable>) : null}
+        <Pressable style={styles.button} onPress={() => {
+          clearDocumentPreviews(); refresh().then(() => setRevision(value => value + 1)).catch(() => undefined);
+        }}>
           <Text style={styles.buttonText}>Refresh</Text>
         </Pressable>
       </ScrollView>

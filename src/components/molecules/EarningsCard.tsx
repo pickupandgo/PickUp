@@ -1,11 +1,15 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, ActivityIndicator } from 'react-native';
+import { DashboardAction } from './DashboardAction';
+import { formatRupees } from '../../services/payments/money';
 import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
 export interface EarningsCardProps {
   readonly label: string;
-  readonly amount: number;
+  readonly amount: number | null;
+  readonly loading?: boolean;
+  readonly error?: string | null;
   readonly currency: string;
   readonly tripCount?: number;
   readonly iconName?: string;
@@ -17,6 +21,8 @@ export interface EarningsCardProps {
 export const EarningsCard: React.FC<EarningsCardProps> = ({
   label,
   amount,
+  loading = false,
+  error = null,
   currency,
   tripCount,
   iconName = 'trending_up', // Used to match the arrow icon in screenshot
@@ -32,22 +38,18 @@ export const EarningsCard: React.FC<EarningsCardProps> = ({
         </View>
         <Text style={styles.label}>{label}</Text>
       </View>
-      <Text style={styles.amount}>
-        {currency}{amount.toLocaleString('en-IN')}
-      </Text>
+      {loading ? <ActivityIndicator accessibilityLabel="Loading today’s earnings" /> :
+        <Text style={styles.amount}>{amount === null ? '—' : formatRupees(amount, currency)}</Text>}
+      {!loading && (error || amount === null) ? (
+        <Text style={styles.trips} accessibilityLiveRegion="polite"
+          accessibilityLabel={error ?? 'Earnings unavailable'}>Earnings unavailable</Text>
+      ) : null}
       <View style={styles.footer}>
         {tripCount !== undefined ? (
           <Text style={styles.trips}>{tripCount} trips</Text>
         ) : <View />}
         {onDetailsPress ? (
-          <Pressable
-            onPress={onDetailsPress}
-            style={styles.pillButton}
-            accessibilityRole="button"
-            accessibilityLabel="View details"
-          >
-            <Text style={styles.pillLabel}>DETAILS</Text>
-          </Pressable>
+          <DashboardAction label="DETAILS" onPress={onDetailsPress} style={styles.action} />
         ) : null}
       </View>
     </View>
@@ -56,11 +58,13 @@ export const EarningsCard: React.FC<EarningsCardProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    padding: spacing.containerPadding,
+    padding: spacing.sm,
     backgroundColor: colors.surfaceContainerLowest,
     borderRadius: borderRadius.md,
-    gap: spacing.xs,
+    gap: spacing.unit,
     flex: 1,
+    minWidth: 0,
+    minHeight: 164,
     ...shadows.sm,
   },
   header: {
@@ -69,8 +73,8 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   iconContainer: {
-    width: 28,
-    height: 28,
+    width: 24,
+    height: 24,
     borderRadius: borderRadius.sm,
     backgroundColor: colors.surfaceContainerLow,
     alignItems: 'center',
@@ -81,6 +85,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   label: {
+    flexShrink: 1,
     ...typography.labelCaps,
     color: colors.onSurfaceVariant,
   },
@@ -92,22 +97,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: 'auto',
   },
   trips: {
+    flexShrink: 1,
     ...typography.labelSm,
     color: colors.onSurfaceVariant,
   },
-  pillButton: {
-    backgroundColor: colors.primaryContainer,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    borderRadius: borderRadius.full,
-  },
-  pillLabel: {
-    ...typography.labelCaps,
-    fontSize: 10,
-    color: colors.onPrimaryContainer,
-  },
+  action: { maxWidth: '100%' },
 });
 
 export default EarningsCard;

@@ -4,6 +4,14 @@
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
         <!-- Customize your theme here. -->
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <item name="android:windowBackground">@color/partner_startup_background</item>
+    </style>
+
+    <style name="PartnerLaunchTheme" parent="AppTheme">
+        <item name="android:windowBackground">@drawable/partner_launch_frame</item>
+        <item name="android:statusBarColor">@color/partner_startup_background</item>
+        <item name="android:navigationBarColor">@color/partner_startup_background</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 
 </resources>

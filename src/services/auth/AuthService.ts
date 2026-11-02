@@ -1,8 +1,8 @@
 import { ApiClient } from '../api/ApiClient';
+import { pushSession } from '../notifications/notifications';
 import { env } from '../../config/env';
 import {
   getAuth,
-  signInWithPhoneNumber,
   onAuthStateChanged,
   signOut as fbSignOut,
   signInWithEmailAndPassword,
@@ -448,6 +448,9 @@ export class FirebaseAuthService implements IAuthService {
 
   async logout(): Promise<void> {
     try {
+      // Deactivate this installation while Firebase credentials are still valid.
+      // A failed cleanup must not prevent the existing sign-out flow.
+      await pushSession.logout().catch(() => {});
       await fbSignOut(getAuth());
       this.confirmation = null;
       this.activePhone = null;

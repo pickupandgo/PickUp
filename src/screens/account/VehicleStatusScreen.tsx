@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -61,13 +61,15 @@ export const VehicleStatusScreen: React.FC<VehicleStatusScreenProps> = ({
   const [reason, setReason] = useState('Replacing my current delivery vehicle');
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const syncedVehicle = useRef<string | null>(null);
   useEffect(() => {
-    if (replacement) {
+    if (replacement && syncedVehicle.current !== replacement.id) {
+      syncedVehicle.current = replacement.id;
       setCategory(replacement.category);
       setRegistration(replacement.registrationNumber);
       setModel(replacement.makeModel);
     }
-  }, [replacement?.id]);
+  }, [replacement]);
   const run = async (key: string, action: () => Promise<unknown>) => {
     setBusy(key);
     setActionError(null);
@@ -113,6 +115,18 @@ export const VehicleStatusScreen: React.FC<VehicleStatusScreenProps> = ({
         {loading ? <ActivityIndicator color={colors.primary} /> : null}
         {loadError ? <Text style={styles.error}>{loadError}</Text> : null}
         {actionError ? <Text style={styles.error}>{actionError}</Text> : null}
+        {summary && summary.vehicles.length === 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.heading}>Register your vehicle</Text>
+            <VehicleFields category={category} registration={registration} model={model}
+              reason={reason} hideReason onCategory={setCategory} onRegistration={setRegistration}
+              onModel={setModel} onReason={setReason} />
+            <Button label="Save vehicle registration" busy={busy === 'register'}
+              disabled={registration.trim().length < 4 || model.trim().length < 2}
+              onPress={() => { run('register', () => api.createVehicle({ category,
+                registrationNumber: registration.trim(), makeModel: model.trim() })).catch(() => undefined); }} />
+          </View>
+        ) : null}
         {summary?.activeVehicle ? (
           <View style={styles.card}>
             <Text style={styles.heading}>Current approved vehicle</Text>
@@ -166,7 +180,7 @@ export const VehicleStatusScreen: React.FC<VehicleStatusScreenProps> = ({
         ) : null}
         {replacement ? (
           <View style={styles.card}>
-            <Text style={styles.heading}>Replacement vehicle</Text>
+            <Text style={styles.heading}>{summary?.activeVehicle ? 'Replacement vehicle' : 'Registered vehicle'}</Text>
             <Text style={styles.body}>
               Status: {display(replacement.status)}
             </Text>

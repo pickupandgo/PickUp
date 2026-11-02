@@ -237,7 +237,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
             </View>
             <Text style={styles.modalTitle}>Enable Location Services</Text>
             <Text style={styles.modalBody}>
-              Pick Up collects and shares your precise location with the trip service and your
+              MultipleRide Partner collects and shares your precise location with the trip service and your
               assigned customer during delivery, including while minimized or with the screen
               locked. Android runs a location foreground service. Sharing stops when you go offline without
               an active trip or sign out.

@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import { View, TextInput, StyleSheet, ViewStyle } from 'react-native';
+import React, { useRef, useEffect, useState } from 'react';
+import { View, TextInput, StyleSheet, ViewStyle, Platform } from 'react-native';
 import { colors, typography, borderRadius, spacing } from '../../theme';
 
 type TextInputRef = React.ElementRef<typeof TextInput>;
@@ -27,6 +27,14 @@ export const OTPInput: React.FC<OTPInputProps> = ({
 }) => {
   const inputRefs = useRef<Array<TextInputRef | null>>([]);
   const onCompleteRef = useRef(onComplete);
+  const latestValue = useRef(value);
+  const insertionIndex = useRef<number | null>(null);
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    latestValue.current = value;
+    if (!value) insertionIndex.current = null;
+  }, [value]);
 
   useEffect(() => {
     onCompleteRef.current = onComplete;
@@ -40,31 +48,45 @@ export const OTPInput: React.FC<OTPInputProps> = ({
 
   const handleChange = (text: string, index: number) => {
     const sanitized = text.replace(/[^0-9]/g, '');
-    if (sanitized.length > 1) {
-      // Handle paste
+    // Native maxLength=1 truncates a paste before onChangeText can receive it.
+    // Sanitize and cap in JS instead; a pasted code replaces the whole value
+    // regardless of which cell received it (including keyboard OTP suggestions).
+    if (text.length > 1 && sanitized) {
       const pasted = sanitized.slice(0, length);
+      insertionIndex.current = null;
+      latestValue.current = pasted;
       onChange(pasted);
-      const lastIndex = Math.min(pasted.length, length) - 1;
-      inputRefs.current[lastIndex]?.focus();
+      inputRefs.current[Math.min(pasted.length, length - 1)]?.focus();
       return;
     }
+    if (text && !sanitized) return;
 
-    const newValue = value.split('');
-    newValue[index] = sanitized;
-    const joined = newValue.join('').slice(0, length);
+    // Keep a contiguous authoritative value. After deletion, typing in the
+    // same cell inserts before the shifted suffix instead of losing a digit.
+    const current = latestValue.current;
+    const position = Math.min(index, current.length);
+    const joined = (
+      current.slice(0, position) + sanitized +
+      current.slice(position + (sanitized && insertionIndex.current === position ? 0 : 1))
+    ).slice(0, length);
+    insertionIndex.current = sanitized ? null : position;
+    latestValue.current = joined;
     onChange(joined);
 
-    if (sanitized && index < length - 1) {
-      inputRefs.current[index + 1]?.focus();
+    if (sanitized && position < length - 1) {
+      inputRefs.current[position + 1]?.focus();
     }
   };
 
   const handleKeyPress = (key: string, index: number) => {
-    if (key === 'Backspace' && !value[index] && index > 0) {
-      const newValue = value.split('');
-      newValue[index - 1] = '';
-      onChange(newValue.join(''));
-      inputRefs.current[index - 1]?.focus();
+    const current = latestValue.current;
+    if (key === 'Backspace' && !current[index] && current.length > 0) {
+      const previousIndex = Math.min(index, current.length) - 1;
+      const next = current.slice(0, previousIndex) + current.slice(previousIndex + 1);
+      latestValue.current = next;
+      insertionIndex.current = previousIndex;
+      onChange(next);
+      inputRefs.current[previousIndex]?.focus();
     }
   };
 
@@ -78,16 +100,25 @@ export const OTPInput: React.FC<OTPInputProps> = ({
           }}
           style={[
             styles.cell,
-            value[index] ? styles.cellFilled : null,
+            focusedIndex === index ? styles.cellFocused : null,
             hasError ? styles.cellError : null,
           ]}
           value={value[index] || ''}
           onChangeText={(text) => handleChange(text, index)}
           onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, index)}
+          onFocus={() => {
+            setFocusedIndex(index);
+            if (insertionIndex.current !== index) insertionIndex.current = null;
+          }}
+          onBlur={() => setFocusedIndex(null)}
           keyboardType="number-pad"
-          maxLength={1}
+          autoComplete={Platform.OS === 'android' ? 'sms-otp' : 'one-time-code'}
+          importantForAutofill="yes"
+          autoCorrect={false}
+          autoCapitalize="none"
           editable={!disabled}
           selectTextOnFocus
+          selection={{ start: 0, end: value[index] ? 1 : 0 }}
           accessibilityLabel={`OTP digit ${index + 1}`}
           accessibilityRole="none"
           testID={`${testID}-cell-${index}`}
@@ -104,17 +135,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cell: {
-    width: 48,
+    flex: 1,
+    minWidth: 0,
+    maxWidth: 48,
     height: 56,
     borderWidth: 1,
-    borderColor: colors.error,
+    borderColor: colors.onSurface,
     borderRadius: borderRadius.md,
     textAlign: 'center',
     ...typography.headlineMd,
     color: colors.onSurface,
     backgroundColor: colors.surfaceContainerLowest,
   },
-  cellFilled: {
+  cellFocused: {
     borderColor: colors.primary,
     backgroundColor: colors.surfaceContainerLowest,
   },

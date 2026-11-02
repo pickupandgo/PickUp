@@ -1,13 +1,18 @@
 import React, { useCallback } from 'react';
 import { View, Text, SectionList, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, typography, spacing, borderRadius } from '../../theme';
+import { colors, typography, spacing } from '../../theme';
 import { mockSettingsSections } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { SettingsRow } from '../../components/molecules/SettingsRow';
 import { useAuth } from '../../hooks/useAuth';
-import type { SettingsItem, SettingsSection } from '../../types/user';
-import type { AccountScreenProps, AccountStackParamList } from '../../types/navigation';
+import type { SettingsItem } from '../../types/user';
+import type { AccountScreenProps } from '../../types/navigation';
+
+const noParamRoutes = new Set<string>([
+  'Profile', 'DocumentsHub', 'PersonalDocuments', 'KYCStatus', 'VehicleDocuments', 'VehicleStatus',
+  'Settings', 'Subscription', 'SubscriptionProcessing', 'LanguageSelection', 'AccountRestricted',
+]);
 
 export interface SettingsScreenProps {
   readonly navigation: AccountScreenProps<'Settings'>['navigation'];
@@ -20,11 +25,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 }) => {
   const { logout } = useAuth();
   
-  const noParamRoutes = new Set<string>([
-    'Profile', 'KYCDocuments', 'VehicleDocuments', 'VehicleStatus',
-    'Settings', 'Subscription', 'SubscriptionProcessing', 'LanguageSelection', 'AccountRestricted',
-  ]);
-
   const handlePress = useCallback(async (item: SettingsItem) => {
     if (item.id === 's9') {
       await logout();

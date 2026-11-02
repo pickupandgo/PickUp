@@ -43,9 +43,7 @@ export const DriverWalletScreen: React.FC<DriverWalletScreenProps> = ({ navigati
     navigation.dispatch(CommonActions.navigate('AccountTab'));
   }, [navigation]);
   const handleNotifications = useCallback(() => {
-    navigation.dispatch(
-      CommonActions.navigate('HomeTab', { screen: 'NotificationCenter' }),
-    );
+    navigation.navigate('Notifications');
   }, [navigation]);
 
   const recent = transactions.slice(0, 3);
@@ -82,7 +80,7 @@ export const DriverWalletScreen: React.FC<DriverWalletScreenProps> = ({ navigati
         <Pressable style={styles.headerBtn} onPress={handleMenu}>
           <Icon name="menu" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>PICK UP</Text>
+        <Text style={styles.headerTitle}>MULTIPLERIDE PARTNER</Text>
         <Pressable style={styles.headerBtn} onPress={handleNotifications}>
           <Icon name="notifications" size={24} color={colors.onSurfaceVariant} />
         </Pressable>

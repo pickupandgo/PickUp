@@ -1,8 +1,10 @@
 import React, { useEffect } from 'react';
 import { TrackingService } from '../services/tracking/TrackingService';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { NotificationBanner } from '../components/notifications/NotificationRuntime';
 import Icon from '../components/atoms/Icon';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { MainTabParamList } from '../types/navigation';
 import { colors, typography } from '../theme';
 import { HomeStack } from './stacks/HomeStack';
@@ -37,7 +39,9 @@ export const MainTabNavigator: React.FC = () => {
     return () => { tracking.stopSession().catch(() => {}); };
   }, []);
   const { t } = useI18n();
+  const insets = useSafeAreaInsets();
   return (
+    <View style={styles.container}>
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
@@ -52,19 +56,26 @@ export const MainTabNavigator: React.FC = () => {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.outline,
         tabBarLabelStyle: styles.tabLabel,
-        tabBarStyle: styles.tabBar,
+        // Preserve the existing 56dp content area. BottomTabBar applies the live
+        // bottom inset as padding itself; the custom total height must include it.
+        tabBarStyle: [styles.tabBar, { height: 56 + insets.bottom }],
+        tabBarItemStyle: styles.tabItem,
+        tabBarHideOnKeyboard: true,
       })}
     >
       <Tab.Screen name="HomeTab" component={HomeStack} />
       <Tab.Screen name="TripsTab" component={TripsStack} />
       <Tab.Screen name="EarningsTab" component={EarningsStack} />
       <Tab.Screen name="WalletTab" component={WalletStack} />
-      <Tab.Screen name="AccountTab" component={AccountStack} />
+      <Tab.Screen name="AccountTab" component={AccountStack} options={{ popToTopOnBlur: false }} />
     </Tab.Navigator>
+    <NotificationBanner />
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  container: { flex: 1 },
   tabIcon: {
     fontSize: 24,
   },
@@ -76,9 +87,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.outlineVariant,
     backgroundColor: colors.surfaceContainerLowest,
-    paddingBottom: 4,
-    height: 56,
   },
+  tabItem: { paddingBottom: 4 },
 });
 
 export default MainTabNavigator;

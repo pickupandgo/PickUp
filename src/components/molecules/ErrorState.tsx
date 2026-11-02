@@ -41,7 +41,7 @@ const variantDefaults: Record<ErrorVariant, { icon: string; title: string; subti
   location_permission: {
     icon: 'location_off',
     title: 'Location Permission Required',
-    subtitle: 'Pick Up needs your location to find nearby trips and provide navigation.',
+    subtitle: 'MultipleRide Partner needs your location to find nearby trips and provide navigation.',
   },
   gps_unavailable: {
     icon: 'gps_off',

@@ -1,0 +1,13 @@
+<resources>
+    <style name="PartnerLaunchTheme" parent="AppTheme">
+        <item name="android:windowBackground">@drawable/partner_launch_frame</item>
+        <item name="android:windowSplashScreenBackground">@color/partner_startup_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="android:statusBarColor">@color/partner_startup_background</item>
+        <item name="android:navigationBarColor">@color/partner_startup_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
+

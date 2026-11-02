@@ -95,3 +95,6 @@ android/app/.cxx/
 android/build/
 android/.gradle/
 android/app/src/main/assets/
+
+# Local device screenshots and verification artifacts
+/artifacts/

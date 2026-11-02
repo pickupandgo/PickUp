@@ -1,5 +1,5 @@
 /**
- * Pick Up Driver — Design Tokens
+ * MultipleRide Partner — Design Tokens
  *
  * Extracted from the Stitch HTML Tailwind config.
  * All color, typography, spacing, and radius tokens for the app.
@@ -11,6 +11,18 @@
 // ─── Colors (Material Design 3 palette) ────────────────────────────
 
 export const colors = {
+  // Shared native/JavaScript startup palette.
+  startupBlue: '#0967f5',
+  startupBlueLight: '#70c8ff',
+  startupBlueDark: '#0845bd',
+  startupBlueDeep: '#073b9a',
+  startupShadow: '#031b60',
+  startupArchitecture: '#edf6ff',
+  startupArchitectureShade: '#b4d6ff',
+  startupParcel: '#dfb881',
+  startupParcelLight: '#f4d6a5',
+  startupParcelShade: '#b68b57',
+  startupWheelHighlight: '#c9d8e5',
   // Primary
   primary: '#03071d',
   onPrimary: '#ffffff',
@@ -53,6 +65,10 @@ export const colors = {
   onSurface: '#191c1e',
   surfaceVariant: '#e0e3e6',
   onSurfaceVariant: '#46464d',
+  // Neutral, unselected navigation surfaces; brand blue remains reserved for actions.
+  navigationIcon: '#303747',
+  onSurfaceMuted: '#667085',
+  outlineSubtle: '#e4e6eb',
   surfaceBright: '#f7f9fc',
   surfaceDim: '#d8dadd',
   surfaceContainer: '#eceef1',

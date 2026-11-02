@@ -32,6 +32,16 @@ jest.mock('@react-native-firebase/app', () => ({
   getApp: () => ({ name: 'test', options: {} }),
   default: () => ({ name: 'test', options: {} }),
 }));
+jest.mock('@react-native-firebase/messaging', () => ({
+  getMessaging: jest.fn(() => ({})),
+  getToken: jest.fn(async () => 'test-installation-token'),
+  deleteToken: jest.fn(async () => undefined),
+  onMessage: jest.fn(() => () => {}),
+  onTokenRefresh: jest.fn(() => () => {}),
+  onNotificationOpenedApp: jest.fn(() => () => {}),
+  getInitialNotification: jest.fn(async () => null),
+  setBackgroundMessageHandler: jest.fn(),
+}));
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: {
@@ -127,12 +137,9 @@ jest.mock('react-native-gesture-handler', () => {
   };
 });
 
-// Mock react-native-reanimated
-jest.mock('react-native-reanimated', () => {
-  const mockReanimated = require('react-native-reanimated/mock');
-  mockReanimated.default.call = () => {};
-  return mockReanimated;
-});
+// Reanimated 4's mock imports Worklets; keep Jest away from its native JSI runtime.
+jest.mock('react-native-worklets', () => require('react-native-worklets/src/mock'));
+jest.mock('react-native-reanimated', () => require('./__mocks__/startupReanimated'));
 
 // Mock react-native-safe-area-context with proper React context
 jest.mock('react-native-safe-area-context', () => {

@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import Icon from '../../components/atoms/Icon';
+import { VehicleAvatar } from '../../components/atoms/VehicleAvatar';
 import {
   DriverOnboardingService,
   type DriverOnboardingSummary,
@@ -607,17 +608,7 @@ export const DriverOnboardingScreen: React.FC<Props> = ({
                   style={[s.category, category === item && s.selected]}
                 >
                   <View style={s.iconBox}>
-                    <Icon
-                      name={
-                        item === 'TWO_WHEELER'
-                          ? 'two_wheeler'
-                          : item === 'THREE_WHEELER'
-                          ? 'electric_rickshaw'
-                          : 'local_shipping'
-                      }
-                      size={24}
-                      color={palette.ink}
-                    />
+                    <VehicleAvatar vehicle={item} size={64} />
                   </View>
                   <Text style={s.categoryText}>{CATEGORY_LABELS[item]}</Text>
                   {category === item ? (
@@ -1252,10 +1243,9 @@ const s = StyleSheet.create({
   },
   selected: { borderColor: palette.ink, borderWidth: 2 },
   iconBox: {
-    width: 38,
-    height: 38,
+    width: 64,
+    height: 64,
     borderRadius: 8,
-    backgroundColor: '#F3F5F8',
     justifyContent: 'center',
     alignItems: 'center',
   },
