@@ -7,9 +7,5 @@
   </style>
   <style name="Theme.App.SplashScreen" parent="AppTheme">
     <item name="android:windowBackground">@drawable/ic_launcher_background</item>
-    <item name="android:statusBarColor">@color/splashscreen_background</item>
-    <item name="android:navigationBarColor">@color/splashscreen_background</item>
-    <item name="android:windowLightStatusBar">true</item>
-    <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/splashscreen_background</item>
   </style>
 </resources>
