@@ -34,7 +34,7 @@ export default function ReviewBookingScreen({ navigation, onBack, onConfirm, onC
   const search = useBookingSearch(finding, navigation, route?.params?.retrySearch === true);
   const responseProgress = useSearchProgress(search.observation, finding && !search.failure && !search.noDrivers && !search.leaving);
   const searchVehicleType = ride?.vehicleType ?? draft.vehicleType;
-  const preview = useVehiclePreview(draft.pickup, vehicleCategoryFor(searchVehicleType), finding && !search.failure && !search.noDrivers && !search.leaving && (!ride || ['REQUESTED', 'PENDING_REGISTRATION'].includes(ride.status)));
+  const preview = useVehiclePreview(draft.pickup, vehicleCategoryFor(finding ? searchVehicleType : draft.vehicleType), !search.failure && !search.noDrivers && !search.leaving && (!finding || !ride || ['REQUESTED', 'PENDING_REGISTRATION'].includes(ride.status)));
   const previewMarkers = useMemo<readonly MapMarker[]>(() => preview.vehicles.map(vehicle => ({ id: `search-preview-${vehicle.vehicleCategory}-${vehicle.key}`, kind: 'nearby', coordinate: vehicle, vehicleType: vehicle.vehicleCategory, preview: true })), [preview.vehicles]);
   const [scanWidth, setScanWidth] = useState(0);
   const scan = useRef(new Animated.Value(0)).current;
