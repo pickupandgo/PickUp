@@ -1,22 +1,23 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, Platform,  KeyboardAvoidingView, FlatList } from 'react-native';
-import Icon from '../../components/atoms/Icon';
+import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
+import { View, Text, StyleSheet, Pressable, TextInput, Platform, ActivityIndicator, KeyboardAvoidingView, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius } from '../../theme';
-import { mockChatMessages, chatLabels } from '../../data/mockData';
+import { chatLabels } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { ChatBubble } from '../../components/molecules/ChatBubble';
-import { ChatImageBubble } from '../../components/molecules/ChatImageBubble';
 import type { ChatMessage } from '../../types/chat';
-import type { HomeScreenProps } from '../../types/navigation';
+import type { ChatRouteParams } from '../../types/navigation';
+import { useActiveTrip } from '../../hooks/useActiveTrip';
+import { useChat } from '../../hooks/useChat';
+import { chatUuid, type ChatConversation } from '../../services/chat/ChatService';
 
 /**
  * ActiveTripChatScreen
- * In-trip chat with dispatcher / support.
+ * Customer conversation for the authenticated driver's confirmed assignment.
  */
 export interface ActiveTripChatScreenProps {
-  readonly navigation: HomeScreenProps<'ActiveTripChat'>['navigation'];
-  readonly route: HomeScreenProps<'ActiveTripChat'>['route'];
+  readonly navigation: {goBack(): void};
+  readonly route: {params: ChatRouteParams};
   readonly testID?: string;
 }
 
@@ -25,60 +26,45 @@ export const ActiveTripChatScreen: React.FC<ActiveTripChatScreenProps> = ({
   route,
   testID,
 }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([...mockChatMessages]);
+  const trip = useActiveTrip(route.params.tripId);
+  const paymentTripId = route.params.paymentTripId ?? (trip?.id === route.params.tripId ? trip?.paymentTripId : undefined);
+  const conversation = useMemo<ChatConversation | undefined>(() => {
+    if (route.params.bookingId && chatUuid.test(route.params.bookingId)) return {kind: 'BOOKING', id: route.params.bookingId};
+    if (paymentTripId && chatUuid.test(paymentTripId)) return {kind: 'TRIP', id: paymentTripId};
+    return undefined;
+  }, [route.params.bookingId, paymentTripId]);
+  const matchesTrip = trip && ((route.params.tripId && trip.id === route.params.tripId) || (paymentTripId && trip.paymentTripId === paymentTripId));
+  const ended = !!matchesTrip && [trip?.status, trip?.engineStatus].some(value => ['COMPLETED','CANCELLED'].includes(String(value).toUpperCase()));
+  const {messages, isLoading, error, closed, ready, sendMessage, retryMessage, fetchMessages} = useChat(conversation, ended);
   const [inputText, setInputText] = useState('');
   const flatListRef = useRef<FlatList>(null);
+  useEffect(() => { setInputText(''); }, [conversation?.kind, conversation?.id, closed]);
 
   const handleSend = useCallback(() => {
-    if (!inputText.trim()) return;
-    const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      sender: 'driver',
-      text: inputText.trim(),
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: 'sending',
-    };
-    setMessages((prev) => [...prev, newMsg]);
+    if (!ready || !inputText.trim()) return;
+    const text = inputText;
     setInputText('');
-    // Mock: update to 'sent' after delay
-    setTimeout(() => {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === newMsg.id ? { ...m, status: 'sent' as const } : m)),
-      );
-    }, 800);
-  }, [inputText]);
-
-  const mapImageStatus = (status: ChatMessage['status']): 'uploading' | 'sent' | 'failed' => {
-    if (status === 'sending') return 'uploading';
-    if (status === 'error') return 'failed';
-    return 'sent';
-  };
+    sendMessage(text).catch(() => undefined);
+  }, [inputText, ready, sendMessage]);
 
   const renderMessage = ({ item }: { item: ChatMessage }) => {
-    if (item.imageUrl) {
-      return (
-        <ChatImageBubble
-          imageUrl={item.imageUrl}
-          timestamp={item.timestamp}
-          isDriver={item.sender === 'driver'}
-          status={mapImageStatus(item.status)}
-        />
-      );
-    }
     return (
+      <View>
       <ChatBubble
         text={item.text ?? ''}
-        timestamp={item.timestamp}
+        timestamp={Number.isFinite(Date.parse(item.timestamp)) ? new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : ''}
         sender={item.sender === 'driver' ? 'driver' : 'other'}
         status={item.status === 'error' ? 'failed' : item.status}
       />
+      {item.status === 'error' && <Pressable accessibilityRole="button" accessibilityLabel="Retry message" disabled={!ready} onPress={() => { retryMessage(item).catch(() => undefined); }}><Text style={styles.notice}>Send not confirmed — tap to retry</Text></Pressable>}
+      </View>
     );
   };
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
       <AppHeader
-        title={chatLabels.title}
+        title="Customer chat"
         onBackPress={() => navigation.goBack()}
         showBackButton
       />
@@ -93,24 +79,29 @@ export const ActiveTripChatScreen: React.FC<ActiveTripChatScreenProps> = ({
           keyExtractor={(item) => item.id}
           renderItem={renderMessage}
           contentContainerStyle={styles.messageList}
+          ListHeaderComponent={isLoading ? <ActivityIndicator accessibilityLabel="Loading chat" /> : undefined}
+          ListEmptyComponent={<Text style={styles.notice}>{closed ? 'This trip has ended. Chat is closed.' : conversation ? 'No messages yet.' : 'Chat becomes available after assignment is confirmed.'}</Text>}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
 
-        {/* Input bar */}
+        {error ? <View><Text accessibilityRole="alert" style={styles.notice}>{error}</Text>{!closed && <Pressable accessibilityRole="button" accessibilityLabel="Refresh chat" onPress={fetchMessages}><Text style={styles.notice}>Retry</Text></Pressable>}</View> : null}
+        <Text style={styles.notice}>Chat is available only during this assigned trip.</Text>
         <View style={styles.inputBar}>
           <TextInput
             style={styles.textInput}
             placeholder={chatLabels.inputPlaceholder}
             placeholderTextColor={colors.outline}
             value={inputText}
+            editable={ready}
+            maxLength={2000}
             onChangeText={setInputText}
             onSubmitEditing={handleSend}
             returnKeyType="send"
           />
           <Pressable
-            style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
+            style={[styles.sendButton, (!ready || !inputText.trim()) && styles.sendButtonDisabled]}
             onPress={handleSend}
-            disabled={!inputText.trim()}
+            disabled={!ready || !inputText.trim()}
             accessibilityRole="button"
             accessibilityLabel={chatLabels.sendLabel}
           >
@@ -125,6 +116,7 @@ export const ActiveTripChatScreen: React.FC<ActiveTripChatScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
+  notice: { color: colors.onSurface, paddingHorizontal: spacing.containerPadding, paddingVertical: spacing.unit, ...typography.bodyMd },
   safeArea: {
     flex: 1,
     backgroundColor: colors.surface,

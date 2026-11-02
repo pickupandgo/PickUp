@@ -10,13 +10,23 @@ import { colors, spacing, borderRadius } from '../../theme';
 import type { RootStackParamList } from '../../types/navigation';
 import { attachNotificationNavigation, pushSession, pushState } from '../../services/notifications/notifications';
 import { notificationInbox } from '../../services/notifications/NotificationInbox';
+import { ChatService } from '../../services/chat/ChatService';
+import { TripController } from '../../services/trip/TripController';
 
 /** One listener set for the app, not one per tab or inbox mount. */
 export function NotificationRuntime() {
   const { locale } = useI18n();
   useEffect(() => {
     const messaging = getMessaging();
+    let previousTrip = TripController.getInstance().getTrip()?.id;
+    const stopTrip = TripController.getInstance().subscribe(trip => {
+      if (!trip || trip.id !== previousTrip || [trip.status, trip.engineStatus].some(status => ['COMPLETED', 'CANCELLED'].includes(String(status).toUpperCase()))) ChatService.getInstance().clear();
+      previousTrip = trip?.id;
+    });
+    let chatUid = getAuth().currentUser?.uid;
     const stopAuth = onAuthStateChanged(getAuth(), user => {
+      if (user?.uid !== getAuth().currentUser?.uid) return;
+      if (chatUid !== user?.uid) { ChatService.getInstance().clear(); chatUid = user?.uid; }
       pushSession.setUser(user, locale).catch(() => {});
     });
     const stopMessage = onMessage(messaging, message => pushSession.receive(message));
@@ -25,12 +35,13 @@ export function NotificationRuntime() {
     let mounted = true;
     getInitialNotification(messaging).then(message => { if (mounted && message) pushSession.tap(message); }).catch(() => {});
     const foreground = AppState.addEventListener('change', next => {
+      if (next !== 'active') ChatService.getInstance().clear();
       if (next === 'active') {
         pushSession.register().catch(() => {});
         notificationInbox.refresh().catch(() => {});
       }
     });
-    return () => { mounted = false; stopAuth(); stopMessage(); stopTap(); stopToken(); foreground.remove(); };
+    return () => { mounted = false; stopTrip(); stopAuth(); stopMessage(); stopTap(); stopToken(); foreground.remove(); };
   }, [locale]);
   return null;
 }
@@ -49,7 +60,10 @@ export function NotificationBanner() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { top } = useSafeAreaInsets();
   const { banner } = useSyncExternalStore(pushState.subscribe, pushState.getSnapshot);
-  useEffect(() => attachNotificationNavigation(id => navigation.navigate('Notifications', id ? { notificationId: id } : undefined)), [navigation]);
+  useEffect(() => attachNotificationNavigation((id, bookingId) => {
+    if (bookingId) navigation.navigate('TripChat', {bookingId});
+    else navigation.navigate('Notifications', id ? { notificationId: id } : undefined);
+  }), [navigation]);
   useEffect(() => {
     if (!banner) return;
     const timer = setTimeout(pushState.dismiss, 6000);

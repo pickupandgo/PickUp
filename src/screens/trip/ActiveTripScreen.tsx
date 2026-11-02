@@ -100,7 +100,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   }, [navigation, trip]);
 
   const handleSupport = useCallback(() => {
-    if (trip) navigation.navigate('ActiveTripChat', { tripId: trip.id });
+    if (trip) navigation.navigate('ActiveTripChat', { tripId: trip.id, paymentTripId: trip.paymentTripId ?? undefined });
   }, [navigation, trip]);
 
   const handleCollect = useCallback(

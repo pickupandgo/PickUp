@@ -24,6 +24,18 @@ test('foreground push invalidates history and shows one banner without automatic
   expect(deps.openInbox).not.toHaveBeenCalled();
   session.tap(message()); session.tap(message()); expect(deps.openInbox).toHaveBeenCalledTimes(1);
 });
+
+test('chat taps open only a validated booking for the authenticated recipient and deduplicate events', async () => {
+  const {session,deps}=setup(); deps.openChat=jest.fn(); await session.setUser(user('a'));
+  const bookingId='00000000-0000-4000-8000-000000000001';
+  const chat={messageId:'chat-1',data:{role:'DRIVER',recipientId:'recipient-a',notificationType:'NEW_CHAT_MESSAGE',bookingId}};
+  session.tap({...chat,data:{...chat.data,recipientId:'recipient-b'}});
+  expect(deps.openChat).not.toHaveBeenCalled();
+  session.tap(chat); session.tap(chat);
+  expect(deps.openChat).toHaveBeenCalledTimes(1); expect(deps.openChat).toHaveBeenCalledWith(bookingId);
+  session.tap({...chat,messageId:'chat-2',data:{...chat.data,bookingId:'untrusted-placeholder'}});
+  expect(deps.openChat).toHaveBeenCalledTimes(1);
+});
 test('rejects another account, customer role, missing recipient and messages without dedup keys', async () => {
   const { session, deps } = setup(); await session.setUser(user('a'));
   session.receive(message('x', 'recipient-b')); session.tap(message('y', 'recipient-b'));

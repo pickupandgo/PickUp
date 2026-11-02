@@ -105,7 +105,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
   }, [currentStop]);
 
   const handleChat = useCallback(() => {
-    if (trip) navigation.navigate('ActiveTripChat', { tripId: trip.id });
+    if (trip) navigation.navigate('ActiveTripChat', { tripId: trip.id, paymentTripId: trip.paymentTripId ?? undefined });
   }, [navigation, trip]);
 
   const handleCall = useCallback(() => {

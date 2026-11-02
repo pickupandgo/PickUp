@@ -15,6 +15,7 @@ export interface PushDependencies {
   refreshInbox(): Promise<void>;
   showBanner(message: PushEnvelope): void;
   openInbox(notificationId?: string): void;
+  openChat?(bookingId: string): void;
   clearBanner(): void;
   reportError(message: string | null): void;
 }
@@ -131,6 +132,12 @@ export class PushSession {
     if (!key || this.opened.has(key)) return;
     this.remember(this.opened, key);
     this.deps.clearBanner();
+    const bookingId = message.data?.bookingId;
+    if (message.data?.notificationType === 'NEW_CHAT_MESSAGE' && typeof bookingId === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(bookingId) && this.deps.openChat) {
+      this.deps.openChat(bookingId);
+      return;
+    }
     const id = message.data?.notificationId;
     this.deps.openInbox(typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id) ? id : undefined);
   }

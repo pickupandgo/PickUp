@@ -34,7 +34,7 @@ export type HomeStackParamList = {
   CancellationReason: { readonly tripId: string };
   CancellationProcessing: { readonly tripId: string; readonly reason: string };
   CancellationResult: { readonly tripId: string; readonly success: boolean };
-  ActiveTripChat: { readonly tripId: string };
+  ActiveTripChat: ChatRouteParams;
   TripOffer: { readonly offer: TripOffer; readonly driverId: string };
 };
 
@@ -112,7 +112,11 @@ export type RootStackParamList = {
   Onboarding: NavigatorScreenParams<AuthStackParamList>;
   Main: NavigatorScreenParams<MainTabParamList>;
   Notifications: { readonly notificationId?: string } | undefined;
+  TripChat: ChatRouteParams;
 };
+
+/** Engine IDs are for display/navigation only; chat uses a confirmed backend reference. */
+export type ChatRouteParams = {readonly tripId?: string; readonly paymentTripId?: string; readonly bookingId?: string};
 
 // ─── Screen Props Helpers ──────────────────────────────────────────
 
