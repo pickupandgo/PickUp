@@ -1,5 +1,6 @@
 import TripRouteDetailsScreen from './src/screens/logistics/TripRouteDetailsScreen';
 import { usePushNotifications } from './src/hooks/usePushNotifications';
+import { useChatPrivacy, useChatTripPrivacy } from './src/hooks/useChatPrivacy';
 import { pushNavigationRef, flushPendingPush } from './src/services/pushNavigation';
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, FlatList, StatusBar } from 'react-native';
@@ -281,6 +282,7 @@ function OnboardingNavigator() {
 }
 
 function RootNavigator({ splashComplete, onSplashComplete }: { splashComplete: boolean; onSplashComplete: () => void }) {
+  useChatTripPrivacy(useBooking().trip);
   const { isLoggedIn, hasProfile, authUid } = useSession();
 
   if (!splashComplete || isLoggedIn === null || (isLoggedIn && hasProfile === null)) {
@@ -319,6 +321,7 @@ function SessionContent() {
   const [splashComplete, setSplashComplete] = useState(false);
   const finishSplash = useCallback(() => setSplashComplete(true), []);
   usePushNotifications(authUid, isLoggedIn === true && hasProfile === true);
+  useChatPrivacy(authUid);
   return <BookingProvider key={authUid ?? 'signed-out'}><RootNavigator splashComplete={splashComplete} onSplashComplete={finishSplash} /></BookingProvider>;
 }
 

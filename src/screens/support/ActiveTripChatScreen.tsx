@@ -16,16 +16,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { getAuth } from '@react-native-firebase/auth';
+import { useFocusEffect } from '@react-navigation/native';
 import type { Trip } from '../../api/types';
 import { toApiError } from '../../api/http';
 import { useSelectedTrip } from '../../hooks/useSelectedTrip';
+import { useTripStatus } from '../../hooks/useTripStatus';
 import { useBooking } from '../../state/BookingContext';
 import { getVehicleImage } from '../../utils/vehicleAssets';
 import {
   fetchChatMessages,
   sendChatMessage,
   markCustomerChatRead,
-  getCachedCustomerChat, restoreCustomerChat, newChatMessageId,
+  clearCustomerChatConversation, newChatMessageId,
   type CustomerChatMessage,
 } from '../../services/chatService';
 
@@ -35,12 +37,12 @@ export interface ActiveTripChatScreenProps {
   readonly onAttachFile?: () => void;
 }
 
-const ConversationChatScreen: React.FC<ActiveTripChatScreenProps & { navigation?: any; route?: any; resolvedTrip?: Trip; conversationId?: string }> = ({
+const ConversationChatScreen: React.FC<ActiveTripChatScreenProps & { navigation?: any; route?: any; resolvedTrip?: Trip; conversationId?: string; conversationEnded?: boolean }> = ({
   onBack,
   onNotifications,
   onAttachFile,
   navigation,
-  route, resolvedTrip, conversationId,
+  route, resolvedTrip, conversationId, conversationEnded,
 }) => {
   const context = useBooking();
   const trip = resolvedTrip;
@@ -50,6 +52,8 @@ const ConversationChatScreen: React.FC<ActiveTripChatScreenProps & { navigation?
   const ride = scoped ? context.ride : undefined;
   const draft = scoped ? context.draft : { drops: [] } as typeof context.draft;
   const [inputText, setInputText] = useState('');
+  const [chatClosed, setChatClosed] = useState(!!conversationEnded);
+  const [confirmedActive, setConfirmedActive] = useState(false);
   const [messages, setMessages] = useState<CustomerChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
@@ -59,7 +63,19 @@ const ConversationChatScreen: React.FC<ActiveTripChatScreenProps & { navigation?
   const [appActive, setAppActive] = useState(AppState.currentState !== 'background' && AppState.currentState !== 'inactive');
   const sending = useRef(false);
   const sendControllers = useRef(new Set<AbortController>());
-  useEffect(() => { const sub = AppState.addEventListener('change', state => setAppActive(state !== 'background' && state !== 'inactive')); return () => sub.remove(); }, []);
+  const [focused, setFocused] = useState(false);
+  useFocusEffect(useCallback(() => {
+    setFocused(true);
+    return () => {
+      setFocused(false); setMessages([]); setInputText(''); setConfirmedActive(false);
+      sendControllers.current.forEach(controller => controller.abort());
+      if (conversationId) clearCustomerChatConversation(conversationId);
+    };
+  }, [conversationId]));
+  useEffect(() => { const sub = AppState.addEventListener('change', state => {
+    const active = state !== 'background' && state !== 'inactive'; setAppActive(active);
+    if (!active) { setMessages([]); setInputText(''); setConfirmedActive(false); sendControllers.current.forEach(controller => controller.abort()); }
+  }); return () => sub.remove(); }, []);
 
   const driverName =
     route?.params?.driverName ||
@@ -98,49 +114,46 @@ const ConversationChatScreen: React.FC<ActiveTripChatScreenProps & { navigation?
   }, []);
 
   useEffect(() => {
-    if (!conversationId || !appActive) return;
+    if (!conversationId || !appActive || !focused) return;
     const controller = new AbortController();
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setIsLoading(true);
+    setMessages([]); setConfirmedActive(false);
     const load = async () => {
       try {
         const remote = await fetchChatMessages(conversationId, controller.signal);
         if (disposed) return;
-        setMessages(remote); setLoadError(undefined);
-        await markCustomerChatRead(conversationId, controller.signal);
-      } catch (error) { if (!disposed) { const failure = toApiError(error); if (failure.status === 401 || failure.status === 403) setMessages([]); setLoadError(failure.userMessage); } }
+        if (remote.some(message => message.sender !== 'customer' && ['sent','delivered'].includes(message.status))) await markCustomerChatRead(conversationId, controller.signal);
+        if (disposed) return;
+        setMessages(remote); setLoadError(undefined); setConfirmedActive(true);
+      } catch (error) { if (!disposed) { const failure = toApiError(error); if ([401,403,410].includes(failure.status ?? 0)) { setMessages([]); setInputText(''); setConfirmedActive(false); setChatClosed(true); clearCustomerChatConversation(conversationId); controller.abort(); } setLoadError(failure.status === 410 ? 'This trip has ended. Chat is closed.' : failure.userMessage); } }
       finally {
-        if (!disposed) { setIsLoading(false); timer = setTimeout(() => { void load(); }, 3500); }
+        if (!disposed) { setIsLoading(false); if (!controller.signal.aborted) timer = setTimeout(() => { void load(); }, 3500); }
       }
     };
-    void (async () => {
-      try {
-        const cached = await restoreCustomerChat(conversationId);
-        if (disposed) return;
-        if (!disposed) setMessages(cached);
-      } catch { if (!disposed) setLoadError('Saved messages could not be loaded.'); }
-      if (!disposed) void load();
-    })();
+    void load();
     return () => { disposed = true; controller.abort(); if (timer) clearTimeout(timer); };
-  }, [conversationId, appActive]);
+  }, [conversationId, appActive, focused]);
 
   const transmit = async (message: CustomerChatMessage) => {
-    if (!conversationId || !message.clientMessageId) return;
+    if (!conversationId || !appActive || !focused || chatClosed || !confirmedActive || !message.clientMessageId) return;
     const controller = new AbortController(); sendControllers.current.add(controller);
     setMessages(previous => previous.map(item => item.clientMessageId === message.clientMessageId ? { ...item, status: 'sending' } : item));
     try {
       const confirmed = await sendChatMessage(conversationId, message.text ?? '', message.imageUrl, message.clientMessageId, controller.signal);
-      if (isMountedRef.current) setMessages(previous => [...previous.filter(item => item.clientMessageId !== message.clientMessageId && item.id !== confirmed.id), confirmed]);
+      if (isMountedRef.current && !controller.signal.aborted) setMessages(previous => [...previous.filter(item => item.clientMessageId !== message.clientMessageId && item.id !== confirmed.id), confirmed]);
     } catch (error) {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && !controller.signal.aborted) {
+        const failure = toApiError(error);
+        if ([401,403,410].includes(failure.status ?? 0)) { setMessages([]); setInputText(''); setChatClosed(true); setConfirmedActive(false); clearCustomerChatConversation(conversationId); setLoadError('This chat is no longer available.'); return; }
         setMessages(previous => previous.map(item => item.clientMessageId === message.clientMessageId ? { ...item, status: 'error' } : item));
         setLoadError(toApiError(error).userMessage);
       }
     } finally { sendControllers.current.delete(controller); }
   };
   const handleSend = async () => {
-    if (sending.current || !conversationId || isLoading || !inputText.trim()) return;
+    if (sending.current || !conversationId || !appActive || !focused || chatClosed || !confirmedActive || isLoading || !inputText.trim()) return;
     sending.current = true;
     const clientMessageId = newChatMessageId();
     const message: CustomerChatMessage = { id: `local:${clientMessageId}`, clientMessageId, text: inputText.trim(), sender: 'customer', timestamp: new Date().toISOString(), status: 'sending' };
@@ -313,13 +326,13 @@ const ConversationChatScreen: React.FC<ActiveTripChatScreenProps & { navigation?
           )}
         </ScrollView>
 
-        {(!conversationId || loadError) && <Text style={{ color: colors.onSurface, padding: spacing.sm }}>{!conversationId ? 'Chat is unavailable until this booking is confirmed.' : `Could not refresh chat. Saved messages may be shown. ${loadError}`}</Text>}
+        {(!conversationId || loadError || chatClosed) && <Text style={{ color: colors.onSurface, padding: spacing.sm }}>{chatClosed ? 'This trip has ended. Chat is closed.' : !conversationId ? 'Chat is unavailable until driver assignment is confirmed.' : `Could not refresh chat. ${loadError}`}</Text>}
         {/* Input Bar */}
         <View style={styles.inputContainer}>
           <Pressable
             style={styles.clipButton}
             onPress={handleAttachment}
-            disabled={!onAttachFile || !conversationId}
+            disabled
             accessibilityRole="button"
             accessibilityLabel="Attach photo"
           >
@@ -331,7 +344,7 @@ const ConversationChatScreen: React.FC<ActiveTripChatScreenProps & { navigation?
             placeholder={`Message ${driverName}...`}
             placeholderTextColor="#94A3B8"
             maxLength={2000}
-            editable={!!conversationId}
+            editable={!!conversationId && appActive && focused && confirmedActive && !chatClosed}
             value={inputText}
             onChangeText={setInputText}
             onSubmitEditing={handleSend}
@@ -341,7 +354,7 @@ const ConversationChatScreen: React.FC<ActiveTripChatScreenProps & { navigation?
           <Pressable
             style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
             onPress={handleSend}
-            disabled={!inputText.trim() || !conversationId || isLoading}
+            disabled={!inputText.trim() || !conversationId || !appActive || !focused || isLoading || chatClosed || !confirmedActive}
             accessibilityRole="button"
             accessibilityLabel="Send message"
           >
@@ -597,12 +610,20 @@ const styles = StyleSheet.create({
 
 const ActiveTripChatScreen: React.FC<ActiveTripChatScreenProps & { navigation?: any; route?: any }> = props => {
   const context = useBooking();
-  const trip = useSelectedTrip(props.route?.params, context.trip);
+  const selected = useSelectedTrip(props.route?.params, context.trip);
+  const current = context.trip?.id === selected?.id ? context.trip : context.completedBooking?.trip.id === selected?.id ? context.completedBooking?.trip : selected;
+  const [focused, setFocused] = useState(false);
+  useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
+  const { trip: polled } = useTripStatus(current?.id, { enabled: focused && !!current && !['COMPLETED', 'CANCELLED'].includes(current.status) });
+  const trip = polled ?? current;
+  useEffect(() => { if (polled && polled.id === context.trip?.id) context.setTrip?.(polled); }, [polled, context.trip?.id, context.setTrip]);
   const params = props.route?.params;
   const explicit = !!params && ('trip' in params || 'tripId' in params || 'bookingId' in params || 'paymentBookingId' in params);
   const bookingId = trip?.paymentBookingId ?? params?.paymentBookingId ?? params?.bookingId ?? (!explicit ? context.ride?.paymentBookingId : undefined);
   const uid = getAuth().currentUser?.uid;
-  return <ConversationChatScreen key={`${uid ?? 'signed-out'}:${bookingId ?? 'unavailable'}`} {...props} resolvedTrip={trip} conversationId={uid ? bookingId : undefined} />;
+  const ended = !!trip && ['COMPLETED','CANCELLED'].includes(trip.status);
+  useEffect(() => { if (ended && bookingId) clearCustomerChatConversation(bookingId); }, [ended,bookingId]);
+  return <ConversationChatScreen key={`${uid ?? 'signed-out'}:${bookingId ?? 'unavailable'}:${ended}`} {...props} resolvedTrip={trip} conversationEnded={ended} conversationId={uid && !ended ? bookingId : undefined} />;
 };
 
 export default ActiveTripChatScreen;

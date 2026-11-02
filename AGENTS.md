@@ -141,3 +141,12 @@ read-only English language and one Logout entry. History belongs to Trips tab. S
 CustomerSettingsScreen source removed; old route aliases ProfileScreen. Do not reintroduce
 Profile/Settings/Account loops, duplicate notification buttons or a selectable language until
 implemented. Logout confirmation no longer renders a fake Settings page behind its dialog.
+
+## Active-trip chat privacy (2026-11-02 integration)
+
+Chat uses RAM only; useChatPrivacy clears it on auth/background and purges only legacy chat
+AsyncStorage keys. useChatTripPrivacy clears matching previous/ended booking conversations,
+not unrelated chats, before passive chat requests begin. Chat polls trip status while focused
+and prefers current/retired matching trip state over stale route snapshots. Late auth/closed
+errors and aborted sends must not restore old content or clear a new session. Background/blur
+clears unsent drafts as requested by the developer design; attachments remain disabled.

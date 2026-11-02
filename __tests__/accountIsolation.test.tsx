@@ -97,7 +97,8 @@ it('scopes chat cache by account and never reads the legacy conversation-only ca
   mockUser = { uid: 'B' };
   expect(await getCachedCustomerChat('conversation')).toEqual([]);
   mockUser = { uid: 'A' };
-  expect(await getCachedCustomerChat('conversation')).toEqual([message]);
+  // Switching accounts irreversibly clears the previous account's RAM-only chat copy.
+  expect(await getCachedCustomerChat('conversation')).toEqual([]);
   mockUser = null;
   expect(await getCachedCustomerChat('conversation')).toEqual([]);
 });
