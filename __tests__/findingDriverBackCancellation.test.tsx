@@ -40,7 +40,7 @@ it('opens assigned Trip Details without a GPS or trip read blocking it', async (
   (findDriverAndCreateRide as jest.Mock).mockResolvedValue({ ride: { id: 'assigned', status: 'ACCEPTED' } });
   const dispatch = jest.fn(); let view: any;
   await act(async () => { view = TestRenderer.create(<Harness navigation={{ getParent: () => ({ dispatch }) }} />); });
-  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ routes: expect.arrayContaining([expect.objectContaining({ name: 'ActiveTripStack', state: { index: 0, routes: [{ name: 'DriverAssignedExpandedScreen', params: undefined }] } })]) }) }));
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ routes: expect.arrayContaining([expect.objectContaining({ name: 'ActiveTripStack', state: { index: 0, routes: [{ name: 'CustomerLiveTrackingScreen', params: undefined }] } })]) }) }));
   act(() => view.unmount());
 });
 it('keeps network failures recoverable instead of claiming no drivers', async () => {

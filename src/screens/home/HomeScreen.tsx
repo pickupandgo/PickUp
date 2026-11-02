@@ -6,8 +6,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import { strings } from '../../data/mockData';
 import { bookingOwner, bookingRevision } from '../../state/pendingBooking';
 import { useBooking } from '../../state/BookingContext';
-import { getCurrentPlace, reverseGeocode, type ResolvedPlace } from '../../api/geocoding';
-import type { GeoPoint } from '../../api/types';
+import { getCurrentPlace, type ResolvedPlace } from '../../api/geocoding';
 import { getActiveTripForCustomer, getDriver, getRide } from '../../api/engine';
 import { toApiError } from '../../api/http';
 import { useTripStatus } from '../../hooks/useTripStatus';
@@ -68,42 +67,14 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
   const topSafeOffset = Math.max(insets.top, 36) + spacing.sm;
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string>();
-  const blueDotRef = useRef<GeoPoint | undefined>(undefined);
   const [forceCenterKey, setForceCenterKey] = useState(1);
   const [deviceLocation, setDeviceLocation] = useState<any>();
-  const deviceLocationRef = useRef<any>(null);
-  const isResolvingLocationRef = useRef(false);
-
   const handleUserLocationChange = useCallback(
-    async (loc: any) => {
+    (loc: any) => {
       if (!loc || !Number.isFinite(loc.latitude) || !Number.isFinite(loc.longitude)) return;
-      blueDotRef.current = loc;
-      deviceLocationRef.current = loc;
       setDeviceLocation(loc);
-
-      // Automatically populate pickup location as soon as map detects user location
-      if (!draft.pickup && !isResolvingLocationRef.current) {
-        isResolvingLocationRef.current = true;
-        try {
-          const bp: GeoPoint = {
-            latitude: loc.latitude,
-            longitude: loc.longitude,
-          };
-          const resolved = await reverseGeocode(bp).catch(() => '');
-          const address = resolved || `${bp.latitude.toFixed(5)}, ${bp.longitude.toFixed(5)}`;
-          setPickup({
-            latitude: bp.latitude,
-            longitude: bp.longitude,
-            address,
-          });
-        } catch {
-          // ignore background reverse geocode error
-        } finally {
-          isResolvingLocationRef.current = false;
-        }
-      }
     },
-    [draft.pickup, setPickup]
+    []
   );
 
   // Reaching Home means the user finished login/onboarding — persist the
@@ -119,42 +90,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
     setIsLocating(true);
     setLocationError(undefined);
     try {
-      let place = await getCurrentPlace().catch(async (err) => {
-        if (
-          blueDotRef.current &&
-          typeof blueDotRef.current.latitude === 'number' &&
-          typeof blueDotRef.current.longitude === 'number' &&
-          Number.isFinite(blueDotRef.current.latitude) &&
-          Number.isFinite(blueDotRef.current.longitude)
-        ) {
-          const bp: GeoPoint = {
-            latitude: blueDotRef.current.latitude,
-            longitude: blueDotRef.current.longitude,
-          };
-          const resolved = await reverseGeocode(bp).catch(() => '');
-          return {
-            ...bp,
-            address:
-              resolved ||
-              `${bp.latitude.toFixed(5)}, ${bp.longitude.toFixed(5)}`,
-          };
-        }
-        throw err;
-      });
-      
-      if (
-        blueDotRef.current &&
-        typeof blueDotRef.current.latitude === 'number' &&
-        typeof blueDotRef.current.longitude === 'number' &&
-        Number.isFinite(blueDotRef.current.latitude) &&
-        Number.isFinite(blueDotRef.current.longitude)
-      ) {
-        place = {
-          ...place,
-          latitude: blueDotRef.current.latitude,
-          longitude: blueDotRef.current.longitude,
-        };
-      }
+      const place = await getCurrentPlace();
       
       if (place && Number.isFinite(place.latitude) && Number.isFinite(place.longitude)) {
         setPickup(place);
@@ -175,28 +111,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
   // Center on user on first mount and initialize pickup with readable address.
   const centerOnUser = useCallback(async () => {
     try {
-      const place = await getCurrentPlace().catch(async (err) => {
-        if (
-          blueDotRef.current &&
-          typeof blueDotRef.current.latitude === 'number' &&
-          typeof blueDotRef.current.longitude === 'number' &&
-          Number.isFinite(blueDotRef.current.latitude) &&
-          Number.isFinite(blueDotRef.current.longitude)
-        ) {
-          const bp: GeoPoint = {
-            latitude: blueDotRef.current.latitude,
-            longitude: blueDotRef.current.longitude,
-          };
-          const resolved = await reverseGeocode(bp).catch(() => '');
-          return {
-            ...bp,
-            address:
-              resolved ||
-              `${bp.latitude.toFixed(5)}, ${bp.longitude.toFixed(5)}`,
-          };
-        }
-        throw err;
-      });
+      const place = await getCurrentPlace();
       if (place && Number.isFinite(place.latitude) && Number.isFinite(place.longitude)) {
         setDeviceLocation(place);
         if (!draft.pickup) {
@@ -402,7 +317,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
                 onActiveTripPress();
               } else {
                 navigation?.navigate('ActiveTripStack', {
-                  screen: trip?.status === 'DRIVER_ASSIGNED' ? 'DriverAssignedExpandedScreen' : 'CustomerLiveTrackingScreen',
+                  screen: 'CustomerLiveTrackingScreen',
                 });
               }
             }}

@@ -95,8 +95,16 @@ const GALLERY_ONLY = new Set([
 ]);
 // Audited compatibility destinations. Keep reasons explicit; do not silently count them as reachable.
 const compatibility = {
+  CustomerSettingsScreen: 'Legacy settings route aliases the single Profile hub; duplicate settings/account UI removed.',
+  TripCompletedSummaryScreen: 'Legacy summary route opens the unified completion screen; duplicate source removed.',
+  DeclaredValueSelectionScreen: 'Legacy value edit opens merged GoodsDetailsScreen focused on declared value; separate UI removed.',
+  GoodsInsuranceScreen: 'Legacy goods-value route opens merged GoodsDetailsScreen; separate value/insurance UI removed.',
   NoDriversAvailableScreen: 'Legacy recovery entry rechecks server state through shared Review finding/result UI; normal search renders result in place.',
-  DriverFoundScreen: 'Legacy assignment alias opens Trip Details directly; current search replaces with DriverAssignedExpandedScreen.',
+  DriverFoundScreen: 'Legacy notification/restored route alias opens the unified CustomerLiveTrackingScreen.',
+  DriverAssignedScreen: 'Legacy assignment route alias; separate UI removed in favour of unified tracking.',
+  DriverAssignedExpandedScreen: 'Legacy Trip Details route alias; separate UI removed in favour of unified tracking.',
+  PickupVerifiedSuccessScreen: 'Legacy pickup route alias; verification now updates the unified tracking screen in place.',
+  PickupOtpVerificationScreen: 'Legacy OTP route alias; gated OTP now appears on unified tracking.',
   DropCompletedStateScreen: 'Legacy route projects real trip state; live tracking already displays stop outcomes.',
   ReceiverDetailsScreen: 'Legacy form retained; the current location flow edits receiver fields inline.',
   WrittenReviewScreen: 'M11 compatibility route explicitly says submission unavailable.',

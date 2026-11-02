@@ -30,6 +30,7 @@ beforeEach(() => {
 });
 
 async function mountProfile() {
+  const navigate = jest.fn();
   const addListener = jest.fn((_event, callback) => {
     focus = callback;
     return jest.fn();
@@ -45,11 +46,11 @@ async function mountProfile() {
     renderer = TestRenderer.create(
       <SessionProvider>
         <Capture />
-        <ProfileScreen navigation={{ addListener, navigate: jest.fn() }} />
+        <ProfileScreen navigation={{ addListener, navigate }} />
       </SessionProvider>,
     );
   });
-  return { renderer: renderer!, addListener, getFocus: () => focus, getRefresh: () => refreshProfile };
+  return { renderer: renderer!, addListener, navigate, getFocus: () => focus, getRefresh: () => refreshProfile };
 }
 
 it('does not re-request or rebind focus when a successful profile refresh updates provider state', async () => {
@@ -83,4 +84,20 @@ it('stops at one request after backend failure and coalesces simultaneous refres
   } finally {
     warning.mockRestore();
   }
+});
+
+it('has one account hub, unique working shortcuts and no Settings/Account navigation loop', async () => {
+  (fetchUserProfileApi as jest.Mock).mockResolvedValue(remote);
+  const { renderer, navigate } = await mountProfile();
+  const root: any = renderer.root;
+  for (const [label, screen] of [['Edit Profile', 'EditProfileScreen'], ['Saved addresses', 'SavedAddressesScreen'], ['Notifications', 'NotificationCenterScreen'], ['Logout', 'LogoutConfirmationScreen']]) {
+    const nodes = root.findAll((node: any) => node.props.accessibilityLabel === label && typeof node.props.onPress === 'function');
+    expect(nodes).toHaveLength(1);
+    act(() => nodes[0].props.onPress());
+    expect(navigate).toHaveBeenLastCalledWith(screen);
+  }
+  const text = root.findAllByType(Text).map((node: any) => node.props.children).flat().join(' ');
+  expect(text).not.toContain('Settings'); expect(text).not.toContain('Booking History');
+  expect(root.findAll((node: any) => node.props.accessibilityLabel === 'Language' && node.props.onPress)).toHaveLength(0);
+  await act(async () => renderer.unmount());
 });

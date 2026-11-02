@@ -46,6 +46,8 @@ export interface BookingDraft {
 const EMPTY_DRAFT: BookingDraft = { drops: [], paymentMethod: 'PAY_AT_DELIVERY', collectionPreference: 'CASH' };
 
 interface BookingContextValue {
+  /** Read-only completion snapshot; never an active booking or a new booking draft. */
+  readonly completedBooking?: { readonly trip: Trip; readonly ride?: Ride; readonly driver?: NearbyDriver };
   readonly pendingInput?: CreateRideInput;
   readonly rememberPendingInput?: (input: CreateRideInput) => void;
   readonly recoveringBooking?: boolean;
@@ -117,6 +119,7 @@ const AccountBookingProvider: React.FC<{ children: React.ReactNode; customerId?:
   }, []);
   const [trip, setTrip] = useState<Trip>();
   const [assignedDriver, setAssignedDriver] = useState<NearbyDriver>();
+  const [completedBooking, setCompletedBooking] = useState<BookingContextValue['completedBooking']>();
 
   const [pendingInput, setPendingInput] = useState<CreateRideInput>();
   const [recoveringBooking, setRecoveringBooking] = useState(true);
@@ -159,7 +162,7 @@ const AccountBookingProvider: React.FC<{ children: React.ReactNode; customerId?:
         if (found) {
           if (found.status === 'CANCELLED' || found.bookingStatus === 'COMPLETED') {
             await writePendingBooking(customerId, null, journalRevision, { value: saved });
-            if (alive.current && version === recoveryVersion.current && bookingRevision(customerId) === journalRevision + 1) { setPendingInput(undefined); storeRide(undefined); setTrip(undefined); setAssignedDriver(undefined); setRecoveringBooking(false); setBookingRecoveryError(undefined); }
+            if (alive.current && version === recoveryVersion.current && bookingRevision(customerId) === journalRevision + 1) { setPendingInput(undefined); storeRide(undefined); setTrip(undefined); setAssignedDriver(undefined); setDraft(EMPTY_DRAFT); setRecoveringBooking(false); setBookingRecoveryError(undefined); }
           } else {
             const input = saved?.input ?? (found.quoteId && found.paymentMethod ? { quoteId: found.quoteId, paymentMethod: found.paymentMethod } : undefined);
             if (input) await writePendingBooking(customerId, { input, rideId: found.id }, journalRevision);
@@ -282,6 +285,7 @@ const AccountBookingProvider: React.FC<{ children: React.ReactNode; customerId?:
   const resetDraft = useCallback(() => setDraft(EMPTY_DRAFT), []);
 
   const startNewBooking = useCallback(() => {
+    setCompletedBooking(undefined);
     setDraft((d) => ({
       ...EMPTY_DRAFT,
       pickup: d.pickup,
@@ -310,11 +314,44 @@ const AccountBookingProvider: React.FC<{ children: React.ReactNode; customerId?:
     setBookingRecoveryError(undefined);
   }, []);
 
+  // Server completion retires the active booking even if the user never taps Home.
+  // Keep the receipt snapshot separate and clear only this ride's recovery journal.
+  useEffect(() => {
+    if (trip?.status !== 'COMPLETED' || !customerId) return;
+    const finished = trip;
+    const finishedRide = ride?.id === finished.rideId ? ride : undefined;
+    setCompletedBooking({ trip: finished, ride: finishedRide, driver: assignedDriver?.id === finished.driverId ? assignedDriver : undefined });
+    clearActiveRide();
+    setRecoveringBooking(true);
+    const version = recoveryVersion.current;
+    const revision = bookingRevision(customerId);
+    const current = () => alive.current && recoveryVersion.current === version && bookingRevision(customerId) === revision;
+    const cleanup = (async () => {
+      try {
+        const saved = await readPendingBooking(customerId);
+        if (!current()) return;
+        if (saved && (saved.rideId === finished.rideId || (finishedRide?.quoteId && saved.input.quoteId === finishedRide.quoteId))) {
+          await writePendingBooking(customerId, null, revision, { value: saved });
+        } else if (saved) {
+          throw new Error('A different booking needs recovery.');
+        }
+        if (alive.current && recoveryVersion.current === version) setBookingRecoveryError(undefined);
+      } catch {
+        if (alive.current && recoveryVersion.current === version) setBookingRecoveryError('Could not clear completed booking recovery. Retry recovery before booking again.');
+      } finally {
+        if (alive.current && recoveryVersion.current === version) setRecoveringBooking(false);
+      }
+    })();
+    recoveryFlight.current = cleanup;
+    void cleanup.finally(() => { if (recoveryFlight.current === cleanup) recoveryFlight.current = null; });
+  }, [trip, ride, assignedDriver, customerId, clearActiveRide]);
+
   const primaryDrop = draft.drops[0];
 
   const value = useMemo<BookingContextValue>(
     () => ({
       customerId, pendingInput, rememberPendingInput: setPendingInput, recoveringBooking, bookingRecoveryError, recoverBooking,
+      completedBooking,
       draft,
       primaryDrop,
       canEstimate: Boolean(draft.pickup && draft.drops.length > 0),
@@ -344,6 +381,7 @@ const AccountBookingProvider: React.FC<{ children: React.ReactNode; customerId?:
     }),
     [
       customerId, pendingInput, recoveringBooking, bookingRecoveryError, recoverBooking,
+      completedBooking,
       draft,
       primaryDrop,
       setPickup,

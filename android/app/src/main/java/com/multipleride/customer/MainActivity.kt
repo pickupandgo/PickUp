@@ -9,6 +9,8 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
 class MainActivity : ReactActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    // The launch theme must not leave its blue system navigation area in the app.
+    setTheme(R.style.AppTheme)
     super.onCreate(null)
   }
 

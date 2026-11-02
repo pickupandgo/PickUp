@@ -271,3 +271,43 @@ it('can release active search context while preserving all booking details for a
   expect(state.ride).toBeUndefined(); expect(state.trip).toBeUndefined(); expect(state.pendingInput).toBeUndefined();
   act(() => view!.unmount());
 });
+
+it('retires a server-completed trip and its journal without a Home tap, keeping a separate summary snapshot', async () => {
+  await writePendingBooking('A', { input, rideId: ride.id });
+  let state!: ReturnType<typeof useBooking>;
+  function Capture() { state = useBooking(); return null; }
+  let view: any;
+  await act(async () => { view = TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
+  const completed: any = { id: 'trip-A', rideId: ride.id, driverId: 'driver-A', status: 'COMPLETED', stops: [], pickup: { latitude: 26, longitude: 73 } };
+  await act(async () => { state.setRide(ride); state.addDrop({ latitude: 26.1, longitude: 73.1, address: 'Drop' }); state.setTrip(completed); });
+  expect(state.trip).toBeUndefined(); expect(state.ride).toBeUndefined(); expect(state.pendingInput).toBeUndefined();
+  expect(state.draft.drops).toHaveLength(0); expect(state.completedBooking?.trip).toEqual(completed);
+  expect(await readPendingBooking('A')).toBeNull();
+  act(() => view.unmount());
+  await act(async () => { view = TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
+  expect(state.trip).toBeUndefined(); expect(state.ride).toBeUndefined(); expect(state.bookingRecoveryError).toBeUndefined();
+  act(() => view.unmount());
+});
+it('does not retire a delivered trip before the server confirms COMPLETED', async () => {
+  await writePendingBooking('A', { input, rideId: ride.id });
+  let state!: ReturnType<typeof useBooking>;
+  function Capture() { state = useBooking(); return null; }
+  let view: any;
+  await act(async () => { view = TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
+  await act(async () => { state.setRide(ride); state.setTrip({ id: 'trip-A', rideId: ride.id, status: 'DELIVERED' } as any); });
+  expect(state.trip?.status).toBe('DELIVERED'); expect(state.ride?.id).toBe(ride.id);
+  expect((await readPendingBooking('A'))?.rideId).toBe(ride.id);
+  act(() => view.unmount());
+});
+it('never deletes a different booking journal during completion cleanup', async () => {
+  const other = { input: { ...input, quoteId: 'another-quote' }, rideId: 'another-ride' };
+  await writePendingBooking('A', other);
+  let state!: ReturnType<typeof useBooking>;
+  function Capture() { state = useBooking(); return null; }
+  let view: any;
+  await act(async () => { view = TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
+  await act(async () => { state.setRide(ride); state.setTrip({ id: 'trip-A', rideId: ride.id, status: 'COMPLETED' } as any); });
+  expect(await readPendingBooking('A')).toEqual(other);
+  expect(state.bookingRecoveryError).toContain('Retry recovery');
+  act(() => view.unmount());
+});

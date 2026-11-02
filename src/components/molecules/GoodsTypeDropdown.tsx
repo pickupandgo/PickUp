@@ -11,6 +11,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 
 export const GOODS_CATEGORIES: readonly string[] = [
@@ -44,6 +45,8 @@ const GoodsTypeDropdown: React.FC<GoodsTypeDropdownProps> = ({
   style,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const insets = useSafeAreaInsets();
+  const categoryIcon = (type: string): string => ({ Furniture: 'sidebar', Electronics: 'monitor', 'Household Goods': 'home', 'Construction Materials': 'layers', 'Commercial Goods': 'shopping-bag', 'Clothing / Apparel': 'shopping-bag', 'Documents / Parcels': 'file-text' }[type] ?? 'package');
 
   const handleToggle = () => {
     Keyboard.dismiss();
@@ -69,6 +72,7 @@ const GoodsTypeDropdown: React.FC<GoodsTypeDropdownProps> = ({
         accessibilityLabel="Select goods type"
         accessibilityState={{ expanded: isOpen }}
       >
+        <Feather name={categoryIcon(selectedType)} size={spacing.xl} color={colors.homeAction} />
         <Text style={[styles.selectText, !selectedType && styles.selectPlaceholder]}>
           {selectedType || placeholder}
         </Text>
@@ -96,13 +100,13 @@ const GoodsTypeDropdown: React.FC<GoodsTypeDropdownProps> = ({
               accessibilityRole="button"
               accessibilityLabel="Close selection"
             />
-            <View style={styles.sheetContainer} testID="goods-type-dropdown-menu">
+            <View style={[styles.sheetContainer, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} testID="goods-type-dropdown-menu" accessibilityViewIsModal>
               <View style={styles.dragHandleContainer}>
                 <View style={styles.dragHandle} />
               </View>
 
               <View style={styles.sheetHeader}>
-                <Text style={styles.sheetTitle}>Goods/Load Type</Text>
+                <Text style={styles.sheetTitle}>Goods type</Text>
                 <Pressable
                   testID="goods-type-close-button"
                   style={styles.closeButton}
@@ -133,6 +137,7 @@ const GoodsTypeDropdown: React.FC<GoodsTypeDropdownProps> = ({
                       accessibilityState={{ selected: isSelected }}
                       accessibilityLabel={item}
                     >
+                      <Feather name={categoryIcon(item)} size={spacing.xxl} color={isSelected ? colors.homePickup : colors.homeAction} />
                       <Text
                         style={[
                           styles.dropdownItemText,
@@ -141,7 +146,7 @@ const GoodsTypeDropdown: React.FC<GoodsTypeDropdownProps> = ({
                       >
                         {item}
                       </Text>
-                      {isSelected && <Feather name="check" size={20} color={colors.primary} />}
+                      {isSelected && <Feather name="check-circle" size={spacing.xl} color={colors.homePickup} />}
                     </Pressable>
                   );
                 })}
@@ -163,18 +168,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: colors.surfaceVariant,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.outlineVariant,
     borderRadius: 12,
     paddingHorizontal: spacing.marginMobile,
     paddingVertical: spacing.md,
+    minHeight: spacing.rowHeightSm + spacing.sm,
+    gap: spacing.md,
   },
   inputError: {
     borderColor: colors.error,
     borderWidth: 1.5,
   },
   selectText: {
+    flex: 1,
     fontSize: typography.bodyMd.fontSize,
     color: colors.onSurface,
     fontFamily: typography.bodyMd.fontFamily,
@@ -185,15 +193,16 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
   },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.black,
+    opacity: 0.4,
   },
   sheetContainer: {
     backgroundColor: colors.surface,
-    borderTopLeftRadius: borderRadius.xl ?? 24,
-    borderTopRightRadius: borderRadius.xl ?? 24,
+    borderTopLeftRadius: borderRadius.xxl,
+    borderTopRightRadius: borderRadius.xxl,
     maxHeight: '70%',
     paddingBottom: spacing.xl,
     ...shadows.elevated,
@@ -232,12 +241,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceVariant,
   },
   dropdownScroll: {
-    maxHeight: 340,
+    flexShrink: 1,
   },
   dropdownScrollContent: {
     paddingVertical: spacing.xs,
   },
   dropdownItem: {
+    gap: spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -247,16 +257,17 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.outlineHairline,
   },
   dropdownItemSelected: {
-    backgroundColor: colors.surfaceContainerLow,
+    backgroundColor: colors.selectionTint,
   },
   dropdownItemText: {
+    flex: 1,
     fontSize: typography.bodyMd.fontSize,
     color: colors.onSurface,
     fontFamily: typography.bodyMd.fontFamily,
   },
   dropdownItemTextSelected: {
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.homePickup,
   },
 });
 

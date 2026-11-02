@@ -4,7 +4,7 @@ import { BookingProvider, useBooking } from '../src/state/BookingContext';
 import { createFareQuote } from '../src/api/payments';
 import { TextInput } from 'react-native';
 import ReceiverDetailsScreen from '../src/screens/logistics/ReceiverDetailsScreen';
-import GoodsInsuranceScreen from '../src/screens/logistics/GoodsInsuranceScreen';
+import GoodsDetailsScreen from '../src/screens/logistics/GoodsDetailsScreen';
 import Button from '../src/components/atoms/Button';
 import ReviewBookingScreen from '../src/screens/booking/ReviewBookingScreen';
 import { useQuoteValidity } from '../src/hooks/useQuoteValidity';
@@ -107,10 +107,10 @@ it('saves receiver details to the intended drop before continuing', async () => 
 
 it('preserves a real declared value without inventing insurance coverage', async () => {
   let state!: ReturnType<typeof useBooking>;
-  function Capture() { state = useBooking(); return state.draft.declaredValue ? <GoodsInsuranceScreen /> : null; }
+  function Capture() { state = useBooking(); return state.draft.declaredValue ? <GoodsDetailsScreen /> : null; }
   await act(async () => { renderer = TestRenderer.create(<BookingProvider><Capture /></BookingProvider>); });
-  act(() => state.setGoods({ declaredValue: '50000' }));
-  expect(renderer.root.findByType(TextInput).props.value).toBe('50000');
+  act(() => state.setGoods({ declaredValue: '50000', goodsType: 'Furniture', goodsDescription: 'A chair', weightKg: 10 }));
+  expect((renderer.root as any).findByProps({ testID: 'input-declared-value' }).props.value).toBe('50000');
   expect((renderer.root as any).findAll((node: any) => node.props.accessibilityRole === 'checkbox')).toHaveLength(0);
   const button = (renderer.root as any).findAll((node: any) => node.props.accessibilityLabel === 'Continue' && typeof node.props.onPress === 'function')[0];
   act(() => button.props.onPress());

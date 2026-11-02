@@ -611,6 +611,15 @@ const readDevicePosition = async (): Promise<any> => {
     );
   }
 
+  // A coarse network fix can resolve to a different neighbourhood. Never
+  // silently turn that into the booking pickup point.
+  if (Number.isFinite(position.coords.accuracy) && position.coords.accuracy > 250) {
+    throw new ApiError(
+      'location_unavailable',
+      'Your location is not accurate enough yet. Move to an open area or choose the pickup on the map.',
+    );
+  }
+
   return position;
 };
 

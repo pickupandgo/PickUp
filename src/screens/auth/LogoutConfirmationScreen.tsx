@@ -29,40 +29,6 @@ const LogoutConfirmationScreen: React.FC<LogoutConfirmationScreenProps & { navig
   const { logout } = useSession();
   return (
     <View style={styles.container}>
-      {/* Background (Mockup of Settings) */}
-      <View style={styles.backgroundMockup}>
-        <SafeAreaView edges={['top']} style={{ flex: 1 }}>
-          <View style={styles.mockHeader}>
-            <View style={styles.mockHeaderLeft}>
-              <Feather name="menu" size={24} color={colors.primary} />
-              <Text style={styles.mockHeaderTitle}>Pick Up</Text>
-            </View>
-            <View style={styles.mockAvatar} />
-          </View>
-          
-          <View style={styles.mockContent}>
-            <View style={styles.mockCard}>
-              {[
-                { icon: 'user', title: 'Account Details', subtitle: 'Update your personal information' },
-                { icon: 'bell', title: 'Notifications', subtitle: 'Manage alert preferences' },
-                { icon: 'shield', title: 'Privacy & Security', subtitle: 'Control your data sharing' },
-              ].map((item, index) => (
-                <View
-                  key={index}
-                  style={[styles.mockRow, index < 2 && styles.mockRowBorder]}
-                >
-                  <Feather name={item.icon as any} size={24} color={colors.onSurfaceVariant} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.mockRowTitle}>{item.title}</Text>
-                    <Text style={styles.mockRowSubtitle}>{item.subtitle}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        </SafeAreaView>
-      </View>
-
       {/* Scrim Overlay */}
       <View style={styles.scrimOverlay}>
         <Pressable

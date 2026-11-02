@@ -1,225 +1,65 @@
 import React from 'react';
-import TestRenderer, { act, type ReactTestRenderer } from 'react-test-renderer';
-import { Text, Pressable } from 'react-native';
-import TripCompletedScreen from '../src/screens/support/TripCompletedScreen';
-import TripCompletedSummaryScreen from '../src/screens/support/TripCompletedSummaryScreen';
+import TestRenderer, { act } from 'react-test-renderer';
+import { ScrollView, BackHandler } from 'react-native';
+import Screen from '../src/screens/support/TripCompletedScreen';
 import { BookingContext } from '../src/state/BookingContext';
-import type { Trip, Ride, NearbyDriver } from '../src/api/types';
-
-jest.mock('../src/config/env', () => ({
-  env: {
-    apiBaseUrl: 'https://engine.test',
-    paymentsApiBaseUrl: 'https://pay.test',
-    googleMapsApiKey: 'mock-key',
-  },
-  hasApiConfig: () => true,
-  hasPaymentsConfig: () => true,
-  assertApiConfig: () => undefined,
-}));
-
-describe('TripCompleted screens with Real Data', () => {
-  const mockRealTrip: Trip = {
-    id: 'b7c89f01-2345-6789-abcd-ef0123456789',
-    rideId: 'ride-real-999',
-    customerId: 'cust-real-1',
-    driverId: 'drv-real-1',
-    externalRef: 'TRP-CUSTOM-99',
-    status: 'COMPLETED',
-    fare: 540,
-    payablePaise: 54000,
-    totalDistanceKm: 18.2,
-    createdAt: '2026-10-28T04:00:00.000Z',
-    updatedAt: '2026-10-28T05:15:00.000Z',
-    completedAt: '2026-10-28T05:15:00.000Z',
-    currentStopIndex: 1,
-    paymentMethod: 'PAY_AT_DELIVERY',
-    pickup: {
-      latitude: 12.9716,
-      longitude: 77.5946,
-      address: 'Indiranagar Metro Station, 100ft Road',
-    },
-    drop: {
-      latitude: 12.9279,
-      longitude: 77.6271,
-      address: 'Koramangala 4th Block, 80ft Road',
-    },
-    stops: [
-      {
-        id: 'stop-1',
-        sequence: 1,
-        status: 'DELIVERED',
-        location: {
-          latitude: 12.9279,
-          longitude: 77.6271,
-          address: 'Koramangala 4th Block, 80ft Road',
-        },
-      },
-    ],
-  };
-
-  const mockRealDriver: NearbyDriver = {
-    id: 'drv-real-1',
-    name: 'Vikram Singh',
-    vehicleType: 'TATA_ACE',
-    distanceKm: 0.5,
-    latitude: 12.9716,
-    longitude: 77.5946,
-    isAvailable: false,
-    ...({ vehicleNumber: 'KA 05 MN 9876' } as any),
-  };
-
-  const createBookingContextValue = (overrides?: any) => ({
-    customerId: 'cust-real-1',
-    draft: {
-      drops: [],
-      paymentMethod: 'PAY_AT_DELIVERY' as const,
-      vehicleType: 'TATA_ACE',
-    },
-    primaryDrop: undefined,
-    canEstimate: false,
-    setPickup: jest.fn(),
-    setPendingDrop: jest.fn(),
-    commitPendingDrop: jest.fn(),
-    addDrop: jest.fn(),
-    replaceDrop: jest.fn(),
-    removeDrop: jest.fn(),
-    setVehicleType: jest.fn(),
-    setGoods: jest.fn(),
-    setInsured: jest.fn(),
-    setSender: jest.fn(),
-    setReceiver: jest.fn(),
-    setQuote: jest.fn(),
-    setPaymentMethod: jest.fn(),
-    resetDraft: jest.fn(),
-    startNewBooking: jest.fn(),
-    ride: undefined,
-    trip: mockRealTrip,
-    assignedDriver: mockRealDriver,
-    setRide: jest.fn(),
-    setTrip: jest.fn(),
-    setAssignedDriver: jest.fn(),
-    clearActiveRide: jest.fn(),
-    ...overrides,
-  });
-
-  describe('TripCompletedScreen (Screenshot 2)', () => {
-    it('renders real trip details from BookingContext instead of mock values', () => {
-      const mockNav = { navigate: jest.fn(), replace: jest.fn(), goBack: jest.fn() };
-      let renderer: ReactTestRenderer;
-
-      act(() => {
-        renderer = TestRenderer.create(
-          <BookingContext.Provider value={createBookingContextValue()}>
-            <TripCompletedScreen navigation={mockNav} />
-          </BookingContext.Provider>
-        );
-      });
-
-      const root = renderer!.root;
-      const allTexts = root.findAllByType(Text).map((t: any) => t.props.children);
-
-      // Verify real Trip ID
-      expect(allTexts).toContain('TRP-CUSTOM-99');
-
-      // Verify real Distance
-      expect(allTexts).toContain('18.2 km');
-
-      // Verify real Vehicle display name
-      expect(allTexts).toContain('Mini Truck / Tata Ace');
-
-      // Verify real Driver Name
-      expect(allTexts).toContain('Vikram Singh');
-
-      // Verify real Total Fare
-      expect(allTexts).toContain('\u20b9540.00');
-
-      // Verify real Route Addresses
-      expect(allTexts).toContain('Indiranagar Metro Station, 100ft Road');
-      expect(allTexts).toContain('Koramangala 4th Block, 80ft Road');
-    });
-
-    it('navigates to TripCompletedSummaryScreen when Done is pressed', () => {
-      const mockNav = { navigate: jest.fn(), replace: jest.fn(), goBack: jest.fn() };
-      let renderer: ReactTestRenderer;
-
-      act(() => {
-        renderer = TestRenderer.create(
-          <BookingContext.Provider value={createBookingContextValue()}>
-            <TripCompletedScreen navigation={mockNav} />
-          </BookingContext.Provider>
-        );
-      });
-
-      const root = renderer!.root as any;
-      const doneBtn = root.findByProps({ label: 'Done' });
-      act(() => {
-        doneBtn.props.onPress();
-      });
-
-      expect(mockNav.navigate).toHaveBeenCalledWith('TripCompletedSummaryScreen', expect.objectContaining({ trip: mockRealTrip, tripId: mockRealTrip.id }));
-    });
-  });
-
-  describe('TripCompletedSummaryScreen (Screenshot 1)', () => {
-    it('renders real stops timeline, vehicle info, and payment status', () => {
-      const mockNav = { navigate: jest.fn(), replace: jest.fn(), goBack: jest.fn(), reset: jest.fn() };
-      let renderer: ReactTestRenderer;
-
-      act(() => {
-        renderer = TestRenderer.create(
-          <BookingContext.Provider value={createBookingContextValue()}>
-            <TripCompletedSummaryScreen navigation={mockNav} />
-          </BookingContext.Provider>
-        );
-      });
-
-      const root = renderer!.root;
-      const allTexts = root.findAllByType(Text).map((t: any) => t.props.children);
-
-      // Verify real stops shortened in timeline
-      expect(allTexts).toContain('Indiranagar Metro Station');
-      expect(allTexts).toContain('Koramangala 4th Block');
-
-      // Verify real vehicle + plate
-      expect(allTexts).toContain('Mini Truck / Tata Ace | KA 05 MN 9876');
-
-      // Verify real payment status with actual fare
-      expect(allTexts).toContain('Payment status unavailable');
-    });
-
-    it('clears active ride and resets to MainTabs when BACK TO HOME is clicked', () => {
-      const clearActiveRide = jest.fn();
-      const mockNav = { navigate: jest.fn(), replace: jest.fn(), goBack: jest.fn(), reset: jest.fn() };
-      let renderer: ReactTestRenderer;
-
-      act(() => {
-        renderer = TestRenderer.create(
-          <BookingContext.Provider value={createBookingContextValue({ clearActiveRide })}>
-            <TripCompletedSummaryScreen navigation={mockNav} />
-          </BookingContext.Provider>
-        );
-      });
-
-      const root = renderer!.root;
-      const homeText = root.findAllByType(Text).find((t: any) => t.props.children === 'BACK TO HOME');
-      expect(homeText).toBeDefined();
-
-      // Find the closest ancestor Pressable
-      let homePressable = (homeText as any)!.parent;
-      while (homePressable && typeof homePressable.props.onPress !== 'function') {
-        homePressable = homePressable.parent;
-      }
-      expect(homePressable).toBeDefined();
-
-      act(() => {
-        homePressable!.props.onPress();
-      });
-
-      expect(clearActiveRide).toHaveBeenCalledTimes(1);
-      expect(mockNav.reset).toHaveBeenCalledWith({
-        index: 0,
-        routes: [{ name: 'MainTabs' }],
-      });
-    });
-  });
+const trip: any = { id: 'trip-A', rideId: 'ride-A', driverId: 'driver-A', status: 'COMPLETED', paymentBookingId: 'pay-A', payablePaise: 87670, totalDistanceKm: 24.7, vehicleType: 'THREE_WHEELER', completedAt: '2026-11-02T07:07:00Z', pickup: { address: 'Pickup A' }, stops: [{ sequence: 1, status: 'DELIVERED', location: { address: 'Drop A' } }], metadata: { specialInstructions: 'Payment preference: Cash.' } };
+const snapshot: any = { trip, ride: { id: 'ride-A', quoteId: 'quote-A' }, driver: { id: 'driver-A', name: 'Driver A' } };
+let mockPayment: any;
+jest.mock('../src/hooks/useBookingPayment', () => ({ useBookingPayment: jest.fn(() => mockPayment) }));
+jest.mock('../src/hooks/useTripStatus', () => ({ useTripStatus: () => ({}) }));
+jest.mock('../src/api/engine', () => ({ getRide: jest.fn(async () => undefined) }));
+jest.mock('../src/api/payments', () => ({ getFareQuote: jest.fn(async () => ({ quoteId: 'quote-A', payablePaise: 87670, deliveryFarePaise: 79700, customerPlatformFeePaise: 7970, customerPlatformFeeBps: 1000, taxPaise: 0 })) }));
+const render = async (overrides: any = {}, props: any = {}) => {
+  let view: any; const context: any = { completedBooking: snapshot, draft: { drops: [] }, clearActiveRide: jest.fn(), setTrip: jest.fn(), ...overrides };
+  await act(async () => { view = TestRenderer.create(<BookingContext.Provider value={context}><Screen {...props} /></BookingContext.Provider>); });
+  return { view, context };
+};
+const text = (view: any) => JSON.stringify(view.toJSON());
+beforeEach(() => { jest.clearAllMocks(); mockPayment = { booking: { bookingId: 'pay-A', farePaise: 87670, paymentMethod: 'PAY_AT_DELIVERY', paymentStatus: 'UNPAID', stops: [] }, refresh: jest.fn() }; });
+it('renders one completed summary from the retired snapshot, without inventing paid state', async () => {
+  const { view } = await render();
+  for (const value of ['Delivered successfully', 'Pickup A', 'Drop A', 'Driver A', '24.7 km', '₹876.70', 'Cash at drop', 'Payment pending']) expect(text(view)).toContain(value);
+  expect(text(view)).not.toContain('Ratings unavailable');
+  act(() => view.unmount());
+});
+it('keeps Home footer outside scroll content and sends toolbar/hardware Back home', async () => {
+  const dispatch = jest.fn(); const navigation = { getParent: () => ({ dispatch }) };
+  const { view, context } = await render({}, { navigation });
+  const scroll = view.root.findByType(ScrollView);
+  expect(scroll.findAllByProps({ testID: 'completion-fixed-footer' })).toHaveLength(0);
+  expect(view.root.findByProps({ testID: 'completion-fixed-footer' })).toBeDefined();
+  act(() => view.root.findByProps({ accessibilityLabel: 'Return to Home' }).props.onPress());
+  act(() => view.root.findByProps({ accessibilityLabel: 'Back to Home' }).props.onPress());
+  const listener = (BackHandler.addEventListener as jest.Mock).mock.calls.find(call => call[0] === 'hardwareBackPress')[1];
+  act(() => listener());
+  expect(dispatch).toHaveBeenCalledTimes(3);
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ payload: { index: 0, routes: [{ name: 'MainTabs' }] } }));
+  expect(context.clearActiveRide).not.toHaveBeenCalled();
+  act(() => view.unmount());
+});
+it('shows Paid only from payment backend, and loads frozen fee breakdown on tap', async () => {
+  mockPayment.booking.paymentStatus = 'PAID';
+  const { view } = await render();
+  expect(text(view)).toContain('Paid');
+  const fetch = require('../src/api/payments').getFareQuote;
+  expect(fetch).not.toHaveBeenCalled();
+  await act(async () => view.root.findByProps({ accessibilityLabel: 'View fare breakdown' }).props.onPress());
+  expect(fetch).toHaveBeenCalledWith('quote-A', expect.anything());
+  expect(text(view)).toContain('Platform fee'); expect(text(view)).toContain('₹79.70');
+  act(() => view.unmount());
+});
+it('keeps an explicit historical trip isolated from a different active booking', async () => {
+  const { view, context } = await render({ completedBooking: undefined, trip: { ...trip, id: 'trip-B', rideId: 'ride-B' }, ride: { id: 'ride-B', quoteId: 'quote-B' }, assignedDriver: { id: 'driver-B', name: 'Driver B' } }, { route: { params: { trip } } });
+  expect(text(view)).not.toContain('Driver B');
+  expect(require('../src/hooks/useBookingPayment').useBookingPayment).toHaveBeenCalledWith('pay-A');
+  expect(context.clearActiveRide).not.toHaveBeenCalled();
+  act(() => view.unmount());
+});
+it('does not show success before completion or when drops were undelivered', async () => {
+  const partial = { ...trip, status: 'DELIVERED', stops: [{ sequence: 1, status: 'UNDELIVERED', location: { address: 'Drop A' } }] };
+  const { view } = await render({}, { route: { params: { trip: partial } } });
+  expect(text(view)).toContain('Finalizing trip'); expect(text(view)).toContain('Some delivery stops need attention.');
+  expect(text(view)).not.toContain('Delivered successfully');
+  act(() => view.unmount());
 });

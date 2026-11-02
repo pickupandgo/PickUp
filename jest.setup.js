@@ -105,6 +105,7 @@ jest.mock('react-native-maps', () => {
 
 try {
   const rn = require('react-native');
+  if (!rn.BackHandler) Object.defineProperty(rn, 'BackHandler', { configurable: true, value: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) } });
   Object.defineProperty(rn, 'Image', {
     configurable: true,
     enumerable: true,

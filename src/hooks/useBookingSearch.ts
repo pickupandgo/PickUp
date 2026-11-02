@@ -106,7 +106,7 @@ export function useBookingSearch(enabled: boolean, navigation: any, retrySearch 
         if (cancelled || controller.signal.aborted) return;
         setRide(ride);
         // 5. Driver found has priority - immediately go to next screen
-        resetBookingDestination(navigation, 'ActiveTripStack', 'DriverAssignedExpandedScreen');
+        resetBookingDestination(navigation, 'ActiveTripStack', 'CustomerLiveTrackingScreen');
       } catch (caught) {
         // 2. Handle AbortError Explicitly
         if (
@@ -153,7 +153,7 @@ export function useBookingSearch(enabled: boolean, navigation: any, retrySearch 
       if (result.kind === 'active') {
         setRide(result.ride);
         if (result.ride.status === 'ACCEPTED') Alert.alert('Driver already assigned', 'Keep the booking or review cancellation.', [
-          { text: 'Keep booking', style: 'cancel', onPress: () => resetBookingDestination(navigation, 'ActiveTripStack', 'DriverAssignedExpandedScreen') },
+          { text: 'Keep booking', style: 'cancel', onPress: () => resetBookingDestination(navigation, 'ActiveTripStack', 'CustomerLiveTrackingScreen') },
           { text: 'Review cancellation', onPress: () => resetBookingDestination(navigation, 'ActiveTripStack', 'CancellationReasonScreen', undefined, true) },
         ]);
         else { retryRequested.current = false; setNoDrivers(false); setRetryKey(n => n + 1); }

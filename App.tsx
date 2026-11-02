@@ -1,16 +1,16 @@
 import TripRouteDetailsScreen from './src/screens/logistics/TripRouteDetailsScreen';
 import { usePushNotifications } from './src/hooks/usePushNotifications';
 import { pushNavigationRef, flushPendingPush } from './src/services/pushNavigation';
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, FlatList, StatusBar } from 'react-native';
 
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { BookingProvider, useBooking } from './src/state/BookingContext';
 import { SessionProvider, useSession } from './src/state/SessionContext';
-import { colors, spacing, typography } from './src/theme';
+import { colors, spacing, typography, borderRadius } from './src/theme';
 import ErrorBoundary from './src/components/common/ErrorBoundary';
 import BrandedSplash from './src/components/splash/BrandedSplash';
 
@@ -27,10 +27,7 @@ import ChangeProfilePhotoScreen from './src/screens/profile/ChangeProfilePhotoSc
 import CreateProfileScreen from './src/screens/profile/CreateProfileScreen';
 import CurrentDropDetailsScreen from './src/screens/logistics/CurrentDropDetailsScreen';
 import CustomerLiveTrackingScreen from './src/screens/tracking/CustomerLiveTrackingScreen';
-import CustomerSettingsScreen from './src/screens/profile/CustomerSettingsScreen';
-import DeclaredValueSelectionScreen from './src/screens/booking/DeclaredValueSelectionScreen';
 import DigitalReceiptScreen from './src/screens/payment/DigitalReceiptScreen';
-import DriverAssignedExpandedScreen from './src/screens/tracking/DriverAssignedExpandedScreen';
 import DriverRatingScreen from './src/screens/support/DriverRatingScreen';
 import DropCompletedStateScreen from './src/screens/logistics/DropCompletedStateScreen';
 import DropOtpVerificationScreen from './src/screens/logistics/DropOtpVerificationScreen';
@@ -40,11 +37,9 @@ import ErrorScreen from './src/screens/support/ErrorScreen';
 import FinalDeliverySummaryScreen from './src/screens/logistics/FinalDeliverySummaryScreen';
 import FindingDriverScreen from './src/screens/tracking/FindingDriverScreen';
 import GoodsDetailsScreen from './src/screens/logistics/GoodsDetailsScreen';
-import GoodsInsuranceScreen from './src/screens/logistics/GoodsInsuranceScreen';
 import HistoricalTripDetailScreen from './src/screens/profile/HistoricalTripDetailScreen';
 import HomeScreen from './src/screens/home/HomeScreen';
 import LiveTrackingExceptionsScreen from './src/screens/tracking/LiveTrackingExceptionsScreen';
-import LiveTrackingScreen from './src/screens/tracking/LiveTrackingScreen';
 import LoadingSkeletonScreen from './src/screens/support/LoadingSkeletonScreen';
 import LoginScreen from './src/screens/auth/LoginScreen';
 import PhoneCompletionScreen from './src/screens/auth/PhoneCompletionScreen';
@@ -58,8 +53,6 @@ import NextDropScreen from './src/screens/logistics/NextDropScreen';
 import NoDriversAvailableScreen from './src/screens/support/NoDriversAvailableScreen';
 import NotificationCenterScreen from './src/screens/support/NotificationCenterScreen';
 import OtpVerificationScreen from './src/screens/auth/OtpVerificationScreen';
-import PickupOtpVerificationScreen from './src/screens/logistics/PickupOtpVerificationScreen';
-import PickupVerifiedSuccessScreen from './src/screens/logistics/PickupVerifiedSuccessScreen';
 import ProfileScreen from './src/screens/profile/ProfileScreen';
 import ReceiverDetailsScreen from './src/screens/logistics/ReceiverDetailsScreen';
 import ReconnectingScreen from './src/screens/tracking/ReconnectingScreen';
@@ -74,7 +67,6 @@ import SelectVehicleScreen from './src/screens/booking/SelectVehicleScreen';
 import ShareTrackingSheetScreen from './src/screens/support/ShareTrackingSheetScreen';
 import TripCancelledStatusScreen from './src/screens/support/TripCancelledStatusScreen';
 import TripCompletedScreen from './src/screens/support/TripCompletedScreen';
-import TripCompletedSummaryScreen from './src/screens/support/TripCompletedSummaryScreen';
 import TripHistoryScreen from './src/screens/profile/TripHistoryScreen';
 import ValidateBookingScreen from './src/screens/booking/ValidateBookingScreen';
 import VehicleSelectionScreen from './src/screens/booking/SelectVehicleScreen';
@@ -130,16 +122,23 @@ function AuthNavigator() {
 }
 
 function MainTabNavigator() {
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.onSurfaceVariant,
+        tabBarActiveTintColor: colors.homeAction,
+        tabBarInactiveTintColor: colors.secondary,
+        tabBarHideOnKeyboard: true,
+        tabBarLabelStyle: { ...typography.labelSm, fontWeight: '600' },
+        tabBarIconStyle: { width: spacing.rowHeightStandard, height: spacing.xxxl, marginBottom: spacing.xs },
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopWidth: 1,
           borderTopColor: colors.outlineHairline,
+          height: spacing.rowHeightStandard + spacing.sm + insets.bottom,
+          paddingTop: spacing.sm,
+          paddingBottom: Math.max(insets.bottom, spacing.xs),
         },
       }}
     >
@@ -148,7 +147,7 @@ function MainTabNavigator() {
         component={HomeScreen} 
         options={{
           tabBarLabel: 'Home',
-          tabBarIcon: ({ color, size, focused }) => focused ? <MaterialIcons name="home" size={size} color={color} /> : <Feather name="home" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => <View style={[styles.tabIcon, focused && styles.tabIconActive]}>{focused ? <MaterialIcons name="home" size={spacing.xxl} color={color} /> : <Feather name="home" size={spacing.xxl} color={color} />}</View>
         }}
       />
       <Tab.Screen 
@@ -156,7 +155,7 @@ function MainTabNavigator() {
         component={TripHistoryScreen} 
         options={{
           tabBarLabel: 'Trips',
-          tabBarIcon: ({ color, size }) => <Feather name="clock" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => <View style={[styles.tabIcon, focused && styles.tabIconActive]}><Feather name="clock" size={spacing.xxl} color={color} /></View>
         }}
       />
       <Tab.Screen 
@@ -164,7 +163,7 @@ function MainTabNavigator() {
         component={ProfileScreen} 
         options={{
           tabBarLabel: 'Profile',
-          tabBarIcon: ({ color, size }) => <Feather name="user" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => <View style={[styles.tabIcon, focused && styles.tabIconActive]}><Feather name="user" size={spacing.xxl} color={color} /></View>
         }}
       />
     </Tab.Navigator>
@@ -180,9 +179,9 @@ function BookingStackNavigator() {
       <Stack.Screen name="SelectVehicleScreen" component={SelectVehicleScreen} />
       <Stack.Screen name="ReviewBookingScreen" component={ReviewBookingScreen} />
       <Stack.Screen name="BookingReviewScreen" component={ReviewBookingScreen} />
-      <Stack.Screen name="DeclaredValueSelectionScreen" component={DeclaredValueSelectionScreen} />
+      <Stack.Screen name="DeclaredValueSelectionScreen" component={GoodsDetailsScreen} initialParams={{ returnToReview: true, focusField: 'declaredValue' }} />
       <Stack.Screen name="GoodsDetailsScreen" component={GoodsDetailsScreen} />
-      <Stack.Screen name="GoodsInsuranceScreen" component={GoodsInsuranceScreen} />
+      <Stack.Screen name="GoodsInsuranceScreen" component={GoodsDetailsScreen} />
       <Stack.Screen name="ValidateBookingScreen" component={ValidateBookingScreen} />
       <Stack.Screen name="MultiDropOverviewScreen" component={MultiDropOverviewScreen} />
       
@@ -198,17 +197,18 @@ function ActiveTripStackNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="FindingDriverScreen" component={FindingDriverScreen} />
-      <Stack.Screen name="DriverFoundScreen" component={DriverAssignedExpandedScreen} />
-      <Stack.Screen name="DriverAssignedScreen" component={DriverAssignedExpandedScreen} />
-      <Stack.Screen name="DriverAssignedExpandedScreen" component={DriverAssignedExpandedScreen} />
+      {/* Legacy notification/restored route names resolve to the single active-trip UI. */}
+      <Stack.Screen name="DriverFoundScreen" component={CustomerLiveTrackingScreen} />
+      <Stack.Screen name="DriverAssignedScreen" component={CustomerLiveTrackingScreen} />
+      <Stack.Screen name="DriverAssignedExpandedScreen" component={CustomerLiveTrackingScreen} />
       <Stack.Screen name="CustomerLiveTrackingScreen" component={CustomerLiveTrackingScreen} />
       <Stack.Screen name="ActiveTripTrackingScreen" component={CustomerLiveTrackingScreen} />
       <Stack.Screen name="ActiveTripChatScreen" component={ActiveTripChatScreen} />
       <Stack.Screen name="CallDriverScreen" component={CallDriverScreen} />
       
       {/* Logistics/Trip states */}
-      <Stack.Screen name="PickupVerifiedSuccessScreen" component={PickupVerifiedSuccessScreen} />
-      <Stack.Screen name="PickupOtpVerificationScreen" component={PickupOtpVerificationScreen} />
+      <Stack.Screen name="PickupVerifiedSuccessScreen" component={CustomerLiveTrackingScreen} />
+      <Stack.Screen name="PickupOtpVerificationScreen" component={CustomerLiveTrackingScreen} />
       <Stack.Screen name="MultiDropProgressScreen" component={TripRouteDetailsScreen} />
       <Stack.Screen name="CurrentDropDetailsScreen" component={TripRouteDetailsScreen} />
       <Stack.Screen name="DropOtpVerificationScreen" component={DropOtpVerificationScreen} />
@@ -219,7 +219,7 @@ function ActiveTripStackNavigator() {
       
       {/* Support / Completion */}
       <Stack.Screen name="TripCompletedScreen" component={TripCompletedScreen} />
-      <Stack.Screen name="TripCompletedSummaryScreen" component={TripCompletedSummaryScreen} />
+      <Stack.Screen name="TripCompletedSummaryScreen" component={TripCompletedScreen} />
       <Stack.Screen name="DriverRatingScreen" component={DriverRatingScreen} />
       <Stack.Screen name="WrittenReviewScreen" component={WrittenReviewScreen} />
       <Stack.Screen name="ShareTrackingSheetScreen" component={ShareTrackingSheetScreen} />
@@ -246,7 +246,7 @@ function MainNavigator() {
       <Stack.Screen name="ShareTrackingSheetScreen" component={ShareTrackingSheetScreen} />
       <Stack.Screen name="LiveTrackingExceptionsScreen" component={TripRouteDetailsScreen} />
       {/* Global Modals/Screens in Main */}
-      <Stack.Screen name="CustomerSettingsScreen" component={CustomerSettingsScreen} />
+      <Stack.Screen name="CustomerSettingsScreen" component={ProfileScreen} />
       <Stack.Screen name="ChangeProfilePhotoScreen" component={ChangeProfilePhotoScreen} options={{ presentation: 'transparentModal', animation: 'fade' }} />
       <Stack.Screen name="EditProfileScreen" component={EditProfileScreen} />
       <Stack.Screen name="SavedAddressesScreen" component={SavedAddressesScreen} />
@@ -280,11 +280,11 @@ function OnboardingNavigator() {
   );
 }
 
-function RootNavigator() {
+function RootNavigator({ splashComplete, onSplashComplete }: { splashComplete: boolean; onSplashComplete: () => void }) {
   const { isLoggedIn, hasProfile, authUid } = useSession();
 
-  if (isLoggedIn === null || (isLoggedIn && hasProfile === null)) {
-    return <BrandedSplash checkingAccount={isLoggedIn === true} />;
+  if (!splashComplete || isLoggedIn === null || (isLoggedIn && hasProfile === null)) {
+    return <BrandedSplash checkingAccount={isLoggedIn === true} onJourneyComplete={onSplashComplete} />;
   }
 
   return (
@@ -316,11 +316,15 @@ export default function App() {
 // Booking data must not survive a Firebase identity change.
 function SessionContent() {
   const { authUid, isLoggedIn, hasProfile } = useSession();
+  const [splashComplete, setSplashComplete] = useState(false);
+  const finishSplash = useCallback(() => setSplashComplete(true), []);
   usePushNotifications(authUid, isLoggedIn === true && hasProfile === true);
-  return <BookingProvider key={authUid ?? 'signed-out'}><RootNavigator /></BookingProvider>;
+  return <BookingProvider key={authUid ?? 'signed-out'}><RootNavigator splashComplete={splashComplete} onSplashComplete={finishSplash} /></BookingProvider>;
 }
 
 const styles = StyleSheet.create({
+  tabIcon: { width: spacing.rowHeightStandard, height: spacing.xxxl, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center' },
+  tabIconActive: { backgroundColor: colors.successContainer },
   galleryContainer: { flex: 1, backgroundColor: '#fff' },
   header: { fontSize: 24, fontWeight: 'bold', padding: 20, borderBottomWidth: 1, borderColor: '#eee' },
   item: { padding: 16, borderBottomWidth: 1, borderColor: '#f0f0f0' },

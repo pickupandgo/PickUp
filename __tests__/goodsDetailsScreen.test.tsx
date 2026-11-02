@@ -73,6 +73,15 @@ describe('GoodsDetailsScreen — Unit & Integration Tests', () => {
   // 1. Validator Functions
   // ───────────────────────────────────────────────────────────────────────────
   describe('Field validation helper functions', () => {
+    it('returns edited goods to Review without the removed extra value page', () => {
+      const renderer = renderScreen({ goodsType: 'Electronics', goodsDescription: 'Packed monitor', weightKg: 5, declaredValue: '1000', specialInstructions: 'Keep upright' }, { route: { params: { returnToReview: true } } });
+      act(() => (renderer.root as any).findByProps({ testID: 'input-declared-value' }).props.onChangeText('2500'));
+      act(() => (renderer.root as any).findByProps({ testID: 'goods-details-continue-button' }).props.onPress());
+      expect(mockSetGoods).toHaveBeenCalledWith(expect.objectContaining({ goodsType: 'Electronics', goodsDescription: 'Packed monitor', weightKg: 5, declaredValue: '2500', specialInstructions: 'Keep upright' }));
+      expect(mockGoBack).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+
     it('validates goods type against supported categories', () => {
       expect(isValidGoodsType('Furniture')).toBe(true);
       expect(isValidGoodsType('Electronics')).toBe(true);
@@ -343,28 +352,30 @@ describe('GoodsDetailsScreen — Unit & Integration Tests', () => {
     it('switches between kg and lbs units seamlessly without modifying entered text', () => {
       const renderer = renderScreen();
       const weightInput = (renderer.root as any).findByProps({ testID: 'input-approximate-weight' });
-      const toggleKg = (renderer.root as any).findByProps({ testID: 'unit-toggle-kg' });
-      const toggleLbs = (renderer.root as any).findByProps({ testID: 'unit-toggle-lbs' });
+      const openUnits = () => act(() => (renderer.root as any).findByProps({ accessibilityLabel: 'Choose weight unit' }).props.onPress());
 
       act(() => {
         weightInput.props.onChangeText('50');
       });
 
       // Default is kg
-      expect(toggleKg.props.accessibilityState.selected).toBe(true);
+      openUnits();
+      expect((renderer.root as any).findByProps({ testID: 'unit-toggle-kg' }).props.accessibilityState.selected).toBe(true);
 
       // Switch to lbs
       act(() => {
-        toggleLbs.props.onPress();
+        (renderer.root as any).findByProps({ testID: 'unit-toggle-lbs' }).props.onPress();
       });
-      expect(toggleLbs.props.accessibilityState.selected).toBe(true);
+      openUnits();
+      expect((renderer.root as any).findByProps({ testID: 'unit-toggle-lbs' }).props.accessibilityState.selected).toBe(true);
       expect(weightInput.props.value).toBe('50');
 
       // Switch back to kg
       act(() => {
-        toggleKg.props.onPress();
+        (renderer.root as any).findByProps({ testID: 'unit-toggle-kg' }).props.onPress();
       });
-      expect(toggleKg.props.accessibilityState.selected).toBe(true);
+      openUnits();
+      expect((renderer.root as any).findByProps({ testID: 'unit-toggle-kg' }).props.accessibilityState.selected).toBe(true);
       expect(weightInput.props.value).toBe('50');
     });
   });
@@ -501,7 +512,7 @@ describe('GoodsDetailsScreen — Unit & Integration Tests', () => {
       });
 
       expect(mockOnContinue).toHaveBeenCalled();
-      expect(mockNavigate).toHaveBeenCalledWith('GoodsInsuranceScreen');
+      expect(mockNavigate).toHaveBeenCalledWith('ReviewBookingScreen');
     });
 
     it('converts weight to canonical kilograms when unit is lbs on submission', () => {
@@ -527,6 +538,9 @@ describe('GoodsDetailsScreen — Unit & Integration Tests', () => {
         (renderer.root as any).findByProps({ testID: 'input-approximate-weight' }).props.onChangeText('100');
       });
       act(() => {
+        (renderer.root as any).findByProps({ accessibilityLabel: 'Choose weight unit' }).props.onPress();
+      });
+      act(() => {
         (renderer.root as any).findByProps({ testID: 'unit-toggle-lbs' }).props.onPress();
       });
 
@@ -548,7 +562,7 @@ describe('GoodsDetailsScreen — Unit & Integration Tests', () => {
           goodsType: 'Other',
         })
       );
-      expect(mockNavigate).toHaveBeenCalledWith('GoodsInsuranceScreen');
+      expect(mockNavigate).toHaveBeenCalledWith('ReviewBookingScreen');
     });
 
     it('allows optional Special Instructions to be omitted', () => {
@@ -583,7 +597,7 @@ describe('GoodsDetailsScreen — Unit & Integration Tests', () => {
           specialInstructions: undefined,
         })
       );
-      expect(mockNavigate).toHaveBeenCalledWith('GoodsInsuranceScreen');
+      expect(mockNavigate).toHaveBeenCalledWith('ReviewBookingScreen');
     });
 
     it('reopens pounds without converting canonical kg a second time', () => {

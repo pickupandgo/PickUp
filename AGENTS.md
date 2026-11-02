@@ -44,8 +44,15 @@ Entry: `index.js` → `App.tsx`.
 ```
 locations -> vehicle -> goods/value -> ReviewBooking (server fare + payment preference/timing)
   -> in-place finding/result (durable POST /rides, server-owned dispatch)
-  -> Trip Details -> pickup OTP -> live tracking -> completion
+  -> CustomerLiveTrackingScreen (assignment + gated OTP + tracking) -> completion
 ```
+
+GoodsDetailsScreen is the merged goods/value form (2026-11-02). It saves the existing
+categories, description, canonical kg weight, declared value and optional instructions,
+sets insurance false, then goes directly to ReviewBookingScreen. Review value editing
+opens this same form with returnToReview/focusField params; save goes back and unchanged
+weight preserves the quote. Separate GoodsInsurance/DeclaredValueSelection source screens
+were removed; their old route names are aliases. Insurance information is a truthful note.
 
 - No local fare is ever calculated or sent. The server quote is the only fare; any change to the
   route, vehicle or weight discards the quote and forces a new one (`BookingContext`).
@@ -58,6 +65,16 @@ locations -> vehicle -> goods/value -> ReviewBooking (server fare + payment pref
   the server releases and never derives or logs an OTP.
 - The payment state the UI shows comes from `GET /v1/bookings/:paymentBookingId` (the customer
   payment gate and per-drop state). Never show "paid" from local state.
+
+## Unified active trip (2026-11-02)
+
+CustomerLiveTrackingScreen owns assignment, arrival, pickup/drop OTPs, driver tracking,
+locations and the payment summary. DriverAssigned/DriverFound, separate pickup OTP/success
+and prototype LiveTracking source screens were removed. Legacy route aliases in App.tsx
+resolve to the unified component for old links. New navigation targets CustomerLiveTrackingScreen.
+Back returns Home while preserving the active booking. OTPs remain server gated; arrival
+updates the same screen. Payment row opens frozen quote details on demand; collection choice
+is recovered from the booking metadata instruction. Never infer Cash for an unknown old booking.
 
 ## Auth / identity
 
@@ -106,3 +123,21 @@ The vehicle-selection map may display nearby vehicle icons through the authentic
 ReviewBookingScreen owns the in-place search UI after Book. BookingConfirmedScreen was removed. FindingDriverScreen is a recovery/deep-link wrapper around that same review component in searchMode; do not reintroduce a separate finding layout. useBookingSearch reuses the durable matching API and server-owned dispatch. Cross-stack transitions use resetBookingDestination because SelectVehicle belongs to BookingStack and assignment/cancellation/result belong to ActiveTripStack. Keep draft details on vehicle change and never treat the loading animation as a timeout. The user explicitly deferred emulator builds/installs until new refresh milestone M6. M4 response-window/live-preview and M5 in-place no-driver result are implemented in source; M6 deployment/native/live validation remains pending.
 
 NoDriversAvailableScreen is now also a legacy recovery wrapper around the same finding/review result UI. Server exhaustion sets an in-place result; it never navigates to a separate failure popup. Try again explicitly retries the same registered booking; its frozen server fare remains authoritative even after the original quote expires. Home/vehicle actions call leaveFailedSearch first. Vehicle change preserves details and gets a new quote; it never silently books a changed price. Foreground/focus recovery reads status and must not replay a prior dispatch retry.
+
+## Completion (2026-11-02)
+
+TripCompletedScreen is the single completion UI; TripCompletedSummaryScreen source was removed
+and its old route aliases to the same component. Back/Home uses a fixed safe-area footer and
+returns to MainTabs. BookingProvider retires active trip/ride/draft on server COMPLETED without
+a button tap, retains a separate completedBooking snapshot for this summary, and conditionally
+clears only its matching recovery journal. DELIVERED is not final completion. Never infer Paid
+from completion. Explicit historical trips must not borrow another active booking's data or
+clear its journal. Failed journal cleanup blocks booking through the existing recovery error.
+
+## Profile hub (2026-11-02)
+
+ProfileScreen is the single account hub: identity/Edit profile, Saved addresses, Notifications,
+read-only English language and one Logout entry. History belongs to Trips tab. Separate
+CustomerSettingsScreen source removed; old route aliases ProfileScreen. Do not reintroduce
+Profile/Settings/Account loops, duplicate notification buttons or a selectable language until
+implemented. Logout confirmation no longer renders a fake Settings page behind its dialog.

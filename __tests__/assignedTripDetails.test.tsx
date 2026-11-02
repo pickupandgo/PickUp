@@ -1,37 +1,84 @@
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
-import Screen from '../src/screens/tracking/DriverAssignedExpandedScreen';
+import { BackHandler } from 'react-native';
+import Screen from '../src/screens/tracking/CustomerLiveTrackingScreen';
+import { savedCollectionPreference } from '../src/state/collectionPreference';
 let mockStatus = 'DRIVER_ASSIGNED';
+let mockOtp: string | null = null;
 const mockPickup = { latitude: 26, longitude: 73, address: 'Pickup road' };
 const mockPoint = { latitude: 26.01, longitude: 73.01 };
-const mockTrip = () => ({ id: 'trip', driverId: 'driver', status: mockStatus, vehicleType: 'TWO_WHEELER', pickup: mockPickup, stops: [{ location: { latitude: 26.1, longitude: 73.1, address: 'Drop road' } }], paymentBookingId: 'payment' });
 const mockSet = jest.fn();
-jest.mock('../src/state/BookingContext', () => ({ useBooking: () => ({ trip: mockTrip(), setTrip: mockSet, ride: null, assignedDriver: { id: 'driver', name: 'Test driver', vehicleType: 'PICKUP_TRUCK' }, setAssignedDriver: mockSet, draft: { drops: [] } }) }));
+const mockTrip = () => ({ id: 'trip', rideId: 'ride', driverId: 'driver', status: mockStatus, vehicleType: 'TWO_WHEELER', pickup: mockPickup, stops: [{ sequence: 1, status: 'PENDING', location: { latitude: 26.1, longitude: 73.1, address: 'Drop road' } }], paymentBookingId: 'payment', metadata: { specialInstructions: 'Fragile\nPayment preference: UPI (driver collection).' } });
+jest.mock('../src/state/BookingContext', () => ({ useBooking: () => ({ trip: mockTrip(), setTrip: mockSet, ride: { id: 'ride', quoteId: 'quote', paymentMethod: 'PAY_AT_PICKUP' }, assignedDriver: { id: 'driver', name: 'Test driver', vehicleType: 'PICKUP_TRUCK' }, setAssignedDriver: mockSet, draft: { drops: [] } }) }));
 jest.mock('../src/hooks/useTripStatus', () => ({ useTripStatus: () => ({ trip: undefined }) }));
 jest.mock('../src/hooks/useAssignedDriverLocation', () => ({ useAssignedDriverLocation: () => ({ point: mockPoint, status: 'live', refresh: jest.fn() }) }));
+jest.mock('../src/hooks/useBookingPayment', () => ({ useBookingPayment: () => ({ booking: { farePaise: 7700, paymentMethod: 'PAY_AT_PICKUP', paymentStatus: 'UNPAID', stops: [], paymentGate: {} }, refresh: jest.fn() }) }));
+jest.mock('../src/hooks/useRideOtps', () => ({ useRideOtps: () => ({ otps: { pickup: { otp: mockOtp, withheld: 'PAYMENT_REQUIRED' }, stops: [] }, refresh: jest.fn() }) }));
 jest.mock('../src/hooks/useRoute', () => ({ useRoadRoute: jest.fn(() => ({ polyline: [], status: 'loading', retry: jest.fn() })) }));
 jest.mock('../src/api/engine', () => ({ getRideTrip: jest.fn() }));
+jest.mock('../src/api/payments', () => ({ getFareQuote: jest.fn(async () => ({ quoteId: 'quote', deliveryFarePaise: 7000, customerPlatformFeePaise: 700, customerPlatformFeeBps: 1000, payablePaise: 7700, taxPaise: 0 })) }));
 jest.mock('../src/components/map/MapCanvas', () => { const { View } = require('react-native'); return (props: any) => <View testID="assigned-map" {...props} />; });
-beforeEach(() => { mockStatus = 'DRIVER_ASSIGNED'; jest.clearAllMocks(); });
-it('frames assigned driver and pickup only, using authoritative trip category', async () => {
-  let view: any;
-  await act(async () => { view = TestRenderer.create(<Screen />); });
+const text = (view: any) => JSON.stringify(view.toJSON());
+Object.defineProperty(require('react-native'), 'BackHandler', { configurable: true, value: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) } });
+beforeEach(() => { mockStatus = 'DRIVER_ASSIGNED'; mockOtp = null; jest.clearAllMocks(); });
+it('frames fresh assigned driver and pickup using authoritative category', async () => {
+  let view: any; await act(async () => { view = TestRenderer.create(<Screen />); });
   const map = view.root.findByProps({ testID: 'assigned-map' });
   expect(map.props.markers).toHaveLength(2);
   expect(map.props.markers[1]).toMatchObject({ kind: 'driver', coordinate: mockPoint, vehicleType: 'TWO_WHEELER', preview: true });
   expect(map.props.fitToMarkers).toBe(true);
-  expect(map.props.fitRouteOnly).toBe(false);
-  expect(require('../src/hooks/useRoute').useRoadRoute).toHaveBeenCalledWith(mockPoint, mockPickup);
+  expect(require('../src/hooks/useRoute').useRoadRoute).toHaveBeenCalledWith(mockPoint, mockPickup, []);
   act(() => view.unmount());
 });
-it('preserves server-owned pickup progression and routes chat with booking identity', async () => {
+it('keeps arrival and gated OTP in the same screen, with selected booking contact identity', async () => {
   const navigation = { replace: jest.fn(), navigate: jest.fn() };
-  let view: any;
-  await act(async () => { view = TestRenderer.create(<Screen navigation={navigation} />); });
+  let view: any; await act(async () => { view = TestRenderer.create(<Screen navigation={navigation} />); });
+  expect(text(view)).toContain('OTP will appear after the required payment is confirmed.');
+  expect(text(view)).toContain('UPI at pickup');
+  expect(text(view)).not.toContain('Track driver');
   act(() => view.root.findByProps({ accessibilityLabel: 'Chat with driver' }).props.onPress());
   expect(navigation.navigate).toHaveBeenCalledWith('ActiveTripChatScreen', expect.objectContaining({ tripId: 'trip', bookingId: 'payment' }));
-  mockStatus = 'DRIVER_ARRIVED';
+  mockStatus = 'DRIVER_ARRIVED'; mockOtp = '2468';
   await act(async () => { view.update(<Screen navigation={navigation} />); });
-  expect(navigation.replace).toHaveBeenCalledWith('PickupOtpVerificationScreen');
+  expect(navigation.replace).not.toHaveBeenCalled();
+  expect(text(view)).toContain('Driver has arrived');
+  expect(text(view)).toContain('Share only when your driver arrives');
   act(() => view.unmount());
+});
+it('loads server frozen fare only on payment tap, keeping pending status truthful', async () => {
+  const getQuote = require('../src/api/payments').getFareQuote;
+  let view: any; await act(async () => { view = TestRenderer.create(<Screen />); });
+  expect(getQuote).not.toHaveBeenCalled();
+  await act(async () => view.root.findByProps({ accessibilityLabel: 'View fare details' }).props.onPress());
+  expect(getQuote).toHaveBeenCalledWith('quote', expect.anything());
+  expect(text(view)).toContain('Platform fee'); expect(text(view)).toContain('₹7.00');
+  expect(text(view)).toContain('Payment pending'); expect(text(view)).not.toContain('Paid');
+  act(() => view.unmount());
+});
+it('routes toolbar and hardware Back to Home without clearing the active trip', async () => {
+  const dispatch = jest.fn(); const navigation = { getParent: () => ({ dispatch }) };
+  const listener = BackHandler.addEventListener as jest.Mock;
+  let view: any; await act(async () => { view = TestRenderer.create(<Screen navigation={navigation} />); });
+  act(() => view.root.findByProps({ accessibilityLabel: 'Back to Home' }).props.onPress());
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ payload: { index: 0, routes: [{ name: 'MainTabs', params: { screen: 'HomeScreen' } }] } }));
+  const back = listener.mock.calls.find(call => call[0] === 'hardwareBackPress')![1];
+  act(() => { expect(back()).toBe(true); });
+  expect(dispatch).toHaveBeenCalledTimes(2);
+  act(() => view.unmount());
+});
+it('switches to drop route and removes pickup OTP after pickup; redirects only on terminal state', async () => {
+  const navigation = { replace: jest.fn() }; let view: any;
+  mockStatus = 'IN_TRANSIT'; mockOtp = '2468';
+  await act(async () => { view = TestRenderer.create(<Screen navigation={navigation} />); });
+  expect(text(view)).not.toContain('Pickup verification OTP');
+  expect(view.root.findByProps({ testID: 'assigned-map' }).props.markers).toHaveLength(3);
+  expect(navigation.replace).not.toHaveBeenCalled();
+  mockStatus = 'COMPLETED'; await act(async () => { view.update(<Screen navigation={navigation} />); });
+  expect(navigation.replace).toHaveBeenCalledWith('TripCompletedScreen', expect.objectContaining({ tripId: 'trip' }));
+  act(() => view.unmount());
+});
+it('reads collection preference from persisted app instruction without guessing old bookings', () => {
+  expect(savedCollectionPreference('Careful\nPayment preference: Cash.')).toBe('Cash');
+  expect(savedCollectionPreference('Payment preference: UPI (driver collection).')).toBe('UPI');
+  expect(savedCollectionPreference('Customer note')).toBeUndefined();
 });

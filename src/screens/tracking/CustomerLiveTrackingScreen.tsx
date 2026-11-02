@@ -1,1182 +1,196 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-  ImageBackground,
-  Image,
-  Animated,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, ScrollView, Image, Modal, BackHandler } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CommonActions, useFocusEffect } from '@react-navigation/native';
 import Feather from 'react-native-vector-icons/Feather';
+import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import { useBooking } from '../../state/BookingContext';
 import { useAssignedDriverLocation } from '../../hooks/useAssignedDriverLocation';
 import { useTripStatus } from '../../hooks/useTripStatus';
 import { useBookingPayment } from '../../hooks/useBookingPayment';
-import BookingPaymentStatus from '../../components/organisms/BookingPaymentStatus';
 import { useRideOtps } from '../../hooks/useRideOtps';
-import { getActiveTripForCustomer, getDriver, getRide } from '../../api/engine';
-import type { GeoPoint } from '../../api/types';
+import { getActiveTripForCustomer, getRide, getRideTrip } from '../../api/engine';
+import { getFareQuote } from '../../api/payments';
+import type { FareQuote } from '../../api/types';
 import MapCanvas, { type MapMarker } from '../../components/map/MapCanvas';
 import { useRoadRoute } from '../../hooks/useRoute';
 import { getVehicleImage } from '../../utils/vehicleAssets';
+import { getVehicleCategoryDisplayName } from '../../utils/vehicleMapIcons';
+import { formatPaise, paymentLabel } from '../../utils/paymentPresentation';
+import { savedCollectionPreference } from '../../state/collectionPreference';
 
-export interface CustomerLiveTrackingScreenProps {
-  readonly onBack?: () => void;
-  readonly onCall?: () => void;
-  readonly onChat?: () => void;
+export interface CustomerLiveTrackingScreenProps { readonly onBack?: () => void; readonly onCall?: () => void; readonly onChat?: () => void; }
+
+/** One active-trip surface from driver assignment through delivery. */
+export default function CustomerLiveTrackingScreen({ onBack, onCall, onChat, navigation }: CustomerLiveTrackingScreenProps & { navigation?: any }) {
+  const { trip, setTrip, ride, setRide, assignedDriver, setAssignedDriver, customerId, draft } = useBooking();
+  const insets = useSafeAreaInsets();
+  const [focused, setFocused] = useState(true);
+  useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
+  const [collapsed, setCollapsed] = useState(false);
+  const [sheet, setSheet] = useState<'fare' | 'locations'>();
+  const [panelHeight, setPanelHeight] = useState(0);
+  const [quote, setQuote] = useState<FareQuote>();
+  const [quoteError, setQuoteError] = useState(false);
+  const [quoteAttempt, setQuoteAttempt] = useState(0);
+  const [restoreError, setRestoreError] = useState(false);
+  // Acceptance can precede the trip read. Retry without dropping the assignment.
+  useEffect(() => {
+    if (trip || !focused || (!ride?.id && !customerId)) return;
+    const controller = new AbortController(); let active = true; let timer: ReturnType<typeof setTimeout> | undefined;
+    const restore = async () => {
+      try {
+        const found = ride?.id ? await getRideTrip(ride.id, controller.signal) : await getActiveTripForCustomer(customerId!);
+        if (!active) return;
+        if (found) { setTrip(found); setRestoreError(false); return; }
+        setRestoreError(true);
+      } catch { if (active) setRestoreError(true); }
+      if (active) timer = setTimeout(restore, 5000);
+    };
+    void restore();
+    return () => { active = false; controller.abort(); if (timer) clearTimeout(timer); };
+  }, [trip, ride?.id, customerId, focused, setTrip]);
+  useEffect(() => {
+    if (!trip?.rideId || ride?.id === trip.rideId) return;
+    const controller = new AbortController();
+    getRide(trip.rideId, controller.signal).then(value => { if (!controller.signal.aborted) setRide(value); }).catch(() => {});
+    return () => controller.abort();
+  }, [trip?.rideId, ride?.id, setRide]);
+  const polling = useTripStatus(trip?.id ?? ride?.tripId ?? undefined, { enabled: focused });
+  useEffect(() => { if (polling.trip) setTrip(polling.trip); }, [polling.trip, setTrip]);
+  const current = polling.trip ?? trip;
+  const status = current?.status ?? ride?.tripStatus;
+  const terminal = status === 'COMPLETED' || status === 'CANCELLED';
+  const pickupStage = status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED';
+  const preTransit = pickupStage || status === 'PICKUP_VERIFIED';
+  const dropStage = status === 'IN_TRANSIT' || status === 'DROP_PROGRESS';
+  useEffect(() => {
+    if (status === 'COMPLETED') navigation?.replace('TripCompletedScreen', { trip: current, tripId: current?.id });
+    else if (status === 'CANCELLED') navigation?.replace('TripCancelledStatusScreen');
+  }, [status, navigation, current?.id]);
+  const driverId = current?.driverId ?? ride?.assignedDriverId ?? undefined;
+  const location = useAssignedDriverLocation(current?.id ?? ride?.tripId ?? undefined, driverId, focused && !terminal && status !== 'DELIVERED');
+  useEffect(() => { if (location.driver) setAssignedDriver(location.driver); }, [location.driver, setAssignedDriver]);
+  const driver = location.driver ?? (assignedDriver?.id === driverId ? assignedDriver : undefined);
+  const vehicle = current?.vehicleType ?? ride?.vehicleType ?? driver?.vehicleType ?? draft.vehicleType;
+  const pickup = current?.pickup ?? ride?.pickup ?? draft.pickup;
+  const drops = current?.stops.length ? current.stops.map(stop => stop.location) : ride?.drops?.length ? ride.drops : current?.drop ? [current.drop] : draft.drops;
+  const remaining = current?.stops.filter(stop => !['DELIVERED', 'UNDELIVERED', 'CANCELLED'].includes(stop.status)) ?? [];
+  const destination = preTransit ? pickup : remaining[remaining.length - 1]?.location ?? current?.drop ?? undefined;
+  const road = useRoadRoute(location.point, destination, preTransit ? [] : remaining.slice(0, -1).map(stop => stop.location));
+  const markers = useMemo<readonly MapMarker[]>(() => [
+    ...(pickup ? [{ id: 'pickup', kind: 'pickup' as const, coordinate: pickup, title: 'Pickup' }] : []),
+    ...(!preTransit ? drops.map((point, index) => ({ id: `drop-${index}`, kind: 'drop' as const, stopNumber: index + 1, coordinate: point, title: `Drop ${index + 1}` })) : []),
+    ...(location.point ? [{ id: 'driver', kind: 'driver' as const, coordinate: location.point, vehicleType: vehicle, preview: true, bearing: location.driver?.bearingDegrees, title: 'Your driver' }] : []),
+  ], [pickup, preTransit, drops, location.point, vehicle, location.driver?.bearingDegrees]);
+  const otpState = useRideOtps(current?.rideId ?? ride?.id, { enabled: focused && !!status && !terminal && status !== 'DELIVERED' });
+  const stopOtp = otpState.otps?.stops.find(stop => stop.sequence === current?.currentStop?.sequence);
+  const otp = pickupStage ? otpState.otps?.pickup.otp : dropStage && !current?.currentStop?.otpVerified ? stopOtp?.otp : undefined;
+  const withheld = pickupStage ? otpState.otps?.pickup.withheld : stopOtp?.withheld;
+  const showOtp = pickupStage || (dropStage && !!current?.currentStop && !current.currentStop.otpVerified);
+  const payment = useBookingPayment(current?.paymentBookingId ?? ride?.paymentBookingId);
+  const method = payment.booking?.paymentMethod ?? current?.paymentMethod ?? ride?.paymentMethod;
+  const collection = savedCollectionPreference(current?.metadata?.specialInstructions ?? ride?.metadata?.specialInstructions);
+  const paymentTitle = method === 'PREPAID_UPI' ? 'UPI payment' : `${collection ?? 'Payment'}${method === 'PAY_AT_PICKUP' ? ' at pickup' : method === 'PAY_AT_DELIVERY' ? ' at drop' : ''}`;
+  const total = payment.booking?.farePaise ?? current?.payablePaise ?? ride?.payablePaise ?? (current?.fare != null ? Math.round(current.fare * 100) : ride?.fare != null ? Math.round(ride.fare * 100) : undefined);
+  const paymentText = payment.booking ? paymentLabel(payment.booking) : payment.loading ? 'Checking payment...' : 'Payment status unavailable';
+  const quoteId = ride?.quoteId;
+  // Read frozen prices on demand, including after restart. No local fee calculation.
+  useEffect(() => {
+    if (sheet !== 'fare' || !quoteId) return;
+    const controller = new AbortController(); setQuote(undefined); setQuoteError(false);
+    getFareQuote(quoteId, controller.signal).then(value => { if (!controller.signal.aborted && value.quoteId === quoteId) setQuote(value); }).catch(() => { if (!controller.signal.aborted) setQuoteError(true); });
+    return () => controller.abort();
+  }, [sheet, quoteId, quoteAttempt]);
+  const breakdown = quote?.quoteId === quoteId && (total === undefined || quote?.payablePaise === total) ? quote : undefined;
+  const headline = status === 'DRIVER_ASSIGNED' ? 'Driver on the way' : status === 'DRIVER_ARRIVED' ? 'Driver has arrived' : status === 'PICKUP_VERIFIED' ? 'Pickup confirmed' : dropStage ? 'On the way to the drop' : status === 'DELIVERED' ? 'Delivery finished' : 'Updating your trip';
+  const subtitle = status === 'DRIVER_ASSIGNED' ? 'Heading to your pickup location' : status === 'DRIVER_ARRIVED' ? 'Your driver is at the pickup point' : status === 'PICKUP_VERIFIED' ? 'Your delivery will start shortly' : dropStage ? `Delivering to drop ${current?.currentStop?.sequence ?? 1}` : status === 'DELIVERED' ? 'Finalizing your trip' : restoreError ? 'Could not refresh trip. Retrying...' : 'Getting your trip details...';
+  const contactParams = { trip: current, tripId: current?.id, bookingId: current?.paymentBookingId ?? ride?.paymentBookingId, driverName: driver?.name, vehicleType: vehicle };
+  const backHome = useCallback(() => {
+    if (onBack) return onBack();
+    const root = navigation?.getParent?.();
+    if (root?.dispatch) root.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'MainTabs', params: { screen: 'HomeScreen' } }] }));
+    else navigation?.navigate('MainTabs', { screen: 'HomeScreen' });
+  }, [onBack, navigation]);
+  useFocusEffect(useCallback(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => { backHome(); return true; });
+    return () => subscription.remove();
+  }, [backHome]));
+  const addressRows = (full = false) => <>
+    <View style={styles.addressRow}><View style={styles.dotColumn}><View style={styles.pickupDot} /><View style={styles.connector} /></View><View style={styles.flex}><Text style={styles.pickupLabel}>PICKUP</Text><Text style={styles.address} numberOfLines={full ? undefined : 2}>{pickup?.address || 'Pickup address unavailable'}</Text></View></View>
+    {(full ? drops : drops.slice(0, 1)).map((drop, index) => <View style={styles.addressRow} key={index}><View style={styles.dropDot}><Text style={styles.dropNumber}>{index + 1}</Text></View><View style={styles.flex}><Text style={styles.label}>DROP{drops.length > 1 ? ` ${index + 1} OF ${drops.length}` : ''}</Text><Text style={styles.address} numberOfLines={full ? undefined : 2}>{drop.address || 'Drop address unavailable'}</Text>{full && current?.stops[index] && <Text style={styles.caption}>{current.stops[index].status.replace(/_/g, ' ')}</Text>}</View></View>)}
+  </>;
+  return <View style={styles.page}>
+    <MapCanvas style={StyleSheet.absoluteFillObject} appearance="home" markers={markers} fitToMarkers={markers.length > 0} fitRouteOnly={false} polyline={road.polyline} routeStatus={road.status} onRetryRoute={road.retry} contentInsets={{ top: insets.top + spacing.rowHeightStandard, bottom: panelHeight + spacing.lg }} />
+    <SafeAreaView edges={['top']} style={styles.headerSafe} pointerEvents="box-none"><View style={styles.header} pointerEvents="box-none"><Pressable style={styles.backButton} accessibilityRole="button" accessibilityLabel="Back to Home" onPress={backHome}><Feather name="arrow-left" size={spacing.xl} color={colors.homeAction} /></Pressable><View style={styles.tripBadge}><View style={[styles.liveDot, { backgroundColor: location.status === 'live' ? colors.homePickup : colors.outline }]} /><Text style={styles.badgeText}>Your trip</Text></View></View></SafeAreaView>
+    <View style={[styles.panel, { maxHeight: collapsed ? '24%' : '60%' }]} onLayout={event => setPanelHeight(event.nativeEvent.layout.height)}><SafeAreaView edges={['bottom']} style={styles.panelSafe}>
+      <Pressable style={styles.handleButton} accessibilityRole="button" accessibilityLabel={collapsed ? 'Expand trip details' : 'Expand map'} onPress={() => setCollapsed(value => !value)}><View style={styles.handle} /></Pressable>
+      <ScrollView bounces={false} showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+        <Pressable style={styles.statusRow} onPress={location.refresh} accessibilityRole="button" accessibilityLabel="Refresh driver location"><View style={styles.clock}><Feather name="clock" size={spacing.xl} color={colors.homePickup} /></View><View style={styles.flex}><Text style={styles.headline}>{headline}</Text><Text style={styles.caption}>{subtitle}</Text></View>{location.status === 'live' && <View style={styles.liveRow}><View style={styles.liveDot} /><Text style={styles.liveText}>LIVE</Text></View>}</Pressable>
+        {(polling.error || ['error', 'auth_error', 'stale', 'unavailable'].includes(location.status)) && <Text style={styles.caption}>Live location is temporarily unavailable. Retrying...</Text>}
+        {!collapsed && <>
+          <View style={[styles.card, styles.driverRow]}><View style={styles.avatar}><Image source={getVehicleImage(vehicle)} style={styles.vehicleImage} resizeMode="contain" /></View><View style={styles.flex}><Text style={styles.driverName} numberOfLines={1}>{driver?.name || 'Assigned driver'}</Text><Text style={styles.caption} numberOfLines={1}>{vehicle ? getVehicleCategoryDisplayName(vehicle) : 'Assigned vehicle'}</Text></View><Pressable style={styles.contact} accessibilityRole="button" accessibilityLabel="Call driver" onPress={() => onCall ? onCall() : navigation?.navigate('CallDriverScreen', contactParams)}><Feather name="phone" size={spacing.lg} color={colors.homeAction} /></Pressable><Pressable style={styles.contact} accessibilityRole="button" accessibilityLabel="Chat with driver" onPress={() => onChat ? onChat() : navigation?.navigate('ActiveTripChatScreen', contactParams)}><Feather name="message-square" size={spacing.lg} color={colors.homeAction} /></Pressable></View>
+          {showOtp && <View style={styles.otpCard}><View style={styles.otpHeading}><Feather name="shield" size={spacing.xxl} color={colors.homePickup} /><View style={styles.flex}><Text style={styles.headline}>{pickupStage ? 'Pickup verification OTP' : 'Delivery verification OTP'}</Text><Text style={styles.caption}>{otp ? pickupStage ? 'Share only when your driver arrives' : 'Share at the drop to confirm receipt' : withheld === 'PAYMENT_REQUIRED' ? 'OTP will appear after the required payment is confirmed.' : otpState.error ? 'Unable to refresh OTP. Tap to retry.' : 'Waiting for handover authorization...'}</Text></View></View>{otp ? <View style={styles.digits}>{otp.split('').map((digit, index) => <View style={styles.digitBox} key={index}><Text style={styles.digit}>{digit}</Text></View>)}</View> : <Pressable accessibilityRole="button" accessibilityLabel="Refresh handover OTP" onPress={otpState.refresh}><Text style={styles.link}>Refresh OTP</Text></Pressable>}</View>}
+          <View style={[styles.card, styles.routeCard]}><View style={styles.routeAddresses}>{addressRows()}</View><Pressable style={styles.viewAll} accessibilityRole="button" accessibilityLabel="View all trip locations" onPress={() => setSheet('locations')}><Text style={styles.link}>View all</Text><Feather name="chevron-right" size={spacing.lg} color={colors.homeAction} /></Pressable></View>
+          <Pressable style={[styles.card, styles.paymentRow]} accessibilityRole="button" accessibilityLabel="View fare details" onPress={() => setSheet('fare')}><View style={styles.wallet}><Feather name="credit-card" size={spacing.xl} color={colors.homeAction} /></View><View style={styles.flex}><Text style={styles.headline}>{paymentTitle}</Text><Text style={styles.caption}>{paymentText}</Text></View><Text style={styles.headline}>{formatPaise(total)}</Text><Feather name="chevron-right" size={spacing.lg} color={colors.homeAction} /></Pressable>
+          {pickupStage && <Pressable style={styles.cancel} accessibilityRole="button" accessibilityLabel="Cancel booking" onPress={() => navigation?.navigate('CancellationReasonScreen')}><Text style={styles.link}>Cancel booking</Text></Pressable>}
+        </>}
+      </ScrollView>
+    </SafeAreaView></View>
+    <Modal visible={!!sheet} transparent animationType="slide" onRequestClose={() => setSheet(undefined)}><View style={styles.modalRoot}><Pressable style={styles.backdrop} accessibilityRole="button" accessibilityLabel="Close details" onPress={() => setSheet(undefined)} /><View style={[styles.modalSheet, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} accessibilityViewIsModal>
+      <View style={styles.handle} /><View style={styles.modalHeading}><Text style={styles.modalTitle}>{sheet === 'fare' ? 'Fare details' : 'All locations'}</Text><Pressable style={styles.contact} accessibilityRole="button" accessibilityLabel="Close details sheet" onPress={() => setSheet(undefined)}><Feather name="x" size={spacing.xxl} color={colors.homeAction} /></Pressable></View>
+      <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalContent}>{sheet === 'locations' ? addressRows(true) : <>
+        <View style={[styles.card, styles.paymentRow]}><View style={styles.wallet}><Feather name="credit-card" size={spacing.xl} color={colors.homeAction} /></View><View style={styles.flex}><Text style={styles.headline}>{paymentTitle}</Text><Text style={styles.caption}>Selected payment method</Text></View></View>
+        {breakdown ? <>
+          <View style={styles.spread}><Text style={styles.body}>Delivery fare</Text><Text style={styles.body}>{formatPaise(breakdown.deliveryFarePaise ?? breakdown.farePaise)}</Text></View>
+          {breakdown.customerPlatformFeePaise !== undefined && <View style={styles.spread}><Text style={styles.body}>Platform fee{breakdown.customerPlatformFeeBps !== undefined ? ` (${breakdown.customerPlatformFeeBps / 100}%)` : ''}</Text><Text style={styles.body}>{formatPaise(breakdown.customerPlatformFeePaise)}</Text></View>}
+          {(breakdown.surgeChargePaise ?? 0) > 0 && <View style={styles.spread}><Text style={styles.body}>Surge charge</Text><Text style={styles.body}>{formatPaise(breakdown.surgeChargePaise)}</Text></View>}
+          {breakdown.taxPaise > 0 && <View style={styles.spread}><Text style={styles.body}>Tax</Text><Text style={styles.body}>{formatPaise(breakdown.taxPaise)}</Text></View>}
+        </> : <Text style={styles.caption}>{quoteError || !quoteId || quote ? 'Fare breakdown is temporarily unavailable.' : 'Loading fare breakdown...'}</Text>}
+        {(quoteError || (quote && !breakdown)) && <Pressable accessibilityRole="button" accessibilityLabel="Retry fare breakdown" onPress={() => setQuoteAttempt(value => value + 1)}><Text style={styles.link}>Retry breakdown</Text></Pressable>}
+        <View style={[styles.spread, styles.total]}><Text style={styles.headline}>Total</Text><Text style={styles.headline}>{formatPaise(total ?? breakdown?.payablePaise)}</Text></View><Text style={styles.caption}>{paymentText}</Text>{payment.error && <Text style={styles.caption}>{payment.error}</Text>}
+        <Pressable accessibilityRole="button" accessibilityLabel="Refresh payment status" onPress={payment.refresh}><Text style={styles.link}>Refresh payment status</Text></Pressable>
+        {payment.booking && payment.booking.stops.length > 1 && payment.booking.stops.map(stop => <View key={stop.sequence} style={styles.spread}><Text style={styles.caption}>Drop {stop.sequence} · {stop.state.replace(/_/g, ' ').toLowerCase()}</Text><Text style={styles.caption}>{formatPaise(stop.payablePaise)}</Text></View>)}
+      </>}</ScrollView><Pressable style={styles.done} accessibilityRole="button" onPress={() => setSheet(undefined)}><Text style={styles.doneText}>Done</Text></Pressable>
+    </View></View></Modal>
+  </View>;
 }
 
-const CustomerLiveTrackingScreen: React.FC<CustomerLiveTrackingScreenProps & { navigation?: any }> = ({
-  onBack,
-  onCall,
-  onChat,
-  navigation,
-}) => {
-  const {
-    trip,
-    setTrip,
-    assignedDriver,
-    setAssignedDriver,
-    ride,
-    setRide,
-    customerId,
-    draft,
-  } = useBooking();
-
-  // If customer came directly to live tracking and trip is not yet in context, restore from engine
-  useEffect(() => {
-    if (!trip && customerId) {
-      let active = true;
-      getActiveTripForCustomer(customerId)
-        .then((found) => {
-          if (active && found) {
-            setTrip(found);
-            if (found.rideId) {
-              getRide(found.rideId).then((r) => { if (active && r) setRide(r); }).catch(() => {});
-            }
-            if (found.driverId) {
-              getDriver(found.driverId).then((d) => { if (active && d) setAssignedDriver(d); }).catch(() => {});
-            }
-          }
-        })
-        .catch(() => {});
-      return () => {
-        active = false;
-      };
-    }
-  }, [trip, customerId, setTrip, setRide, setAssignedDriver]);
-
-  // If the user killed the app and restarted, `ride` might be undefined, but `trip` exists.
-  // Restore `ride` so we have its id for the gated OTP endpoint (the trip never carries OTPs).
-  useEffect(() => {
-    if (trip?.rideId && !ride) {
-      let active = true;
-      getRide(trip.rideId)
-        .then((fetchedRide) => {
-          if (active) setRide(fetchedRide);
-        })
-        .catch(() => {});
-      return () => {
-        active = false;
-      };
-    }
-  }, [trip?.rideId, ride, setRide]);
-
-  // No push channel, so the trip and the driver's position are both polled.
-  const { trip: polled } = useTripStatus(trip?.id);
-  useEffect(() => {
-    if (polled) setTrip(polled);
-  }, [polled, setTrip]);
-
-  const [panelHeight, setPanelHeight] = useState(0);
-  const current = polled ?? trip;
-  const driverId = current?.driverId ?? assignedDriver?.id;
-  // Declared up-front because effects below read `status` in their dependency
-  // arrays; a later `const` would be in the temporal dead zone at render time
-  // and Hermes throws "Property 'status' doesn't exist".
-  const status = current?.status;
-  const payment = useBookingPayment(current?.paymentBookingId ?? ride?.paymentBookingId);
-
-  // Handover OTPs come from the gated endpoint: the server releases the pickup OTP once the
-  // pickup handover is allowed, and each drop's OTP once that drop's payment is confirmed.
-  const rideId = ride?.id ?? current?.rideId;
-  const { otps } = useRideOtps(rideId, {
-    enabled: status !== undefined && status !== 'COMPLETED' && status !== 'CANCELLED',
-  });
-
-  // Take the customer through completion the moment the driver finishes.
-  // `replace` swaps this screen out of the stack so back-swipe doesn't return
-  // to live tracking after the trip is done.
-  useEffect(() => {
-    if (!status) return;
-    if (status === 'COMPLETED') {
-      navigation?.replace('TripCompletedScreen', { trip: current, tripId: current?.id });
-    } else if (status === 'CANCELLED') {
-      navigation?.replace('TripCancelledStatusScreen');
-    }
-  }, [status, navigation]);
-  const assignedLocation = useAssignedDriverLocation(current?.id, driverId, !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(status ?? ''));
-  const driverPoint = assignedLocation.point;
-  useEffect(() => { if (assignedLocation.driver) setAssignedDriver(assignedLocation.driver); }, [assignedLocation.driver, setAssignedDriver]);
-
-  const markers = useMemo<readonly MapMarker[]>(() => {
-    const built: MapMarker[] = [];
-    if (current?.pickup) {
-      built.push({ id: 'pickup', kind: 'pickup', coordinate: current.pickup, title: 'Pickup' });
-    }
-    if (current?.stops && current.stops.length > 0) {
-      current.stops.forEach((stop, index) => {
-        if (stop.status !== 'DELIVERED') {
-          built.push({ id: `drop-${index}`, kind: 'drop', stopNumber: index + 1, coordinate: stop.location, title: `Drop ${index + 1}` });
-        }
-      });
-    } else if (current?.drop) {
-      built.push({ id: 'drop', kind: 'drop', coordinate: current.drop, title: 'Drop' });
-    }
-    if (driverPoint) {
-      built.push({
-        id: 'driver',
-        kind: 'driver',
-        preview: true,
-        coordinate: driverPoint,
-        title: assignedDriver?.name ?? 'Driver',
-        vehicleType:
-          current?.vehicleType ||
-          assignedDriver?.vehicleType ||
-          ride?.vehicleType ||
-          draft?.vehicleType,
-        bearing: assignedDriver?.bearingDegrees,
-      });
-    }
-    return built;
-  }, [current?.pickup, current?.drop, current?.stops, driverPoint, assignedDriver]);
-
-  // Route always starts from the driver so the polyline shrinks as they close
-  // the distance. Destination flips from pickup to drop once the trip is under
-  // way. `useRoute` rounds coordinates to ~11 m before refetching, so a moving
-  // driver doesn't blow through the Directions quota.
-  const preTransit =
-    status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED' || status === 'PICKUP_VERIFIED';
-  const orderedRemaining = current?.stops.filter(stop => stop.status !== 'DELIVERED' && stop.status !== 'UNDELIVERED' && stop.status !== 'CANCELLED') ?? [];
-  const routeDestination = (preTransit ? current?.pickup : orderedRemaining[orderedRemaining.length - 1]?.location ?? current?.drop) ?? undefined;
-  const routeWaypoints = preTransit ? [] : orderedRemaining.slice(0, -1).map(stop => stop.location);
-  const road = useRoadRoute(driverPoint ?? current?.pickup, routeDestination, routeWaypoints);
-
-  // The pickup OTP and the current drop's OTP, only when the server has released them.
-  const pickupOtp = otps?.pickup.otp ?? null;
-  const pickupPaymentRequired = otps?.pickup.withheld === 'PAYMENT_REQUIRED';
-  const currentStopSequence = current?.currentStop?.sequence;
-  const currentDropOtp =
-    currentStopSequence != null
-      ? (otps?.stops.find((s) => s.sequence === currentStopSequence)?.otp ?? null)
-      : null;
-
-  // Short status labels driven off the engine's own trip status. No mocks.
-  const tripHeadline = (() => {
-    switch (status) {
-      case 'DRIVER_ASSIGNED':
-        return 'Driver assigned';
-      case 'DRIVER_ARRIVED':
-        return 'Driver has arrived';
-      case 'PICKUP_VERIFIED':
-        return 'Pickup confirmed';
-      case 'IN_TRANSIT':
-      case 'DROP_PROGRESS':
-        return 'On the way to the drop';
-      case 'DELIVERED':
-        return 'Delivery finished - finalizing trip';
-      case 'COMPLETED':
-        return 'Trip completed';
-      case 'CANCELLED':
-        return 'Trip cancelled';
-      default:
-        return 'Tracking your trip';
-    }
-  })();
-
-  let currentDropAddress = current?.drop?.address ?? '—';
-  if (current?.stops && current.stops.length > 0) {
-    const activeDrop =
-      current.stops.find((s) => ['PENDING', 'IN_TRANSIT', 'ARRIVED'].includes(s.status)) ||
-      current.stops[current.stops.length - 1];
-    currentDropAddress = activeDrop?.location?.address ?? currentDropAddress;
-  }
-
-  const tripSubtitle = preTransit
-    ? `Pickup: ${current?.pickup?.address ?? draft?.pickup?.address ?? '—'}`
-    : `Drop: ${currentDropAddress}`;
-
-  const pickupAddress = current?.pickup?.address ?? draft?.pickup?.address ?? '—';
-  const dropAddress = currentDropAddress ?? draft?.drops?.[0]?.address ?? '—';
-  const fareDisplay =
-    current?.fare != null
-      ? `₹${current.fare}`
-      : current?.payablePaise != null
-      ? `₹${(current.payablePaise / 100).toFixed(0)}`
-      : draft?.quote?.payablePaise != null
-      ? `₹${(draft.quote.payablePaise / 100).toFixed(0)}`
-      : undefined;
-  const paymentMethodDisplay =
-    (current?.paymentMethod ?? ride?.paymentMethod ?? draft?.paymentMethod) === 'PAY_AT_PICKUP'
-      ? 'Pay at Pickup'
-      : 'Pay at Delivery';
-  const vehicleDisplay =
-    (current as any)?.vehicleType ?? assignedDriver?.vehicleType ?? draft?.vehicleType;
-  const distanceDisplay =
-    typeof current?.totalDistanceKm === 'number'
-      ? `${current.totalDistanceKm.toFixed(1)} km`
-      : undefined;
-
-  const handleBack = useCallback(() => {
-    if (onBack) {
-      onBack();
-    } else if (navigation?.canGoBack()) {
-      navigation.goBack();
-    } else {
-      navigation?.navigate('MainTabs', { screen: 'HomeScreen' });
-    }
-  }, [onBack, navigation]);
-
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const slideAnim = useRef(new Animated.Value(0)).current;
-
-  const toggleCollapsed = useCallback(() => {
-    const next = !isCollapsed;
-    setIsCollapsed(next);
-    Animated.spring(slideAnim, {
-      toValue: next ? 1 : 0,
-      useNativeDriver: false,
-      friction: 8,
-      tension: 40,
-    }).start();
-  }, [isCollapsed, slideAnim]);
-
-  // Bar advances as the engine reports progress.
-  const progressPercent: `${number}%` =
-    status === 'DRIVER_ARRIVED'
-      ? '20%'
-      : status === 'PICKUP_VERIFIED'
-      ? '40%'
-      : status === 'IN_TRANSIT'
-      ? '65%'
-      : status === 'DROP_PROGRESS'
-      ? '85%'
-      : status === 'DELIVERED' || status === 'COMPLETED'
-      ? '100%'
-      : '10%';
-
-  return (
-    <View style={styles.container}>
-      {/* Top App Bar */}
-      <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Pressable
-              style={styles.iconButton}
-              onPress={handleBack}
-              accessibilityRole="button"
-            >
-              <Feather name="arrow-left" size={24} color={colors.onSurfaceVariant} />
-            </Pressable>
-            <Text style={styles.headerTitle}>Live Tracking</Text>
-          </View>
-          <View style={styles.liveBadge}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveBadgeText}>LIVE</Text>
-          </View>
-        </View>
-      </SafeAreaView>
-
-      {/* Live map: pickup, drop and the driver's last reported position. */}
-      <MapCanvas
-        style={styles.mapCanvas}
-        markers={markers}
-        fitToMarkers={markers.length > 0}
-        contentInsets={{ top: spacing.lg, bottom: panelHeight + spacing.lg }}
-        polyline={road.polyline}
-        routeStatus={road.status}
-        onRetryRoute={road.retry}
-      />
-
-      {/* Bottom Overlay Container */}
-      <View style={styles.bottomOverlay} onLayout={e => setPanelHeight(e.nativeEvent.layout.height)}>
-        <SafeAreaView edges={['bottom']} style={styles.safeArea}>
-          <View style={styles.tripStatusCard}>
-            {/* Top Interactive Drag / Slide-down Handle */}
-            <Pressable
-              style={styles.dragHandleBar}
-              onPress={toggleCollapsed}
-              accessibilityRole="button"
-              accessibilityLabel={isCollapsed ? 'Expand details' : 'Slide down to view map'}
-            >
-              <View style={styles.dragHandlePill} />
-              <View style={styles.dragHandleRow}>
-                <Text style={styles.dragHandleHint}>
-                  {isCollapsed ? 'Tap to view details' : 'Tap to view map'}
-                </Text>
-                <Feather
-                  name={isCollapsed ? 'chevron-up' : 'chevron-down'}
-                  size={15}
-                  color={colors.onSurfaceVariant}
-                />
-              </View>
-            </Pressable>
-
-            {current && current.stops.length > 1 && <Pressable accessibilityRole="button" onPress={() => navigation?.navigate('MultiDropProgressScreen', { tripId: current.id })} style={{ paddingVertical: spacing.sm }}><Text style={{ ...typography.labelSm, color: colors.primary }}>View all stops</Text></Pressable>}
-            {/* Minimized Pill View when Collapsed */}
-            {isCollapsed ? (
-              <Pressable style={styles.minimizedRow} onPress={toggleCollapsed} accessibilityRole="button">
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.minimizedTitle} numberOfLines={1}>
-                    {tripHeadline}
-                  </Text>
-                  {Boolean(tripSubtitle) && (
-                    <Text style={styles.minimizedSubtitle} numberOfLines={1}>
-                      {tripSubtitle}
-                    </Text>
-                  )}
-                </View>
-                {Boolean(pickupOtp) && (status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED') && (
-                  <View style={styles.minimizedOtpBadge}>
-                    <Text style={styles.minimizedOtpLabel}>OTP</Text>
-                    <Text style={styles.minimizedOtpValue}>{pickupOtp}</Text>
-                  </View>
-                )}
-                {Boolean(currentDropOtp) && (status === 'IN_TRANSIT' || status === 'DROP_PROGRESS') && (
-                  <View style={styles.minimizedOtpBadge}>
-                    <Text style={styles.minimizedOtpLabel}>OTP</Text>
-                    <Text style={styles.minimizedOtpValue}>{currentDropOtp}</Text>
-                  </View>
-                )}
-              </Pressable>
-            ) : (
-              <ScrollView
-                style={{ flexShrink: 1 }}
-                showsVerticalScrollIndicator={false}
-                bounces={false}
-                contentContainerStyle={styles.cardScrollContent}
-              >
-        <BookingPaymentStatus state={payment} />
-                <View style={styles.tripStatusHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.tripStatusTitle}>{tripHeadline}</Text>
-                    {Boolean(tripSubtitle) && (
-                      <Text style={styles.tripStatusSubtitle} numberOfLines={1}>
-                        {tripSubtitle}
-                      </Text>
-                    )}
-                  </View>
-                  {typeof assignedDriver?.distanceKm === 'number' && (
-                    <View style={styles.onTimeBadge}>
-                      <Feather name="navigation" size={12} color={colors.onSecondaryContainer} />
-                      <Text style={styles.onTimeText}>
-                        {assignedDriver.distanceKm.toFixed(1)} km
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Coarse progress bar driven off the trip status. */}
-                <View style={styles.progressBarContainer}>
-                  <View style={[styles.progressBarFill, { width: progressPercent }]} />
-                </View>
-
-                {/* PICKUP OTP — released by the server once the pickup handover is allowed. */}
-                {(status === 'DRIVER_ASSIGNED' || status === 'DRIVER_ARRIVED') &&
-                  (pickupOtp ? (
-                    <View style={styles.premiumOtpCard}>
-                      <View style={styles.otpHeaderRow}>
-                        <View style={styles.otpShieldBadge}>
-                          <Feather name="shield" size={16} color={colors.primary} />
-                        </View>
-                        <View style={styles.otpHeaderTexts}>
-                          <Text style={styles.otpCardTitle}>PICKUP VERIFICATION OTP</Text>
-                          <Text style={styles.otpCardSub}>Share with driver to start ride</Text>
-                        </View>
-                      </View>
-                      <View style={styles.otpDigitsContainer}>
-                        {pickupOtp.split('').map((digit, idx) => (
-                          <View key={idx} style={styles.otpDigitBox}>
-                            <Text style={styles.otpDigitText}>{digit}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  ) : pickupPaymentRequired ? (
-                    <View style={styles.premiumPaymentCard}>
-                      <Feather name="alert-circle" size={18} color="#D97706" />
-                      <View style={{ flex: 1, marginLeft: 8 }}>
-                        <Text style={styles.paymentCardTitle}>PAYMENT REQUIRED</Text>
-                        <Text style={styles.paymentCardSub}>Pay the driver at pickup to start the trip.</Text>
-                      </View>
-                    </View>
-                  ) : null)}
-
-                {/* DELIVERY OTP — released once this drop's payment is confirmed (pay at delivery). */}
-                {(status === 'IN_TRANSIT' || status === 'DROP_PROGRESS') &&
-                  current?.currentStop &&
-                  !current.currentStop.otpVerified &&
-                  currentDropOtp && (
-                    <View style={styles.premiumOtpCard}>
-                      <View style={styles.otpHeaderRow}>
-                        <View style={styles.otpShieldBadge}>
-                          <Feather name="shield" size={16} color={colors.statusGreen} />
-                        </View>
-                        <View style={styles.otpHeaderTexts}>
-                          <Text style={styles.otpCardTitle}>DELIVERY OTP</Text>
-                          <Text style={styles.otpCardSub}>Share at drop location to confirm receipt</Text>
-                        </View>
-                      </View>
-                      <View style={styles.otpDigitsContainer}>
-                        {currentDropOtp.split('').map((digit, idx) => (
-                          <View key={idx} style={styles.otpDigitBox}>
-                            <Text style={styles.otpDigitText}>{digit}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-
-                {/* Route Summary (Pickup & Drop Locations) */}
-                <View style={styles.routeContainer}>
-                  <View style={styles.routeRow}>
-                    <View style={styles.routeDotCol}>
-                      <View style={[styles.routeDot, styles.pickupDot]} />
-                      <View style={styles.routeLine} />
-                    </View>
-                    <View style={styles.routeTextCol}>
-                      <Text style={styles.routeLabel}>PICKUP LOCATION</Text>
-                      <Text style={styles.routeAddress} numberOfLines={2}>
-                        {pickupAddress}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.routeRow}>
-                    <View style={styles.routeDotCol}>
-                      <View style={[styles.routeDot, styles.dropDot]} />
-                    </View>
-                    <View style={styles.routeTextCol}>
-                      <Text style={styles.routeLabel}>
-                        {current?.stops && current.stops.length > 1
-                          ? `DROP LOCATION (${current.stops.length} STOPS)`
-                          : 'DROP LOCATION'}
-                      </Text>
-                      <Text style={styles.routeAddress} numberOfLines={2}>
-                        {dropAddress}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                {/* Trip Meta Badges (Fare, Payment, Vehicle, Distance) */}
-                <View style={styles.tripMetaRow}>
-                  {Boolean(fareDisplay) && (
-                    <View style={styles.tripMetaBadge}>
-                      <Feather name="credit-card" size={12} color={colors.primary} />
-                      <Text style={styles.tripMetaBadgeText}>{fareDisplay}</Text>
-                    </View>
-                  )}
-                  <View style={styles.tripMetaBadge}>
-                    <Feather name="check-circle" size={12} color={colors.statusGreen} />
-                    <Text style={styles.tripMetaBadgeText}>{paymentMethodDisplay}</Text>
-                  </View>
-                  {Boolean(vehicleDisplay) && (
-                    <View style={styles.tripMetaBadge}>
-                      <Image
-                        source={getVehicleImage(vehicleDisplay)}
-                        style={styles.metaVehicleImage}
-                        resizeMode="contain"
-                      />
-                      <Text style={styles.tripMetaBadgeText}>{vehicleDisplay}</Text>
-                    </View>
-                  )}
-                  {Boolean(distanceDisplay) && (
-                    <View style={styles.tripMetaBadge}>
-                      <Feather name="map-pin" size={12} color={colors.onSurfaceVariant} />
-                      <Text style={styles.tripMetaBadgeText}>{distanceDisplay}</Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Driver Details Container */}
-                <View style={styles.driverDetailsContainer}>
-                  <View style={styles.driverDetailsHeader}>
-                    <View style={styles.driverInfoLeft}>
-                      <View style={styles.driverAvatarContainer}>
-                        <Image
-                          source={getVehicleImage(assignedDriver?.vehicleType)}
-                          style={styles.driver3dAvatarImage}
-                          resizeMode="contain"
-                        />
-                      </View>
-                      <View>
-                        <Text style={styles.driverName}>
-                          {assignedDriver?.name ?? 'Your driver'}
-                        </Text>
-                        {assignedDriver?.vehicleType && (
-                          <View style={styles.driverSubInfo}>
-                            <Image
-                              source={getVehicleImage(assignedDriver.vehicleType)}
-                              style={styles.driverSubVehicleImage}
-                              resizeMode="contain"
-                            />
-                            <Text style={styles.driverSubInfoText}>
-                              {assignedDriver.vehicleType}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                    {typeof assignedDriver?.distanceKm === 'number' && (
-                      <View style={styles.licensePlateBadge}>
-                        <Text style={styles.licensePlateText}>
-                          {assignedDriver.distanceKm.toFixed(1)} km
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Actions */}
-                  <View style={styles.actionsContainer}>
-                    <Pressable
-                      style={styles.actionButton}
-                      onPress={() => (onCall ? onCall() : navigation?.navigate('CallDriverScreen'))}
-                      accessibilityRole="button"
-                    >
-                      <Feather name="phone" size={18} color={colors.onSurface} />
-                      <Text style={styles.actionButtonText}>Call</Text>
-                    </Pressable>
-                    <Pressable
-                      style={styles.actionButton}
-                      onPress={() => (onChat ? onChat() : navigation?.navigate('ActiveTripChatScreen'))}
-                      accessibilityRole="button"
-                    >
-                      <Feather name="message-circle" size={18} color={colors.onSurface} />
-                      <Text style={styles.actionButtonText}>Chat</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              </ScrollView>
-            )}
-          </View>
-        </SafeAreaView>
-      </View>
-    </View>
-  );
-};
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f3f0f2', // map bg pattern color
-  },
-  
-  // Header
-  headerSafeArea: {
-    position: 'absolute',
-    top: 0,
-    width: '100%',
-    zIndex: 50,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.marginMobile,
-    height: spacing.rowHeightStandard,
-    backgroundColor: colors.surface + 'CC', // 80% opacity
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: -8,
-  },
-  headerTitle: {
-    fontSize: typography.headlineMd.fontSize,
-    fontWeight: '700',
-    color: colors.primary,
-    fontFamily: typography.headlineMd.fontFamily,
-  },
-  liveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.surfaceContainerLow,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: borderRadius.full,
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.error,
-  },
-  liveBadgeText: {
-    fontSize: typography.labelCaps.fontSize,
-    fontWeight: typography.labelCaps.fontWeight,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelCaps.fontFamily,
-    letterSpacing: typography.labelCaps.letterSpacing,
-  },
-
-  // Map Canvas
-  mapCanvas: {
-    flex: 1,
-    position: 'relative',
-  },
-  mockMapPattern: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#f3f0f2',
-  },
-  pickupMarkerContainer: {
-    position: 'absolute',
-    top: '20%',
-    left: '20%',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  pickupMarkerIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.primaryContainer,
-    ...shadows.sm,
-  },
-  pickupMarkerInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.primaryContainer,
-  },
-  markerLabelContainer: {
-    marginTop: 4,
-    backgroundColor: colors.surface + 'CC',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: borderRadius.full,
-  },
-  markerLabel: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-
-  driverMarkerContainer: {
-    position: 'absolute',
-    top: '40%',
-    left: '40%',
-    alignItems: 'center',
-    zIndex: 20,
-  },
-  driverMarkerIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.primaryContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.md,
-  },
-  driverTimeLabel: {
-    marginTop: 8,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderColor: colors.surfaceContainerHighest,
-    ...shadows.sm,
-  },
-  driverTimeText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurface,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-
-  drop1MarkerContainer: {
-    position: 'absolute',
-    top: '55%',
-    left: '45%',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  drop2MarkerContainer: {
-    position: 'absolute',
-    top: '75%',
-    left: '80%',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  dropMarkerIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.outlineVariant,
-    ...shadows.sm,
-  },
-  dropMarkerText: {
-    fontSize: typography.labelCaps.fontSize,
-    fontWeight: typography.labelCaps.fontWeight,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelCaps.fontFamily,
-  },
-
-  // Bottom Overlay
-  bottomOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: spacing.marginMobile,
-    paddingBottom: spacing.lg,
-    zIndex: 30,
-    maxHeight: '55%',
-  },
-  safeArea: {
-    flexShrink: 1,
-    width: '100%',
-  },
-  tripStatusCard: {
-    flexShrink: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 24,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.surfaceContainerHighest,
-    ...shadows.card,
-  },
-  cardScrollContent: {
-    paddingBottom: spacing.xs,
-  },
-  routeContainer: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.surfaceContainerHighest,
-  },
-  routeRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  routeDotCol: {
-    alignItems: 'center',
-    width: 14,
-    paddingTop: 3,
-  },
-  routeDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  pickupDot: {
-    backgroundColor: colors.statusGreen,
-  },
-  dropDot: {
-    backgroundColor: colors.error,
-  },
-  routeLine: {
-    width: 1.5,
-    height: 18,
-    backgroundColor: colors.outlineVariant,
-    marginVertical: 2,
-  },
-  routeTextCol: {
-    flex: 1,
-  },
-  routeLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: colors.onSurfaceVariant,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  routeAddress: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurface,
-    fontWeight: '500',
-    marginTop: 1,
-  },
-  tripMetaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    marginBottom: spacing.md,
-  },
-  tripMetaBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.surfaceContainerLow,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderColor: colors.surfaceContainerHighest,
-  },
-  tripMetaBadgeText: {
-    fontSize: typography.labelSm.fontSize,
-    fontWeight: '600',
-    color: colors.onSurface,
-  },
-  tripStatusHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: spacing.lg,
-  },
-  tripStatusTitle: {
-    fontSize: typography.headlineMd.fontSize,
-    fontWeight: typography.headlineMd.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.headlineMd.fontFamily,
-  },
-  tripStatusSubtitle: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.bodyMd.fontFamily,
-    marginTop: 4,
-  },
-  tripStatusHighlight: {
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  onTimeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.secondaryContainer,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
-  },
-  onTimeText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSecondaryContainer,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-  progressBarContainer: {
-    width: '100%',
-    height: 8,
-    backgroundColor: colors.surfaceContainerHigh,
-    borderRadius: borderRadius.full,
-    overflow: 'hidden',
-    marginBottom: spacing.lg,
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: colors.primaryContainer,
-    borderRadius: borderRadius.full,
-  },
-  dragHandleBar: {
-    alignItems: 'center',
-    paddingVertical: 6,
-    marginBottom: spacing.xs,
-  },
-  dragHandlePill: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.outlineVariant,
-    marginBottom: 4,
-  },
-  dragHandleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  dragHandleHint: {
-    fontSize: 10,
-    color: colors.onSurfaceVariant,
-    fontWeight: '500',
-  },
-  minimizedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-    gap: spacing.md,
-  },
-  minimizedTitle: {
-    fontSize: typography.bodyLg.fontSize,
-    fontWeight: '700',
-    color: colors.onSurface,
-  },
-  minimizedSubtitle: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    marginTop: 2,
-  },
-  minimizedOtpBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-  },
-  minimizedOtpLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#2563EB',
-  },
-  minimizedOtpValue: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1E3A8A',
-    letterSpacing: 2,
-  },
-  premiumOtpCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    borderWidth: 1.5,
-    borderColor: '#BFDBFE',
-    ...shadows.sm,
-  },
-  otpHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  otpShieldBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  otpHeaderTexts: {
-    flex: 1,
-  },
-  otpCardTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#0F172A',
-    letterSpacing: 0.8,
-  },
-  otpCardSub: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  otpDigitsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.md,
-  },
-  otpDigitBox: {
-    width: 54,
-    height: 54,
-    borderRadius: borderRadius.md,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    ...shadows.sm,
-  },
-  otpDigitText: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#0F172A',
-    fontFamily: typography.dataMono.fontFamily,
-  },
-  premiumPaymentCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFBEB',
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-  },
-  paymentCardTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#92400E',
-  },
-  paymentCardSub: {
-    fontSize: 12,
-    color: '#B45309',
-    marginTop: 2,
-  },
-  otpRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.primaryContainer,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  otpLabel: {
-    fontSize: typography.labelCaps.fontSize,
-    fontWeight: typography.labelCaps.fontWeight,
-    color: colors.onPrimaryContainer,
-    fontFamily: typography.labelCaps.fontFamily,
-    letterSpacing: typography.labelCaps.letterSpacing,
-  },
-  otpValue: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.onPrimaryContainer,
-    fontFamily: typography.dataMono.fontFamily,
-    letterSpacing: 4,
-  },
-  otpHint: {
-    flex: 1,
-    marginLeft: spacing.md,
-    textAlign: 'right',
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onPrimaryContainer,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-
-  driverDetailsContainer: {
-    borderTopWidth: 1,
-    borderTopColor: colors.surfaceContainerHighest,
-    paddingTop: spacing.lg,
-  },
-  driverDetailsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  driverInfoLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  metaVehicleImage: {
-    width: 18,
-    height: 18,
-    marginRight: 2,
-  },
-  driverSubVehicleImage: {
-    width: 14,
-    height: 14,
-    marginRight: 2,
-  },
-  driverAvatarContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: colors.surfaceContainerHighest,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.elevated,
-  },
-  driver3dAvatarImage: {
-    width: 38,
-    height: 38,
-  },
-  driverAvatar: {
-    width: '100%',
-    height: '100%',
-  },
-  driverName: {
-    fontSize: typography.dataMono.fontSize,
-    fontWeight: '500',
-    color: colors.onSurface,
-    fontFamily: typography.dataMono.fontFamily,
-  },
-  driverSubInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  driverSubInfoText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-  licensePlateBadge: {
-    backgroundColor: colors.surfaceContainerLow,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: borderRadius.xs,
-    borderWidth: 1,
-    borderColor: colors.surfaceContainerHighest,
-  },
-  licensePlateText: {
-    fontSize: typography.labelCaps.fontSize,
-    fontWeight: typography.labelCaps.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.labelCaps.fontFamily,
-    letterSpacing: typography.labelCaps.letterSpacing,
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surfaceContainerLow,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderColor: colors.surfaceContainerHighest,
-  },
-  actionButtonText: {
-    fontSize: typography.labelSm.fontSize,
-    fontWeight: '500',
-    color: colors.onSurface,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-  iconOnlyButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.surfaceContainerHighest,
-  },
+  page: { flex: 1, backgroundColor: colors.surface }, flex: { flex: 1, minWidth: 0 },
+  headerSafe: { position: 'absolute', top: 0, left: 0, right: 0 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  backButton: { width: spacing.rowHeightSm, height: spacing.rowHeightSm, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, ...shadows.sm },
+  tripBadge: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, borderRadius: borderRadius.full, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, ...shadows.sm },
+  badgeText: { ...typography.labelSm, color: colors.homeAction, fontWeight: '700' },
+  liveDot: { width: spacing.sm, height: spacing.sm, borderRadius: borderRadius.full, backgroundColor: colors.homePickup },
+  panel: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: colors.surface, borderTopLeftRadius: borderRadius.xxl, borderTopRightRadius: borderRadius.xxl, ...shadows.sm },
+  panelSafe: { flexShrink: 1 }, handleButton: { height: spacing.xxl, alignItems: 'center', justifyContent: 'center' },
+  handle: { width: spacing.xxxl, height: spacing.xs, backgroundColor: colors.outlineVariant, borderRadius: borderRadius.full, alignSelf: 'center' },
+  content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.md },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  clock: { width: spacing.rowHeightSm, height: spacing.rowHeightSm, borderRadius: borderRadius.full, backgroundColor: colors.successContainer, alignItems: 'center', justifyContent: 'center' },
+  headline: { ...typography.bodyMd, color: colors.homeAction, fontWeight: '700' }, caption: { ...typography.labelSm, color: colors.secondary, marginTop: spacing.xs },
+  liveRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs }, liveText: { ...typography.labelSm, color: colors.homePickup, fontWeight: '700' },
+  card: { borderWidth: 1, borderColor: colors.outlineHairline, borderRadius: borderRadius.lg, padding: spacing.md },
+  driverRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  avatar: { width: spacing.rowHeightSm + spacing.sm, height: spacing.rowHeightSm + spacing.sm, borderRadius: borderRadius.full, backgroundColor: colors.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' },
+  vehicleImage: { width: spacing.rowHeightSm, height: spacing.rowHeightSm }, driverName: { ...typography.bodyLg, color: colors.homeAction, fontWeight: '700' },
+  contact: { width: spacing.rowHeightSm, height: spacing.rowHeightSm, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.outlineHairline, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
+  otpCard: { backgroundColor: colors.selectionTint, borderRadius: borderRadius.lg, padding: spacing.md, gap: spacing.sm },
+  otpHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.md }, digits: { flexDirection: 'row', gap: spacing.sm, paddingLeft: spacing.xxxl + spacing.xs },
+  digitBox: { width: spacing.rowHeightSm, height: spacing.rowHeightSm + spacing.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.outlineHairline, borderRadius: borderRadius.md },
+  digit: { ...typography.headlineMd, color: colors.homeAction, fontWeight: '700' }, routeCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, routeAddresses: { flex: 1, gap: spacing.md },
+  addressRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }, dotColumn: { width: spacing.lg, alignItems: 'center', alignSelf: 'stretch', paddingTop: spacing.xs },
+  pickupDot: { width: spacing.md, height: spacing.md, borderRadius: borderRadius.full, backgroundColor: colors.homePickup }, connector: { flex: 1, minHeight: spacing.md, borderLeftWidth: 1, borderColor: colors.outlineVariant, marginTop: spacing.xs },
+  dropDot: { width: spacing.lg, height: spacing.lg, borderRadius: borderRadius.full, backgroundColor: colors.homeAction, alignItems: 'center', justifyContent: 'center', marginTop: spacing.xs }, dropNumber: { ...typography.labelSm, color: colors.onPrimary },
+  pickupLabel: { ...typography.labelCaps, color: colors.homePickup }, label: { ...typography.labelCaps, color: colors.secondary }, address: { ...typography.bodyMd, color: colors.homeAction, marginTop: spacing.xs },
+  viewAll: { flexDirection: 'row', alignItems: 'center', minHeight: spacing.rowHeightSm }, link: { ...typography.labelSm, color: colors.homeAction, fontWeight: '600' },
+  paymentRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, wallet: { width: spacing.xxxl, height: spacing.xxxl, borderRadius: borderRadius.full, backgroundColor: colors.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' },
+  cancel: { minHeight: spacing.rowHeightSm, borderWidth: 1, borderColor: colors.homeAction, borderRadius: borderRadius.md, alignItems: 'center', justifyContent: 'center' },
+  modalRoot: { flex: 1, justifyContent: 'flex-end' }, backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.black, opacity: 0.4 },
+  modalSheet: { maxHeight: '80%', backgroundColor: colors.surface, borderTopLeftRadius: borderRadius.xxl, borderTopRightRadius: borderRadius.xxl, padding: spacing.lg, gap: spacing.md },
+  modalHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, modalTitle: { ...typography.headlineMd, color: colors.homeAction, fontWeight: '700' }, modalScroll: { flexShrink: 1 }, modalContent: { gap: spacing.md },
+  spread: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md }, body: { ...typography.bodyMd, color: colors.homeAction }, total: { borderTopWidth: 1, borderColor: colors.outlineHairline, paddingTop: spacing.md },
+  done: { minHeight: spacing.rowHeightSm + spacing.sm, borderRadius: borderRadius.md, backgroundColor: colors.homeAction, alignItems: 'center', justifyContent: 'center' }, doneText: { ...typography.bodyMd, color: colors.onPrimary, fontWeight: '700' },
 });
-
-export default CustomerLiveTrackingScreen;

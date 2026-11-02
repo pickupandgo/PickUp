@@ -3,7 +3,7 @@ import { Animated, Easing, Image, StyleSheet, Text, useWindowDimensions, View } 
 import Feather from 'react-native-vector-icons/Feather';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 
-export default function BrandedSplash({ checkingAccount }: { readonly checkingAccount: boolean }) {
+export default function BrandedSplash({ checkingAccount, onJourneyComplete }: { readonly checkingAccount: boolean; readonly onJourneyComplete: () => void }) {
   const { width } = useWindowDimensions();
   const routeWidth = Math.min(width - spacing.xxl * 2, 360);
   const travel = useRef(new Animated.Value(0)).current;
@@ -11,15 +11,27 @@ export default function BrandedSplash({ checkingAccount }: { readonly checkingAc
 
   useEffect(() => {
     const arrive = Animated.timing(entrance, { toValue: 1, duration: 450, useNativeDriver: true });
-    const drive = Animated.loop(Animated.timing(travel, {
-      toValue: 1, duration: 3000, easing: Easing.inOut(Easing.ease), useNativeDriver: true,
-    }));
+    let active = true;
+    const journey = () => Animated.timing(travel, {
+      toValue: 1, duration: 2800, easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+    });
+    const firstJourney = journey();
+    const drive = Animated.loop(journey());
+    travel.setValue(0);
     arrive.start();
-    drive.start();
-    return () => { arrive.stop(); drive.stop(); };
-  }, [entrance, travel]);
+    firstJourney.start(({ finished }) => {
+      if (!active || !finished) return;
+      onJourneyComplete();
+      // Both ends are invisible, so resetting never shows a jump backwards.
+      travel.setValue(0);
+      drive.start();
+    });
+    return () => { active = false; arrive.stop(); firstJourney.stop(); drive.stop(); };
+  }, [entrance, travel, onJourneyComplete]);
 
-  const bikeX = travel.interpolate({ inputRange: [0, 1], outputRange: [-60, routeWidth - 85] });
+  const bikeX = travel.interpolate({ inputRange: [0, 1], outputRange: [spacing.lg - 44, routeWidth - spacing.lg - 44] });
+  const bikeOpacity = travel.interpolate({ inputRange: [0, 0.12, 0.85, 1], outputRange: [0, 1, 1, 0] });
+  const bikeScale = travel.interpolate({ inputRange: [0, 0.12, 0.85, 1], outputRange: [0.55, 1, 1, 0.55] });
   const progressX = travel.interpolate({ inputRange: [0, 1], outputRange: [-routeWidth * 0.25, routeWidth] });
 
   return <View style={styles.page}>
@@ -35,7 +47,11 @@ export default function BrandedSplash({ checkingAccount }: { readonly checkingAc
         <View style={styles.routeEndpoint}><Text style={styles.endpointText}>DROP</Text><View style={[styles.endpointDot, styles.dropDot]} /></View>
       </View>
       <View style={styles.road} />
-      <Animated.Image source={require('../../assets/vehicles/map/bike_delivery.png')} resizeMode="contain" style={[styles.bike, { transform: [{ translateX: bikeX }] }]} />
+      <View style={[styles.portal, styles.pickupPortal]} />
+      <View style={[styles.portal, styles.dropPortal]} />
+      <Animated.View style={[styles.bike, { opacity: bikeOpacity, transform: [{ translateX: bikeX }, { scale: bikeScale }] }]}>
+        <Image source={require('../../assets/vehicles/map/bike_delivery.png')} resizeMode="contain" style={styles.bikeImage} />
+      </Animated.View>
       <View style={styles.routeCaption}><Feather name="navigation" size={spacing.md} color={colors.homePickup} /><Text style={styles.routeCaptionText}>Moving with you, every stop.</Text></View>
     </View>
 
@@ -61,6 +77,10 @@ const styles = StyleSheet.create({
   endpointText: { ...typography.labelSm, fontSize: 10, fontWeight: '700', letterSpacing: 0.8, color: colors.secondary },
   road: { position: 'absolute', left: spacing.lg, right: spacing.lg, top: 95, borderTopWidth: 2, borderStyle: 'dashed', borderColor: colors.outlineVariant },
   bike: { position: 'absolute', width: 88, height: 78, top: 41, left: 0 },
+  bikeImage: { width: '100%', height: '100%', transform: [{ scaleX: -1 }] },
+  portal: { position: 'absolute', top: 64, width: spacing.lg, height: spacing.rowHeightSm, borderRadius: borderRadius.full, borderWidth: 2 },
+  pickupPortal: { left: spacing.sm, borderColor: colors.homePickup, backgroundColor: colors.successContainer },
+  dropPortal: { right: spacing.sm, borderColor: colors.homeAction, backgroundColor: colors.splashHalo },
   routeCaption: { position: 'absolute', bottom: spacing.sm, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   routeCaptionText: { ...typography.labelSm, color: colors.secondary },
   progressSection: { marginTop: spacing.xxxl, gap: spacing.md },

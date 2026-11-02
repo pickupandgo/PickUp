@@ -1,402 +1,123 @@
-import React, { useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
-import { strings } from '../../data/mockData';
-import Card from '../../components/molecules/Card';
-import ListRow from '../../components/molecules/ListRow';
-import Divider from '../../components/atoms/Divider';
-import Button from '../../components/atoms/Button';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, Pressable, Image, Modal, BackHandler } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CommonActions, useFocusEffect } from '@react-navigation/native';
+import Feather from 'react-native-vector-icons/Feather';
+import { colors, spacing, borderRadius, typography } from '../../theme';
 import { useSelectedTrip } from '../../hooks/useSelectedTrip';
+import { useTripStatus } from '../../hooks/useTripStatus';
 import { useBookingPayment } from '../../hooks/useBookingPayment';
-import BookingPaymentStatus from '../../components/organisms/BookingPaymentStatus';
 import { formatPaise, paymentLabel } from '../../utils/paymentPresentation';
 import { useBooking } from '../../state/BookingContext';
-import { getVehicleDisplayName } from '../../utils/vehicleAssets';
+import { getVehicleImage, getVehicleDisplayName } from '../../utils/vehicleAssets';
+import { vehicleLabelFor } from '../../data/mockData';
+import { getRide } from '../../api/engine';
+import { getFareQuote } from '../../api/payments';
+import type { FareQuote, Ride } from '../../api/types';
+import { savedCollectionPreference } from '../../state/collectionPreference';
 
-export interface TripCompletedScreenProps {
-  readonly onDone?: () => void;
-  readonly onWriteReview?: () => void;
-  readonly navigation?: any;
-  readonly route?: any;
+export interface TripCompletedScreenProps { readonly onDone?: () => void; readonly navigation?: any; readonly route?: any; }
+
+/** Read-only completion summary. Active-state retirement is owned by BookingProvider. */
+export default function TripCompletedScreen({ onDone, navigation, route }: TripCompletedScreenProps) {
+  const context = useBooking();
+  const selected = useSelectedTrip(route?.params, context.trip ?? context.completedBooking?.trip);
+  const live = useTripStatus(selected?.id, { enabled: !!selected && selected.status !== 'COMPLETED' && selected.status !== 'CANCELLED' });
+  const trip = live.trip ?? selected;
+  useEffect(() => { if (live.trip && context.trip?.id === live.trip.id) context.setTrip(live.trip); }, [live.trip, context.trip?.id, context.setTrip]);
+  const snapshot = context.completedBooking?.trip.id === trip?.id ? context.completedBooking : undefined;
+  const scoped = !!trip && context.trip?.id === trip.id;
+  const retainedRide = snapshot?.ride ?? (scoped && context.ride?.id === trip?.rideId ? context.ride : undefined);
+  const driver = snapshot?.driver ?? (scoped && context.assignedDriver?.id === trip?.driverId ? context.assignedDriver : undefined);
+  const [loadedRide, setLoadedRide] = useState<Ride>();
+  useEffect(() => {
+    if (!trip?.rideId || retainedRide) return;
+    const controller = new AbortController();
+    getRide(trip.rideId, controller.signal).then(value => { if (!controller.signal.aborted && value.id === trip.rideId) setLoadedRide(value); }).catch(() => {});
+    return () => controller.abort();
+  }, [trip?.rideId, retainedRide]);
+  const ride = retainedRide ?? (loadedRide?.id === trip?.rideId ? loadedRide : undefined);
+  const payment = useBookingPayment(trip?.paymentBookingId ?? ride?.paymentBookingId);
+  const total = payment.booking?.farePaise ?? trip?.payablePaise ?? ride?.payablePaise ?? (trip?.fare != null ? Math.round(trip.fare * 100) : undefined);
+  const method = payment.booking?.paymentMethod ?? trip?.paymentMethod ?? ride?.paymentMethod;
+  const collection = savedCollectionPreference(trip?.metadata?.specialInstructions ?? ride?.metadata?.specialInstructions);
+  const paymentTitle = method === 'PREPAID_UPI' ? 'UPI payment' : `${collection ?? 'Payment'}${method === 'PAY_AT_PICKUP' ? ' at pickup' : method === 'PAY_AT_DELIVERY' ? ' at drop' : ''}`;
+  const paid = payment.booking?.paymentStatus === 'PAID';
+  const paymentText = payment.booking ? paymentLabel(payment.booking) : payment.loading ? 'Checking payment...' : 'Payment status unavailable';
+  const completed = trip?.status === 'COMPLETED';
+  const mixed = trip?.stops?.some(stop => ['UNDELIVERED', 'FAILED', 'CANCELLED'].includes(stop.status));
+  const phase = completed ? mixed ? 'Trip completed' : 'Delivered successfully' : trip?.status === 'DELIVERED' ? 'Finalizing trip' : trip?.status === 'CANCELLED' ? 'Trip cancelled' : 'Trip status unavailable';
+  const vehicle = trip?.vehicleType ?? ride?.vehicleType ?? driver?.vehicleType;
+  const completedAt = trip?.completedAt && Number.isFinite(Date.parse(trip.completedAt)) ? new Date(trip.completedAt) : undefined;
+  const stops = trip?.stops?.length ? trip.stops : trip?.drop ? [{ sequence: 1, status: undefined, location: trip.drop }] : [];
+  const [fareOpen, setFareOpen] = useState(false);
+  const [quote, setQuote] = useState<FareQuote>();
+  const [quoteError, setQuoteError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const insets = useSafeAreaInsets();
+  useEffect(() => {
+    if (!fareOpen || !ride?.quoteId) return;
+    const controller = new AbortController(); setQuote(undefined); setQuoteError(false);
+    getFareQuote(ride.quoteId, controller.signal).then(value => { if (!controller.signal.aborted && value.quoteId === ride.quoteId) setQuote(value); }).catch(() => { if (!controller.signal.aborted) setQuoteError(true); });
+    return () => controller.abort();
+  }, [fareOpen, ride?.quoteId, attempt]);
+  const breakdown = quote?.quoteId === ride?.quoteId && (total === undefined || quote?.payablePaise === total) ? quote : undefined;
+  const home = useCallback(() => {
+    if (onDone) return onDone();
+    const root = navigation?.getParent?.();
+    if (root?.dispatch) root.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'MainTabs' }] }));
+    else navigation?.navigate('MainTabs', { screen: 'HomeScreen' });
+  }, [onDone, navigation]);
+  useFocusEffect(useCallback(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => { home(); return true; });
+    return () => subscription.remove();
+  }, [home]));
+
+  return <SafeAreaView style={styles.page} edges={['top', 'bottom']}>
+    <View style={styles.header}><Pressable style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Back to Home" onPress={home}><Feather name="arrow-left" size={spacing.xxl} color={colors.homeAction} /></Pressable><Text style={styles.headerTitle}>{completed ? 'Trip completed' : phase}</Text></View>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.hero}><View style={styles.halo}><View style={styles.success}><Feather name={completed && !mixed ? 'check' : 'info'} size={spacing.xxxl} color={colors.onPrimary} /></View></View><Text style={styles.heroTitle}>{phase}</Text><Text style={styles.subtitle}>{mixed ? 'Some delivery stops need attention.' : completed ? 'Your trip is complete. Thank you for choosing PICKUP.' : 'Waiting for final trip confirmation.'}</Text></View>
+      {trip && <View style={styles.card}><Text style={styles.cardTitle}>Trip summary</Text>
+        <View style={styles.addressRow}><View style={styles.pickupDot} /><View style={styles.flex}><Text style={styles.label}>PICKUP</Text><Text style={styles.body}>{trip.pickup?.address || 'Address unavailable'}</Text></View></View>
+        {stops.map((stop, index) => <View style={styles.addressRow} key={stop.sequence}><View style={styles.dropDot}><Text style={styles.dropNumber}>{index + 1}</Text></View><View style={styles.flex}><Text style={styles.label}>DROP{stops.length > 1 ? ` ${index + 1} OF ${stops.length}` : ''}</Text><Text style={styles.body}>{stop.location?.address || 'Address unavailable'}</Text>{stop.status && stop.status !== 'DELIVERED' && <Text style={styles.statusNote}>{stop.status.replace(/_/g, ' ').toLowerCase()}</Text>}</View></View>)}
+        <View style={[styles.driverRow, styles.divider]}>{vehicle && <Image source={getVehicleImage(vehicle)} style={styles.vehicleImage} resizeMode="contain" />}<View style={styles.flex}><Text style={styles.strong}>{vehicle ? vehicleLabelFor(getVehicleDisplayName(vehicle)) : 'Vehicle unavailable'}</Text><Text style={styles.muted}>{driver?.name || 'Driver details unavailable'}</Text></View></View>
+        <View style={[styles.metadata, styles.divider]}><View style={styles.flex}><Text style={styles.muted}>Distance</Text><Text style={styles.strong}>{typeof trip.totalDistanceKm === 'number' ? `${trip.totalDistanceKm.toFixed(1)} km` : 'Not available'}</Text></View><View style={[styles.flex, styles.timeColumn]}><Text style={styles.muted}>Completed at</Text><Text style={styles.strong}>{completedAt ? `${completedAt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}, ${completedAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : 'Not available'}</Text></View></View>
+      </View>}
+      <View style={styles.card}><View style={styles.spread}><View style={styles.inline}><Feather name="credit-card" size={spacing.xxl} color={colors.homeAction} /><Text style={styles.cardTitle}>Final amount</Text></View><Text style={styles.amount}>{formatPaise(total)}</Text></View><View style={styles.spread}><Text style={styles.muted}>{paymentTitle}</Text><View style={[styles.paymentBadge, paid && styles.paidBadge]}><Text style={[styles.paymentText, paid && styles.paidText]}>{paymentText}</Text></View></View><Pressable style={[styles.breakdownButton, styles.divider]} accessibilityRole="button" accessibilityLabel="View fare breakdown" onPress={() => setFareOpen(true)}><Feather name="file-text" size={spacing.xl} color={colors.homeAction} /><Text style={[styles.body, styles.flex]}>View fare breakdown</Text><Feather name="chevron-right" size={spacing.xl} color={colors.secondary} /></Pressable></View>
+      {live.error && <Text style={styles.muted}>Could not refresh the trip. Retrying...</Text>}
+      {completed && <View style={styles.savedNote}><Feather name="clock" size={spacing.lg} color={colors.secondary} /><Text style={styles.muted}>Trip details are saved in your trips.</Text></View>}
+    </ScrollView>
+    <View style={styles.footer} testID="completion-fixed-footer"><Pressable style={styles.homeButton} accessibilityRole="button" accessibilityLabel="Return to Home" onPress={home}><Text style={styles.homeText}>Back to Home</Text><Feather name="arrow-right" size={spacing.xxl} color={colors.onPrimary} /></Pressable></View>
+    <Modal visible={fareOpen} transparent animationType="slide" onRequestClose={() => setFareOpen(false)}><View style={styles.modalRoot}><Pressable style={styles.backdrop} accessibilityRole="button" accessibilityLabel="Close fare details" onPress={() => setFareOpen(false)} /><View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} accessibilityViewIsModal><View style={styles.spread}><Text style={styles.cardTitle}>Fare details</Text><Pressable style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Close fare sheet" onPress={() => setFareOpen(false)}><Feather name="x" size={spacing.xxl} color={colors.homeAction} /></Pressable></View><ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetContent}>
+      <Text style={styles.strong}>{paymentTitle}</Text>
+      {breakdown ? <><View style={styles.spread}><Text style={styles.body}>Delivery fare</Text><Text style={styles.body}>{formatPaise(breakdown.deliveryFarePaise ?? breakdown.farePaise)}</Text></View>{breakdown.customerPlatformFeePaise !== undefined && <View style={styles.spread}><Text style={styles.body}>Platform fee{breakdown.customerPlatformFeeBps !== undefined ? ` (${breakdown.customerPlatformFeeBps / 100}%)` : ''}</Text><Text style={styles.body}>{formatPaise(breakdown.customerPlatformFeePaise)}</Text></View>}{(breakdown.surgeChargePaise ?? 0) > 0 && <View style={styles.spread}><Text style={styles.body}>Surge charge</Text><Text style={styles.body}>{formatPaise(breakdown.surgeChargePaise)}</Text></View>}{breakdown.taxPaise > 0 && <View style={styles.spread}><Text style={styles.body}>Tax</Text><Text style={styles.body}>{formatPaise(breakdown.taxPaise)}</Text></View>}</> : <Text style={styles.muted}>{quoteError || !ride?.quoteId || quote ? 'Fare breakdown is temporarily unavailable.' : 'Loading fare breakdown...'}</Text>}
+      {(quoteError || (quote && !breakdown)) && <Pressable accessibilityRole="button" accessibilityLabel="Retry fare breakdown" onPress={() => setAttempt(value => value + 1)}><Text style={styles.strong}>Retry</Text></Pressable>}
+      <View style={[styles.spread, styles.divider]}><Text style={styles.strong}>Total</Text><Text style={styles.strong}>{formatPaise(total ?? breakdown?.payablePaise)}</Text></View><Text style={styles.muted}>{paymentText}</Text>{payment.error && <Text style={styles.muted}>{payment.error}</Text>}<Pressable accessibilityRole="button" accessibilityLabel="Refresh payment status" onPress={payment.refresh}><Text style={styles.strong}>Refresh payment status</Text></Pressable>
+      {payment.booking && payment.booking.stops.length > 1 && payment.booking.stops.map(stop => <View key={stop.sequence} style={styles.spread}><Text style={styles.muted}>Drop {stop.sequence}: {stop.state.replace(/_/g, ' ').toLowerCase()}</Text><Text style={styles.muted}>{formatPaise(stop.payablePaise)}</Text></View>)}
+    </ScrollView></View></View></Modal>
+  </SafeAreaView>;
 }
 
-const TripCompletedScreen: React.FC<TripCompletedScreenProps & { navigation?: any; route?: any }> = ({
-  onDone,
-  onWriteReview,
-  navigation,
-  route,
-}) => {
-  const context = useBooking();
-  const trip = useSelectedTrip(route?.params, context.trip);
-  const explicit = !!route?.params && ('trip' in route.params || 'tripId' in route.params || 'paymentBookingId' in route.params);
-  const scoped = !explicit || (!!trip && trip.id === context.trip?.id);
-  const ride = scoped ? context.ride : undefined;
-  const draft = { drops: [] } as typeof context.draft;
-  const assignedDriver = scoped ? context.assignedDriver : undefined;
-  const clearActiveRide = () => { if (trip?.id === context.trip?.id && ['COMPLETED', 'CANCELLED'].includes(trip?.status ?? '')) context.clearActiveRide(); };
-  const payment = useBookingPayment(trip?.paymentBookingId ?? ride?.paymentBookingId);
-  const selected = { trip, tripId: trip?.id, paymentBookingId: trip?.paymentBookingId };
-  const phase = trip?.status === 'COMPLETED' ? 'Trip completed' : trip?.status === 'DELIVERED' ? 'Finalizing trip' : trip?.status === 'CANCELLED' ? 'Trip cancelled' : 'Trip status unavailable';
-
-
-  // 1. Trip ID
-  const displayTripId = useMemo(() => {
-    return (
-      route?.params?.tripId ||
-      trip?.externalRef ||
-      (trip?.id ? `TRIP-${trip.id.substring(0, 6).toUpperCase()}` : undefined) ||
-      ride?.externalRef ||
-      (ride?.id ? `TRIP-${ride.id.substring(0, 6).toUpperCase()}` : undefined) ||
-      'Not available'
-    );
-  }, [route?.params?.tripId, trip, ride]);
-
-  // 2. Distance
-  const displayDistance = useMemo(() => {
-    const km =
-      route?.params?.distanceKm ??
-      trip?.totalDistanceKm ??
-      ride?.totalDistanceKm ??
-      (draft.quote ? draft.quote.distanceMeters / 1000 : undefined);
-    if (typeof km === 'number' && !isNaN(km) && km > 0) {
-      return `${km.toFixed(1)} km`;
-    }
-    return 'Not available';
-  }, [route?.params?.distanceKm, trip, ride, draft.quote]);
-
-  // 3. Vehicle Display Name
-  const displayVehicle = useMemo(() => {
-    const rawType =
-      route?.params?.vehicleType ||
-      assignedDriver?.vehicleType ||
-      (trip as any)?.vehicleType ||
-      ride?.vehicleType ||
-      draft.vehicleType;
-    return getVehicleDisplayName(rawType);
-  }, [route?.params?.vehicleType, assignedDriver?.vehicleType, trip, ride?.vehicleType, draft.vehicleType]);
-
-  // 4. Driver Name
-  const displayDriver = useMemo(() => {
-    return (
-      route?.params?.driverName ||
-      assignedDriver?.name ||
-      (trip as any)?.driverName ||
-      (ride as any)?.driverName ||
-      'Not available'
-    );
-  }, [route?.params?.driverName, assignedDriver?.name, trip, ride]);
-
-  // 5. Total Fare
-  const displayFare = formatPaise(payment.booking?.farePaise ?? trip?.payablePaise ?? ride?.payablePaise);
-
-  // 6. Route Stops
-  const stops = useMemo(() => {
-    // 1. Try trip
-    if (trip?.pickup?.address || (trip?.stops && trip.stops.length > 0)) {
-      const list: Array<{ label: string; address: string }> = [];
-      const pickupAddr = trip.pickup?.address || draft.pickup?.address;
-      if (pickupAddr) {
-        list.push({ label: 'Pickup', address: pickupAddr });
-      }
-      if (trip.stops && trip.stops.length > 0) {
-        trip.stops.forEach((s, i) => {
-          const isSingle = trip.stops.length === 1;
-          const isLast = i === trip.stops.length - 1;
-          const label = isSingle ? 'Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
-          list.push({
-            label,
-            address: s.location?.address || `Drop Location ${i + 1}`,
-          });
-        });
-      } else if (trip.drop?.address) {
-        list.push({ label: 'Drop', address: trip.drop.address });
-      }
-      if (list.length >= 2) return list;
-    }
-
-    // 2. Try ride
-    const rideDrops = ride?.drops;
-    if (ride?.pickup?.address || (rideDrops && rideDrops.length > 0)) {
-      const list: Array<{ label: string; address: string }> = [];
-      const pickupAddr = ride.pickup?.address || draft.pickup?.address;
-      if (pickupAddr) {
-        list.push({ label: 'Pickup', address: pickupAddr });
-      }
-      if (rideDrops && rideDrops.length > 0) {
-        rideDrops.forEach((d, i) => {
-          const isSingle = rideDrops.length === 1;
-          const isLast = i === rideDrops.length - 1;
-          const label = isSingle ? 'Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
-          list.push({
-            label,
-            address: d.address || `Drop Location ${i + 1}`,
-          });
-        });
-      } else if (ride.drop?.address) {
-        list.push({ label: 'Drop', address: ride.drop.address });
-      }
-      if (list.length >= 2) return list;
-    }
-
-    // 3. Try draft
-    if (draft.pickup?.address && draft.drops && draft.drops.length > 0) {
-      const list: Array<{ label: string; address: string }> = [
-        { label: 'Pickup', address: draft.pickup.address },
-      ];
-      draft.drops.forEach((d, i) => {
-        const isSingle = draft.drops.length === 1;
-        const isLast = i === draft.drops.length - 1;
-        const label = isSingle ? 'Drop' : isLast ? 'Final Drop' : `Drop ${i + 1}`;
-        list.push({
-          label,
-          address: d.address,
-        });
-      });
-      return list;
-    }
-
-    return [];
-  }, [trip, ride, draft]);
-
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <BookingPaymentStatus state={payment} />
-        {trip?.stops?.map(stop => <Text key={`outcome-${stop.sequence}`}>Drop {stop.sequence}: {stop.status.replace(/_/g, ' ').toLowerCase()}</Text>)}
-        {/* Success Icon */}
-        <View style={styles.heroSection}>
-          <View style={styles.successCircle}>
-            <Text style={styles.successIcon}>✓</Text>
-          </View>
-          <Text style={styles.title}>{phase}</Text>
-          <Text style={styles.subtitle}>
-            {trip?.stops?.some(stop => ['UNDELIVERED', 'FAILED', 'CANCELLED'].includes(stop.status)) ? 'Some delivery stops need attention.' : trip?.status === 'COMPLETED' ? 'Trip completion confirmed.' : 'Waiting for final trip confirmation.'}
-          </Text>
-        </View>
-
-        {/* Trip Summary Card */}
-        <Card variant="outlined" padding="none">
-          <View style={styles.summaryHeader}>
-            <Text style={styles.summaryTitle}>{strings.trip.summary}</Text>
-            <Text style={styles.tripId}>{displayTripId}</Text>
-          </View>
-          <Divider />
-          <ListRow
-            title="Distance"
-            trailing={
-              <Text style={styles.valueText}>{displayDistance}</Text>
-            }
-          />
-          <Divider />
-          <ListRow
-            title="Vehicle"
-            trailing={
-              <Text style={styles.valueText}>{displayVehicle}</Text>
-            }
-          />
-          <Divider />
-          <ListRow
-            title="Driver"
-            trailing={
-              <Text style={styles.valueText}>{displayDriver}</Text>
-            }
-          />
-          <Divider />
-          <View style={styles.fareRow}>
-            <Text style={styles.fareLabel}>Total Fare</Text>
-            <Text style={styles.fareAmount}>{displayFare}</Text>
-          </View>
-        </Card>
-
-        {/* Route Summary */}
-        <Card variant="filled" padding="md">
-          {stops.map((stop, i) => (
-            <View key={`stop-${i}`} style={styles.stopRow}>
-              <View
-                style={[
-                  styles.stopDot,
-                  i === 0
-                    ? styles.pickupDot
-                    : styles.dropDot,
-                ]}
-              />
-              <View style={styles.stopInfo}>
-                <Text style={styles.stopLabel}>{stop.label}</Text>
-                <Text style={styles.stopAddress}>{stop.address}</Text>
-              </View>
-            </View>
-          ))}
-        </Card>
-      </ScrollView>
-
-      {/* Footer */}
-      <View style={styles.footer}>
-        <Button
-          label={onWriteReview ? 'Write a Review' : 'Reviews unavailable'}
-          onPress={() =>
-            onWriteReview ? onWriteReview() : navigation?.navigate('DriverRatingScreen', selected)
-          }
-          variant="outline"
-          size="lg"
-          fullWidth
-        />
-        <Button
-          label="Done"
-          onPress={() => {
-            onDone?.();
-            navigation?.navigate('TripCompletedSummaryScreen', selected);
-          }}
-          variant="primary"
-          size="lg"
-          fullWidth
-        />
-      </View>
-    </SafeAreaView>
-  );
-};
-
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: spacing.marginMobile,
-    gap: spacing.stackGapMd,
-    paddingBottom: spacing.xxxl,
-  },
-
-  // Hero
-  heroSection: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxxl,
-    gap: spacing.md,
-  },
-  successCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.statusGreen,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-  },
-  successIcon: {
-    fontSize: 36,
-    color: colors.white,
-    fontWeight: '700',
-  },
-  title: {
-    fontSize: typography.headlineMd.fontSize,
-    lineHeight: typography.headlineMd.lineHeight,
-    fontWeight: typography.headlineMd.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.headlineMd.fontFamily,
-  },
-  subtitle: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.bodyMd.fontFamily,
-    textAlign: 'center',
-  },
-
-  // Summary
-  summaryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  summaryTitle: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.headlineSm.fontFamily,
-  },
-  tripId: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-  valueText: {
-    fontSize: typography.bodyMd.fontSize,
-    fontWeight: '500',
-    color: colors.onSurface,
-    fontFamily: typography.bodyMd.fontFamily,
-  },
-  fareRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-  },
-  fareLabel: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.headlineSm.fontFamily,
-  },
-  fareAmount: {
-    fontSize: typography.headlineMd.fontSize,
-    fontWeight: '700',
-    color: colors.primary,
-    fontFamily: typography.headlineMd.fontFamily,
-  },
-
-  // Stops
-  stopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  stopDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 6,
-  },
-  pickupDot: {
-    backgroundColor: colors.statusGreen,
-  },
-  dropDot: {
-    backgroundColor: colors.primary,
-  },
-  stopInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  stopLabel: {
-    fontSize: typography.labelSm.fontSize,
-    fontWeight: typography.labelSm.fontWeight,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-  stopAddress: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurface,
-    fontFamily: typography.bodyMd.fontFamily,
-  },
-
-  // Footer
-  footer: {
-    paddingHorizontal: spacing.marginMobile,
-    paddingVertical: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.outlineHairline,
-    backgroundColor: colors.surface,
-    gap: spacing.sm,
-  },
+  page: { flex: 1, backgroundColor: colors.surface }, flex: { flex: 1, minWidth: 0 }, scroll: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, minHeight: spacing.rowHeightStandard, gap: spacing.sm },
+  iconButton: { width: spacing.rowHeightSm, height: spacing.rowHeightSm, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { ...typography.headlineMd, color: colors.homeAction, fontWeight: '700' },
+  content: { padding: spacing.lg, gap: spacing.lg }, hero: { alignItems: 'center', gap: spacing.md, paddingVertical: spacing.lg },
+  halo: { width: spacing.xxxl * 3, height: spacing.xxxl * 3, backgroundColor: colors.selectionTint, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center' },
+  success: { width: spacing.xxxl * 2, height: spacing.xxxl * 2, backgroundColor: colors.homePickup, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center' },
+  heroTitle: { ...typography.headlineLg, color: colors.homeAction, textAlign: 'center' }, subtitle: { ...typography.bodyMd, color: colors.secondary, textAlign: 'center' },
+  card: { borderWidth: 1, borderColor: colors.outlineHairline, borderRadius: borderRadius.xl, padding: spacing.lg, gap: spacing.lg },
+  cardTitle: { ...typography.headlineSm, color: colors.homeAction, fontWeight: '700' }, body: { ...typography.bodyMd, color: colors.homeAction }, strong: { ...typography.bodyMd, color: colors.homeAction, fontWeight: '600' }, muted: { ...typography.labelSm, color: colors.secondary },
+  addressRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }, label: { ...typography.labelCaps, color: colors.secondary, marginBottom: spacing.xs },
+  pickupDot: { width: spacing.md, height: spacing.md, borderRadius: borderRadius.full, backgroundColor: colors.homePickup, marginTop: spacing.sm, marginHorizontal: spacing.xs },
+  dropDot: { width: spacing.xl, height: spacing.xl, borderRadius: borderRadius.full, backgroundColor: colors.homeAction, alignItems: 'center', justifyContent: 'center', marginTop: spacing.xs }, dropNumber: { ...typography.labelSm, color: colors.onPrimary },
+  statusNote: { ...typography.labelSm, color: colors.error, marginTop: spacing.xs }, driverRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  vehicleImage: { width: spacing.rowHeightStandard + spacing.sm, height: spacing.rowHeightStandard }, divider: { borderTopWidth: 1, borderColor: colors.outlineHairline, paddingTop: spacing.md },
+  metadata: { flexDirection: 'row', gap: spacing.md }, timeColumn: { borderLeftWidth: 1, borderColor: colors.outlineHairline, paddingLeft: spacing.lg },
+  spread: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md }, inline: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, amount: { ...typography.headlineMd, color: colors.homeAction, fontWeight: '700' },
+  paymentBadge: { backgroundColor: colors.surfaceContainerLow, borderRadius: borderRadius.full, paddingVertical: spacing.xs, paddingHorizontal: spacing.sm, flexShrink: 1 }, paidBadge: { backgroundColor: colors.successContainer }, paymentText: { ...typography.labelSm, color: colors.secondary }, paidText: { color: colors.homePickup },
+  breakdownButton: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: spacing.rowHeightSm }, savedNote: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  footer: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderTopWidth: 1, borderColor: colors.outlineHairline }, homeButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.lg, minHeight: spacing.rowHeightStandard, backgroundColor: colors.homeAction, borderRadius: borderRadius.lg }, homeText: { ...typography.bodyLg, color: colors.onPrimary, fontWeight: '600' },
+  modalRoot: { flex: 1, justifyContent: 'flex-end' }, backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.black, opacity: 0.4 }, sheet: { maxHeight: '80%', backgroundColor: colors.surface, borderTopLeftRadius: borderRadius.xxl, borderTopRightRadius: borderRadius.xxl, padding: spacing.lg, gap: spacing.md }, sheetScroll: { flexShrink: 1 }, sheetContent: { gap: spacing.lg },
 });
-
-export default TripCompletedScreen;
