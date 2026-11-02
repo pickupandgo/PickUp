@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
+import Feather from 'react-native-vector-icons/Feather';
 import { verifyOTP, sendPhoneOTP, sendPhoneLinkOTP, getPhoneLinkSession, confirmPhoneLinkOTP,
   mapFirebaseAuthError, usePhoneCooldown, hasActiveSession } from '../../auth/authService';
 import { useSession } from '../../state/SessionContext';
@@ -62,17 +63,20 @@ export default function OtpVerificationScreen({ phoneNumber = '', onVerify, onRe
   const shownError = error || localError || (!actualPhone ? 'Go back and enter your mobile number.'
     : !sessionExists ? 'Request a new code to continue verification.' : null);
   return <AuthLayout onBack={back} busy={Boolean(busy) || isLoading}>
+    <Text style={styles.eyebrow}>PHONE VERIFICATION</Text>
     <Text style={authStyles.title}>Verify your number</Text>
-    <Text style={styles.subtitle}>Enter the 6-digit code sent to</Text>
+    <Text style={styles.subtitle}>Enter the 6-digit code sent to your phone.</Text>
     <View style={styles.destination}>
-      <Text style={styles.number}>{actualPhone}</Text>
-      <Pressable onPress={back} disabled={Boolean(busy) || isLoading} style={authStyles.action}
-        accessibilityRole="button" accessibilityLabel="Edit mobile number"><Text style={authStyles.link}>Edit</Text></Pressable>
+      <View style={styles.phoneIcon}><Feather name="smartphone" size={spacing.lg} color={colors.homeAction} /></View>
+      <Text style={styles.number} numberOfLines={1}>{actualPhone}</Text>
+      <Pressable onPress={back} disabled={Boolean(busy) || isLoading} style={styles.editAction}
+        accessibilityRole="button" accessibilityLabel="Edit mobile number"><Text style={styles.editText}>Edit</Text></Pressable>
     </View>
+    <Text style={styles.codeLabel}>VERIFICATION CODE</Text>
     <View style={styles.codeArea}>
       <View style={styles.cells} pointerEvents="none" accessible={false}>
         {Array.from({ length: 6 }, (_, i) => <View key={i} style={[styles.cell,
-          focused && Math.min(code.length, 5) === i && styles.focused, Boolean(shownError) && styles.invalid]}>
+          Boolean(code[i]) && styles.filled, focused && Math.min(code.length, 5) === i && styles.focused, Boolean(shownError) && styles.invalid]}>
           <Text style={styles.digit}>{code[i] || ''}</Text>
         </View>)}
       </View>
@@ -101,18 +105,23 @@ export default function OtpVerificationScreen({ phoneNumber = '', onVerify, onRe
   </AuthLayout>;
 }
 const styles = StyleSheet.create({
-  subtitle: { ...typography.bodyMd, color: colors.onSurfaceVariant },
-  destination: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xxl },
-  number: { ...typography.bodyMd, color: colors.onSurface, fontWeight: '500' },
-  codeArea: { position: 'relative', marginBottom: spacing.md },
-  cells: { flexDirection: 'row', gap: spacing.sm },
-  cell: { flex: 1, minHeight: spacing.rowHeightStandard, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: colors.outlineVariant, borderRadius: borderRadius.md, backgroundColor: colors.surface },
-  focused: { borderColor: colors.primary, borderWidth: 2 },
+  eyebrow: { ...typography.labelSm, color: colors.homePickup, fontWeight: '700', letterSpacing: 1, marginBottom: spacing.sm },
+  subtitle: { ...typography.bodyMd, color: colors.onSurfaceVariant, marginBottom: spacing.lg },
+  destination: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primaryFixed, borderRadius: borderRadius.lg, padding: spacing.sm, marginBottom: spacing.xxl },
+  phoneIcon: { width: spacing.xxxl, height: spacing.xxxl, borderRadius: borderRadius.full, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
+  number: { ...typography.bodyMd, color: colors.homeAction, fontWeight: '700', flex: 1, minWidth: 0 },
+  editAction: { minHeight: spacing.rowHeightSm, justifyContent: 'center', paddingHorizontal: spacing.sm },
+  editText: { ...typography.bodyMd, color: colors.homeAction, fontWeight: '700' },
+  codeLabel: { ...typography.labelSm, color: colors.secondary, fontWeight: '700', letterSpacing: 0.8, marginBottom: spacing.sm },
+  codeArea: { position: 'relative', marginBottom: spacing.lg },
+  cells: { flexDirection: 'row', gap: spacing.xs },
+  cell: { flex: 1, minWidth: 0, minHeight: spacing.rowHeightStandard + spacing.sm, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.outlineHairline, borderRadius: borderRadius.md, backgroundColor: colors.surfaceContainerLow },
+  filled: { backgroundColor: colors.selectionTint, borderColor: colors.selectionOutline },
+  focused: { borderColor: colors.homeAction, borderWidth: 2 },
   invalid: { borderColor: colors.error },
-  digit: { ...typography.authTitle, color: colors.primary },
-  codeInput: { ...StyleSheet.absoluteFillObject, color: colors.transparent, backgroundColor: colors.transparent,
-    fontSize: typography.bodyLg.fontSize },
-  resend: { minHeight: spacing.rowHeightStandard, justifyContent: 'center', alignItems: 'center', marginVertical: spacing.lg },
+  digit: { ...typography.headlineMd, color: colors.homeAction, fontWeight: '700' },
+  codeInput: { ...StyleSheet.absoluteFillObject, opacity: 0, fontSize: typography.bodyLg.fontSize },
+  resend: { minHeight: spacing.rowHeightStandard, justifyContent: 'center', alignItems: 'center', marginVertical: spacing.sm },
 });
 
