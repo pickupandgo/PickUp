@@ -57,7 +57,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
   // High-level mode
   const initialMode = route?.params?.mode ?? 'pickup';
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const mapShare = useRef(new Animated.Value(0.7)).current;
+  const mapShare = useRef(new Animated.Value(0.62)).current;
   const [mapCenter, setMapCenter] = useState<GeoPoint | undefined>(draft.pickup);
   const [locationError, setLocationError] = useState<string>();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -164,7 +164,7 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
   const DetailsScrollView = Platform.OS === 'android' ? ScrollView : KeyboardAwareScrollView;
   const timelineVisible = mode === 'edit' && !editTarget;
   useEffect(() => {
-    Animated.timing(mapShare, { toValue: keyboardOpen ? 0.3 : detailsOpen || timelineVisible ? 0.42 : 0.7, duration: 260, useNativeDriver: false }).start();
+    Animated.timing(mapShare, { toValue: keyboardOpen ? 0.3 : detailsOpen || timelineVisible ? 0.42 : 0.62, duration: 260, useNativeDriver: false }).start();
   }, [detailsOpen, timelineVisible, keyboardOpen, mapShare]);
 
   const collapseDetails = () => {
@@ -200,6 +200,9 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
       setTempPlace(place);
       setMapCenter(place);
       setSearchQuery(place.address);
+      setDetailsOpen(false);
+      setIsSearchFocused(false);
+      Keyboard.dismiss();
     } catch {
       if (seq === latestResolveSeq.current) setLocationError('Could not find your location. Move the map or search for an address.');
     } finally { if (seq === latestResolveSeq.current) setIsResolving(false); }
@@ -470,13 +473,14 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
 
   const renderAddress = () => (
     <View style={styles.selectedAddress}>
-      <MaterialIcons name="place" size={spacing.xxl} color={activeType === 'pickup' ? colors.homePickup : colors.primary} />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.addressName} numberOfLines={1}>{tempPlace?.address.split(',')[0] || 'Choose a location'}</Text>
-        <Text style={styles.addressSubtitle} numberOfLines={2}>{isResolving ? 'Finding address...' : tempPlace?.address ?? 'Move the map or search above'}</Text>
+      <View style={[styles.addressIcon, activeType === 'pickup' ? styles.pickupAccent : styles.dropAccent]}><Feather name="map-pin" size={spacing.xl} color={colors.white} /></View>
+      <View style={styles.addressText}>
+        <Text style={styles.addressEyebrow}>SELECTED {activeType === 'pickup' ? 'PICKUP' : 'DROP'}</Text>
+        <Text style={styles.addressName} numberOfLines={1}>{tempPlace?.address.split(',')[0]?.trim() || 'Choose a location'}</Text>
+        <Text style={styles.addressSubtitle} numberOfLines={2}>{isResolving ? 'Finding address...' : tempPlace?.address.split(',').slice(1).join(',').trim() || 'Move the map or search above'}</Text>
       </View>
-      <Pressable onPress={() => { collapseDetails(); setIsSearchFocused(true); searchRef.current?.focus(); }} accessibilityRole="button" accessibilityLabel="Change selected location" hitSlop={spacing.sm}>
-        {detailsOpen ? <Text style={styles.changeText}>Change</Text> : <Feather name="edit-2" size={spacing.lg} color={colors.primary} />}
+      <Pressable style={styles.addressChange} onPress={collapseDetails} accessibilityRole="button" accessibilityLabel="Change selected location" hitSlop={spacing.sm}>
+        <Text style={styles.changeText}>Change</Text>
       </Pressable>
     </View>
   );
@@ -484,9 +488,8 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
     <View style={styles.sheetContent}>
       <Text style={styles.stageTitle}>Select {activeType === 'pickup' ? 'pickup' : 'drop'} location</Text>
       {renderAddress()}
-      <Text style={styles.selectionHint}>Move the map to adjust the pin.</Text>
+      <Text style={styles.selectionHint}>Drag the map to place the pin exactly where you need it.</Text>
       {locationError && <Text style={styles.locationError}>{locationError}</Text>}
-      <Button label={`Confirm ${activeType === 'pickup' ? 'pickup' : 'drop'} location`} onPress={selectLocation} disabled={!tempPlace || isResolving} loading={isResolving} fullWidth style={styles.stageButton} />
     </View>
   );
   const renderForm = () => (
@@ -589,11 +592,12 @@ label="Done Editing"
   return (
     <View style={styles.container}>
       <Animated.View style={{ flex: mapShare, minHeight: spacing.rowHeightStandard * 2 }}>
-        <MapCanvas style={styles.mapCanvas} appearance="home" center={mapCenter ?? tempPlace} recenterOnLayout markers={timelineVisible ? mapMarkers : []} scrollEnabled={!detailsOpen && !timelineVisible} onRegionChangeComplete={handleRegionChange}>
+        <MapCanvas style={styles.mapCanvas} appearance="home" center={mapCenter ?? tempPlace} markers={timelineVisible ? mapMarkers : []} scrollEnabled={!detailsOpen && !timelineVisible} onRegionChangeComplete={handleRegionChange}>
           {renderTopControls()}
           {!timelineVisible && <View style={styles.mapPinContainer} pointerEvents="none">
-            <MaterialIcons name="place" size={spacing.xxxl + spacing.md} color={activeType === 'pickup' ? colors.homePickup : colors.primary} />
-            <View style={[styles.mapPinDot, activeType === 'pickup' && { backgroundColor: colors.homePickup }]} />
+            <View style={styles.mapPointerRing}><View style={[styles.mapPointerCore, activeType === 'pickup' ? styles.pickupAccent : styles.dropAccent]} /></View>
+            <View style={[styles.mapPointerStem, activeType === 'pickup' ? styles.pickupAccent : styles.dropAccent]} />
+            <View style={[styles.mapPointerTip, activeType === 'pickup' ? styles.pickupAccent : styles.dropAccent]} />
           </View>}
           <Pressable style={styles.recenterButton} onPress={locateSelection} disabled={isResolving} accessibilityRole="button" accessibilityLabel="Use my current location">
             <Feather name="crosshair" size={spacing.xl} color={colors.primary} />
@@ -605,14 +609,16 @@ label="Done Editing"
         <DetailsScrollView testID="location-details-scroll" style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" overScrollMode="never" bounces={false} automaticallyAdjustKeyboardInsets={false} contentContainerStyle={styles.scrollContent}>
           {timelineVisible ? renderTimeline() : detailsOpen ? renderForm() : renderSelection()}
         </DetailsScrollView>
-        {detailsOpen && !timelineVisible && <View style={styles.stickyFooter}><Button label="Save and continue" onPress={handleConfirm} fullWidth disabled={isResolving || !isFormValid || savingDetails} loading={savingDetails} style={styles.stageButton} /></View>}
+        {!timelineVisible && <View style={styles.stickyFooter}>{detailsOpen
+          ? <Button label="Save and continue" onPress={handleConfirm} fullWidth disabled={isResolving || !isFormValid || savingDetails} loading={savingDetails} style={styles.stageButton} />
+          : <Button label={`Confirm ${activeType === 'pickup' ? 'pickup' : 'drop'} location`} onPress={selectLocation} disabled={!tempPlace || isResolving} loading={isResolving} fullWidth style={styles.stageButton} />}</View>}
       </Animated.View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  stickyFooter: { paddingHorizontal: spacing.marginMobile, paddingTop: spacing.sm, paddingBottom: spacing.xs, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.outlineHairline },
+  stickyFooter: { paddingHorizontal: spacing.marginMobile, paddingTop: spacing.sm, paddingBottom: spacing.sm, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.outlineHairline },
   filledInput: { ...typography.bodyMd, color: colors.onSurface, backgroundColor: colors.surfaceContainerLow, borderRadius: borderRadius.md, padding: spacing.md, minHeight: spacing.rowHeightSm + spacing.sm },
   filledNameRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceContainerLow, borderRadius: borderRadius.md, paddingHorizontal: spacing.md },
   filledNameInput: { ...typography.bodyMd, color: colors.onSurface, flex: 1, minWidth: 0, minHeight: spacing.rowHeightSm + spacing.sm, paddingVertical: spacing.md },
@@ -624,13 +630,19 @@ const styles = StyleSheet.create({
   saveAsSelected: { backgroundColor: colors.primaryFixed, borderColor: colors.primary },
   detailsSheet: { flex: 1, borderTopLeftRadius: borderRadius.xxl, borderTopRightRadius: borderRadius.xxl, backgroundColor: colors.surface, overflow: 'hidden', paddingBottom: spacing.sm },
   sheetHandle: { width: spacing.xxxl, height: spacing.xs, backgroundColor: colors.outlineVariant, borderRadius: borderRadius.full, alignSelf: 'center', marginTop: spacing.sm },
-  stageTitle: { ...typography.headlineMd, color: colors.primary, marginBottom: spacing.md },
-  selectedAddress: { backgroundColor: colors.surfaceContainerLow, borderWidth: 1, borderColor: colors.outlineHairline, borderRadius: borderRadius.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, marginBottom: spacing.md },
-  addressName: { ...typography.bodyMd, fontWeight: '600', color: colors.primary },
-  addressSubtitle: { ...typography.labelSm, color: colors.onSurfaceVariant },
-  selectionHint: { ...typography.labelSm, color: colors.onSurfaceVariant, marginBottom: spacing.md },
+  stageTitle: { ...typography.headlineMd, fontWeight: '700', color: colors.homeAction, marginBottom: spacing.md },
+  selectedAddress: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.selectionOutline, borderRadius: borderRadius.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, marginBottom: spacing.md, ...shadows.card },
+  addressIcon: { width: spacing.xxxl, height: spacing.xxxl, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center' },
+  pickupAccent: { backgroundColor: colors.homePickup },
+  dropAccent: { backgroundColor: colors.error },
+  addressText: { flex: 1, minWidth: 0 },
+  addressEyebrow: { ...typography.labelSm, fontSize: typography.labelSm.fontSize - 2, fontWeight: '700', color: colors.secondary, marginBottom: spacing.xs },
+  addressName: { ...typography.bodyMd, fontWeight: '700', color: colors.homeAction },
+  addressSubtitle: { ...typography.labelSm, color: colors.onSurfaceVariant, marginTop: spacing.xs },
+  addressChange: { minHeight: spacing.rowHeightSm, justifyContent: 'center', paddingHorizontal: spacing.xs },
+  selectionHint: { ...typography.labelSm, color: colors.secondary, marginBottom: spacing.sm },
   locationError: { ...typography.labelSm, color: colors.error, marginBottom: spacing.sm },
-  stageButton: { backgroundColor: colors.primary, borderRadius: borderRadius.lg },
+  stageButton: { backgroundColor: colors.homeAction, borderRadius: borderRadius.lg },
   detailsHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   changeText: { ...typography.labelSm, fontWeight: '600', color: colors.primary },
   detailInput: { ...typography.bodyMd, color: colors.onSurface, borderWidth: 1, borderColor: colors.outlineHairline, borderRadius: borderRadius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, minHeight: spacing.rowHeightSm + spacing.xs },
@@ -685,9 +697,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '50%',
     left: '50%',
-    transform: [{ translateX: -(spacing.xxxl + spacing.md) / 2 }, { translateY: -(spacing.xxxl + spacing.md + spacing.xs / 2) }],
+    transform: [{ translateX: -spacing.xl }, { translateY: -(spacing.xl * 2 + spacing.md) }],
     alignItems: 'center',
   },
+  mapPointerRing: { width: spacing.xl * 2, height: spacing.xl * 2, borderRadius: borderRadius.full, backgroundColor: colors.white, borderWidth: 2, borderColor: colors.outlineHairline, alignItems: 'center', justifyContent: 'center', ...shadows.elevated },
+  mapPointerCore: { width: spacing.lg, height: spacing.lg, borderRadius: borderRadius.full },
+  mapPointerStem: { width: 2, height: spacing.sm },
+  mapPointerTip: { width: spacing.xs, height: spacing.xs, borderRadius: borderRadius.full },
   mapPin: {
     width: 40,
     height: 40,

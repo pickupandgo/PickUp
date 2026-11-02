@@ -81,6 +81,21 @@ it('pickup also starts without fields; collapsing details retains the draft with
   act(() => { renderer!.unmount(); });
 });
 
+it('returns to a draggable map when changing the location after confirmation', () => {
+  mockBooking = { draft: { drops: [], pendingDrop: place }, customerId: 'test' };
+  let renderer: ReactTestRenderer;
+  act(() => { renderer = TestRenderer.create(<Screen />); });
+  const map = (): any => renderer!.root.findByType('MapCanvas' as any);
+  const button = (label: string): any => renderer!.root.findAllByType(Button).find((b: any) => b.props.label === label);
+  expect(map().props.scrollEnabled).toBe(true);
+  act(() => { button('Confirm drop location').props.onPress(); });
+  expect(map().props.scrollEnabled).toBe(false);
+  act(() => { (renderer!.root as any).findByProps({ accessibilityLabel: 'Change selected location' }).props.onPress(); });
+  expect(map().props.scrollEnabled).toBe(true);
+  expect(button('Confirm drop location')).toBeDefined();
+  act(() => { renderer!.unmount(); });
+});
+
 it('uses the signed-in phone, includes house details, and waits for optional address save before committing', async () => {
   mockAuthUser = { uid: 'test', phoneNumber: '+919999999999' };
   const addDrop = jest.fn();
