@@ -1,225 +1,32 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import Icon from '../../components/atoms/Icon';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { mockHistoricalTrip, earningsLabels } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
-import { TripStopRow } from '../../components/molecules/TripStopRow';
 import { StatusBadge } from '../../components/atoms/StatusBadge';
+import { TripFinancialDetails } from '../../components/trips/TripFinancialDetails';
+import { useTripFinancialRecord } from '../../hooks/useTripFinancialRecord';
+import { historyStatus, historyTime } from '../../services/trip/tripHistoryPresentation';
+import { colors, spacing, typography, borderRadius } from '../../theme';
 import type { EarningsScreenProps } from '../../types/navigation';
 
-export interface TripEarningsDetailScreenProps {
-  readonly navigation: EarningsScreenProps<'TripEarningsDetail'>['navigation'];
-  readonly route: EarningsScreenProps<'TripEarningsDetail'>['route'];
-  readonly testID?: string;
+export function TripEarningsDetailScreen({ navigation, route, testID }: EarningsScreenProps<'TripEarningsDetail'> & { testID?: string }) {
+  const state = useTripFinancialRecord(route.params.tripId);
+  return <SafeAreaView style={styles.root} edges={['top', 'left', 'right']} testID={testID}>
+    <AppHeader title="Trip Earnings" showBackButton onBackPress={() => navigation.goBack()} />
+    <ScrollView contentContainerStyle={styles.content}>
+      {state.loading ? <ActivityIndicator color={colors.primary} accessibilityLabel="Loading trip earnings" /> : null}
+      {state.error ? <><Text style={styles.body} accessibilityRole="alert">{state.error}</Text><Pressable accessibilityRole="button" style={styles.action} onPress={state.refresh}><Text style={styles.link}>Retry</Text></Pressable></> : null}
+      {state.trip ? <View style={styles.card}><Text style={styles.title}>Trip {state.trip.externalRef}</Text>
+        <Text style={styles.body}>{historyTime(state.trip.assignedAt)}</Text><StatusBadge {...historyStatus(state.trip.status)} />
+        <TripFinancialDetails earning={state.earning} loading={state.loading} />
+      </View> : null}
+    </ScrollView>
+  </SafeAreaView>;
 }
-
-export const TripEarningsDetailScreen: React.FC<TripEarningsDetailScreenProps> = ({
-  navigation,
-  route,
-  testID,
-}) => {
-  // Mock: use static data — in production, fetched by tripId
-  const trip = mockHistoricalTrip;
-  const earnings = trip.earnings;
-
-  return (
-    <SafeAreaView style={styles.safeArea} testID={testID}>
-      <AppHeader
-        title={earningsLabels.tripDetailsTitle}
-        onBackPress={() => navigation.goBack()}
-        showBackButton
-      />
-
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Trip header */}
-        <View style={styles.headerCard}>
-          <View style={styles.headerRow}>
-            <Text style={styles.tripId}>Trip #{trip.id}</Text>
-            <StatusBadge label={trip.status} variant="approved" />
-          </View>
-          <Text style={styles.tripDateTime}>{trip.date} • {trip.time}</Text>
-        </View>
-
-        {/* Route section */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionLabel}>{earningsLabels.routeLabel}</Text>
-          {trip.stops.map((stop) => (
-            <TripStopRow
-              key={stop.id}
-              label={stop.label}
-              address={stop.address}
-              status={stop.status}
-              type={stop.type}
-            />
-          ))}
-        </View>
-
-        {/* Load details */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionLabel}>{earningsLabels.loadDetailsLabel}</Text>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>{earningsLabels.goodsTypeLabel}</Text>
-            <Text style={styles.detailValue}>{trip.goodsType}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>{earningsLabels.totalWeightLabel}</Text>
-            <Text style={styles.detailValue}>{trip.totalWeight}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>{earningsLabels.vehicleLabel}</Text>
-            <Text style={styles.detailValue}>{trip.vehicleType} ({trip.vehicleRegistration})</Text>
-          </View>
-        </View>
-
-        {/* Financials */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionLabel}>{earningsLabels.financialsLabel}</Text>
-          <View style={styles.finRow}>
-            <Text style={styles.finLabel}>{earningsLabels.grossEarningsLabel}</Text>
-            <Text style={styles.finValue}>{earnings.currency}{earnings.grossEarning}</Text>
-          </View>
-          <View style={styles.finRow}>
-            <Text style={styles.finLabelDeduct}>
-              {earningsLabels.platformCommissionLabel} ({earnings.platformCommissionPercent}%)
-            </Text>
-            <Text style={styles.finValueDeduct}>-{earnings.currency}{earnings.platformCommission}</Text>
-          </View>
-          <View style={styles.finRow}>
-            <Text style={styles.finLabelDeduct}>{earningsLabels.otherDeductionsLabel}</Text>
-            <Text style={styles.finValueDeduct}>-{earnings.currency}{earnings.otherDeductions}</Text>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.finRow}>
-            <Text style={styles.finLabelNet}>{earningsLabels.netEarningsLabel}</Text>
-            <Text style={styles.finValueNet}>{earnings.currency}{earnings.netEarning}</Text>
-          </View>
-
-          {earnings.paidToWallet ? (
-            <View style={styles.paidBadge}>
-              <Icon name="check_circle" style={styles.paidIcon} />
-              <Text style={styles.paidText}>{earningsLabels.paidToWalletLabel}</Text>
-            </View>
-          ) : null}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-};
-
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.containerPadding,
-    paddingBottom: spacing.lg,
-    gap: spacing.containerPadding,
-  },
-  headerCard: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: borderRadius.md,
-    padding: spacing.containerPadding,
-    gap: spacing.gutter,
-    ...shadows.sm,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  tripId: {
-    ...typography.headlineSm,
-    color: colors.onSurface,
-  },
-  tripDateTime: {
-    ...typography.labelSm,
-    color: colors.onSurfaceVariant,
-  },
-  sectionCard: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: borderRadius.md,
-    padding: spacing.containerPadding,
-    gap: spacing.gutter,
-    ...shadows.sm,
-  },
-  sectionLabel: {
-    ...typography.labelSm,
-    color: colors.primary,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  detailLabel: {
-    ...typography.bodyMd,
-    color: colors.onSurfaceVariant,
-  },
-  detailValue: {
-    ...typography.bodyMd,
-    fontWeight: '500',
-    color: colors.onSurface,
-  },
-  finRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  finLabel: {
-    ...typography.bodyMd,
-    color: colors.onSurface,
-  },
-  finValue: {
-    ...typography.bodyMd,
-    fontWeight: '500',
-    color: colors.onSurface,
-  },
-  finLabelDeduct: {
-    ...typography.bodyMd,
-    color: colors.onSurfaceVariant,
-  },
-  finValueDeduct: {
-    ...typography.bodyMd,
-    color: colors.error,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.outlineVariant,
-    marginVertical: 4,
-  },
-  finLabelNet: {
-    ...typography.bodyMd,
-    fontWeight: '700',
-    color: colors.onSurface,
-  },
-  finValueNet: {
-    ...typography.headlineSm,
-    color: colors.primary,
-  },
-  paidBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: '#e8f5e9',
-    padding: spacing.gutter,
-    borderRadius: borderRadius.sm,
-    marginTop: 4,
-  },
-  paidIcon: {
-    fontSize: 18,
-    color: '#2e7d32',
-  },
-  paidText: {
-    ...typography.labelSm,
-    color: '#2e7d32',
-    fontWeight: '600',
-  },
+  root: { flex: 1, backgroundColor: colors.surface }, content: { padding: spacing.containerPadding, gap: spacing.containerPadding },
+  card: { padding: spacing.containerPadding, gap: spacing.sm, borderRadius: borderRadius.xl, backgroundColor: colors.surfaceContainerLowest },
+  title: { ...typography.headlineSm, color: colors.onSurface }, body: { ...typography.bodyMd, color: colors.onSurfaceMuted },
+  action: { minHeight: 48, justifyContent: 'center' }, link: { ...typography.bodyMd, color: colors.startupBlue },
 });
-
 export default TripEarningsDetailScreen;

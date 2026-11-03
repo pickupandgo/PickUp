@@ -80,7 +80,13 @@ export type WalletStackParamList = {
 // ─── Account Stack ─────────────────────────────────────────────────
 
 export type AccountStackParamList = {
+  FloatingWindow: undefined;
   Profile: undefined;
+  EditProfile: undefined;
+  Privacy: undefined;
+  LegalInformation: { readonly document: 'privacy' | 'terms' };
+  DataPermissions: undefined;
+  HelpSupport: { readonly topic?: 'privacy' } | undefined;
   DocumentsHub: undefined;
   PersonalDocuments: { readonly documentId?: string } | undefined;
   KYCStatus: undefined;

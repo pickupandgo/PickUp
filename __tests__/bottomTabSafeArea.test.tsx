@@ -7,7 +7,7 @@ import { SafeAreaInsetsContext, SafeAreaFrameContext } from 'react-native-safe-a
 import { MainTabNavigator } from '../src/navigation/MainTabNavigator';
 import { colors } from '../src/theme';
 
-jest.mock('../src/services/tracking/TrackingService', () => ({ TrackingService: { getInstance: () => ({ startSession: jest.fn(), stopSession: jest.fn(async () => {}) }) } }));
+jest.mock('../src/services/tracking/TrackingService', () => ({ TrackingService: { getInstance: () => ({ startSession: jest.fn(), detachSession: jest.fn(), stopSession: jest.fn(async () => {}) }) } }));
 jest.mock('../src/components/notifications/NotificationRuntime', () => ({ NotificationBanner: () => null }));
 jest.mock('../src/components/atoms/Icon', () => 'Icon');
 jest.mock('../src/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));

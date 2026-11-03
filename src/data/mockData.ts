@@ -1,9 +1,8 @@
-import type { TripOffer, ActiveTrip, HistoricalTrip } from '../types/trip';
+import type { TripOffer, ActiveTrip } from '../types/trip';
 import type {
   Vehicle,
   KycDocument,
   Subscription,
-  SettingsSection,
 } from '../types/user';
 import type { ChatMessage } from '../types/chat';
 /**
@@ -362,34 +361,6 @@ export const mockEarningsSummary: EarningsSummary = {
   onlineHours: 6.2,
 };
 
-export const mockHistoricalTrip: HistoricalTrip = {
-  id: 'LOG-9921',
-  date: 'Oct 24, 2023',
-  time: '10:30 AM',
-  status: 'completed',
-  stops: [
-    { id: 's1', type: 'pickup', label: 'PICKUP', address: '124 Industrial Park, Sector 4', latitude: 0, longitude: 0, status: 'completed' },
-    { id: 's2', type: 'drop', label: 'DROP 1', address: 'Wholesale Market', latitude: 0, longitude: 0, status: 'completed' },
-    { id: 's3', type: 'drop', label: 'DROP 2', address: 'Retail Plaza', latitude: 0, longitude: 0, status: 'completed' },
-    { id: 's4', type: 'drop_final', label: 'DROP 3 (FINAL)', address: 'Final Hub', latitude: 0, longitude: 0, status: 'completed' },
-  ],
-  loadType: 'electronics',
-  goodsType: 'Electronic Appliances',
-  totalWeight: '450 kg',
-  vehicleType: 'Mini Truck',
-  vehicleRegistration: 'LOG-9921',
-  earnings: {
-    tripId: 'LOG-9921',
-    grossEarning: 1800,
-    platformCommission: 270,
-    platformCommissionPercent: 15,
-    otherDeductions: 80,
-    netEarning: 1450,
-    currency: '₹',
-    paidToWallet: true,
-  },
-};
-
 export const earningsLabels = {
   earningsTitle: 'Earnings',
   todayTab: 'Today',
@@ -491,38 +462,6 @@ export const accountRestrictedData = {
 } as const;
 
 // ───  ───
-
-export const mockSettingsSections: readonly SettingsSection[] = [
-  {
-    title: 'Personal',
-    items: [
-      { id: 's1', label: 'Profile', iconName: 'person', hasChevron: true, route: 'Profile' },
-      { id: 's2', label: 'Language', value: 'English', iconName: 'language', hasChevron: true, route: 'LanguageSelection' },
-    ],
-  },
-  {
-    title: 'Vehicle & Service',
-    items: [
-      { id: 's3', label: 'Vehicle Details', iconName: 'local_shipping', hasChevron: true, route: 'VehicleDocuments' },
-      { id: 's4', label: 'Personal Documents', iconName: 'description', hasChevron: true, route: 'PersonalDocuments' },
-    ],
-  },
-  {
-    title: 'Preferences',
-    items: [
-      { id: 's5', label: 'Notifications', iconName: 'notifications', hasChevron: true },
-      { id: 's6', label: 'Privacy', iconName: 'lock', hasChevron: true },
-    ],
-  },
-  {
-    title: 'Account',
-    items: [
-      { id: 's7', label: 'Subscription', iconName: 'card_membership', hasChevron: true, route: 'Subscription' },
-      { id: 's8', label: 'Help & Support', iconName: 'help', hasChevron: true },
-      { id: 's9', label: 'Logout', iconName: 'logout', hasChevron: false },
-    ],
-  },
-];
 
 // ───  ───
 

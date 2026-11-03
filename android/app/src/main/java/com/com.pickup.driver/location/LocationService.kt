@@ -41,6 +41,13 @@ class LocationService : Service() {
         private var isRunning: Boolean = false
 
         fun isServiceRunning(): Boolean = isRunning
+        @Volatile private var lastPublishedAt: Long = 0
+        fun connectionHealth(): String = when {
+            !isRunning -> "DISCONNECTED"
+            lastPublishedAt == 0L -> "RECONNECTING"
+            System.currentTimeMillis() - lastPublishedAt <= 30000L -> "CONNECTED"
+            else -> "STALE"
+        }
 
         /**
          * Convenience: start the foreground location service.
@@ -133,7 +140,7 @@ class LocationService : Service() {
             startForeground(LocationConfig.FOREGROUND_NOTIFICATION_ID, notification)
         }
 
-        publisher = LocationPublisher { message, terminal ->
+        publisher = LocationPublisher(onSuccess = { lastPublishedAt = it; PartnerFloatingPanel.refresh() }) { message, terminal ->
             LocationModule.foregroundEmitter?.emitLocationError(LocationErrorCode.TRACKING_UNAVAILABLE)
             // No upstream payload, token, coordinates or history in logs/notifications.
             val manager = getSystemService(NotificationManager::class.java)
@@ -146,6 +153,7 @@ class LocationService : Service() {
         startLocationUpdates(tripId != null)
         isRunning = true
         LocationModule.foregroundEmitter?.emitTrackingStateChanged(TrackingState.TRACKING)
+        PartnerFloatingPanel.refresh()
         Log.d(TAG, "Foreground tracking started")
     }
 
@@ -175,6 +183,8 @@ class LocationService : Service() {
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         isRunning = false
+        lastPublishedAt = 0
+        PartnerFloatingPanel.clear()
         LocationModule.foregroundEmitter?.emitTrackingStateChanged(TrackingState.STOPPED)
         Log.d(TAG, "Foreground tracking stopped")
     }

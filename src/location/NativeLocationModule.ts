@@ -29,6 +29,9 @@ export const LOCATION_EVENTS = {
 } as const;
 
 export const NativeLocationModule = {
+  getConnectionHealth(): Promise<'CONNECTED' | 'RECONNECTING' | 'STALE' | 'DISCONNECTED'> { return PickUpLocationModule.getConnectionHealth(); },
+  getOnlinePreference(): Promise<boolean> { return PickUpLocationModule.getOnlinePreference(); },
+  setOnlinePreference(online: boolean): Promise<boolean> { return PickUpLocationModule.setOnlinePreference(online); },
   setPublishing(enabled: boolean, tripId: string | null): Promise<boolean> {
     return PickUpLocationModule.setPublishing(enabled, tripId);
   },

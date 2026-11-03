@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,9 @@ import {
   Pressable,
   Image,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { launchImageLibrary } from 'react-native-image-picker';
-import { getAuth } from '@react-native-firebase/auth';
 import Icon from '../../components/atoms/Icon';
 import {
   colors,
@@ -22,16 +20,14 @@ import {
 import type { AccountScreenProps } from '../../types/navigation';
 import { useAuth } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n';
-import { useDriverOnboarding } from '../../hooks/useDriverOnboarding';
+import { usePartnerProfile } from '../../hooks/usePartnerProfile';
 import { DocumentNavigationCard } from '../../components/documents/DocumentNavigationCard';
+import { PartnerAppHeader } from '../../components/molecules/PartnerAppHeader';
 
 export interface ProfileScreenProps {
   readonly navigation: AccountScreenProps<'Profile'>['navigation'];
   readonly testID?: string;
 }
-
-const AVATAR_KEY = 'driver.avatarUri';
-
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   navigation,
@@ -39,42 +35,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 }) => {
   const { logout } = useAuth();
   const { t, locale } = useI18n();
-  const { summary } = useDriverOnboarding();
-  const [avatarUri, setAvatarUri] = useState<string | undefined>(undefined);
-
-  const firebaseUser = getAuth().currentUser;
-  const name =
-    summary?.profileName ||
-    firebaseUser?.displayName ||
-    firebaseUser?.phoneNumber ||
-    'Driver';
-
-  // Restore a previously chosen avatar so it survives app restarts.
-  useEffect(() => {
-    AsyncStorage.getItem(AVATAR_KEY)
-      .then(uri => {
-        if (uri) setAvatarUri(uri);
-      })
-      .catch(() => {});
-  }, []);
-
-  const handlePickAvatar = useCallback(async () => {
-    try {
-      const result = await launchImageLibrary({
-        mediaType: 'photo',
-        quality: 0.8,
-        selectionLimit: 1,
-      });
-      if (result.didCancel) return;
-      const uri = result.assets?.[0]?.uri;
-      if (uri) {
-        setAvatarUri(uri);
-        AsyncStorage.setItem(AVATAR_KEY, uri).catch(() => {});
-      }
-    } catch {
-      Alert.alert('Could not open gallery', 'Please try again.');
-    }
-  }, []);
+  const profile = usePartnerProfile();
+  const name = profile.profile?.name || 'Partner';
 
   const handleLanguage = useCallback(
     () => navigation.navigate('LanguageSelection'),
@@ -95,25 +57,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {
         text: t('profile.logout'),
         style: 'destructive',
-        onPress: () => void logout(),
+        onPress: logout,
       },
     ]);
   }, [logout, t]);
 
-  const resolvedAvatar = avatarUri;
+  const resolvedAvatar = profile.profile?.photoUrl;
 
   return (
-    <SafeAreaView style={styles.safeArea} testID={testID} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} testID={testID} edges={['top', 'left', 'right']}>
       {/* Top app bar */}
-      <View style={styles.header}>
-        <Pressable style={styles.headerBtn} onPress={handleSettings}>
-          <Icon name="menu" size={24} color={colors.primary} />
-        </Pressable>
-        <Text style={styles.headerTitle}>MULTIPLERIDE PARTNER</Text>
-        <Pressable style={styles.headerBtn} onPress={handleNotifications} accessibilityRole="button" accessibilityLabel="Notifications">
-          <Icon name="notifications" size={24} color={colors.primary} />
-        </Pressable>
-      </View>
+      <PartnerAppHeader onMenu={handleSettings} onNotifications={handleNotifications} />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -123,8 +77,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         <View style={styles.hero}>
           <Pressable
             style={styles.avatarWrap}
-            onPress={handlePickAvatar}
+            onPress={() => navigation.navigate('EditProfile')}
             accessibilityRole="button"
+            accessibilityLabel="Edit profile photo and details"
           >
             {resolvedAvatar ? (
               <Image
@@ -137,10 +92,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               </View>
             )}
             <View style={styles.avatarEditBadge}>
-              <Icon name="photo_camera" size={14} color={colors.onPrimary} />
+              <Icon name="edit" size={14} color={colors.onPrimary} />
             </View>
           </Pressable>
-          <Text style={styles.name}>{name}</Text>
+          {profile.loading ? <ActivityIndicator accessibilityLabel="Loading profile" color={colors.primary} /> : <Text style={styles.name}>{name}</Text>}
+          {profile.error ? <><Text style={styles.profileError} accessibilityRole="alert">{profile.error}</Text><Pressable onPress={profile.refresh} accessibilityRole="button" style={styles.editButton}><Text style={styles.editText}>Retry</Text></Pressable></> : null}
+          <Pressable onPress={() => navigation.navigate('EditProfile')} accessibilityRole="button" accessibilityLabel="Edit Profile" style={styles.editButton}><Text style={styles.editText}>Edit Profile</Text><Icon name="edit" size={16} color={colors.startupBlue} /></Pressable>
         </View>
 
 
@@ -236,6 +193,9 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   scrollContent: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
     paddingHorizontal: spacing.containerPadding,
     paddingBottom: spacing.xxl,
     gap: spacing.lg,
@@ -282,7 +242,11 @@ const styles = StyleSheet.create({
   name: {
     ...typography.headlineMd,
     color: colors.onSurface,
+    textAlign: 'center',
   },
+  editButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingHorizontal: spacing.containerPadding },
+  editText: { ...typography.headlineSm, color: colors.startupBlue },
+  profileError: { ...typography.bodyMd, color: colors.error, textAlign: 'center' },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',

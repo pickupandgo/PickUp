@@ -3,6 +3,9 @@ import { deleteToken, getMessaging, getToken } from '@react-native-firebase/mess
 import { createNotificationBackend } from './NotificationBackend';
 import { notificationInbox } from './NotificationInbox';
 import { PushSession, type PushEnvelope } from './PushSession';
+import { historyPushTypes, tripHistoryEvents } from '../trip/tripHistoryEvents';
+import { incomingOffers } from '../trip/incomingOfferRuntime';
+import { notificationHistory } from './NotificationApi';
 
 type PushState = { banner: PushEnvelope | null; error: string | null };
 let state: PushState = { banner: null, error: null };
@@ -21,9 +24,15 @@ export const pushSession = new PushSession({
   getToken: () => getToken(getMessaging()),
   deleteToken: () => deleteToken(getMessaging()),
   backend: user => createNotificationBackend(user, () => getAuth().currentUser?.uid === user.uid),
-  resetInbox: uid => { pendingOpen = null; notificationInbox.setSession(uid); },
+  resetInbox: uid => { pendingOpen = null; notificationInbox.setSession(uid, notificationHistory); },
   refreshInbox: () => notificationInbox.refresh(),
-  showBanner: banner => update({ banner }),
+  showBanner: banner => {
+    // Recipient/account validation and deduplication happened in PushSession. A push
+    // never creates an offer or decides acceptance; re-read the authenticated inbox.
+    incomingOffers.refresh();
+    update({ banner });
+    if (typeof banner.data?.notificationType === 'string' && historyPushTypes.has(banner.data.notificationType)) tripHistoryEvents.invalidate();
+  },
   clearBanner: () => update({ banner: null }),
   reportError: error => update({ error }),
   openInbox: id => {

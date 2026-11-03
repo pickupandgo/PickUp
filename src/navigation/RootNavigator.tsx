@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { getAuth } from '@react-native-firebase/auth';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
@@ -14,14 +15,13 @@ import { NotificationsScreen } from '../screens/notifications/NotificationsScree
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// TEMPORARY: Driver login and sign-up bypassed for development/testing.
-export const TEMPORARY_BYPASS_AUTH = true;
-
 export const RootNavigator: React.FC<{
   onReadyChange?: (ready: boolean) => void;
 }> = ({ onReadyChange }) => {
-  const [initializing, setInitializing] = useState(!TEMPORARY_BYPASS_AUTH);
-  const [isAuthenticated, setIsAuthenticated] = useState(TEMPORARY_BYPASS_AUTH);
+  const [initializing, setInitializing] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const generation = useRef(0);
+  const invalidateSession = useCallback(() => { ++generation.current; }, []);
   const [account, setAccount] = useState<DriverAccount | null>(null);
   const [onboarding, setOnboarding] = useState<DriverOnboardingSummary | null>(
     null,
@@ -33,15 +33,22 @@ export const RootNavigator: React.FC<{
   }, [initializing, onReadyChange]);
 
   const bootstrap = useCallback(async () => {
+    const request = ++generation.current;
+    const uid = getAuth().currentUser?.uid;
+    const current = () => request === generation.current && !!uid && getAuth().currentUser?.uid === uid;
+    if (!uid) return;
     setInitializing(true);
     setBootstrapError(null);
     try {
       const driverAccount = await AuthService.getInstance().bootstrapDriver();
+      if (!current()) return;
       const onboardingState = await AuthService.getInstance().getOnboarding();
+      if (!current()) return;
       setAccount(driverAccount);
       setOnboarding(onboardingState);
       setIsAuthenticated(true);
     } catch (error) {
+      if (!current()) return;
       setAccount(null);
       setIsAuthenticated(false);
       setBootstrapError(
@@ -50,12 +57,15 @@ export const RootNavigator: React.FC<{
           : 'Could not verify your driver account.',
       );
     } finally {
-      setInitializing(false);
+      if (current()) setInitializing(false);
     }
   }, []);
 
   const refreshOnboarding = useCallback(async () => {
+    const request = generation.current;
+    const uid = getAuth().currentUser?.uid;
     const state = await AuthService.getInstance().getOnboarding();
+    if (!uid || uid !== getAuth().currentUser?.uid || request !== generation.current) return;
     setOnboarding(state);
     setAccount(current =>
       current ? { ...current, approvalStatus: state.approvalStatus } : current,
@@ -68,9 +78,12 @@ export const RootNavigator: React.FC<{
     // observeAuthState handles Firebase auth state changes
     if (authService.observeAuthState) {
       const unsubscribe = authService.observeAuthState(async user => {
+        // A token restore that finished after logout must not reopen the partner stack.
+        if (user && user.uid !== getAuth().currentUser?.uid) return;
         if (user) {
           await bootstrap();
         } else {
+          invalidateSession();
           setIsAuthenticated(false);
           setAccount(null);
           setOnboarding(null);
@@ -78,38 +91,37 @@ export const RootNavigator: React.FC<{
           setInitializing(false);
         }
       });
-      return unsubscribe;
+      return () => { invalidateSession(); unsubscribe(); };
     } else {
       // Mock mode without observeAuthState
       setInitializing(false);
       return () => {};
     }
-  }, [bootstrap]);
+  }, [bootstrap, invalidateSession]);
 
   const renderAuthStack = useCallback(
     () => <AuthStack initialRouteName="UnifiedAuth" />,
     [],
   );
 
-  if (initializing && !TEMPORARY_BYPASS_AUTH) {
+  if (initializing) {
     return null; // Don't render until Firebase auth state is determined
   }
 
-  if (bootstrapError && !TEMPORARY_BYPASS_AUTH) {
+  if (bootstrapError) {
     return (
       <AccountState
         title="We could not verify your account"
         message={bootstrapError}
         primaryLabel="Try again"
-        onPrimary={() => void bootstrap()}
+        onPrimary={bootstrap}
         secondaryLabel="Sign out"
-        onSecondary={() => void AuthService.getInstance().logout()}
+        onSecondary={() => AuthService.getInstance().logout()}
       />
     );
   }
 
   if (
-    !TEMPORARY_BYPASS_AUTH &&
     isAuthenticated &&
     account &&
     (!onboarding?.eligible || account.approvalStatus !== 'APPROVED')
@@ -120,9 +132,9 @@ export const RootNavigator: React.FC<{
           title="Account review"
           message="Could not load your onboarding state."
           primaryLabel="Try again"
-          onPrimary={() => void bootstrap()}
+          onPrimary={bootstrap}
           secondaryLabel="Sign out"
-          onSecondary={() => void AuthService.getInstance().logout()}
+          onSecondary={() => AuthService.getInstance().logout()}
         />
       );
     }
@@ -136,12 +148,11 @@ export const RootNavigator: React.FC<{
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Main">
-      <Stack.Screen name="Main" component={MainTabNavigator} />
-      <Stack.Screen name="Notifications" component={NotificationsScreen} getId={() => 'partner-notifications'} />
-      {!TEMPORARY_BYPASS_AUTH && !isAuthenticated && (
-        <Stack.Screen name="Auth" children={renderAuthStack} />
-      )}
+    <Stack.Navigator key={isAuthenticated ? 'partner' : 'auth'} screenOptions={{ headerShown: false }} initialRouteName={isAuthenticated ? 'Main' : 'Auth'}>
+      {isAuthenticated ? <>
+        <Stack.Screen name="Main" component={MainTabNavigator} />
+        <Stack.Screen name="Notifications" component={NotificationsScreen} getId={() => 'partner-notifications'} />
+      </> : <Stack.Screen name="Auth" children={renderAuthStack} />}
     </Stack.Navigator>
   );
 };

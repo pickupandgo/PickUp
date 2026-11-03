@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image } from 'react-native';
+import { Image, type ImageProps } from 'react-native';
 import type { VehicleCategory } from '../../services/onboarding/DriverOnboardingService';
 
 type LegacyCategory =
@@ -40,14 +40,17 @@ export const categoryArtwork: Record<
 export function VehicleAvatar({
   vehicle,
   size = 72,
+  onError,
 }: {
   readonly vehicle: VehicleCategory | LegacyCategory;
   readonly size?: number;
+  readonly onError?: ImageProps['onError'];
 }) {
   return (
     <Image
       source={artwork[categoryArtwork[vehicle]]}
       resizeMode="contain"
+      onError={onError}
       style={{ width: size, height: size }}
       accessible={false}
       testID={`vehicle-avatar-${vehicle}`}

@@ -1,7 +1,9 @@
 import * as engine from '../engine/dispatch';
 import { env } from '../../config/env';
-import type { ActiveTrip, HistoricalTrip, TripOffer } from '../../types/trip';
-import { mockActiveTrip, mockHistoricalTrip } from '../../data/mockData';
+import type { ActiveTrip, TripOffer } from '../../types/trip';
+import type { TripHistorySnapshot } from '../../types/tripHistory';
+import { mockActiveTrip } from '../../data/mockData';
+import { backendTripHistory } from './TripHistoryService';
 
 /** What an engine action answered: the trip as the engine has it now. */
 export interface TripActionResult {
@@ -48,7 +50,7 @@ export interface ITripService {
   /** Re-reads the trip through the engine, following what the payment backend decided. */
   refreshTrip(tripId: string): Promise<ActiveTrip>;
   completeTrip(tripId: string): Promise<TripActionResult>;
-  getHistory(): Promise<HistoricalTrip[]>;
+  getHistory(): Promise<TripHistorySnapshot>;
   getActiveTrip(): Promise<ActiveTrip | null>;
   getTripById(tripId: string): Promise<ActiveTrip | null>;
 }
@@ -287,9 +289,8 @@ export class MockTripService implements ITripService {
     return { ...this.result(true), completion: 'COMPLETED' };
   }
 
-  async getHistory(): Promise<HistoricalTrip[]> {
-    await delay(800);
-    return [mockHistoricalTrip];
+  async getHistory(): Promise<TripHistorySnapshot> {
+    return backendTripHistory.list(requireDriverId());
   }
 
   async getActiveTrip(): Promise<ActiveTrip | null> {
@@ -332,14 +333,14 @@ export class ApiTripService implements ITripService {
     const accepted = await engine.acceptRideRequest(rideId);
     const trip =
       accepted ?? (await engine.getActiveTripForDriver(requireDriverId()));
-    if (!trip) {
+    if (!trip || trip.rideId !== rideId) {
       throw new Error('Trip not found after accepting');
     }
     return engine.engineTripToActiveTrip(trip);
   }
 
   async declineTrip(rideId: string): Promise<void> {
-    await engine.rejectRideRequest(rideId).catch(() => undefined);
+    await engine.rejectRideRequest(rideId);
   }
 
   async arriveAtPickup(tripId: string): Promise<TripActionResult> {
@@ -396,9 +397,8 @@ export class ApiTripService implements ITripService {
     return toResult(await engine.completeTrip(tripId));
   }
 
-  async getHistory(): Promise<HistoricalTrip[]> {
-    // Driver trip history is not part of the Phase 9 contract (unchanged).
-    return [];
+  async getHistory(): Promise<TripHistorySnapshot> {
+    return backendTripHistory.list(requireDriverId());
   }
 
   async getActiveTrip(): Promise<ActiveTrip | null> {
@@ -417,6 +417,9 @@ export class ApiTripService implements ITripService {
 
 export class TripService {
   private static instance: ITripService;
+
+  /** History always uses authenticated APIs, including when live-trip demo mode is enabled. */
+  static getHistorySource() { return backendTripHistory; }
 
   static getInstance(): ITripService {
     if (!TripService.instance) {

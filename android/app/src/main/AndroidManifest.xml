@@ -13,6 +13,8 @@
 
     <!-- Notification permission (required Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Optional user-enabled compact Partner panel; normal notifications do not require it. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
       android:name=".MainApplication"

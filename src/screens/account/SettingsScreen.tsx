@@ -2,17 +2,20 @@ import React, { useCallback } from 'react';
 import { View, Text, SectionList, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing } from '../../theme';
-import { mockSettingsSections } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { SettingsRow } from '../../components/molecules/SettingsRow';
 import { useAuth } from '../../hooks/useAuth';
-import type { SettingsItem } from '../../types/user';
+import { useI18n } from '../../i18n';
 import type { AccountScreenProps } from '../../types/navigation';
 
-const noParamRoutes = new Set<string>([
-  'Profile', 'DocumentsHub', 'PersonalDocuments', 'KYCStatus', 'VehicleDocuments', 'VehicleStatus',
-  'Settings', 'Subscription', 'SubscriptionProcessing', 'LanguageSelection', 'AccountRestricted',
-]);
+type Setting = { label: string; iconName: string; route: 'FloatingWindow' | 'EditProfile' | 'LanguageSelection' | 'VehicleDocuments' | 'PersonalDocuments' | 'Notifications' | 'Privacy' | 'HelpSupport' | 'Logout'; value?: string };
+const groups: { title: string; data: Setting[] }[] = [
+  { title: 'Personal', data: [{ label: 'Profile', iconName: 'person', route: 'EditProfile' }, { label: 'Language', iconName: 'language', route: 'LanguageSelection' }] },
+  { title: 'Vehicle & Service', data: [{ label: 'Vehicle Details', iconName: 'local_shipping', route: 'VehicleDocuments' }, { label: 'Personal Documents', iconName: 'description', route: 'PersonalDocuments' }] },
+  { title: 'Preferences', data: [{ label: 'Notifications', iconName: 'notifications', route: 'Notifications' }, { label: 'Floating window', iconName: 'picture_in_picture_alt', route: 'FloatingWindow' }, { label: 'Privacy', iconName: 'lock', route: 'Privacy' }] },
+  { title: 'Account', data: [{ label: 'Help & Support', iconName: 'help', route: 'HelpSupport' }, { label: 'Logout', iconName: 'logout', route: 'Logout' }] },
+];
+const SettingsSeparator = () => <View style={styles.separator} />;
 
 export interface SettingsScreenProps {
   readonly navigation: AccountScreenProps<'Settings'>['navigation'];
@@ -24,24 +27,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   testID,
 }) => {
   const { logout } = useAuth();
+  const { locale } = useI18n();
   
-  const handlePress = useCallback(async (item: SettingsItem) => {
-    if (item.id === 's9') {
+  const handlePress = useCallback(async (item: Setting) => {
+    if (item.route === 'Logout') {
       await logout();
       return;
     }
-    if (item.route && noParamRoutes.has(item.route)) {
-      navigation.navigate(item.route as 'Profile');
-    }
+    navigation.navigate(item.route);
   }, [navigation, logout]);
 
-  const sections = mockSettingsSections.map((section) => ({
-    title: section.title,
-    data: [...section.items],
-  }));
+  const sections = groups.map(section => ({ ...section, data: section.data.map(item => item.route === 'LanguageSelection' ? { ...item, value: locale === 'hi' ? 'हिन्दी' : 'English' } : item) }));
 
   return (
-    <SafeAreaView style={styles.safeArea} testID={testID}>
+    <SafeAreaView style={styles.safeArea} testID={testID} edges={['top', 'left', 'right']}>
       <AppHeader
         title="Settings"
         onBackPress={() => navigation.goBack()}
@@ -50,13 +49,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
       <SectionList
         sections={sections}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.route}
         renderItem={({ item }) => (
           <SettingsRow
             label={item.label}
             value={item.value}
             iconName={item.iconName}
-            hasChevron={item.hasChevron}
+            hasChevron={item.route !== 'Logout'}
             onPress={() => handlePress(item)}
           />
         )}
@@ -65,7 +64,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         )}
         contentContainerStyle={styles.listContent}
         stickySectionHeadersEnabled={false}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ItemSeparatorComponent={SettingsSeparator}
       />
     </SafeAreaView>
   );
@@ -77,6 +76,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   listContent: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
     paddingHorizontal: spacing.containerPadding,
     paddingBottom: spacing.lg,
   },

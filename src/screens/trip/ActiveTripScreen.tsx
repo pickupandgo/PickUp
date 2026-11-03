@@ -11,7 +11,8 @@ import {
 } from '../../theme';
 import { DriverMap, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
-import { useActiveTrip } from '../../hooks/useActiveTrip';
+import { useLiveTrip } from '../../hooks/useActiveTrip';
+import { historyStatus, historyVehicle } from '../../services/trip/tripHistoryPresentation';
 import { useArrivalDetection } from '../../hooks/useArrivalDetection';
 import { useTripRoute } from '../../hooks/useTripRoute';
 import { useCollectableTrips } from '../../hooks/useCollectableTrips';
@@ -42,7 +43,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   testID,
 }) => {
   const { currentLocation } = useDriverLocation();
-  const trip = useActiveTrip(navRoute.params?.tripId);
+  const trip = useLiveTrip(navRoute.params.tripId);
   const { route: routingData } = useTripRoute();
   const collectable = useCollectableTrips();
 
@@ -115,6 +116,16 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
         <Text style={styles.loadingText}>Loading Trip...</Text>
       </View>
     );
+  }
+
+  if (trip.status === 'cancelled' || trip.status === 'completed') {
+    return <View style={styles.loading}>
+      <Text style={styles.loadingText}>{trip.status === 'cancelled' ? 'Trip cancelled' : 'Trip completed'}</Text>
+      <Pressable style={styles.navBtn} accessibilityRole="button" onPress={() => {
+        if (trip.status === 'completed') navigation.navigate('TripCompleted', { tripId: trip.id });
+        else navigation.popToTop();
+      }}><Text style={styles.navBtnText}>{trip.status === 'completed' ? 'View trip summary' : 'Back to Home'}</Text></Pressable>
+    </View>;
   }
 
   const currentIndex = trip.currentStopIndex;
@@ -192,9 +203,12 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
                 size={16}
                 color={colors.onSecondaryContainer}
               />
-              <Text style={styles.onTimeText}>On Time</Text>
+              <Text style={styles.onTimeText}>{historyStatus(trip.engineStatus ?? trip.status).label}</Text>
             </View>
           </View>
+
+          <Text style={styles.arrivingText}>{historyVehicle(trip.vehicleCategory ?? null).label} · {trip.weightKg === undefined ? 'Weight unavailable' : `${trip.weightKg} kg`}</Text>
+          <Text style={styles.arrivingText}>{trip.goodsType}</Text>
 
           {/* Route progression */}
           <View style={styles.timeline}>

@@ -2,6 +2,7 @@ import type { ActiveTrip } from '../../types/trip';
 import { ArrivalDetectionService } from './ArrivalDetectionService';
 import { TripService, type TripActionResult } from './TripService';
 import { isOutcomeUnknown } from './tripErrors';
+import { getCurrentDriverId } from '../engine/dispatch';
 
 /**
  * The driver's current trip, as the engine last reported it, and the driver's trip actions.
@@ -19,6 +20,8 @@ export class TripController {
   private currentTrip: ActiveTrip | null = null;
   private listeners = new Set<(trip: ActiveTrip | null) => void>();
   private inFlight = new Map<string, Promise<unknown>>();
+  private sessionUid = getCurrentDriverId();
+  private sessionEpoch = 0;
 
   private constructor() {}
 
@@ -36,10 +39,26 @@ export class TripController {
   }
 
   getTrip(): ActiveTrip | null {
+    this.checkSession();
     return this.currentTrip;
   }
 
+  private checkSession() {
+    const uid = getCurrentDriverId();
+    if (uid !== this.sessionUid) {
+      this.sessionUid = uid;
+      this.resetSession();
+    }
+  }
+
+  resetSession() {
+    ++this.sessionEpoch;
+    this.inFlight.clear();
+    this.setTrip(null);
+  }
+
   subscribe(listener: (trip: ActiveTrip | null) => void) {
+    this.checkSession();
     this.listeners.add(listener);
     listener(this.currentTrip);
     return () => {
@@ -52,7 +71,7 @@ export class TripController {
   }
 
   /** Applies a trip the engine returned, unless it is older than the one already shown. */
-  private applyServerTrip(trip: ActiveTrip) {
+  applyServerTrip(trip: ActiveTrip) {
     const current = this.currentTrip;
     if (
       current &&
@@ -67,13 +86,20 @@ export class TripController {
   }
 
   /** Runs `work` once per key at a time: a duplicate tap gets the running request's outcome. */
-  private once<T>(key: string, work: () => Promise<T>): Promise<T> {
+  private once<T>(key: string, work: (isCurrent: () => boolean) => Promise<T>): Promise<T> {
+    this.checkSession();
+    const uid = this.sessionUid, epoch = this.sessionEpoch;
+    if (!uid) return Promise.reject(new Error('Please sign in again.'));
+    const isCurrent = () => uid !== null && uid === getCurrentDriverId() && epoch === this.sessionEpoch;
     const running = this.inFlight.get(key);
     if (running) {
       return running as Promise<T>;
     }
-    const promise = work().finally(() => {
-      this.inFlight.delete(key);
+    const promise = work(isCurrent).then(result => {
+      if (!isCurrent()) throw new Error('Partner session changed. Please sign in again.');
+      return result;
+    }).finally(() => {
+      if (this.inFlight.get(key) === promise) this.inFlight.delete(key);
     });
     this.inFlight.set(key, promise);
     return promise;
@@ -85,14 +111,14 @@ export class TripController {
     tripId: string,
     work: () => Promise<TripActionResult>,
   ): Promise<TripActionResult> {
-    return this.once(`${key}:${tripId}`, async () => {
+    return this.once(`${key}:${tripId}`, async isCurrent => {
       try {
         const result = await work();
-        this.applyServerTrip(result.trip);
+        if (isCurrent()) this.applyServerTrip(result.trip);
         return result;
       } catch (error) {
         // Never move forward on a failure: show what the engine has now.
-        this.loadTrip(tripId).catch(() => undefined);
+        if (isCurrent()) this.loadTrip(tripId).catch(() => undefined);
         throw error;
       }
     });
@@ -106,13 +132,13 @@ export class TripController {
    * and only a trip for this very ride counts.
    */
   acceptOffer(rideId: string): Promise<ActiveTrip> {
-    return this.once(`accept:${rideId}`, async () => {
+    return this.once(`accept:${rideId}`, async isCurrent => {
       const service = TripService.getInstance();
       let trip: ActiveTrip;
       try {
         trip = await service.acceptTrip(rideId);
       } catch (error) {
-        if (!isOutcomeUnknown(error)) {
+        if (!isCurrent() || !isOutcomeUnknown(error)) {
           throw error;
         }
         const active = await service.getActiveTrip().catch(() => null);
@@ -121,7 +147,7 @@ export class TripController {
         }
         trip = active;
       }
-      this.applyServerTrip(trip);
+      if (isCurrent()) this.applyServerTrip(trip);
       return trip;
     });
   }
@@ -193,9 +219,9 @@ export class TripController {
    * admin's retry or closure of a failed drop, a cancellation). Throws on failure.
    */
   refreshTrip(tripId: string): Promise<ActiveTrip> {
-    return this.once(`refresh:${tripId}`, async () => {
+    return this.once(`refresh:${tripId}`, async isCurrent => {
       const trip = await TripService.getInstance().refreshTrip(tripId);
-      this.applyServerTrip(trip);
+      if (isCurrent()) this.applyServerTrip(trip);
       return trip;
     });
   }
@@ -207,10 +233,13 @@ export class TripController {
 
   async loadInitialTrip() {
     try {
-      const trip = await TripService.getInstance().getActiveTrip();
-      if (trip) {
-        this.applyServerTrip(trip);
-      }
+      await this.once('restore-active', async isCurrent => {
+        const before = this.currentTrip;
+        const trip = await TripService.getInstance().getActiveTrip();
+        if (!isCurrent() || this.currentTrip !== before) return;
+        if (trip) this.applyServerTrip(trip);
+        else this.setTrip(null);
+      });
     } catch (e) {
       console.warn('Failed to load initial active trip', e);
     }
@@ -219,9 +248,9 @@ export class TripController {
   /** Load a specific trip by id (e.g. the one the driver just accepted). Failures are silent. */
   async loadTrip(tripId: string) {
     try {
-      await this.once(`load:${tripId}`, async () => {
+      await this.once(`load:${tripId}`, async isCurrent => {
         const trip = await TripService.getInstance().getTripById(tripId);
-        if (trip) {
+        if (trip && isCurrent()) {
           this.applyServerTrip(trip);
         }
       });

@@ -13,7 +13,7 @@ export interface PartnerNotification {
 export interface NotificationPage {
   items: PartnerNotification[];
   nextCursor: string | null;
-  unreadCount: number;
+  unreadCount: number | null;
 }
 
 /** Port for the missing backend history API. No speculative HTTP routes are called. */
@@ -135,9 +135,10 @@ export const notificationInbox = new NotificationInbox();
 export function notificationPresentation(type: string): { category: string; icon: string } {
   if (/WALLET|RECHARGE/.test(type)) return { category: 'Wallet', icon: 'account_balance_wallet' };
   if (/EARNING/.test(type)) return { category: 'Earnings', icon: 'payments' };
+  if (/PAYOUT|SETTLEMENT|PAYMENT/.test(type)) return { category: 'Earnings', icon: 'payments' };
   if (/VEHICLE/.test(type)) return { category: 'Vehicle', icon: 'local_shipping' };
   if (/KYC|DOCUMENT|IDENTITY/.test(type)) return { category: 'Verification', icon: 'verified_user' };
   if (/CHAT|MESSAGE/.test(type)) return { category: 'Message', icon: 'chat_bubble_outline' };
-  if (/TRIP|RIDE|DRIVER_|STOP|BOOKING|PICKUP/.test(type)) return { category: 'Trip', icon: 'route' };
+  if (/TRIP|RIDE|DRIVER_|STOP|DROP_|BOOKING|PICKUP|OFFER/.test(type)) return { category: 'Trip', icon: 'route' };
   return { category: 'Account', icon: 'notifications' };
 }

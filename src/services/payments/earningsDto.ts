@@ -45,7 +45,7 @@ export interface EarningDto {
   readonly earningId: string;
   readonly bookingId: string;
   readonly tripId: string;
-  readonly settlement: 'ONLINE' | 'CASH';
+  readonly settlement: 'ONLINE' | 'CASH' | 'MIXED';
   readonly status: EarningStatusDto;
   readonly grossAmountPaise: number;
   readonly platformFeePaise: number;
@@ -124,7 +124,7 @@ export interface BankAccountDto {
     | 'FAILED';
 }
 
-const SETTLEMENTS = ['ONLINE', 'CASH'] as const;
+const SETTLEMENTS = ['ONLINE', 'CASH', 'MIXED'] as const;
 const PAYOUT_STATUSES: readonly PayoutStatusDto[] = [
   'PREPARED',
   'SUBMITTING',

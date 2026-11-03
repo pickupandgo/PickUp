@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import type { EngineRequest } from '../src/services/engine/engineClient';
 import * as engine from '../src/services/engine/dispatch';
+import { ApiTripService } from '../src/services/trip/TripService';
 
 jest.mock('@react-native-firebase/auth', () => ({
   getAuth: () => ({ currentUser: { uid: 'driverUid123' } }),
@@ -354,5 +355,26 @@ describe('engine trip -> app trip', () => {
     });
     expect(offer.expiresAt).toBe(Date.parse('2026-10-02T08:00:30.000Z'));
     expect(offer.dropStops.map(d => d.address)).toEqual(['Ratanada', 'Paota']);
+    expect(offer.partnerAmount).toBeUndefined();
+    expect(offer.distanceKind).toBe('approximate');
+  });
+
+  it('does not invent an offer expiry, Partner earnings or category', () => {
+    const offer = engine.rideRequestToOffer({ rideId: RIDE_ID, pickup: { latitude: 26, longitude: 73 },
+      drop: null, drops: [], fare: 1200, weight: 10, status: 'REQUESTED', createdAt: new Date().toISOString() });
+    expect(offer.expiresAt).toBe(0); expect(offer.partnerAmount).toBeUndefined();
+    expect(offer.weightKg).toBe(10); expect(offer.vehicleType).toContain('unavailable');
+  });
+  it('refuses impossible pickup/drop coordinates', async () => {
+    mockAnswers = [{ requests: [{ rideId: RIDE_ID, pickup: { latitude: 91, longitude: 73 }, drops: [] }] }];
+    await expect(engine.fetchRideRequests('driverUid123')).rejects.toThrow();
+  });
+  it('never presents another ride as a successful acceptance fallback', async () => {
+    mockAnswers = [{ trip: null }, { trip: tripView({ rideId: TRIP_ID }) }];
+    await expect(new ApiTripService().acceptTrip(RIDE_ID)).rejects.toThrow('Trip not found');
+  });
+  it('propagates decline failure rather than reporting success', async () => {
+    mockAnswers = [new Error('offline')];
+    await expect(new ApiTripService().declineTrip(RIDE_ID)).rejects.toThrow('offline');
   });
 });

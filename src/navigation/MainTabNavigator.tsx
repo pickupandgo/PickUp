@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { TrackingService } from '../services/tracking/TrackingService';
 import { StyleSheet, View } from 'react-native';
 import { NotificationBanner } from '../components/notifications/NotificationRuntime';
@@ -13,6 +13,9 @@ import { EarningsStack } from './stacks/EarningsStack';
 import { WalletStack } from './stacks/WalletStack';
 import { AccountStack } from './stacks/AccountStack';
 import { useI18n } from '../i18n';
+import { IncomingTripOffer } from '../components/trips/IncomingTripOffer';
+import { incomingOffers } from '../services/trip/incomingOfferRuntime';
+import { TripController } from '../services/trip/TripController';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -33,10 +36,11 @@ const TAB_LABEL_KEYS: Record<keyof MainTabParamList, string> = {
 };
 
 export const MainTabNavigator: React.FC = () => {
+  const [offerHeight, setOfferHeight] = useState(0);
   useEffect(() => {
     const tracking = TrackingService.getInstance();
     tracking.startSession();
-    return () => { tracking.stopSession().catch(() => {}); };
+    return () => { tracking.detachSession(); incomingOffers.reset(); TripController.getInstance().resetSession(); };
   }, []);
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
@@ -61,6 +65,7 @@ export const MainTabNavigator: React.FC = () => {
         tabBarStyle: [styles.tabBar, { height: 56 + insets.bottom }],
         tabBarItemStyle: styles.tabItem,
         tabBarHideOnKeyboard: true,
+        sceneStyle: { paddingBottom: offerHeight },
       })}
     >
       <Tab.Screen name="HomeTab" component={HomeStack} />
@@ -70,6 +75,7 @@ export const MainTabNavigator: React.FC = () => {
       <Tab.Screen name="AccountTab" component={AccountStack} options={{ popToTopOnBlur: false }} />
     </Tab.Navigator>
     <NotificationBanner />
+    <IncomingTripOffer onHeight={setOfferHeight} />
     </View>
   );
 };

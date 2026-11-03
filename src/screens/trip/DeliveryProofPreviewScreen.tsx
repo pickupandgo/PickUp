@@ -66,7 +66,7 @@ export const DeliveryProofPreviewScreen: React.FC<
     setError(null);
     try {
       const result = await TripController.getInstance().completeTrip(tripId);
-      if (result.completion === 'PENDING') {
+      if (result.completion === 'PENDING' || result.trip.engineStatus !== 'COMPLETED') {
         setCompletionPending(true);
       } else {
         navigation.navigate('TripCompleted', { tripId });
@@ -93,8 +93,9 @@ export const DeliveryProofPreviewScreen: React.FC<
           <Text style={styles.feedbackSubtitle}>
             {allDone
               ? t('trip.allDropsDone')
-              : deliveryProofLabels.uploadSuccessSubtitle}
+              : 'Delivery confirmed by the backend. Continue to the next drop.'}
           </Text>
+          <Text style={styles.feedbackSubtitle}>A photo reference was submitted. Secure photo storage is not verified.</Text>
           {error ? <InlineErrorBanner message={error} /> : null}
           {completionPending ? (
             <Text style={styles.feedbackSubtitle}>
@@ -167,7 +168,7 @@ export const DeliveryProofPreviewScreen: React.FC<
         <View style={styles.actions}>
           <PrimaryButton
             label={
-              error ? t('trip.tryAgain') : deliveryProofLabels.confirmLabel
+              error ? t('trip.tryAgain') : 'CONFIRM DELIVERY'
             }
             onPress={handleConfirm}
             loading={busy === 'deliver'}

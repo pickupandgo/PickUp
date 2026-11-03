@@ -1,0 +1,1093 @@
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 4cf1c62..d4db01f 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -1,285 +1,294 @@
+-// MultipleRide trip engine (engine-v2): the operational state it owns, kept across restarts, and
+-// the durable outbox through which it reports to the payment backend (raj_backend).
+-//
+-// Ownership (docs: README.md, "Engine and payment backend"):
+-//   - The engine owns dispatch, offers, the trip and stop movement, and the OTP flow.
+-//   - The payment backend owns the fare, payment, collections, the payment gate, earnings,
+-//     settlements, payouts, refunds and the financial audit. Amounts stored here are display
+-//     copies of the backend's fare quote; the engine never sends an amount anywhere.
+-//
+-// CHECK constraints and the outbox delete guard live in prisma/migrations/*/migration.sql
+-// because the Prisma schema language cannot express them.
+-
+-generator client {
+-  provider        = "prisma-client"
+-  output          = "../src/generated/prisma"
+-  moduleFormat    = "cjs"
+-  previewFeatures = ["partialIndexes"]
+-}
+-
+-datasource db {
+-  provider = "postgresql"
+-}
+-
+-/// Latest fix only. Driver identity is verified by Firebase and the owning Engine trip/backend.
+-model EngineDriverPosition {
+-  subject    String   @id @db.VarChar(128)
+-  latitude   Float
+-  longitude  Float
+-  accuracy   Float
+-  capturedAt BigInt   @map("captured_at")
+-  receivedAt DateTime @default(dbgenerated("clock_timestamp()")) @map("received_at") @db.Timestamptz(6)
+-
+-  @@index([capturedAt], map: "idx_engine_driver_positions_captured")
+-  @@map("engine_driver_positions")
+-}
+-
+-/// An engine booking. PENDING_REGISTRATION until the payment backend registered it; it is
+-/// offered to drivers only once REGISTERED (status OPEN).
+-enum EngineBookingStatus {
+-  PENDING_REGISTRATION
+-  REGISTRATION_FAILED
+-  OPEN
+-  ASSIGNED
+-  COMPLETED
+-  CANCELLED
+-
+-  @@map("engine_booking_status")
+-}
+-
+-enum EnginePaymentMethod {
+-  PAY_AT_PICKUP
+-  PAY_AT_DELIVERY
+-
+-  @@map("engine_payment_method")
+-}
+-
+-/// An offer of a booking to one driver.
+-enum EngineOfferStatus {
+-  REQUESTED
+-  ACCEPTED
+-  REJECTED
+-  EXPIRED
+-  CANCELLED
+-  /// The payment backend refused the assignment (driver not provisioned or not approved, ...).
+-  FAILED
+-
+-  @@map("engine_offer_status")
+-}
+-
+-/// The engine's operational trip state. Between drops it returns to IN_TRANSIT.
+-enum EngineTripStatus {
+-  DRIVER_ASSIGNED
+-  DRIVER_ARRIVED
+-  PICKUP_VERIFIED
+-  IN_TRANSIT
+-  DROP_PROGRESS
+-  DELIVERED
+-  COMPLETED
+-  CANCELLED
+-
+-  @@map("engine_trip_status")
+-}
+-
+-enum EngineStopStatus {
+-  PENDING
+-  IN_TRANSIT
+-  ARRIVED
+-  DELIVERED
+-  DELIVERY_FAILED
+-  /// Closed without delivery by an admin of the payment backend (never by the engine).
+-  UNDELIVERED
+-  CANCELLED
+-
+-  @@map("engine_stop_status")
+-}
+-
+-enum OutboxKind {
+-  SEARCHING
+-  ASSIGN
+-  TRIP_STATUS
+-  STOP_STATUS
+-  CANCEL
+-
+-  @@map("engine_outbox_kind")
+-}
+-
+-enum OutboxMode {
+-  /// Backend first: the engine applies the transition only once the backend accepted it.
+-  COMMAND
+-  /// The engine already committed the change; the backend is told about it.
+-  EVENT
+-
+-  @@map("engine_outbox_mode")
+-}
+-
+-enum OutboxStatus {
+-  PENDING
+-  DELIVERED
+-  /// A definitive answer other than success (or superseded): never sent again on its own.
+-  REFUSED
+-
+-  @@map("engine_outbox_status")
+-}
+-
+-model EngineBooking {
+-  /// Also the public ride id.
+-  id                 String              @id @db.Uuid
+-  /// Stable and unique: registering it again returns the same payment booking.
+-  externalRef        String              @unique(map: "uq_engine_bookings_external_ref") @map("external_ref") @db.VarChar(100)
+-  /// The payment backend's fare quote: the only fare reference. Unique per customer: the
+-  /// backend redeems a quote once, for its own customer only (another customer's attempt is
+-  /// recorded as REGISTRATION_FAILED and blocks nobody).
+-  quoteId            String              @map("quote_id") @db.Uuid
+-  /// Firebase UID of the customer, from the verified token.
+-  customerSubject    String              @map("customer_subject") @db.VarChar(128)
+-  paymentMethod      EnginePaymentMethod @map("payment_method")
+-  status             EngineBookingStatus @default(PENDING_REGISTRATION)
+-  paymentBookingId   String?             @unique(map: "uq_engine_bookings_payment_booking") @map("payment_booking_id") @db.Uuid
+-  /// The payment backend's error code when it refused the registration.
+-  registrationError  String?             @map("registration_error") @db.VarChar(60)
+-  vehicleCategory    String              @map("vehicle_category") @db.VarChar(40)
+-  weightGrams        Int                 @map("weight_grams")
+-  pickupLatitude     Float               @map("pickup_latitude")
+-  pickupLongitude    Float               @map("pickup_longitude")
+-  pickupAddress      String?             @map("pickup_address") @db.VarChar(300)
+-  searchExhaustedAt  DateTime?           @map("search_exhausted_at") @db.Timestamptz(6)
+-  metadata           Json?
+-  pickupOtp          String              @map("pickup_otp") @db.VarChar(4)
+-  distanceMeters     Int                 @map("distance_meters")
+-  /// Display copy of the quote's payable amount; never sent anywhere.
+-  payablePaise       BigInt              @map("payable_paise")
+-  quoteExpiresAt     DateTime            @map("quote_expires_at") @db.Timestamptz(6)
+-  registeredAt       DateTime?           @map("registered_at") @db.Timestamptz(6)
+-  cancelledAt        DateTime?           @map("cancelled_at") @db.Timestamptz(6)
+-  cancelledBy        String?             @map("cancelled_by") @db.VarChar(20)
+-  cancellationReason String?             @map("cancellation_reason") @db.VarChar(200)
+-  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+-  updatedAt          DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+-
+-  stops  EngineStop[]
+-  offers EngineOffer[]
+-  trips  EngineTrip[]
+-  outbox EngineOutbox[]
+-
+-  @@unique([quoteId, customerSubject], map: "uq_engine_bookings_quote_customer")
+-  @@index([customerSubject, createdAt(sort: Desc)], map: "idx_engine_bookings_customer")
+-  @@index([updatedAt, id], map: "idx_engine_dispatch_pending", where: raw("((status = 'OPEN'::engine_booking_status) AND (search_exhausted_at IS NULL))"))
+-  @@map("engine_bookings")
+-}
+-
+-/// A drop of a booking, in the quote's order. Coordinates and amounts come from the quote.
+-model EngineStop {
+-  id               String           @id @db.Uuid
+-  bookingId        String           @map("booking_id") @db.Uuid
+-  sequence         Int
+-  latitude         Float
+-  longitude        Float
+-  address          String?          @db.VarChar(300)
+-  instructions     String?          @db.VarChar(1000)
+-  receiverName     String?          @map("receiver_name") @db.VarChar(100)
+-  receiverPhone    String?          @map("receiver_phone") @db.VarChar(20)
+-  distanceMeters   Int              @map("distance_meters")
+-  /// Display copy of what this drop's receiver pays (pay at delivery); never sent anywhere.
+-  payablePaise     BigInt           @map("payable_paise")
+-  status           EngineStopStatus @default(PENDING)
+-  otp              String           @db.VarChar(4)
+-  otpVerified      Boolean          @default(false) @map("otp_verified")
+-  proofUri         String?          @map("proof_uri") @db.VarChar(1000)
+-  proofSubmittedAt DateTime?        @map("proof_submitted_at") @db.Timestamptz(6)
+-  arrivedAt        DateTime?        @map("arrived_at") @db.Timestamptz(6)
+-  deliveredAt      DateTime?        @map("delivered_at") @db.Timestamptz(6)
+-  failedAt         DateTime?        @map("failed_at") @db.Timestamptz(6)
+-  failureReason    String?          @map("failure_reason") @db.VarChar(200)
+-  resolvedAt       DateTime?        @map("resolved_at") @db.Timestamptz(6)
+-  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+-  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+-
+-  booking EngineBooking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+-
+-  @@unique([bookingId, sequence], map: "uq_engine_stops_booking_sequence")
+-  @@map("engine_stops")
+-}
+-
+-model EngineOffer {
+-  id            String            @id @db.Uuid
+-  bookingId     String            @map("booking_id") @db.Uuid
+-  /// Firebase UID of the driver the booking is offered to.
+-  driverSubject String            @map("driver_subject") @db.VarChar(128)
+-  status        EngineOfferStatus @default(REQUESTED)
+-  expiresAt     DateTime          @map("expires_at") @db.Timestamptz(6)
+-  respondedAt   DateTime?         @map("responded_at") @db.Timestamptz(6)
+-  failureCode   String?           @map("failure_code") @db.VarChar(60)
+-  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+-  updatedAt     DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+-
+-  booking EngineBooking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+-
+-  @@unique([bookingId], map: "uq_engine_offers_live", where: raw("(status = 'REQUESTED'::engine_offer_status)"))
+-  @@index([driverSubject, status], map: "idx_engine_offers_driver")
+-  @@index([bookingId, createdAt], map: "idx_engine_offers_booking")
+-  @@map("engine_offers")
+-}
+-
+-/// The single trip of a booking (M6). A trip the payment backend refused to assign is kept as
+-/// CANCELLED, and the booking can be offered again.
+-model EngineTrip {
+-  id                    String           @id @db.Uuid
+-  bookingId             String           @map("booking_id") @db.Uuid
+-  driverSubject         String           @map("driver_subject") @db.VarChar(128)
+-  /// The payment backend's trip id, once it accepted the assignment.
+-  paymentTripId         String?          @unique(map: "uq_engine_trips_payment_trip") @map("payment_trip_id") @db.Uuid
+-  status                EngineTripStatus @default(DRIVER_ASSIGNED)
+-  currentStopIndex      Int              @default(0) @map("current_stop_index")
+-  arrivedAt             DateTime?        @map("arrived_at") @db.Timestamptz(6)
+-  pickupVerifiedAt      DateTime?        @map("pickup_verified_at") @db.Timestamptz(6)
+-  startedAt             DateTime?        @map("started_at") @db.Timestamptz(6)
+-  deliveredAt           DateTime?        @map("delivered_at") @db.Timestamptz(6)
+-  completionRequestedAt DateTime?        @map("completion_requested_at") @db.Timestamptz(6)
+-  completedAt           DateTime?        @map("completed_at") @db.Timestamptz(6)
+-  cancelledAt           DateTime?        @map("cancelled_at") @db.Timestamptz(6)
+-  cancelledBy           String?          @map("cancelled_by") @db.VarChar(20)
+-  cancellationReason    String?          @map("cancellation_reason") @db.VarChar(200)
+-  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+-  updatedAt             DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+-
+-  booking EngineBooking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+-
+-  @@unique([bookingId], map: "uq_engine_trips_booking_live", where: raw("(status <> 'CANCELLED'::engine_trip_status)"))
+-  @@unique([driverSubject], map: "uq_engine_trips_driver_active", where: raw("(status <> ALL (ARRAY['COMPLETED'::engine_trip_status, 'CANCELLED'::engine_trip_status]))"))
+-  @@index([driverSubject, createdAt(sort: Desc)], map: "idx_engine_trips_driver")
+-  @@map("engine_trips")
+-}
+-
+-/// Engine to payment backend calls, delivered in order per booking, retried until the backend
+-/// gives a definitive answer. Never deleted while pending.
+-model EngineOutbox {
+-  id             BigInt       @id @default(autoincrement())
+-  bookingId      String       @map("booking_id") @db.Uuid
+-  kind           OutboxKind
+-  mode           OutboxMode
+-  /// What to send (status, stop sequence, reason, driver), resolved into a request at send time.
+-  payload        Json
+-  status         OutboxStatus @default(PENDING)
+-  attempts       Int          @default(0)
+-  nextAttemptAt  DateTime     @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+-  /// Claimed by a sender until then (one sender at a time, across instances).
+-  lockedUntil    DateTime?    @map("locked_until") @db.Timestamptz(6)
+-  claimId        String?      @map("claim_id") @db.Uuid
+-  lastHttpStatus Int?         @map("last_http_status")
+-  lastErrorCode  String?      @map("last_error_code") @db.VarChar(60)
+-  lastError      String?      @map("last_error") @db.VarChar(500)
+-  /// The backend's answer once final (summary: trip id, statuses, payment gate, error details).
+-  result         Json?
+-  alertedAt      DateTime?    @map("alerted_at") @db.Timestamptz(6)
+-  deliveredAt    DateTime?    @map("delivered_at") @db.Timestamptz(6)
+-  refusedAt      DateTime?    @map("refused_at") @db.Timestamptz(6)
+-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+-  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+-
+-  booking EngineBooking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+-
+-  @@index([bookingId, id], map: "idx_engine_outbox_booking")
+-  @@index([nextAttemptAt], map: "idx_engine_outbox_due", where: raw("(status = 'PENDING'::engine_outbox_status)"))
+-  @@map("engine_outbox")
+-}
++// MultipleRide trip engine (engine-v2): the operational state it owns, kept across restarts, and
++// the durable outbox through which it reports to the payment backend (raj_backend).
++//
++// Ownership (docs: README.md, "Engine and payment backend"):
++//   - The engine owns dispatch, offers, the trip and stop movement, and the OTP flow.
++//   - The payment backend owns the fare, payment, collections, the payment gate, earnings,
++//     settlements, payouts, refunds and the financial audit. Amounts stored here are display
++//     copies of the backend's fare quote; the engine never sends an amount anywhere.
++//
++// CHECK constraints and the outbox delete guard live in prisma/migrations/*/migration.sql
++// because the Prisma schema language cannot express them.
++
++generator client {
++  provider        = "prisma-client"
++  output          = "../src/generated/prisma"
++  moduleFormat    = "cjs"
++  previewFeatures = ["partialIndexes"]
++}
++
++datasource db {
++  provider = "postgresql"
++}
++
++/// Latest fix only. Driver identity is verified by Firebase and the owning Engine trip/backend.
++model EngineDriverAvailability {
++  subject String @id @db.VarChar(128)
++  online Boolean @default(false)
++  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
++  @@map("engine_driver_availability")
++}
++
++model EngineDriverPosition {
++  subject    String   @id @db.VarChar(128)
++  latitude   Float
++  longitude  Float
++  accuracy   Float
++  capturedAt BigInt   @map("captured_at")
++  receivedAt DateTime @default(dbgenerated("clock_timestamp()")) @map("received_at") @db.Timestamptz(6)
++
++  @@index([capturedAt], map: "idx_engine_driver_positions_captured")
++  @@map("engine_driver_positions")
++}
++
++/// An engine booking. PENDING_REGISTRATION until the payment backend registered it; it is
++/// offered to drivers only once REGISTERED (status OPEN).
++enum EngineBookingStatus {
++  PENDING_REGISTRATION
++  REGISTRATION_FAILED
++  OPEN
++  ASSIGNED
++  COMPLETED
++  CANCELLED
++
++  @@map("engine_booking_status")
++}
++
++enum EnginePaymentMethod {
++  PAY_AT_PICKUP
++  PAY_AT_DELIVERY
++
++  @@map("engine_payment_method")
++}
++
++/// An offer of a booking to one driver.
++enum EngineOfferStatus {
++  REQUESTED
++  ACCEPTED
++  REJECTED
++  EXPIRED
++  CANCELLED
++  /// The payment backend refused the assignment (driver not provisioned or not approved, ...).
++  FAILED
++
++  @@map("engine_offer_status")
++}
++
++/// The engine's operational trip state. Between drops it returns to IN_TRANSIT.
++enum EngineTripStatus {
++  DRIVER_ASSIGNED
++  DRIVER_ARRIVED
++  PICKUP_VERIFIED
++  IN_TRANSIT
++  DROP_PROGRESS
++  DELIVERED
++  COMPLETED
++  CANCELLED
++
++  @@map("engine_trip_status")
++}
++
++enum EngineStopStatus {
++  PENDING
++  IN_TRANSIT
++  ARRIVED
++  DELIVERED
++  DELIVERY_FAILED
++  /// Closed without delivery by an admin of the payment backend (never by the engine).
++  UNDELIVERED
++  CANCELLED
++
++  @@map("engine_stop_status")
++}
++
++enum OutboxKind {
++  SEARCHING
++  ASSIGN
++  TRIP_STATUS
++  STOP_STATUS
++  CANCEL
++
++  @@map("engine_outbox_kind")
++}
++
++enum OutboxMode {
++  /// Backend first: the engine applies the transition only once the backend accepted it.
++  COMMAND
++  /// The engine already committed the change; the backend is told about it.
++  EVENT
++
++  @@map("engine_outbox_mode")
++}
++
++enum OutboxStatus {
++  PENDING
++  DELIVERED
++  /// A definitive answer other than success (or superseded): never sent again on its own.
++  REFUSED
++
++  @@map("engine_outbox_status")
++}
++
++model EngineBooking {
++  /// Also the public ride id.
++  id                 String              @id @db.Uuid
++  /// Stable and unique: registering it again returns the same payment booking.
++  externalRef        String              @unique(map: "uq_engine_bookings_external_ref") @map("external_ref") @db.VarChar(100)
++  /// The payment backend's fare quote: the only fare reference. Unique per customer: the
++  /// backend redeems a quote once, for its own customer only (another customer's attempt is
++  /// recorded as REGISTRATION_FAILED and blocks nobody).
++  quoteId            String              @map("quote_id") @db.Uuid
++  /// Firebase UID of the customer, from the verified token.
++  customerSubject    String              @map("customer_subject") @db.VarChar(128)
++  paymentMethod      EnginePaymentMethod @map("payment_method")
++  status             EngineBookingStatus @default(PENDING_REGISTRATION)
++  paymentBookingId   String?             @unique(map: "uq_engine_bookings_payment_booking") @map("payment_booking_id") @db.Uuid
++  /// The payment backend's error code when it refused the registration.
++  registrationError  String?             @map("registration_error") @db.VarChar(60)
++  vehicleCategory    String              @map("vehicle_category") @db.VarChar(40)
++  weightGrams        Int                 @map("weight_grams")
++  pickupLatitude     Float               @map("pickup_latitude")
++  pickupLongitude    Float               @map("pickup_longitude")
++  pickupAddress      String?             @map("pickup_address") @db.VarChar(300)
++  searchExhaustedAt  DateTime?           @map("search_exhausted_at") @db.Timestamptz(6)
++  metadata           Json?
++  pickupOtp          String              @map("pickup_otp") @db.VarChar(4)
++  distanceMeters     Int                 @map("distance_meters")
++  /// Display copy of the quote's payable amount; never sent anywhere.
++  payablePaise       BigInt              @map("payable_paise")
++  quoteExpiresAt     DateTime            @map("quote_expires_at") @db.Timestamptz(6)
++  registeredAt       DateTime?           @map("registered_at") @db.Timestamptz(6)
++  cancelledAt        DateTime?           @map("cancelled_at") @db.Timestamptz(6)
++  cancelledBy        String?             @map("cancelled_by") @db.VarChar(20)
++  cancellationReason String?             @map("cancellation_reason") @db.VarChar(200)
++  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt          DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
++
++  stops  EngineStop[]
++  offers EngineOffer[]
++  trips  EngineTrip[]
++  outbox EngineOutbox[]
++
++  @@unique([quoteId, customerSubject], map: "uq_engine_bookings_quote_customer")
++  @@index([customerSubject, createdAt(sort: Desc)], map: "idx_engine_bookings_customer")
++  @@index([updatedAt, id], map: "idx_engine_dispatch_pending", where: raw("((status = 'OPEN'::engine_booking_status) AND (search_exhausted_at IS NULL))"))
++  @@map("engine_bookings")
++}
++
++/// A drop of a booking, in the quote's order. Coordinates and amounts come from the quote.
++model EngineStop {
++  id               String           @id @db.Uuid
++  bookingId        String           @map("booking_id") @db.Uuid
++  sequence         Int
++  latitude         Float
++  longitude        Float
++  address          String?          @db.VarChar(300)
++  instructions     String?          @db.VarChar(1000)
++  receiverName     String?          @map("receiver_name") @db.VarChar(100)
++  receiverPhone    String?          @map("receiver_phone") @db.VarChar(20)
++  distanceMeters   Int              @map("distance_meters")
++  /// Display copy of what this drop's receiver pays (pay at delivery); never sent anywhere.
++  payablePaise     BigInt           @map("payable_paise")
++  status           EngineStopStatus @default(PENDING)
++  otp              String           @db.VarChar(4)
++  otpVerified      Boolean          @default(false) @map("otp_verified")
++  proofUri         String?          @map("proof_uri") @db.VarChar(1000)
++  proofSubmittedAt DateTime?        @map("proof_submitted_at") @db.Timestamptz(6)
++  arrivedAt        DateTime?        @map("arrived_at") @db.Timestamptz(6)
++  deliveredAt      DateTime?        @map("delivered_at") @db.Timestamptz(6)
++  failedAt         DateTime?        @map("failed_at") @db.Timestamptz(6)
++  failureReason    String?          @map("failure_reason") @db.VarChar(200)
++  resolvedAt       DateTime?        @map("resolved_at") @db.Timestamptz(6)
++  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
++
++  booking EngineBooking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
++
++  @@unique([bookingId, sequence], map: "uq_engine_stops_booking_sequence")
++  @@map("engine_stops")
++}
++
++model EngineOffer {
++  notifiedStatus String? @map("notified_status") @db.VarChar(20)
++  notifiedAt DateTime? @map("notified_at") @db.Timestamptz(6)
++  id            String            @id @db.Uuid
++  bookingId     String            @map("booking_id") @db.Uuid
++  /// Firebase UID of the driver the booking is offered to.
++  driverSubject String            @map("driver_subject") @db.VarChar(128)
++  status        EngineOfferStatus @default(REQUESTED)
++  expiresAt     DateTime          @map("expires_at") @db.Timestamptz(6)
++  respondedAt   DateTime?         @map("responded_at") @db.Timestamptz(6)
++  failureCode   String?           @map("failure_code") @db.VarChar(60)
++  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt     DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
++
++  booking EngineBooking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
++
++  @@unique([bookingId], map: "uq_engine_offers_live", where: raw("(status = 'REQUESTED'::engine_offer_status)"))
++  @@index([driverSubject, status], map: "idx_engine_offers_driver")
++  @@index([bookingId, createdAt], map: "idx_engine_offers_booking")
++  @@map("engine_offers")
++}
++
++/// The single trip of a booking (M6). A trip the payment backend refused to assign is kept as
++/// CANCELLED, and the booking can be offered again.
++model EngineTrip {
++  id                    String           @id @db.Uuid
++  bookingId             String           @map("booking_id") @db.Uuid
++  driverSubject         String           @map("driver_subject") @db.VarChar(128)
++  /// The payment backend's trip id, once it accepted the assignment.
++  paymentTripId         String?          @unique(map: "uq_engine_trips_payment_trip") @map("payment_trip_id") @db.Uuid
++  status                EngineTripStatus @default(DRIVER_ASSIGNED)
++  currentStopIndex      Int              @default(0) @map("current_stop_index")
++  arrivedAt             DateTime?        @map("arrived_at") @db.Timestamptz(6)
++  pickupVerifiedAt      DateTime?        @map("pickup_verified_at") @db.Timestamptz(6)
++  startedAt             DateTime?        @map("started_at") @db.Timestamptz(6)
++  deliveredAt           DateTime?        @map("delivered_at") @db.Timestamptz(6)
++  completionRequestedAt DateTime?        @map("completion_requested_at") @db.Timestamptz(6)
++  completedAt           DateTime?        @map("completed_at") @db.Timestamptz(6)
++  cancelledAt           DateTime?        @map("cancelled_at") @db.Timestamptz(6)
++  cancelledBy           String?          @map("cancelled_by") @db.VarChar(20)
++  cancellationReason    String?          @map("cancellation_reason") @db.VarChar(200)
++  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt             DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
++
++  booking EngineBooking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
++
++  @@unique([bookingId], map: "uq_engine_trips_booking_live", where: raw("(status <> 'CANCELLED'::engine_trip_status)"))
++  @@unique([driverSubject], map: "uq_engine_trips_driver_active", where: raw("(status <> ALL (ARRAY['COMPLETED'::engine_trip_status, 'CANCELLED'::engine_trip_status]))"))
++  @@index([driverSubject, createdAt(sort: Desc)], map: "idx_engine_trips_driver")
++  @@map("engine_trips")
++}
++
++/// Engine to payment backend calls, delivered in order per booking, retried until the backend
++/// gives a definitive answer. Never deleted while pending.
++model EngineOutbox {
++  id             BigInt       @id @default(autoincrement())
++  bookingId      String       @map("booking_id") @db.Uuid
++  kind           OutboxKind
++  mode           OutboxMode
++  /// What to send (status, stop sequence, reason, driver), resolved into a request at send time.
++  payload        Json
++  status         OutboxStatus @default(PENDING)
++  attempts       Int          @default(0)
++  nextAttemptAt  DateTime     @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
++  /// Claimed by a sender until then (one sender at a time, across instances).
++  lockedUntil    DateTime?    @map("locked_until") @db.Timestamptz(6)
++  claimId        String?      @map("claim_id") @db.Uuid
++  lastHttpStatus Int?         @map("last_http_status")
++  lastErrorCode  String?      @map("last_error_code") @db.VarChar(60)
++  lastError      String?      @map("last_error") @db.VarChar(500)
++  /// The backend's answer once final (summary: trip id, statuses, payment gate, error details).
++  result         Json?
++  alertedAt      DateTime?    @map("alerted_at") @db.Timestamptz(6)
++  deliveredAt    DateTime?    @map("delivered_at") @db.Timestamptz(6)
++  refusedAt      DateTime?    @map("refused_at") @db.Timestamptz(6)
++  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
++
++  booking EngineBooking @relation(fields: [bookingId], references: [id], onDelete: Restrict, onUpdate: Restrict)
++
++  @@index([bookingId, id], map: "idx_engine_outbox_booking")
++  @@index([nextAttemptAt], map: "idx_engine_outbox_due", where: raw("(status = 'PENDING'::engine_outbox_status)"))
++  @@map("engine_outbox")
++}
+diff --git a/src/drivers/drivers.controller.ts b/src/drivers/drivers.controller.ts
+index c01e6b7..9386e53 100644
+--- a/src/drivers/drivers.controller.ts
++++ b/src/drivers/drivers.controller.ts
+@@ -107,6 +107,15 @@ export class DriversController {
+     };
+   }
+ 
++  @Get(':id/availability')
++  async availability(
++    @CurrentSubject() subject: string,
++    @Param('id') id: string,
++  ) {
++    assertSameIdentity(subject, id, 'id');
++    return this.driversService.availability(subject);
++  }
++
+   @Get(':id')
+   async findOne(@CurrentSubject() subject: string, @Param('id') id: string) {
+     const driver = await this.driversService.positionFor(id, subject);
+diff --git a/src/drivers/drivers.service.ts b/src/drivers/drivers.service.ts
+index 2dda999..f8f0c4e 100644
+--- a/src/drivers/drivers.service.ts
++++ b/src/drivers/drivers.service.ts
+@@ -69,11 +69,28 @@ export class DriversService {
+   async updateAvailability(id: string, isAvailable: boolean): Promise<Driver> {
+     if (isAvailable) {
+       await this.requireEligibleForNewWork(id);
+-      if (await this.hasActiveTrip(id)) {
+-        return this.setAvailability(id, false);
+-      }
+     }
+-    return this.setAvailability(id, isAvailable);
++    await this.prisma.engineDriverAvailability.upsert({
++      where: { subject: id },
++      create: { subject: id, online: isAvailable },
++      update: { online: isAvailable },
++    });
++    return this.setAvailability(
++      id,
++      isAvailable && !(await this.hasActiveTrip(id)),
++    );
++  }
++
++  async availability(id: string) {
++    const pref = await this.prisma.engineDriverAvailability.findUnique({
++      where: { subject: id },
++    });
++    const [fix] = await this.locations.fresh(id);
++    return {
++      online: pref?.online ?? false,
++      hasPreference: pref !== null,
++      connectionHealth: fix ? 'CONNECTED' : 'STALE',
++    };
+   }
+ 
+   /** A post-trip local presence update never authorizes work; offers re-check the backend. */
+@@ -299,7 +316,6 @@ export class DriversService {
+         if (
+           !fix ||
+           busy.has(driver.id) ||
+-          !this.drivers.find((item) => item.id === driver.id)?.isAvailable ||
+           generatedAt - Number(fix.capturedAt) > 60_000
+         )
+           return [];
+@@ -338,13 +354,15 @@ export class DriversService {
+ 
+   async findNearby(params: NearbySearchParams): Promise<NearbyDriverResult[]> {
+     const { latitude, longitude, radiusKm, vehicleType } = params;
+-    const STALE_MS = 60_000; // 60 seconds - driver must have pinged in last 60s
+-    const now = Date.now();
+ 
+     // 1. Filter Available Drivers that are also recently active
+-    let availableDrivers = this.drivers.filter(
+-      (d) => d.isAvailable && d.lastSeen && now - d.lastSeen < STALE_MS,
+-    );
++    const preferences = await this.prisma.engineDriverAvailability.findMany({
++      where: { online: true },
++    });
++    let availableDrivers = preferences.map((pref) => ({
++      ...this.findById(pref.subject),
++      isAvailable: true,
++    }));
+     const fresh = new Map(
+       (await this.locations.fresh()).map((position) => [
+         position.subject,
+diff --git a/src/drivers/vehicle-preview.spec.ts b/src/drivers/vehicle-preview.spec.ts
+index 4039c6e..58f978a 100644
+--- a/src/drivers/vehicle-preview.spec.ts
++++ b/src/drivers/vehicle-preview.spec.ts
+@@ -18,6 +18,13 @@ function setup() {
+     receivedAt: new Date(),
+   }));
+   const prisma = {
++    engineDriverAvailability: {
++      findMany: jest.fn(() =>
++        Promise.resolve(
++          Object.keys(categories).map((subject) => ({ subject, online: true })),
++        ),
++      ),
++    },
+     engineTrip: {
+       findMany: jest.fn(() => Promise.resolve([{ driverSubject: 'busy' }])),
+     },
+diff --git a/src/rides/dispatch-progression.spec.ts b/src/rides/dispatch-progression.spec.ts
+index ea26841..1e51bd6 100644
+--- a/src/rides/dispatch-progression.spec.ts
++++ b/src/rides/dispatch-progression.spec.ts
+@@ -26,6 +26,11 @@ function setup() {
+   };
+   let fail = false;
+   const backend = {
++    call: jest.fn().mockResolvedValue({
++      kind: 'OK',
++      status: 200,
++      body: { success: true },
++    }),
+     getDriverEligibilityForSubject: jest.fn((id: string) =>
+       Promise.resolve(
+         fail
+@@ -81,9 +86,18 @@ function setup() {
+       }),
+       findMany: jest.fn(({ where }: any) =>
+         Promise.resolve(
+-          where.status
+-            ? offers.filter((o) => where.status.in.includes(o.status))
+-            : [...offers].reverse(),
++          where.OR
++            ? offers
++                .filter(
++                  (o) =>
++                    o.status === 'REQUESTED' &&
++                    o.expiresAt > new Date() &&
++                    !o.notifiedStatus,
++                )
++                .map((o) => ({ ...o, booking }))
++            : where.status
++              ? offers.filter((o) => where.status.in.includes(o.status))
++              : [...offers].reverse(),
+         ),
+       ),
+       findFirst: jest.fn(() =>
+@@ -113,6 +127,19 @@ function setup() {
+   };
+   let queue: Promise<unknown> = Promise.resolve();
+   const prisma = {
++    engineDriverAvailability: {
++      findMany: jest.fn(() =>
++        Promise.resolve(
++          Object.keys(categories).map((subject) => ({ subject, online: true })),
++        ),
++      ),
++      findUnique: jest.fn(({ where }: any) =>
++        Promise.resolve({
++          subject: where.subject,
++          online: true,
++        }),
++      ),
++    },
+     ...tx,
+     runInTransaction: jest.fn((work: any) => {
+       const result = queue.then(() => work(tx));
+@@ -202,7 +229,12 @@ it('progresses rejection, then reports exhaustion separately from an individual
+   const h = setup();
+   await h.service['dispatch'](h.booking);
+   const ride = await h.service.rejectRide('first', h.booking.id);
+-  expect(ride).toMatchObject({ status: 'REQUESTED', searchStatus: 'OFFERED', offerRequestedAt: h.offers[1].createdAt.toISOString(), offerExpiresAt: h.offers[1].expiresAt.toISOString() });
++  expect(ride).toMatchObject({
++    status: 'REQUESTED',
++    searchStatus: 'OFFERED',
++    offerRequestedAt: h.offers[1].createdAt.toISOString(),
++    offerExpiresAt: h.offers[1].expiresAt.toISOString(),
++  });
+   expect(Number.isFinite(Date.parse(ride.serverTime))).toBe(true);
+   h.offers[1].expiresAt = new Date(Date.now() - 1);
+   await h.service.progressDispatch();
+diff --git a/src/rides/rides.controller.ts b/src/rides/rides.controller.ts
+index db21e56..533039d 100644
+--- a/src/rides/rides.controller.ts
++++ b/src/rides/rides.controller.ts
+@@ -80,6 +80,15 @@ export class RidesController {
+     };
+   }
+ 
++  @Post('rides/:rideId/offer-road-route')
++  async offerRoadRoute(
++    @CurrentSubject() subject: string,
++    @Param('rideId') rideId: string,
++    @Body() body: unknown,
++  ) {
++    return this.ridesService.offerRoadRoute(subject, rideId, body);
++  }
++
+   @Post('rides/:rideId/accept')
+   async acceptRide(
+     @CurrentSubject() subject: string,
+diff --git a/src/rides/rides.service.ts b/src/rides/rides.service.ts
+index 08f00f0..c8379c7 100644
+--- a/src/rides/rides.service.ts
++++ b/src/rides/rides.service.ts
+@@ -17,6 +17,7 @@ import { generateOtp } from '../common/otp';
+ import { parseRequest } from '../common/validation';
+ import { ENGINE_CONFIG, type EngineConfig } from '../config/engine-config';
+ import { DriversService } from '../drivers/drivers.service';
++import { validateFix, type DriverFix } from '../drivers/location-policy';
+ import type { EngineBooking } from '../generated/prisma/client';
+ import { OutboxService } from '../outbox/outbox.service';
+ import { PaymentBackendClient } from '../payment-backend/payment-backend.client';
+@@ -69,6 +70,7 @@ export class RidesService implements OnApplicationBootstrap, OnModuleDestroy {
+   private stopping = false;
+   private dispatchTimer: NodeJS.Timeout | null = null;
+   private dispatchFlight: Promise<void> | null = null;
++  private offerPushFlight: Promise<void> | null = null;
+ 
+   onApplicationBootstrap(): void {
+     this.stopping = false;
+@@ -85,6 +87,7 @@ export class RidesService implements OnApplicationBootstrap, OnModuleDestroy {
+     this.stopping = true;
+     if (this.dispatchTimer) clearInterval(this.dispatchTimer);
+     if (this.dispatchFlight) await this.dispatchFlight;
++    if (this.offerPushFlight) await this.offerPushFlight;
+   }
+ 
+   /** Durable DB scan: resumes expired/open searches after restart, with no customer repost. */
+@@ -105,6 +108,18 @@ export class RidesService implements OnApplicationBootstrap, OnModuleDestroy {
+   }
+ 
+   private async sweepDispatch(): Promise<void> {
++    // A push provider outage must not block offer expiry/search progression.
++    if (!this.offerPushFlight) {
++      this.offerPushFlight = this.notifyOffers()
++        .catch(() => {
++          this.logger.warn(
++            'Offer notification enqueue failed; retrying persisted offers',
++          );
++        })
++        .finally(() => {
++          this.offerPushFlight = null;
++        });
++    }
+     const bookings = await this.prisma.engineBooking.findMany({
+       where: {
+         status: 'OPEN',
+@@ -135,6 +150,42 @@ export class RidesService implements OnApplicationBootstrap, OnModuleDestroy {
+     }
+   }
+ 
++  private async notifyOffers() {
++    const offers = await this.prisma.engineOffer.findMany({
++      where: {
++        status: { in: ['REQUESTED', 'CANCELLED'] },
++        expiresAt: { gt: new Date() },
++        OR: [
++          { notifiedStatus: null },
++          { status: 'CANCELLED', notifiedStatus: 'REQUESTED' },
++        ],
++      },
++      include: { booking: true },
++      take: 25,
++      orderBy: { createdAt: 'asc' },
++    });
++    for (const offer of offers) {
++      if (this.stopping) break;
++      const response = await this.backend.call({
++        method: 'POST',
++        path: '/v1/internal/notifications/offer',
++        requestId: `eng-push-${offer.id}`,
++        body: {
++          offerId: offer.id,
++          externalRef: offer.booking.externalRef,
++          driverSubject: offer.driverSubject,
++          expiresAt: offer.expiresAt.toISOString(),
++          status: offer.status,
++        },
++      });
++      if (response.kind === 'OK')
++        await this.prisma.engineOffer.updateMany({
++          where: { id: offer.id, status: offer.status },
++          data: { notifiedAt: new Date(), notifiedStatus: offer.status },
++        });
++    }
++  }
++
+   private readonly logger = new Logger(RidesService.name);
+ 
+   constructor(
+@@ -333,6 +384,68 @@ export class RidesService implements OnApplicationBootstrap, OnModuleDestroy {
+ 
+   // ──── DRIVER OFFERS ────
+ 
++  private readonly routeBudgets = new Map<string, number>();
++
++  async offerRoadRoute(subject: string, rideId: string, raw: unknown) {
++    if (!UUID.test(rideId)) throw new BadRequestException('Invalid ride id');
++    validateFix(raw as DriverFix);
++    const now = Date.now();
++    const offer = await this.prisma.engineOffer.findFirst({
++      where: {
++        bookingId: rideId,
++        driverSubject: subject,
++        status: 'REQUESTED',
++        expiresAt: { gt: new Date(now) },
++        booking: { status: 'OPEN' },
++      },
++      include: { booking: true },
++    });
++    if (!offer) throw new NotFoundException('No current offer for this driver');
++    await this.drivers.requireEligibleForNewWork(
++      subject,
++      offer.booking.vehicleCategory,
++    );
++    if (now - (this.routeBudgets.get(subject) ?? 0) < 5000)
++      throw engineError(
++        HttpStatus.TOO_MANY_REQUESTS,
++        'ROUTING_RATE_LIMITED',
++        'Wait before refreshing the route',
++      );
++    if (this.routeBudgets.size > 10000)
++      for (const [key, time] of this.routeBudgets)
++        if (now - time > 60000) this.routeBudgets.delete(key);
++    this.routeBudgets.set(subject, now);
++    const fix = raw as DriverFix;
++    const result = await this.backend.call({
++      method: 'POST',
++      path: '/v1/internal/routes/offer',
++      requestId: `eng-route-${randomUUID()}`,
++      body: {
++        externalRef: offer.booking.externalRef,
++        origin: { latitude: fix.latitude, longitude: fix.longitude },
++      },
++    });
++    if (result.kind !== 'OK')
++      throw paymentBackendUnavailable('Road routing is unavailable');
++    // Discard a provider response if the offer was accepted/reassigned/cancelled while routing.
++    const current = await this.prisma.engineOffer.findFirst({
++      where: {
++        id: offer.id,
++        driverSubject: subject,
++        status: 'REQUESTED',
++        expiresAt: { gt: new Date() },
++        booking: { status: 'OPEN' },
++      },
++    });
++    if (!current) throw new NotFoundException('Offer is no longer available');
++    return {
++      offerId: offer.id,
++      rideId,
++      expiresAt: offer.expiresAt.toISOString(),
++      routes: result.body,
++    };
++  }
++
+   async findPendingForDriver(subject: string, driverId: string) {
+     assertSameIdentity(subject, driverId, 'driverId');
+     // Heartbeat, as before: the driver stays discoverable while polling.
+@@ -431,6 +544,9 @@ export class RidesService implements OnApplicationBootstrap, OnModuleDestroy {
+         // This synchronous check runs while the booking is locked, immediately before the
+         // assignment is persisted. It is intentionally not cached: the backend owns all KYC,
+         // vehicle, approval and suspension decisions.
++        const presence = await this.drivers.availability(subject);
++        if (!presence.online || presence.connectionHealth !== 'CONNECTED')
++          throw new ConflictException('A fresh Online driver is required.');
+         await this.drivers.requireEligibleForNewWork(
+           subject,
+           bundle.booking.vehicleCategory,
+@@ -843,8 +959,12 @@ export class RidesService implements OnApplicationBootstrap, OnModuleDestroy {
+ 
+   /** Offers an open booking to the engine-selected driver; the same offer again is a no-op. */
+   private async offer(booking: EngineBooking, driverId: string): Promise<void> {
+-    const driver = this.drivers.findById(driverId);
+-    if (!driver.isAvailable || (await this.drivers.hasActiveTrip(driverId))) {
++    const presence = await this.drivers.availability(driverId);
++    if (
++      !presence.online ||
++      presence.connectionHealth !== 'CONNECTED' ||
++      (await this.drivers.hasActiveTrip(driverId))
++    ) {
+       throw engineError(
+         HttpStatus.BAD_REQUEST,
+         'DRIVER_NOT_AVAILABLE',
+diff --git a/prisma/migrations/20261102220000_driver_availability/migration.sql b/prisma/migrations/20261102220000_driver_availability/migration.sql
+new file mode 100644
+index 0000000..495c8fd
+--- /dev/null
++++ b/prisma/migrations/20261102220000_driver_availability/migration.sql
+@@ -0,0 +1,7 @@
++CREATE TABLE engine_driver_availability (
++  subject varchar(128) PRIMARY KEY,
++  online boolean NOT NULL DEFAULT false,
++  updated_at timestamptz(6) NOT NULL DEFAULT now()
++);
++ALTER TABLE engine_offers ADD COLUMN notified_at timestamptz(6);
++ALTER TABLE engine_offers ADD COLUMN notified_status varchar(20);
+diff --git a/src/rides/offer-road-route.spec.ts b/src/rides/offer-road-route.spec.ts
+new file mode 100644
+index 0000000..f9e6ca6
+--- /dev/null
++++ b/src/rides/offer-road-route.spec.ts
+@@ -0,0 +1,110 @@
++import { RidesService } from './rides.service';
++const rideId = '00000000-0000-4000-8000-000000000001';
++const offerId = '00000000-0000-4000-8000-000000000002';
++function setup() {
++  const row = {
++    id: offerId,
++    bookingId: rideId,
++    driverSubject: 'driver-a',
++    status: 'REQUESTED',
++    expiresAt: new Date(Date.now() + 30000),
++    booking: {
++      externalRef: rideId,
++      status: 'OPEN',
++      vehicleCategory: 'MINI_TRUCK',
++    },
++  };
++  const prisma = {
++    engineOffer: {
++      findFirst: jest.fn(({ where }: any) =>
++        Promise.resolve(
++          where.driverSubject === row.driverSubject &&
++            (!where.bookingId || where.bookingId === row.bookingId) &&
++            row.status === 'REQUESTED' &&
++            row.expiresAt > new Date()
++            ? row
++            : null,
++        ),
++      ),
++    },
++  };
++  const backend = {
++    call: jest.fn().mockResolvedValue({
++      kind: 'OK',
++      body: {
++        toPickup: { distanceMeters: 5600, durationSeconds: 1020 },
++        delivery: { distanceMeters: 12000, durationSeconds: 2000 },
++      },
++    }),
++  };
++  const drivers = {
++    requireEligibleForNewWork: jest.fn().mockResolvedValue(undefined),
++  };
++  const service = new RidesService(
++    prisma as never,
++    backend as never,
++    {} as never,
++    drivers as never,
++    {} as never,
++    {} as never,
++  );
++  return { row, prisma, backend, service };
++}
++const fix = () => ({
++  latitude: 26.2,
++  longitude: 73.1,
++  capturedAt: Date.now(),
++  accuracy: 5,
++});
++it('routes only an authenticated targeted offer with server-owned itinerary and no amount', async () => {
++  const h = setup();
++  const result = await h.service.offerRoadRoute('driver-a', rideId, fix());
++  expect(result.offerId).toBe(offerId);
++  expect(h.backend.call).toHaveBeenCalledWith(
++    expect.objectContaining({
++      path: '/v1/internal/routes/offer',
++      body: {
++        externalRef: rideId,
++        origin: { latitude: 26.2, longitude: 73.1 },
++      },
++    }),
++  );
++});
++it('refuses a foreign driver, expired offer and stale GPS before provider access', async () => {
++  const h = setup();
++  await expect(
++    h.service.offerRoadRoute('other-driver', rideId, fix()),
++  ).rejects.toMatchObject({ status: 404 });
++  h.row.expiresAt = new Date(0);
++  await expect(
++    h.service.offerRoadRoute('driver-a', rideId, fix()),
++  ).rejects.toMatchObject({ status: 404 });
++  await expect(
++    h.service.offerRoadRoute('driver-a', rideId, { ...fix(), capturedAt: 0 }),
++  ).rejects.toMatchObject({ status: 400 });
++  expect(h.backend.call).not.toHaveBeenCalled();
++});
++it('discards a route when cancellation wins while the provider request is in flight', async () => {
++  const h = setup();
++  h.backend.call.mockImplementationOnce(() => {
++    h.row.status = 'CANCELLED';
++    return Promise.resolve({
++      kind: 'OK',
++      body: {
++        toPickup: { distanceMeters: 1, durationSeconds: 1 },
++        delivery: { distanceMeters: 1, durationSeconds: 1 },
++      },
++    });
++  });
++  await expect(
++    h.service.offerRoadRoute('driver-a', rideId, fix()),
++  ).rejects.toMatchObject({ status: 404 });
++});
++it('limits repeated requests for the same driver', async () => {
++  const h = setup();
++  await h.service.offerRoadRoute('driver-a', rideId, fix());
++  await expect(
++    h.service.offerRoadRoute('driver-a', rideId, fix()),
++  ).rejects.toMatchObject({ status: 429 });
++  expect(h.backend.call).toHaveBeenCalledTimes(1);
++});

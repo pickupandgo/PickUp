@@ -1,4 +1,5 @@
 import React from 'react';
+import { FloatingWindowScreen } from '../../screens/account/FloatingWindowScreen';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { AccountStackParamList } from '../../types/navigation';
 
@@ -10,9 +11,11 @@ import { VehicleDocumentsScreen } from '../../screens/account/VehicleDocumentsSc
 import { DocumentPreviewScreen } from '../../screens/account/DocumentPreviewScreen';
 import { VehicleStatusScreen } from '../../screens/account/VehicleStatusScreen';
 import { SettingsScreen } from '../../screens/account/SettingsScreen';
-import { SubscriptionScreen } from '../../screens/account/SubscriptionScreen';
-import { SubscriptionProcessingScreen } from '../../screens/account/SubscriptionProcessingScreen';
-import { SubscriptionResultScreen } from '../../screens/account/SubscriptionResultScreen';
+import { EditProfileScreen } from '../../screens/account/EditProfileScreen';
+import { PrivacyScreen } from '../../screens/account/PrivacyScreen';
+import { LegalInformationScreen } from '../../screens/account/LegalInformationScreen';
+import { DataPermissionsScreen } from '../../screens/account/DataPermissionsScreen';
+import { HelpSupportScreen } from '../../screens/account/HelpSupportScreen';
 import { SettingsLanguageScreen } from '../../screens/account/SettingsLanguageScreen';
 import { AccountRestrictedScreen } from '../../screens/account/AccountRestrictedScreen';
 
@@ -27,6 +30,12 @@ export const AccountStack: React.FC = () => {
       }}
     >
       <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="FloatingWindow" component={FloatingWindowScreen} />
+      <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+      <Stack.Screen name="Privacy" component={PrivacyScreen} />
+      <Stack.Screen name="LegalInformation" component={LegalInformationScreen} />
+      <Stack.Screen name="DataPermissions" component={DataPermissionsScreen} />
+      <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
       <Stack.Screen name="DocumentsHub" component={DocumentsHubScreen} />
       <Stack.Screen name="PersonalDocuments" component={PersonalDocumentsScreen} />
       <Stack.Screen name="KYCStatus" component={KYCStatusScreen} />
@@ -34,17 +43,6 @@ export const AccountStack: React.FC = () => {
       <Stack.Screen name="DocumentPreview" component={DocumentPreviewScreen} options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="VehicleStatus" component={VehicleStatusScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
-      <Stack.Screen name="Subscription" component={SubscriptionScreen} />
-      <Stack.Screen
-        name="SubscriptionProcessing"
-        component={SubscriptionProcessingScreen}
-        options={{ gestureEnabled: false }}
-      />
-      <Stack.Screen
-        name="SubscriptionResult"
-        component={SubscriptionResultScreen}
-        options={{ gestureEnabled: false }}
-      />
       <Stack.Screen name="LanguageSelection" component={SettingsLanguageScreen} />
       <Stack.Screen name="AccountRestricted" component={AccountRestrictedScreen} />
     </Stack.Navigator>

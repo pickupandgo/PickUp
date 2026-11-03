@@ -7,7 +7,8 @@ import { MultiStopTimeline } from '../../components/organisms/MultiStopTimeline'
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { DriverMap, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
-import { useActiveTrip } from '../../hooks/useActiveTrip';
+import { useLiveTrip } from '../../hooks/useActiveTrip';
+import { historyStatus } from '../../services/trip/tripHistoryPresentation';
 import { useTripRoute } from '../../hooks/useTripRoute';
 import type { HomeScreenProps } from '../../types/navigation';
 
@@ -32,10 +33,11 @@ function compactAddress(address?: string): string {
 
 export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
   navigation,
+  route,
   testID,
 }) => {
   const { currentLocation } = useDriverLocation();
-  const trip = useActiveTrip();
+  const trip = useLiveTrip(route.params.tripId);
   const { route: routingData } = useTripRoute();
 
   const handleNavigateToStop = useCallback(
@@ -131,7 +133,7 @@ export const MultiStopJourneyScreen: React.FC<MultiStopJourneyScreenProps> = ({
           </Text>
           <View style={styles.onTimeBadge}>
             <Icon name="schedule" size={14} color={colors.onSecondaryContainer} />
-            <Text style={styles.onTimeText}>On Time</Text>
+            <Text style={styles.onTimeText}>{historyStatus(trip.engineStatus ?? trip.status).label}</Text>
           </View>
         </View>
 

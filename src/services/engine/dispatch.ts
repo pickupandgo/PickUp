@@ -172,6 +172,8 @@ export interface EngineTrip {
   /** INR, display copy of the payment backend's quote. */
   readonly fare?: number;
   readonly payablePaise?: number;
+  readonly weight?: number;
+  readonly vehicleType?: string;
   readonly totalDistanceKm?: number;
   readonly createdAt?: string;
   readonly updatedAt?: string;
@@ -184,7 +186,7 @@ function parseLocation(value: unknown, what: string): EngineLocation {
   const json = record(value, what);
   const latitude = finite(json.latitude);
   const longitude = finite(json.longitude);
-  if (latitude === undefined || longitude === undefined) {
+  if (latitude === undefined || longitude === undefined || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
     invalid(what);
   }
   return { latitude, longitude, address: optionalText(json.address) };
@@ -260,6 +262,8 @@ export function parseEngineTrip(value: unknown): EngineTrip {
     status: status as EngineTripStatus,
     fare: finite(json.fare),
     payablePaise: finite(json.payablePaise),
+    weight: finite(json.weight),
+    vehicleType: optionalText(json.vehicleType),
     totalDistanceKm: finite(json.totalDistanceKm),
     createdAt: optionalText(json.createdAt),
     updatedAt: optionalText(json.updatedAt),
@@ -336,8 +340,8 @@ function parseRideRequest(value: unknown): EngineRideRequest {
     weight: finite(json.weight),
     fare: finite(json.fare),
     paymentMethod: optionalText(json.paymentMethod),
-    status: optionalText(json.status) ?? 'REQUESTED',
-    createdAt: optionalText(json.createdAt) ?? new Date().toISOString(),
+    status: optionalText(json.status) ?? 'UNKNOWN',
+    createdAt: optionalText(json.createdAt) ?? '',
     expiresAt: optionalText(json.expiresAt),
   };
 }
@@ -628,9 +632,12 @@ export const engineTripToActiveTrip = (t: EngineTrip): ActiveTrip => {
         ) * 10,
       ) / 10,
     loadType: 'other',
-    goodsType: 'other',
+    goodsType: 'Goods description not supplied',
     vehicleId: 'unknown',
     vehicleRegistration: 'unknown',
+    vehicleCategory: t.vehicleType,
+    weightKg: t.weight !== undefined && t.weight >= 0 ? t.weight : undefined,
+    distanceKind: t.totalDistanceKm === undefined ? 'approximate' : 'backend',
     startedAt: timeOf(t.startedAt),
     completedAt: timeOf(t.completedAt),
     engineStatus: t.status,
@@ -678,12 +685,8 @@ const formatAddress = (loc: EngineLocation): string =>
   loc.address?.trim() ||
   `${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}`;
 
-/** Fallback offer lifetime when an older engine sends no expiresAt. */
-const RIDE_TTL_MS = 15_000;
-
 /** Map an engine ride request into the app's TripOffer. */
 export const rideRequestToOffer = (r: EngineRideRequest): TripOffer => {
-  const createdMs = Date.parse(r.createdAt);
   const expiresMs = r.expiresAt ? Date.parse(r.expiresAt) : NaN;
   const dropStops: TripStop[] = r.drops.map((d, index) => ({
     id: `${r.rideId}-drop-${index + 1}`,
@@ -697,6 +700,7 @@ export const rideRequestToOffer = (r: EngineRideRequest): TripOffer => {
 
   return {
     id: r.rideId,
+    dispatchOfferId: r.offerId,
     estimatedEarning: r.fare ?? 0,
     currency: '₹',
     pickupStop: {
@@ -711,11 +715,10 @@ export const rideRequestToOffer = (r: EngineRideRequest): TripOffer => {
     dropStops,
     totalDistanceKm: Math.round(routeKm(r.pickup, r.drops) * 10) / 10,
     loadType: 'other',
-    vehicleType: r.vehicleType ?? 'Mini Truck',
-    // The engine's deadline is authoritative; the fallback only covers an older engine.
-    expiresAt: Number.isFinite(expiresMs)
-      ? expiresMs
-      : (Number.isFinite(createdMs) ? createdMs : Date.now()) + RIDE_TTL_MS,
-    demandLevel: 'medium',
+    vehicleType: r.vehicleType ?? 'Vehicle category unavailable',
+    // Fail closed when the server supplies no deadline; never invent an offer lifetime.
+    expiresAt: Number.isFinite(expiresMs) ? expiresMs : 0,
+    weightKg: r.weight !== undefined && r.weight >= 0 ? r.weight : undefined,
+    distanceKind: 'approximate',
   };
 };

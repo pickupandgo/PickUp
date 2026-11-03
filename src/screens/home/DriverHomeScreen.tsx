@@ -7,7 +7,6 @@ import { WalletCard } from '../../components/molecules/WalletCard';
 import Icon from '../../components/atoms/Icon';
 import { GoLiveSheet } from '../../components/organisms/GoLiveSheet';
 import { GoOfflineSheet } from '../../components/organisms/GoOfflineSheet';
-import { useFocusEffect } from '@react-navigation/native';
 import { useDriverLocation } from '../../location';
 import { TrackingService } from '../../services/tracking/TrackingService';
 import type { HomeScreenProps } from '../../types/navigation';
@@ -21,6 +20,7 @@ import { CollectPaymentBanner } from '../../components/molecules/CollectPaymentB
 import type { DriverTripDto } from '../../services/payments/collectionsDto';
 import { useI18n } from '../../i18n';
 import { notificationInbox } from '../../services/notifications/NotificationInbox';
+import { useConnectionHealth } from '../../hooks/useConnectionHealth';
 
 export type DriverMode = 'offline' | 'searching' | 'active_trip';
 
@@ -153,16 +153,15 @@ const ActiveTripHero: React.FC<{ trip: ActiveTrip; onOpen: () => void }> = ({ tr
             {currentStop?.label ?? 'Current Stop'}
           </Text>
           <Text style={styles.heroSubtitle}>
-            {distanceKm != null ? `${distanceKm} km` : ''}
+            {distanceKm != null ? `${trip.distanceKind === 'approximate' ? 'Approx. ' : ''}${distanceKm} km` : ''}
             {etaMinutes != null ? `${distanceKm != null ? ' · ' : ''}${etaMinutes} min away` : ''}
           </Text>
         </View>
         <View style={styles.earningBox}>
           <Text style={styles.earningAmount}>
-            {trip.currency}
-            {trip.estimatedEarning}
+            {trip.payablePaise === undefined ? 'Unavailable' : `₹${(trip.payablePaise / 100).toLocaleString('en-IN')}`}
           </Text>
-          <Text style={styles.earningLabel}>{t('home.estEarning')}</Text>
+          <Text style={styles.earningLabel}>Customer fare</Text>
         </View>
       </View>
 
@@ -198,13 +197,16 @@ const ActiveTripHero: React.FC<{ trip: ActiveTrip; onOpen: () => void }> = ({ tr
 // ─── Screen ────────────────────────────────────────────────────────
 
 export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, testID }) => {
-  const { requestPermission, currentLocation } = useDriverLocation();
+  const { requestPermission } = useDriverLocation();
   const { t } = useI18n();
   const activeTrip = useActiveTrip();
   const dashboard = useHomeDashboard(`${activeTrip?.id ?? ''}:${activeTrip?.status ?? ''}`);
   const collectable = useCollectableTrips();
-  const [driverMode, setDriverMode] = useState<Exclude<DriverMode, 'active_trip'>>('offline');
+  const tracking = TrackingService.getInstance();
+  const online = useSyncExternalStore(tracking.subscribeOnline, tracking.getOnline);
+  const connectionHealth = useConnectionHealth();
   const [sheetMode, setSheetMode] = useState<'none' | 'go_live' | 'go_offline'>('none');
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -215,6 +217,7 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
   const confirmToggleLive = useCallback(
     (value: boolean) => {
       setSheetMode('none');
+      setAvailabilityError(null);
       Animated.timing(fadeAnim, {
         toValue: 0.5,
         duration: 200,
@@ -227,9 +230,9 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
           } else {
             await TrackingService.getInstance().setOnline(false);
           }
-          setDriverMode(value ? 'searching' : 'offline');
-        } catch (err) {
-          console.error('Failed to toggle tracking:', err);
+        } catch {
+          setAvailabilityError(value ? 'Could not confirm Online availability. Check precise location access and your connection, then retry.'
+            : 'Offline was not confirmed by the service. Your previous availability is unchanged. Please retry.');
         } finally {
           Animated.timing(fadeAnim, {
             toValue: 1,
@@ -266,27 +269,15 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
     }
   }, [navigation, activeTrip]);
 
-  const isLive = driverMode === 'searching';
-  // Effective view: offline > active trip (only while live) > searching.
-  const mode: DriverMode = !isLive ? 'offline' : activeTrip ? 'active_trip' : 'searching';
+  const isLive = online;
+  // A restored, unfinished trip stays accessible even before LIVE is toggled.
+  const hasActiveTrip = activeTrip && !['completed', 'cancelled', 'expired'].includes(activeTrip.status);
+  const mode: DriverMode = hasActiveTrip ? 'active_trip' : isLive ? 'searching' : 'offline';
 
   // Advertise availability + poll for offers only while live and not already on a trip.
-  const { resume: resumeDispatch } = useDriverDispatch({
+  useDriverDispatch({
     enabled: mode === 'searching',
-    getLocation: () =>
-      currentLocation
-        ? { latitude: currentLocation.latitude, longitude: currentLocation.longitude }
-        : null,
-    onOffer: (offer, driverId) => {
-      navigation.navigate('TripOffer', { offer, driverId });
-    },
   });
-
-  useFocusEffect(
-    useCallback(() => {
-      resumeDispatch();
-    }, [resumeDispatch]),
-  );
 
   const pillLabel =
     mode === 'active_trip' ? t('home.online') : mode === 'searching' ? t('home.live') : t('home.offline');
@@ -339,7 +330,9 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={dashboard.vehicle.loading || dashboard.wallet.loading || dashboard.today.loading}
           onRefresh={() => { dashboard.refresh().catch(() => undefined); }} />}>
-        <Animated.View style={{ opacity: fadeAnim, gap: spacing.lg }}>
+          <Animated.View style={{ opacity: fadeAnim, gap: spacing.lg }}>
+            {availabilityError && <Text accessibilityRole="alert" style={styles.heroSubtitle}>{availabilityError}</Text>}
+          {online && <Text style={styles.heroSubtitle} accessibilityLiveRegion="polite">Online preference · {connectionHealth === 'CONNECTED' ? 'Connected' : connectionHealth === 'STALE' ? 'Location connection stale' : connectionHealth === 'RECONNECTING' ? 'Reconnecting' : 'Disconnected — reopen location sharing'}</Text>}
           {/* Payment the driver can collect right now (payments backend) */}
           <CollectPaymentBanner trips={collectable} onPress={handleCollect} />
 
@@ -350,7 +343,7 @@ export const DriverHomeScreen: React.FC<DriverHomeScreenProps> = ({ navigation, 
             <>
               <View style={styles.availabilityBanner}>
                 <Icon name="radar" size={16} color={colors.primary} />
-                <Text style={styles.bannerText}>{t('home.availableNearby')}</Text>
+                <Text style={styles.bannerText}>{connectionHealth === 'CONNECTED' ? t('home.availableNearby') : 'Waiting for a fresh location connection'}</Text>
               </View>
               <View style={styles.searchingCard}>
                 <SearchingPulse />

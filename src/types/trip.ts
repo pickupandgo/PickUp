@@ -64,6 +64,7 @@ export interface TripStop {
 }
 
 export interface TripOffer {
+  readonly dispatchOfferId?: string;
   readonly id: string;
   readonly estimatedEarning: number;
   readonly currency: string;
@@ -74,6 +75,11 @@ export interface TripOffer {
   readonly vehicleType: string;
   readonly expiresAt: number;
   readonly demandLevel?: 'low' | 'medium' | 'high';
+  /** Only a documented Partner offer amount may populate this (INR). */
+  readonly partnerAmount?: number;
+  readonly weightKg?: number;
+  readonly goodsDescription?: string;
+  readonly distanceKind?: 'approximate';
 }
 
 export interface ActiveTrip {
@@ -88,6 +94,9 @@ export interface ActiveTrip {
   readonly goodsType: string;
   readonly vehicleId: string;
   readonly vehicleRegistration: string;
+  readonly vehicleCategory?: string;
+  readonly weightKg?: number;
+  readonly distanceKind?: 'approximate' | 'backend';
   readonly startedAt?: number;
   readonly completedAt?: number;
   /**

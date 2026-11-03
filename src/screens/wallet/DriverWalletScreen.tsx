@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CommonActions } from '@react-navigation/native';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { InlineErrorBanner } from '../../components/molecules/InlineErrorBanner';
+import { PartnerAppHeader } from '../../components/molecules/PartnerAppHeader';
 import { useWallet } from '../../hooks/useWallet';
 import { useEarnings } from '../../hooks/useEarnings';
 import { useI18n } from '../../i18n';
@@ -76,15 +77,7 @@ export const DriverWalletScreen: React.FC<DriverWalletScreenProps> = ({ navigati
   return (
     <SafeAreaView style={styles.safeArea} testID={testID} edges={['top']}>
       {/* Top app bar */}
-      <View style={styles.header}>
-        <Pressable style={styles.headerBtn} onPress={handleMenu}>
-          <Icon name="menu" size={24} color={colors.primary} />
-        </Pressable>
-        <Text style={styles.headerTitle}>MULTIPLERIDE PARTNER</Text>
-        <Pressable style={styles.headerBtn} onPress={handleNotifications}>
-          <Icon name="notifications" size={24} color={colors.onSurfaceVariant} />
-        </Pressable>
-      </View>
+      <PartnerAppHeader onMenu={handleMenu} onNotifications={handleNotifications} />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}

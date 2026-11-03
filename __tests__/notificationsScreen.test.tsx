@@ -7,7 +7,7 @@ import { AppHeader } from '../src/components/molecules/AppHeader';
 import { notificationInbox, type NotificationHistory } from '../src/services/notifications/NotificationInbox';
 jest.mock('../src/components/atoms/Icon', () => 'Icon');
 jest.mock('../src/components/notifications/NotificationRuntime', () => ({ enablePushAlerts: jest.fn(async () => true) }));
-const navigation = { goBack: jest.fn() };
+const navigation = { goBack: jest.fn(), navigate: jest.fn() };
 let renderer: Renderer.ReactTestRenderer;
 let session = 0;
 const render = async () => { await act(async () => { renderer = Renderer.create(<NotificationsScreen navigation={navigation as never} route={{ params: undefined } as never} />); }); };
@@ -18,7 +18,7 @@ test('missing history renders an honest unavailable state and back goes to the o
   expect(text).toContain('Notifications unavailable'); expect(text).toContain('Unread count unavailable');
   expect(renderer.root.findAllByType(NotificationCard)).toHaveLength(0);
   await act(() => renderer.root.findByType(AppHeader).props.onBackPress()); expect(navigation.goBack).toHaveBeenCalled();
-});
+}, 15000); // The first FlatList render may cold-load native host components on Windows.
 test('renders only backend records; exposes pagination, refresh, individual and all-read actions', async () => {
   const history: NotificationHistory = { available: true,
     list: jest.fn(async () => ({ items: [{ id: 'backend-id', type: 'BOOKING_CANCELLED', title: 'Actual server title', body: 'Actual server body', readAt: null, createdAt: '2026-11-02T00:30:00Z' }], unreadCount: 9, nextCursor: 'cursor-1' })),
@@ -30,6 +30,11 @@ test('renders only backend records; exposes pagination, refresh, individual and 
   await act(async () => renderer.root.findByType(FlatList).props.onEndReached()); expect(history.list).toHaveBeenCalledWith('cursor-1');
   await act(async () => renderer.root.findByType(FlatList).props.refreshControl.props.onRefresh());
   await act(async () => renderer.root.findByType(NotificationCard).props.onPress()); expect(history.markRead).toHaveBeenCalledWith('backend-id');
+  const related = renderer.root.findAll(node => typeof node.props.onPress === 'function' &&
+    node.findAllByType(Text).some(child => child.props.children?.join?.('') === 'Open Trips'));
+  expect(related.length).toBeGreaterThan(0);
+  await act(async () => related[0].props.onPress());
+  expect(navigation.navigate).toHaveBeenCalledWith('Main', { screen: 'TripsTab', params: { screen: 'TripHistory' } });
   await act(async () => renderer.root.findAll(node => node.props.accessibilityLabel === 'Mark all as read' && typeof node.props.onPress === 'function')[0].props.onPress());
   expect(history.markAllRead).toHaveBeenCalled();
 });

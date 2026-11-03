@@ -80,6 +80,30 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+describe('active restoration and session races', () => {
+  it('ignores a late acceptance after the authenticated session ends', async () => {
+    const pending = deferred<ActiveTrip>();
+    useService({ acceptTrip: jest.fn(() => pending.promise) });
+    const response = controller.acceptOffer(RIDE_ID);
+    controller.resetSession();
+    pending.resolve(trip('DRIVER_ASSIGNED'));
+    await expect(response).rejects.toThrow('session changed');
+    expect(controller.getTrip()).toBeNull();
+  });
+  it('does not let an old empty restoration erase a newly accepted trip', async () => {
+    const pending = deferred<ActiveTrip | null>();
+    useService({ getActiveTrip: jest.fn(() => pending.promise), acceptTrip: jest.fn(async () => trip('DRIVER_ASSIGNED')) });
+    const restore = controller.loadInitialTrip();
+    await controller.acceptOffer(RIDE_ID); pending.resolve(null); await restore;
+    expect(controller.getTrip()?.rideId).toBe(RIDE_ID);
+  });
+  it('clears a cached trip on an authoritative empty active-trip response', async () => {
+    controller.setTrip(trip('IN_TRANSIT'));
+    useService({ getActiveTrip: jest.fn(async () => null) });
+    await controller.loadInitialTrip(); expect(controller.getTrip()).toBeNull();
+  });
+});
+
 describe('one engine step per driver action (review G)', () => {
   it('never chains the pickup OTP with the start of the trip', async () => {
     const service = {

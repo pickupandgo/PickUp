@@ -36,7 +36,7 @@ export const SettingsRow: React.FC<SettingsRowProps> = ({
       testID={testID}
     >
       <View style={styles.iconContainer}>
-        <Icon name={iconName} />
+        <Icon name={iconName} size={22} color={colors.navigationIcon} />
       </View>
       <Text style={styles.label}>{label}</Text>
       {value ? (
@@ -66,6 +66,8 @@ const styles = StyleSheet.create({
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: colors.surfaceContainerLow,
   },
   icon: {
     fontSize: 22,

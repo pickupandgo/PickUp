@@ -37,6 +37,23 @@ class LocationModule(reactContext: ReactApplicationContext) :
     init { foregroundEmitter = eventEmitter }
 
     @ReactMethod
+    fun getConnectionHealth(promise: Promise) { promise.resolve(LocationService.connectionHealth()) }
+
+    @ReactMethod
+    fun getOnlinePreference(promise: Promise) {
+        promise.resolve(OnlinePreference.isOnline(reactApplicationContext))
+    }
+
+    @ReactMethod
+    fun setOnlinePreference(online: Boolean, promise: Promise) {
+        try {
+            OnlinePreference.set(reactApplicationContext, online)
+            PartnerFloatingPanel.refresh()
+            promise.resolve(true)
+        } catch (error: Exception) { promise.reject("PREFERENCE_UNAVAILABLE", "Availability preference could not be saved", error) }
+    }
+
+    @ReactMethod
     fun setPublishing(enabled: Boolean, tripId: String?, promise: Promise) {
         try {
             if (enabled) {

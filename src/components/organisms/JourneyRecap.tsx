@@ -24,8 +24,9 @@ export const JourneyRecap: React.FC<JourneyRecapProps> = ({
         {stops.map((stop, index) => (
           <View key={stop.id} style={styles.stopRow}>
             <View style={styles.timelineColumn}>
-              <View style={styles.completedDot}>
-                <Icon name="check" style={styles.checkIcon} />
+              <View style={[styles.completedDot, { backgroundColor: stop.engineStatus === 'DELIVERED' ||
+                (stop.type === 'pickup' && stop.status === 'completed') ? colors.success : colors.surfaceContainerHighest }]}>
+                <Icon name={stop.engineStatus === 'DELIVERED' || (stop.type === 'pickup' && stop.status === 'completed') ? 'check' : 'remove'} style={styles.checkIcon} />
               </View>
               {index < stops.length - 1 ? (
                 <View style={styles.line} />
@@ -68,7 +69,7 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#2e7d32',
+    backgroundColor: colors.success,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -79,7 +80,7 @@ const styles = StyleSheet.create({
   line: {
     width: 2,
     height: 24,
-    backgroundColor: '#2e7d32',
+    backgroundColor: colors.outlineVariant,
   },
   stopContent: {
     flex: 1,

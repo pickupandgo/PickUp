@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Tex
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { NotificationCard } from '../../components/molecules/NotificationCard';
+import { NotificationPreferences } from '../../components/notifications/NotificationPreferences';
 import { enablePushAlerts } from '../../components/notifications/NotificationRuntime';
 import { notificationInbox, notificationPresentation } from '../../services/notifications/NotificationInbox';
 import { pushSession, pushState } from '../../services/notifications/notifications';
@@ -34,6 +35,15 @@ export function NotificationsScreen({ navigation, route }: RootScreenProps<'Noti
       setPermissionMessage(allowed ? 'Notification permission is enabled on this device.' : 'Enable notifications in Android app settings to receive alerts.');
     } catch { setPermissionMessage('Could not enable alerts. Please try again.'); }
   };
+  const openRelated = (category: string, type: string) => {
+    if (category === 'Wallet') navigation.navigate('Main', { screen: 'WalletTab', params: { screen: 'DriverWallet' } });
+    else if (category === 'Earnings') navigation.navigate('Main', { screen: 'EarningsTab', params: { screen: 'EarningsHistory' } });
+    else if (category === 'Vehicle' || category === 'Verification')
+      navigation.navigate('Main', { screen: 'AccountTab', params: { screen: 'DocumentsHub' } });
+    else if (type === 'RIDE_OFFER') navigation.navigate('Main', { screen: 'HomeTab', params: { screen: 'DriverHome' } });
+    else if (category === 'Trip' || category === 'Message') navigation.navigate('Main', { screen: 'TripsTab', params: { screen: 'TripHistory' } });
+    else navigation.navigate('Main', { screen: 'AccountTab', params: { screen: 'Profile' } });
+  };
   return <SafeAreaView style={styles.root}>
     <AppHeader title="Notifications" showBackButton onBackPress={() => navigation.goBack()} />
     <View style={styles.toolbar}>
@@ -49,13 +59,17 @@ export function NotificationsScreen({ navigation, route }: RootScreenProps<'Noti
       renderItem={({ item }) => {
         const presentation = notificationPresentation(item.type);
         const date = new Date(item.createdAt);
-        return <NotificationCard title={item.title} description={item.body} isRead={item.readAt !== null}
+        return <View><NotificationCard title={item.title} description={item.body} isRead={item.readAt !== null}
           timestamp={Number.isNaN(date.getTime()) ? 'Time unavailable' : date.toLocaleString()}
           iconName={presentation.icon} category={presentation.category}
           reference={item.relatedEntityId ? `${item.relatedEntityType ?? 'Reference'}: ${item.relatedEntityId}` : undefined}
-          expanded={selectedId === item.id} onPress={() => { attemptedRead.current = item.id; setSelectedId(item.id); notificationInbox.markRead(item.id).catch(() => {}); }} />;
+          expanded={selectedId === item.id} onPress={() => { attemptedRead.current = item.id; setSelectedId(item.id); notificationInbox.markRead(item.id).catch(() => {}); }} />
+          {selectedId === item.id && <Pressable style={styles.action} accessibilityRole="button"
+            onPress={() => openRelated(presentation.category, item.type)}><Text style={styles.actionText}>Open {presentation.category === 'Trip' ? 'Trips' : presentation.category === 'Verification' || presentation.category === 'Vehicle' ? 'Documents' : presentation.category === 'Message' ? 'Trips' : presentation.category}</Text></Pressable>}
+        </View>;
       }}
       ListHeaderComponent={<>
+        <NotificationPreferences />
         {inbox.error && inbox.items.length > 0 ? <Text accessibilityRole="alert" style={styles.error}>{inbox.error}</Text> : null}
         {push.error ? <Text style={styles.secondary}>{push.error}</Text> : null}
         {permissionMessage ? <Text accessibilityLiveRegion="polite" style={styles.secondary}>{permissionMessage}</Text> : null}

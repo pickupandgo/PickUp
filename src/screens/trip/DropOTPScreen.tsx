@@ -144,7 +144,7 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
     setError(null);
     try {
       const result = await TripController.getInstance().completeTrip(tripId);
-      if (result.completion === 'PENDING') {
+      if (result.completion === 'PENDING' || result.trip.engineStatus !== 'COMPLETED') {
         setCompletionPending(true);
       } else {
         setCompletionPending(false);

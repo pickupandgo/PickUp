@@ -22,6 +22,7 @@ internal class LocationPublisher(
     },
     private val send: ((String, String, String) -> Int)? = null,
     private val now: () -> Long = { System.currentTimeMillis() },
+    private val onSuccess: (Long) -> Unit = {},
     private val onFailure: (String, Boolean) -> Unit,
 ) {
     private val worker = Executors.newSingleThreadScheduledExecutor()
@@ -96,6 +97,7 @@ internal class LocationPublisher(
                 if (code == 401 && attempt == 0) continue
                 if (code in 200..299) {
                     synchronized(lock) { lastCaptured = maxOf(lastCaptured, fix.timestamp); backoff = 2 }
+                    onSuccess(fix.timestamp)
                 } else if (code == 401 || code == 403) {
                     onFailure("Location sharing authorization failed. Reopen the app to recover.", true)
                     close()

@@ -29,6 +29,7 @@ const mockSummary = { profileName: 'Partner', requiredDocuments: { kyc: ['DRIVER
   vehicles: [{ id: 'a', makeModel: 'Actual model', registrationNumber: 'REG-A', category: 'MINI_TRUCK', status: 'VERIFIED', active: true, documents: [rc, insurance] },
     { id: 'b', makeModel: 'Other model', registrationNumber: 'REG-B', category: 'PICKUP_TRUCK', status: 'SUBMITTED', active: false, documents: [{ ...rc, id: 'rc-b' }] }], activeVehicle: null };
 jest.mock('../src/hooks/useDriverOnboarding', () => ({ useDriverOnboarding: () => ({ summary: mockSummary, loading: false, error: null, refresh: mockRefresh }) }));
+jest.mock('../src/hooks/usePartnerProfile', () => ({ usePartnerProfile: () => ({ profile: { name: mockSummary.profileName, photoUrl: null }, loading: false, error: null, refresh: mockRefresh }) }));
 jest.mock('../src/hooks/useDocumentPreview', () => ({ useSecureDocumentScreen: jest.fn(), useDocumentPreview: jest.fn(), useDocumentPage: jest.fn() }));
 const nativePreview = { handle: 'opaque', name: 'Driver photo', status: 'VERIFIED', contentType: 'image/jpeg', pageCount: 1, pages: [{ width: 800, height: 1200 }], expiresAt: Date.now() + 60000 };
 const retry = jest.fn();

@@ -1,5 +1,6 @@
 import { ApiClient } from '../api/ApiClient';
 import { pushSession } from '../notifications/notifications';
+import { TrackingService } from '../tracking/TrackingService';
 import { env } from '../../config/env';
 import {
   getAuth,
@@ -448,6 +449,7 @@ export class FirebaseAuthService implements IAuthService {
 
   async logout(): Promise<void> {
     try {
+      await TrackingService.getInstance().logout().catch(() => {});
       // Deactivate this installation while Firebase credentials are still valid.
       // A failed cleanup must not prevent the existing sign-out flow.
       await pushSession.logout().catch(() => {});
