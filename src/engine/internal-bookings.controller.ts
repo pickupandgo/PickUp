@@ -113,6 +113,7 @@ export class InternalBookingsController {
       {
         bookingId,
         tripId: result.trip?.id || '',
+        eventId: `assigned:${bookingId}:${result.trip?.id || ''}`,
       },
     );
     return this.view(result);
@@ -134,7 +135,7 @@ export class InternalBookingsController {
       'CUSTOMER',
       'BOOKING_CANCELLED',
       { reason: body.reason },
-      { bookingId },
+      { bookingId, eventId: `cancelled:${bookingId}` },
     );
 
     // If trip had driver assigned, notify driver
@@ -144,7 +145,7 @@ export class InternalBookingsController {
         'DRIVER',
         'BOOKING_CANCELLED',
         { reason: body.reason },
-        { bookingId, tripId: result.trip.id },
+        { bookingId, tripId: result.trip.id, eventId: `cancelled:${bookingId}` },
       );
     }
 
@@ -172,15 +173,15 @@ export class InternalBookingsController {
           'CUSTOMER',
           'DRIVER_ARRIVED',
           {},
-          { bookingId: result.booking.id, tripId },
+          { bookingId: result.booking.id, tripId, eventId: `trip:${tripId}:${body.status}` },
         );
-      } else if (body.status === 'PICKUP_VERIFIED' || body.status === 'IN_TRANSIT') {
+      } else if (body.status === 'IN_TRANSIT') {
         await this.notifications.sendNotification(
           result.booking.customerId,
           'CUSTOMER',
           'TRIP_STARTED',
           {},
-          { bookingId: result.booking.id, tripId },
+          { bookingId: result.booking.id, tripId, eventId: `trip:${tripId}:${body.status}` },
         );
       } else if (body.status === 'COMPLETED') {
         await this.notifications.sendNotification(
@@ -188,7 +189,7 @@ export class InternalBookingsController {
           'CUSTOMER',
           'TRIP_COMPLETED',
           {},
-          { bookingId: result.booking.id, tripId },
+          { bookingId: result.booking.id, tripId, eventId: `trip:${tripId}:${body.status}` },
         );
       }
     }
@@ -244,7 +245,11 @@ export class InternalBookingsController {
           'CUSTOMER',
           'ARRIVED_AT_STOP',
           { stopNumber: sequence },
-          { bookingId: result.booking.id, tripId },
+          {
+            bookingId: result.booking.id,
+            tripId,
+            eventId: `stop:${result.stop.id}:${body.status}:${result.stop.updatedAt.toISOString()}`,
+          },
         );
       } else if (body.status === 'DELIVERED') {
         await this.notifications.sendNotification(
@@ -252,7 +257,11 @@ export class InternalBookingsController {
           'CUSTOMER',
           'STOP_DELIVERED',
           { stopNumber: sequence },
-          { bookingId: result.booking.id, tripId },
+          {
+            bookingId: result.booking.id,
+            tripId,
+            eventId: `stop:${result.stop.id}:${body.status}:${result.stop.updatedAt.toISOString()}`,
+          },
         );
       }
     }

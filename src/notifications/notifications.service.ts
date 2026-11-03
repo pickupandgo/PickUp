@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { notificationCopy } from './notification-copy';
 import { applicationDefault, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { AppError } from '../common/errors/app-error';
@@ -121,116 +123,6 @@ export class NotificationsService {
   private get notificationPrisma(): NotificationPrismaClient {
     return this.prisma as unknown as NotificationPrismaClient;
   }
-
-  // Bilingual templates (English and pure Devanagari Hindi)
-  private readonly templates: Record<
-    BackendNotificationType,
-    {
-      en: (vars: TemplateVariables) => { title: string; body: string };
-      hi: (vars: TemplateVariables) => { title: string; body: string };
-      channelId: string;
-    }
-  > = {
-    RIDE_OFFER: {
-      en: (v) => ({
-        title: 'New Ride Offer Available',
-        body: `New ride request near ${v.pickup || 'your location'}. Tap to review.`,
-      }),
-      hi: (v) => ({
-        title: 'नई सवारी का प्रस्ताव उपलब्ध है',
-        body: `${v.pickup || 'आपके स्थान'} के पास नई सवारी अनुरोध। समीक्षा करने के लिए टैप करें।`,
-      }),
-      channelId: 'ride_updates',
-    },
-    DRIVER_ASSIGNED: {
-      en: (v) => ({
-        title: 'Driver Assigned',
-        body: `${v.driverName || 'Driver'} (${v.vehicleType || 'Vehicle'}) has accepted your booking!`,
-      }),
-      hi: (v) => ({
-        title: 'चालक नियुक्त हो गया है',
-        body: `${v.driverName || 'चालक'} (${v.vehicleType || 'वाहन'}) ने आपकी बुकिंग स्वीकार कर ली है!`,
-      }),
-      channelId: 'ride_updates',
-    },
-    DRIVER_ARRIVED: {
-      en: (v) => ({
-        title: 'Driver Arrived at Pickup',
-        body: `${v.driverName || 'Your driver'} has arrived at your pickup location.`,
-      }),
-      hi: (v) => ({
-        title: 'चालक पिकअप पर पहुंच गया है',
-        body: `${v.driverName || 'आपका चालक'} आपके पिकअप स्थान पर पहुंच चुका है।`,
-      }),
-      channelId: 'ride_updates',
-    },
-    TRIP_STARTED: {
-      en: () => ({
-        title: 'Trip Started',
-        body: 'Your trip is now in transit. You can track the live progress in the app.',
-      }),
-      hi: () => ({
-        title: 'यात्रा शुरू हो गई है',
-        body: 'आपकी यात्रा अब प्रगति पर है। आप ऐप में लाइव देख सकते हैं।',
-      }),
-      channelId: 'ride_updates',
-    },
-    ARRIVED_AT_STOP: {
-      en: (v) => ({
-        title: `Driver Arrived at Stop ${v.stopNumber || 1}`,
-        body: 'Driver is at the delivery stop. Prepare OTP for delivery verification.',
-      }),
-      hi: (v) => ({
-        title: `चालक स्टॉप ${v.stopNumber || 1} पर पहुंच गया है`,
-        body: 'चालक डिलीवरी स्टॉप पर है। डिलीवरी सत्यापन के लिए ओटीपी तैयार रखें।',
-      }),
-      channelId: 'ride_updates',
-    },
-    STOP_DELIVERED: {
-      en: (v) => ({
-        title: `Stop ${v.stopNumber || 1} Delivered`,
-        body: 'Delivery confirmed with proof for this stop.',
-      }),
-      hi: (v) => ({
-        title: `स्टॉप ${v.stopNumber || 1} डिलीवर हो गया है`,
-        body: 'इस स्टॉप के लिए डिलीवरी सत्यापन प्रमाण के साथ पूरी हुई।',
-      }),
-      channelId: 'ride_updates',
-    },
-    TRIP_COMPLETED: {
-      en: () => ({
-        title: 'Trip Completed',
-        body: 'Your ride has successfully completed. Thank you for using MultipleRide!',
-      }),
-      hi: () => ({
-        title: 'यात्रा पूरी हो गई',
-        body: 'आपकी यात्रा सफलतापूर्वक पूरी हो गई है। मल्टीपलराइड का उपयोग करने के लिए धन्यवाद!',
-      }),
-      channelId: 'ride_updates',
-    },
-    BOOKING_CANCELLED: {
-      en: (v) => ({
-        title: 'Booking Cancelled',
-        body: v.reason ? `Booking was cancelled: ${v.reason}` : 'The booking has been cancelled.',
-      }),
-      hi: (v) => ({
-        title: 'बुकिंग रद्द कर दी गई',
-        body: v.reason ? `बुकिंग रद्द की गई: ${v.reason}` : 'बुकिंग रद्द कर दी गई है।',
-      }),
-      channelId: 'ride_updates',
-    },
-    NEW_CHAT_MESSAGE: {
-      en: (v) => ({
-        title: `New message from ${v.senderName || 'Driver'}`,
-        body: 'Open your active trip to view the message.',
-      }),
-      hi: (v) => ({
-        title: `${v.senderName || 'चालक'} से नया संदेश`,
-        body: 'अपनी चालू ट्रिप में संदेश देखें।',
-      }),
-      channelId: 'chat_messages',
-    },
-  };
 
   /**
    * Registers/refreshes an FCM device token for an authenticated user.
@@ -446,33 +338,51 @@ export class NotificationsService {
     targetId: string,
     role: 'CUSTOMER' | 'DRIVER',
     type: BackendNotificationType,
-    variables: TemplateVariables = {},
+    _variables: TemplateVariables = {},
     customData: Record<string, string> = {},
   ): Promise<number> {
+    // Kept for producer compatibility; private variables never enter notification copy.
+    void _variables;
     const userId = await this.resolveUserId(targetId, role);
-    const inboxTemplate = this.templates[type];
-    if (!inboxTemplate) return 0;
-    const inboxCopy = inboxTemplate.en(variables);
+    const inboxCopy = notificationCopy(type, role);
+    if (!inboxCopy) return 0;
+    // Stable producer IDs deduplicate retries per recipient without collapsing distinct events.
+    const eventId = customData.eventId;
+    const digest = eventId
+      ? createHash('sha256')
+          .update(JSON.stringify([userId, role, type, eventId]))
+          .digest('hex')
+      : undefined;
+    const notificationId = digest
+      ? [
+          digest.slice(0, 8),
+          digest.slice(8, 12),
+          '4' + digest.slice(13, 16),
+          '8' + digest.slice(17, 20),
+          digest.slice(20, 32),
+        ].join('-')
+      : undefined;
     // Inbox persists independently of device tokens and push opt-out.
-    await this.prisma.inboxNotification.create({
-      data: {
-        userId,
-        role,
-        type,
-        title: inboxCopy.title,
-        body: inboxCopy.body,
-        data: customData,
-      },
-    });
+    let inbox: { id: string };
+    try {
+      inbox = await this.prisma.inboxNotification.create({
+        data: {
+          ...(notificationId ? { id: notificationId } : {}),
+          userId,
+          role,
+          type,
+          title: inboxCopy.title,
+          body: inboxCopy.body,
+          data: customData,
+        },
+      });
+    } catch (error: unknown) {
+      if (notificationId && (error as { code?: string })?.code === 'P2002') return 0;
+      throw error;
+    }
     const prefs = await this.getPreferences(userId);
     if (!prefs.pushEnabled) {
       this.logger.log(`Push notifications disabled by user preferences for ${userId}`);
-      return 0;
-    }
-
-    const template = this.templates[type];
-    if (!template) {
-      this.logger.warn(`No template found for notification type ${type}`);
       return 0;
     }
 
@@ -483,16 +393,17 @@ export class NotificationsService {
     }
 
     let sent = 0;
-    for (const dev of devices) {
+    for (const dev of new Map(devices.map((device) => [device.token, device])).values()) {
       const lang = prefs.language || dev.language || 'en';
-      const copy = lang === 'hi' ? template.hi(variables) : template.en(variables);
+      const copy = notificationCopy(type, role, lang)!;
 
       const payload: NotificationPayload = {
         title: copy.title,
         body: copy.body,
-        channelId: template.channelId,
+        channelId: copy.channelId,
         data: {
           ...customData,
+          notificationId: inbox.id,
           notificationType: type,
           recipientId: userId,
           role,
@@ -525,11 +436,15 @@ export class NotificationsService {
       // Lock-screen text is generic; private details are fetched from the authenticated inbox.
       const sending = getMessaging(app).send({
         token,
-        notification: { title: 'PICKUP update', body: 'Open PICKUP to view your update.' },
+        notification: { title: payload.title, body: payload.body },
         data: payload.data,
         android: {
           priority: 'high',
-          notification: { channelId: payload.channelId, sound: 'default' },
+          notification: {
+            channelId: payload.channelId,
+            sound: 'default',
+            tag: payload.data.notificationId,
+          },
         },
       });
       await Promise.race([

@@ -7,7 +7,7 @@ jest.mock('firebase-admin/app', () => ({
 jest.mock('firebase-admin/messaging', () => ({
   getMessaging: jest.fn(() => ({ send: mockFcmSend })),
 }));
-import { NotificationsService } from './notifications.service';
+import { NotificationsService, type NotificationPayload } from './notifications.service';
 import type { PrismaService } from '../prisma/prisma.service';
 
 describe('NotificationsService', () => {
@@ -228,8 +228,8 @@ describe('NotificationsService', () => {
     try {
       await expect(
         service['dispatchFcm']('token', {
-          title: 'Private detail',
-          body: 'Private chat text',
+          title: 'MultipleRide • New Message',
+          body: 'You have a new message from your driver.',
           channelId: 'chat_messages',
           data: { recipientId: 'user-A', role: 'CUSTOMER' },
         }),
@@ -237,7 +237,10 @@ describe('NotificationsService', () => {
       expect(mockFcmSend).toHaveBeenCalledWith(
         expect.objectContaining({
           token: 'token',
-          notification: { title: 'PICKUP update', body: 'Open PICKUP to view your update.' },
+          notification: {
+            title: 'MultipleRide • New Message',
+            body: 'You have a new message from your driver.',
+          },
         }),
       );
     } finally {
@@ -292,7 +295,63 @@ describe('NotificationsService', () => {
       { bookingId: 'b-123' },
     );
     const stored = mockPrisma.inboxNotification.create.mock.calls[0]?.[0]?.data;
-    expect(stored.body).toBe('Open your active trip to view the message.');
+    expect(stored.body).toBe('You have a new message from your driver.');
     expect(JSON.stringify(stored)).not.toContain('Private text');
+  });
+  it('deduplicates concurrent producer retries using the recipient-scoped database primary key', async () => {
+    const stored = new Set<string>();
+    mockPrisma.inboxNotification.create.mockImplementation(({ data }: { data: { id: string } }) => {
+      if (stored.has(data.id))
+        return Promise.reject(Object.assign(new Error('Duplicate event'), { code: 'P2002' }));
+      stored.add(data.id);
+      return Promise.resolve({ id: data.id });
+    });
+    mockPrisma.notificationPreference.findUnique.mockResolvedValue({
+      pushEnabled: true,
+      language: 'en',
+    });
+    mockPrisma.deviceToken.findMany.mockResolvedValue([
+      { token: 'device-a' },
+      { token: 'device-a' },
+    ]);
+    const send = jest
+      .spyOn(
+        service as unknown as {
+          dispatchFcm(token: string, payload: NotificationPayload): Promise<boolean>;
+        },
+        'dispatchFcm',
+      )
+      .mockResolvedValue(true);
+    const event = { bookingId: 'booking-a', eventId: 'message-a' };
+    expect(
+      await Promise.all([
+        service.sendNotification(
+          'user-a',
+          'DRIVER',
+          'NEW_CHAT_MESSAGE',
+          { text: 'private' },
+          event,
+        ),
+        service.sendNotification('user-a', 'DRIVER', 'NEW_CHAT_MESSAGE', {}, event),
+      ]),
+    ).toEqual([1, 0]);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      'device-a',
+      expect.objectContaining({
+        title: 'MultipleRide • New Message',
+        body: 'You have a new message from your customer.',
+        data: expect.objectContaining({ notificationId: expect.any(String), eventId: 'message-a' }),
+      }),
+    );
+    await service.sendNotification(
+      'user-a',
+      'DRIVER',
+      'NEW_CHAT_MESSAGE',
+      {},
+      { ...event, eventId: 'message-b' },
+    );
+    await service.sendNotification('user-b', 'DRIVER', 'NEW_CHAT_MESSAGE', {}, event);
+    expect(send).toHaveBeenCalledTimes(3);
   });
 });

@@ -238,6 +238,7 @@ export class ChatService {
           {
             bookingId,
             tripId: context.trip?.id || '',
+            eventId: savedMessage.id,
           },
         );
       } else if (context.isDriver) {
@@ -252,6 +253,7 @@ export class ChatService {
           {
             bookingId,
             tripId: context.trip?.id || '',
+            eventId: savedMessage.id,
           },
         );
       }
