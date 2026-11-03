@@ -5,7 +5,7 @@ import { AppHeader } from '../../components/molecules/AppHeader';
 import { NotificationCard } from '../../components/molecules/NotificationCard';
 import { enablePushAlerts } from '../../components/notifications/NotificationRuntime';
 import { notificationInbox, notificationPresentation } from '../../services/notifications/NotificationInbox';
-import { pushSession, pushState } from '../../services/notifications/notifications';
+import { pushSession, pushState,openChatNotification,openTripNotification } from '../../services/notifications/notifications';
 import { colors, spacing, typography } from '../../theme';
 import type { RootScreenProps } from '../../types/navigation';
 
@@ -15,11 +15,12 @@ export function NotificationsScreen({ navigation, route }: RootScreenProps<'Noti
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | undefined>(route.params?.notificationId);
   const attemptedRead = useRef<string | null>(null);
+  const hasUnread=inbox.unreadCount!==null?inbox.unreadCount>0:inbox.items.some(item=>item.readAt===null);
   useEffect(() => { notificationInbox.refresh().catch(() => {}); }, []);
   useEffect(() => { setSelectedId(route.params?.notificationId); }, [route.params?.notificationId]);
   useEffect(() => {
     // Only mark a push reference if it resolves to a recipient-authorized backend record.
-    if (selectedId && attemptedRead.current !== selectedId && inbox.items.some(item => item.id === selectedId && item.readAt === null)) {
+    if (selectedId && attemptedRead.current !== selectedId && inbox.items.some(item => item.id === selectedId && item.readAt === null && item.type!=='NEW_CHAT_MESSAGE')) {
       attemptedRead.current = selectedId;
       notificationInbox.markRead(selectedId).catch(() => {});
     }
@@ -38,9 +39,9 @@ export function NotificationsScreen({ navigation, route }: RootScreenProps<'Noti
     <AppHeader title="Notifications" showBackButton onBackPress={() => navigation.goBack()} />
     <View style={styles.toolbar}>
       <Text style={styles.secondary} accessibilityLiveRegion="polite">{inbox.unreadCount === null ? 'Unread count unavailable' : `${inbox.unreadCount} unread`}</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Mark all as read" disabled={!inbox.available || !inbox.unreadCount || inbox.updating} onPress={() => { notificationInbox.markRead().catch(() => {}); }}
-        style={styles.action} accessibilityState={{ disabled: !inbox.available || !inbox.unreadCount || inbox.updating }}>
-        <Text style={[styles.actionText, (!inbox.available || !inbox.unreadCount || inbox.updating) && styles.disabled]}>Mark all as read</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Mark all as read" disabled={!inbox.available || !hasUnread || inbox.updating} onPress={() => { notificationInbox.markRead().catch(() => {}); }}
+        style={styles.action} accessibilityState={{ disabled: !inbox.available || !hasUnread || inbox.updating }}>
+        <Text style={[styles.actionText, (!inbox.available || !hasUnread || inbox.updating) && styles.disabled]}>Mark all as read</Text>
       </Pressable>
     </View>
     <FlatList data={inbox.items} keyExtractor={item => item.id} contentContainerStyle={styles.content}
@@ -53,7 +54,7 @@ export function NotificationsScreen({ navigation, route }: RootScreenProps<'Noti
           timestamp={Number.isNaN(date.getTime()) ? 'Time unavailable' : date.toLocaleString()}
           iconName={presentation.icon} category={presentation.category}
           reference={item.relatedEntityId ? `${item.relatedEntityType ?? 'Reference'}: ${item.relatedEntityId}` : undefined}
-          expanded={selectedId === item.id} onPress={() => { attemptedRead.current = item.id; setSelectedId(item.id); notificationInbox.markRead(item.id).catch(() => {}); }} />;
+          expanded={selectedId === item.id} onPress={() => {if(item.type==='NEW_CHAT_MESSAGE'&&item.bookingId){openChatNotification(item.bookingId);return;} if(item.backendTripId){openTripNotification({type:item.type,notificationId:item.id,bookingId:item.bookingId,backendTripId:item.backendTripId});return;} attemptedRead.current = item.id; setSelectedId(item.id); notificationInbox.markRead(item.id).catch(() => {}); }} />;
       }}
       ListHeaderComponent={<>
         {inbox.error && inbox.items.length > 0 ? <Text accessibilityRole="alert" style={styles.error}>{inbox.error}</Text> : null}

@@ -10,6 +10,7 @@ import {
   type ChatConversation,
 } from '../services/chat/ChatService';
 import type { ChatMessage } from '../types/chat';
+import { chatNotificationSignals } from '../services/notifications/ChatNotificationSignals';
 
 export function useChat(conversation?: ChatConversation, ended = false) {
   const [uid, setUid] = useState(getAuth().currentUser?.uid);
@@ -93,6 +94,7 @@ export function useChat(conversation?: ChatConversation, ended = false) {
       let first = true;
       if (!uid || !active || !kind || !id || ended) return;
       const ref: ChatConversation = { kind, id };
+      const stopViewing = chatNotificationSignals.viewing(ref, uid);
       const controller = new AbortController();
       pending.add(controller);
       const load = async () => {
@@ -137,7 +139,7 @@ export function useChat(conversation?: ChatConversation, ended = false) {
             )
           ) {
             await ChatService.getInstance().markAsRead(ref, controller.signal);
-          }
+          } else chatNotificationSignals.read(ref, uid, false);
         } catch (error) {
           if (!current() || controller.signal.aborted) return;
           const message =
@@ -178,6 +180,7 @@ export function useChat(conversation?: ChatConversation, ended = false) {
       };
       load().catch(() => undefined);
       return () => {
+        stopViewing();
         ++scope.current;
         if (timer) clearTimeout(timer);
         for (const item of pending) item.abort();

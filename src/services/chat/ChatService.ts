@@ -1,6 +1,7 @@
 import { getAuth } from '@react-native-firebase/auth';
 import { env } from '../../config/env';
 import type { ChatMessage } from '../../types/chat';
+import { chatNotificationSignals } from '../notifications/ChatNotificationSignals';
 
 export type ChatConversation = { kind: 'TRIP' | 'BOOKING'; id: string };
 export const chatUuid =
@@ -395,7 +396,21 @@ export class ApiChatService implements IChatService {
     return task;
   }
   async markAsRead(ref: ChatConversation, signal?: AbortSignal) {
-    await this.request(ref, '/read', 'POST', {}, signal);
+    const session = this.conversationSession(ref);
+    const ack = (await this.request(ref, '/read', 'POST', {}, signal)) as {
+      updatedCount?: unknown;
+    } | null;
+    if (
+      !ack ||
+      typeof ack.updatedCount !== 'number' ||
+      !Number.isSafeInteger(ack.updatedCount) ||
+      ack.updatedCount < 0
+    )
+      throw new ChatError(
+        'INVALID_RESPONSE',
+        'Read acknowledgement could not be verified.',
+      );
+    if (session.current()) chatNotificationSignals.read(ref, session.user.uid);
   }
 }
 export class ChatService {

@@ -5,7 +5,7 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
-import type { TripOffer } from './trip';
+import type { TripOffer, ActiveTrip } from './trip';
 
 // ─── Auth Stack ────────────────────────────────────────────────────
 
@@ -20,7 +20,7 @@ export type AuthStackParamList = {
 
 export type HomeStackParamList = {
   DriverHome: undefined;
-  ActiveTrip: { readonly tripId: string };
+  ActiveTrip: { readonly tripId: string; readonly notificationTrip?: ActiveTrip };
   Navigation: { readonly tripId: string };
   MultiStopJourney: { readonly tripId: string };
   ArrivedAtPickup: { readonly tripId: string; readonly stopId: string };
@@ -28,7 +28,7 @@ export type HomeStackParamList = {
   DropOTP: { readonly tripId: string; readonly stopId: string };
   DeliveryProofCamera: { readonly tripId: string; readonly stopId: string };
   DeliveryProofPreview: { readonly tripId: string; readonly stopId: string; readonly photoUri: string };
-  TripCompleted: { readonly tripId: string };
+  TripCompleted: { readonly tripId: string; readonly notificationTrip?: ActiveTrip };
   /** Pickup / delivery payment. `tripId` is the payments backend's trip id (not the engine's). */
   CollectPayment: { readonly tripId: string };
   CancellationReason: { readonly tripId: string };
