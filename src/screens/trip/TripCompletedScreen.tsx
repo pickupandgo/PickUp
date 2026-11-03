@@ -47,9 +47,10 @@ export const TripCompletedScreen: React.FC<TripCompletedScreenProps> = ({
 
   const handleBackToHome = useCallback(() => {
     // Clear the finished trip and return to the root of HomeStack.
-    TripController.getInstance().clearTrip();
+    if (!route.params.notificationTrip || TripController.getInstance().getTrip()?.id === route.params.tripId)
+      TripController.getInstance().clearTrip();
     navigation.popToTop();
-  }, [navigation]);
+  }, [navigation, route.params.notificationTrip, route.params.tripId]);
 
   const handleViewEarnings = useCallback(() => {
     navigation.getParent()?.navigate('EarningsTab', { screen: 'EarningsHistory' });

@@ -1,6 +1,7 @@
 import { ApiClient } from '../api/ApiClient';
 import { pushSession } from '../notifications/notifications';
 import { TrackingService } from '../tracking/TrackingService';
+import { ChatService } from '../chat/ChatService';
 import { env } from '../../config/env';
 import {
   getAuth,
@@ -394,6 +395,9 @@ export class FirebaseAuthService implements IAuthService {
     const timer = setTimeout(() => controller.abort(), env.REQUEST_TIMEOUT_MS);
     try {
       const token = await currentUser.getIdToken();
+      if (getAuth().currentUser?.uid !== currentUser.uid) {
+        throw new Error('Your sign-in session changed. Please sign in again.');
+      }
       ApiClient.getInstance().setToken(token);
       const response = await fetch(
         `${env.PAYMENTS_API_BASE_URL}/v1/drivers/me`,
@@ -448,6 +452,7 @@ export class FirebaseAuthService implements IAuthService {
   }
 
   async logout(): Promise<void> {
+    ChatService.getInstance().clear(true);
     try {
       await TrackingService.getInstance().logout().catch(() => {});
       // Deactivate this installation while Firebase credentials are still valid.
@@ -465,21 +470,36 @@ export class FirebaseAuthService implements IAuthService {
   }
 
   observeAuthState(callback: (user: User | null) => void): () => void {
-    return onAuthStateChanged(getAuth(), async (user: User | null) => {
+    let active = true;
+    let generation = 0;
+    const stop = onAuthStateChanged(getAuth(), async (user: User | null) => {
+      const request = ++generation;
+      const current = () =>
+        active &&
+        generation === request &&
+        getAuth().currentUser?.uid === user?.uid;
       if (user) {
         console.log('[AUTH] Auth state restored');
         try {
           const token = await user.getIdToken();
+          if (!current()) return;
           ApiClient.getInstance().setToken(token);
         } catch (e) {
+          if (!current()) return;
           console.warn('[AUTH] Failed to fetch ID token on auth restore:', e);
         }
       } else {
+        if (!current()) return;
         console.log('[AUTH] Auth state unauthenticated');
         ApiClient.getInstance().setToken(null);
       }
-      callback(user);
+      if (current()) callback(user);
     });
+    return () => {
+      active = false;
+      ++generation;
+      stop();
+    };
   }
 }
 

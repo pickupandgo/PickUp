@@ -12,6 +12,7 @@ import {
 } from '../services/auth/AuthService';
 import { DriverOnboardingScreen } from '../screens/onboarding/DriverOnboardingFlow';
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
+import { ActiveTripChatScreen } from '../screens/trip/ActiveTripChatScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -22,6 +23,7 @@ export const RootNavigator: React.FC<{
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const generation = useRef(0);
   const invalidateSession = useCallback(() => { ++generation.current; }, []);
+  const mounted = useRef(false);
   const [account, setAccount] = useState<DriverAccount | null>(null);
   const [onboarding, setOnboarding] = useState<DriverOnboardingSummary | null>(
     null,
@@ -33,12 +35,24 @@ export const RootNavigator: React.FC<{
   }, [initializing, onReadyChange]);
 
   const bootstrap = useCallback(async () => {
+    if (!mounted.current) return;
     const request = ++generation.current;
     const uid = getAuth().currentUser?.uid;
-    const current = () => request === generation.current && !!uid && getAuth().currentUser?.uid === uid;
+    const current = () =>
+      mounted.current &&
+      request === generation.current &&
+      !!uid &&
+      getAuth().currentUser?.uid === uid;
     if (!uid) return;
     setInitializing(true);
     setBootstrapError(null);
+    setIsAuthenticated(false);
+    setAccount(null);
+    setOnboarding(null);
+    if (!uid) {
+      setInitializing(false);
+      return;
+    }
     try {
       const driverAccount = await AuthService.getInstance().bootstrapDriver();
       if (!current()) return;
@@ -65,7 +79,13 @@ export const RootNavigator: React.FC<{
     const request = generation.current;
     const uid = getAuth().currentUser?.uid;
     const state = await AuthService.getInstance().getOnboarding();
-    if (!uid || uid !== getAuth().currentUser?.uid || request !== generation.current) return;
+    if (
+      !mounted.current ||
+      !uid ||
+      uid !== getAuth().currentUser?.uid ||
+      request !== generation.current
+    )
+      return;
     setOnboarding(state);
     setAccount(current =>
       current ? { ...current, approvalStatus: state.approvalStatus } : current,
@@ -73,14 +93,20 @@ export const RootNavigator: React.FC<{
   }, []);
 
   useEffect(() => {
+    const authGeneration = generation;
+    const authMounted = mounted;
+    mounted.current = true;
     const authService = AuthService.getInstance();
 
     // observeAuthState handles Firebase auth state changes
     if (authService.observeAuthState) {
       const unsubscribe = authService.observeAuthState(async user => {
+        if (!mounted.current) return;
         // A token restore that finished after logout must not reopen the partner stack.
         if (user && user.uid !== getAuth().currentUser?.uid) return;
         if (user) {
+          // Token restoration may finish after signout or a different sign-in.
+          if (getAuth().currentUser?.uid !== user.uid) return;
           await bootstrap();
         } else {
           invalidateSession();
@@ -91,11 +117,21 @@ export const RootNavigator: React.FC<{
           setInitializing(false);
         }
       });
-      return () => { invalidateSession(); unsubscribe(); };
+      return () => {
+        authMounted.current = false;
+        invalidateSession();
+        unsubscribe();
+      };
     } else {
-      // Mock mode without observeAuthState
+      // Missing authentication infrastructure must never open protected routes.
+      setBootstrapError(
+        'Firebase authentication is unavailable. Please restart the app.',
+      );
       setInitializing(false);
-      return () => {};
+      return () => {
+        authMounted.current = false;
+        ++authGeneration.current;
+      };
     }
   }, [bootstrap, invalidateSession]);
 
@@ -124,7 +160,7 @@ export const RootNavigator: React.FC<{
   if (
     isAuthenticated &&
     account &&
-    (!onboarding?.eligible || account.approvalStatus !== 'APPROVED')
+    (onboarding?.eligible !== true || account.approvalStatus !== 'APPROVED')
   ) {
     if (!onboarding) {
       return (
@@ -148,11 +184,27 @@ export const RootNavigator: React.FC<{
   }
 
   return (
-    <Stack.Navigator key={isAuthenticated ? 'partner' : 'auth'} screenOptions={{ headerShown: false }} initialRouteName={isAuthenticated ? 'Main' : 'Auth'}>
-      {isAuthenticated ? <>
-        <Stack.Screen name="Main" component={MainTabNavigator} />
-        <Stack.Screen name="Notifications" component={NotificationsScreen} getId={() => 'partner-notifications'} />
-      </> : <Stack.Screen name="Auth" children={renderAuthStack} />}
+    <Stack.Navigator
+      key={isAuthenticated ? 'partner' : 'auth'}
+      screenOptions={{ headerShown: false }}
+      initialRouteName={isAuthenticated ? 'Main' : 'Auth'}
+    >
+      {isAuthenticated &&
+      account &&
+      onboarding?.eligible === true &&
+      account.approvalStatus === 'APPROVED' ? (
+        <>
+          <Stack.Screen name="Main" component={MainTabNavigator} />
+          <Stack.Screen name="TripChat" component={ActiveTripChatScreen} />
+          <Stack.Screen
+            name="Notifications"
+            component={NotificationsScreen}
+            getId={() => 'partner-notifications'}
+          />
+        </>
+      ) : (
+        <Stack.Screen name="Auth" children={renderAuthStack} />
+      )}
     </Stack.Navigator>
   );
 };

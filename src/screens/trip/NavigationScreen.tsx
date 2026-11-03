@@ -18,6 +18,7 @@ import { TrackingService } from '../../services/tracking/TrackingService';
 import { useActiveTrip } from '../../hooks/useActiveTrip';
 import { useTripRoute } from '../../hooks/useTripRoute';
 import type { HomeScreenProps } from '../../types/navigation';
+import {ChatUnreadBadge} from '../../components/notifications/ChatUnreadBadge';
 
 export interface NavigationScreenProps {
   readonly navigation: HomeScreenProps<'Navigation'>['navigation'];
@@ -105,7 +106,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
   }, [currentStop]);
 
   const handleChat = useCallback(() => {
-    if (trip) navigation.navigate('ActiveTripChat', { tripId: trip.id });
+    if (trip) navigation.navigate('ActiveTripChat', { tripId: trip.id, paymentTripId: trip.paymentTripId ?? undefined });
   }, [navigation, trip]);
 
   const handleCall = useCallback(() => {
@@ -215,6 +216,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
               </Pressable>
               <Pressable style={styles.circleAction} onPress={handleChat} accessibilityLabel="Chat">
                 <Icon name="chat" size={20} color={colors.primary} />
+                <ChatUnreadBadge backendTripId={trip.paymentTripId} />
               </Pressable>
             </View>
           </View>

@@ -15,6 +15,9 @@ export interface PushDependencies {
   refreshInbox(): Promise<void>;
   showBanner(message: PushEnvelope): void;
   openInbox(notificationId?: string): void;
+  openEvent?(message: PushEnvelope): void;
+  openChat?(bookingId: string): void;
+  chatChanged?(): void;
   clearBanner(): void;
   reportError(message: string | null): void;
 }
@@ -23,7 +26,12 @@ export interface PushDependencies {
 export class PushSession {
   private user: NotificationIdentity | null = null;
   private recipientId: string | null = null;
-  private registration: { user: NotificationIdentity; token: string; language: string } | null = null;
+  private registration: {
+    user: NotificationIdentity;
+    token: string;
+    language: string;
+    userId: string;
+  } | null = null;
   private chain: Promise<unknown> = Promise.resolve();
   private epoch = 0;
   private seen = new Set<string>();
@@ -38,14 +46,19 @@ export class PushSession {
   }
   setUser(user: NotificationIdentity | null, language = 'en') {
     this.language = language;
-    if (user?.uid === this.user?.uid && this.user !== null) return this.register();
+    if (user?.uid === this.user?.uid && this.user !== null)
+      return this.register();
     this.epoch++;
     this.user = user;
     this.recipientId = null;
-    this.seen.clear(); this.opened.clear();
-    this.deps.clearBanner(); this.deps.reportError(null);
+    this.seen.clear();
+    this.opened.clear();
+    this.deps.clearBanner();
+    this.deps.reportError(null);
     this.deps.resetInbox(user?.uid ?? null);
-    if (!user) { this.pendingTap = null; }
+    if (!user) {
+      this.pendingTap = null;
+    }
     return this.register();
   }
   register(refreshedToken?: string) {
@@ -55,26 +68,49 @@ export class PushSession {
     return this.enqueue(async () => {
       if (epoch !== this.epoch) return;
       try {
-        if (!user) { await this.removeRegistration(); return; }
-        if (!refreshedToken && this.registration?.user.uid === user.uid && this.registration.language === language) return;
-        if (refreshedToken && this.registration?.user.uid === user.uid && this.registration.token === refreshedToken && this.registration.language === language) return;
+        if (!user) {
+          await this.removeRegistration();
+          return;
+        }
+        if (
+          this.registration?.user.uid === user.uid &&
+          this.registration.language === language &&
+          (!refreshedToken || this.registration.token === refreshedToken)
+        ) {
+          this.recipientId = this.registration.userId;
+          await this.deps.refreshInbox();
+          if (epoch === this.epoch && this.pendingTap) {
+            const pending = this.pendingTap;
+            this.pendingTap = null;
+            this.tap(pending);
+          }
+          return;
+        }
         const invalidated = await this.removeRegistration();
         if (epoch !== this.epoch) return;
-        const token = invalidated ? await this.deps.getToken() : refreshedToken ?? await this.deps.getToken();
+        const token = invalidated
+          ? await this.deps.getToken()
+          : refreshedToken ?? (await this.deps.getToken());
         if (epoch !== this.epoch) return;
         const result = await this.deps.backend(user).register(token, language);
         // Keep ownership even if the session changed during HTTP: the next queued operation removes it.
-        this.registration = { user, token, language };
+        if (typeof result.userId !== 'string' || !result.userId)
+          throw new Error('Notification registration was not confirmed.');
+        this.registration = { user, token, language, userId: result.userId };
         if (epoch !== this.epoch) return;
         this.recipientId = result.userId ?? null;
         this.deps.reportError(null);
         await this.deps.refreshInbox();
         if (epoch === this.epoch && this.pendingTap) {
-          const pending = this.pendingTap; this.pendingTap = null;
+          const pending = this.pendingTap;
+          this.pendingTap = null;
           this.tap(pending);
         }
       } catch {
-        if (epoch === this.epoch) this.deps.reportError('Push alerts are currently unavailable. Open Notifications to retry.');
+        if (epoch === this.epoch)
+          this.deps.reportError(
+            'Push alerts are currently unavailable. Open Notifications to retry.',
+          );
       }
     });
   }
@@ -96,20 +132,37 @@ export class PushSession {
   /** Called BEFORE Firebase sign-out while DELETE can still authenticate. */
   async logout() {
     this.epoch++;
-    this.user = null; this.recipientId = null; this.pendingTap = null;
-    this.seen.clear(); this.opened.clear();
-    this.deps.resetInbox(null); this.deps.clearBanner();
+    this.user = null;
+    this.recipientId = null;
+    this.pendingTap = null;
+    this.seen.clear();
+    this.opened.clear();
+    this.deps.resetInbox(null);
+    this.deps.clearBanner();
     await this.enqueue(async () => {
-      try { await this.removeRegistration(); }
-      finally { await this.deps.deleteToken(); }
+      try {
+        await this.removeRegistration();
+      } finally {
+        await this.deps.deleteToken();
+      }
     });
   }
   private matches(message: PushEnvelope) {
-    return !!this.user && !!this.recipientId && message.data?.role === 'DRIVER' && message.data?.recipientId === this.recipientId;
+    return (
+      !!this.user &&
+      !!this.recipientId &&
+      message.data?.role === 'DRIVER' &&
+      message.data?.recipientId === this.recipientId
+    );
   }
   private key(message: PushEnvelope) {
-    const stableId = message.data?.notificationId ?? message.data?.eventId ?? message.messageId;
-    return typeof stableId === 'string' && stableId.length > 0 ? stableId : null;
+    const stableId =
+      message.data?.notificationId ??
+      message.data?.eventId ??
+      message.messageId;
+    return typeof stableId === 'string' && stableId.length > 0
+      ? stableId
+      : null;
   }
   private remember(set: Set<string>, key: string) {
     set.add(key);
@@ -122,16 +175,46 @@ export class PushSession {
     this.remember(this.seen, key);
     // Push is an invalidation hint, never a permanent business record or an unread-count increment.
     this.deps.refreshInbox().catch(() => {});
+    if (
+      message.data?.notificationType === 'NEW_CHAT_MESSAGE' &&
+      this.deps.chatChanged
+    ) {
+      this.deps.chatChanged();
+      return;
+    }
     this.deps.showBanner(message);
   }
   tap(message: PushEnvelope) {
-    if (!this.recipientId) { this.pendingTap = message; return; }
+    if (!this.recipientId) {
+      this.pendingTap = message;
+      return;
+    }
     if (!this.matches(message)) return;
     const key = this.key(message);
     if (!key || this.opened.has(key)) return;
     this.remember(this.opened, key);
     this.deps.clearBanner();
+    const bookingId = message.data?.bookingId;
+    if (
+      message.data?.notificationType === 'NEW_CHAT_MESSAGE' &&
+      typeof bookingId === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        bookingId,
+      ) &&
+      this.deps.openChat
+    ) {
+      this.deps.openChat(bookingId);
+      return;
+    }
+    if (this.deps.openEvent && typeof message.data?.tripId === 'string') {
+      this.deps.openEvent(message);
+      return;
+    }
     const id = message.data?.notificationId;
-    this.deps.openInbox(typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id) ? id : undefined);
+    this.deps.openInbox(
+      typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id)
+        ? id
+        : undefined,
+    );
   }
 }

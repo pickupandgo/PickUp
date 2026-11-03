@@ -20,6 +20,7 @@ import { CollectPaymentBanner } from '../../components/molecules/CollectPaymentB
 import type { DriverTripDto } from '../../services/payments/collectionsDto';
 import type { TripStop } from '../../types/trip';
 import type { HomeScreenProps } from '../../types/navigation';
+import {ChatUnreadBadge} from '../../components/notifications/ChatUnreadBadge';
 
 export interface ActiveTripScreenProps {
   readonly navigation: HomeScreenProps<'ActiveTrip'>['navigation'];
@@ -101,7 +102,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   }, [navigation, trip]);
 
   const handleSupport = useCallback(() => {
-    if (trip) navigation.navigate('ActiveTripChat', { tripId: trip.id });
+    if (trip) navigation.navigate('ActiveTripChat', { tripId: trip.id, paymentTripId: trip.paymentTripId ?? undefined });
   }, [navigation, trip]);
 
   const handleCollect = useCallback(
@@ -174,6 +175,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
           </View>
           <Pressable style={styles.circleBtn} onPress={handleSupport}>
             <Icon name="support_agent" size={22} color={colors.onSurface} />
+            <ChatUnreadBadge backendTripId={trip.paymentTripId} />
           </Pressable>
         </View>
       </SafeAreaView>

@@ -896,8 +896,9 @@ const styles = StyleSheet.create({
 });
 
 function UnreadNotificationDot() {
-  const { unreadCount } = useSyncExternalStore(notificationInbox.subscribe, notificationInbox.getSnapshot);
-  return unreadCount !== null && unreadCount > 0 ? <View style={styles.redDot} accessibilityLabel={`${unreadCount} unread notifications`} /> : null;
+  const { unreadCount,items } = useSyncExternalStore(notificationInbox.subscribe, notificationInbox.getSnapshot);
+  const hasUnread=unreadCount!==null?unreadCount>0:items.some(item=>item.readAt===null);
+  return hasUnread ? <View style={styles.redDot} accessibilityLabel={unreadCount===null?'Unread notifications':`${unreadCount} unread notifications`} /> : null;
 }
 
 export default DriverHomeScreen;
