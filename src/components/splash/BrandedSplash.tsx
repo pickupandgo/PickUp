@@ -1,90 +1,83 @@
-import React, { useEffect, useRef } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import Feather from 'react-native-vector-icons/Feather';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography } from '../../theme';
+import { APP_NAME, APP_LOGO } from '../../config/brand';
+import { JOURNEY_POINTS, JOURNEY_SEGMENTS, SPLASH_SIZE } from './journeyPath';
+const inputs=JOURNEY_POINTS.map((_,i)=>i/(JOURNEY_POINTS.length-1));
+const headings=inputs.map((_,i)=>`${JOURNEY_SEGMENTS[Math.min(i,JOURNEY_SEGMENTS.length-1)].angle+45}deg`);
 
-export default function BrandedSplash({ checkingAccount, onJourneyComplete }: { readonly checkingAccount: boolean; readonly onJourneyComplete: () => void }) {
-  const { width } = useWindowDimensions();
-  const routeWidth = Math.min(width - spacing.xxl * 2, 360);
-  const travel = useRef(new Animated.Value(0)).current;
-  const entrance = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const arrive = Animated.timing(entrance, { toValue: 1, duration: 450, useNativeDriver: true });
-    let active = true;
-    const journey = () => Animated.timing(travel, {
-      toValue: 1, duration: 2800, easing: Easing.inOut(Easing.ease), useNativeDriver: true,
-    });
-    const firstJourney = journey();
-    const drive = Animated.loop(journey());
-    travel.setValue(0);
-    arrive.start();
-    firstJourney.start(({ finished }) => {
-      if (!active || !finished) return;
-      onJourneyComplete();
-      // Both ends are invisible, so resetting never shows a jump backwards.
-      travel.setValue(0);
-      drive.start();
-    });
-    return () => { active = false; arrive.stop(); firstJourney.stop(); drive.stop(); };
-  }, [entrance, travel, onJourneyComplete]);
-
-  const bikeX = travel.interpolate({ inputRange: [0, 1], outputRange: [spacing.lg - 44, routeWidth - spacing.lg - 44] });
-  const bikeOpacity = travel.interpolate({ inputRange: [0, 0.12, 0.85, 1], outputRange: [0, 1, 1, 0] });
-  const bikeScale = travel.interpolate({ inputRange: [0, 0.12, 0.85, 1], outputRange: [0.55, 1, 1, 0.55] });
-  const progressX = travel.interpolate({ inputRange: [0, 1], outputRange: [-routeWidth * 0.25, routeWidth] });
-
+function Pin({ drop=false }: { drop?: boolean }) {
+  const point=JOURNEY_POINTS[drop ? JOURNEY_POINTS.length-1 : 0];
+  return <View style={[styles.pinGroup,{left:point.x-16,top:point.y-40}]}>
+    <View style={[styles.pinTip,drop && styles.drop]} />
+    <View style={[styles.pinHead,drop && styles.drop]}><View style={styles.pinHole} /></View>
+    <View style={[styles.pinLabel,drop && styles.dropLabel]}><Text numberOfLines={1} adjustsFontSizeToFit style={styles.pinText}>{drop ? 'Drop' : 'Pickup'}</Text></View>
+  </View>;
+}
+/** Simple bundled 2.5D illustration; no native scene, WebView, GPS or network. */
+export default function BrandedSplash({ checkingAccount,onJourneyComplete }: { readonly checkingAccount:boolean;readonly onJourneyComplete:()=>void }) {
+  const {width,height}=useWindowDimensions();
+  const insets=useSafeAreaInsets();
+  const scale=Math.min(width/SPLASH_SIZE.width,(height-insets.top-insets.bottom)/SPLASH_SIZE.height);
+  const travel=useRef(new Animated.Value(0)).current;
+  const [arrived,setArrived]=useState(false);
+  useEffect(()=>{
+    let active=true;
+    let hold:ReturnType<typeof setTimeout>|undefined;
+    travel.setValue(0);setArrived(false);
+    const animation=Animated.sequence([Animated.delay(200),Animated.timing(travel,{toValue:1,duration:3000,easing:Easing.linear,useNativeDriver:true})]);
+    animation.start(({finished})=>{if(active && finished){setArrived(true);hold=setTimeout(()=>{if(active)onJourneyComplete();},220);}});
+    return ()=>{active=false;animation.stop();if(hold)clearTimeout(hold);};
+  },[travel,onJourneyComplete]);
   return <View style={styles.page}>
-    <Animated.View style={[styles.brand, { opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }] }]}>
-      <Image source={require('../../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
-      <Text style={styles.title}>PICKUP</Text>
-      <Text style={styles.tagline}>Your goods, on the move.</Text>
-    </Animated.View>
-
-    <View style={[styles.routeCard, { width: routeWidth }]} accessible accessibilityLabel="Bike moving from pickup to drop">
-      <View style={styles.routeLabels}>
-        <View style={styles.routeEndpoint}><View style={[styles.endpointDot, styles.pickupDot]} /><Text style={styles.endpointText}>PICKUP</Text></View>
-        <View style={styles.routeEndpoint}><Text style={styles.endpointText}>DROP</Text><View style={[styles.endpointDot, styles.dropDot]} /></View>
+    <View style={{width:SPLASH_SIZE.width*scale,height:SPLASH_SIZE.height*scale,marginTop:insets.top,marginBottom:insets.bottom}}>
+      <View style={[styles.canvas,{left:(SPLASH_SIZE.width*scale-SPLASH_SIZE.width)/2,top:(SPLASH_SIZE.height*scale-SPLASH_SIZE.height)/2,transform:[{scale}]}]}>
+        <Image source={require('../../assets/splash/journey-map.png')} style={styles.background} resizeMode="stretch" />
+        <View style={styles.brand}>
+          <Image source={APP_LOGO} style={styles.logo} resizeMode="contain" accessibilityLabel={`${APP_NAME} logo`} />
+          <Text style={styles.title}>{APP_NAME}</Text><Text style={styles.tagline}>Your goods, on the move.</Text>
+        </View>
+        <View style={StyleSheet.absoluteFill} pointerEvents="none" accessible accessibilityLabel={arrived ? 'Delivery bike arrived at drop' : 'Delivery bike moving from pickup to drop'}>
+          {JOURNEY_SEGMENTS.map((segment,i)=>{
+            const line={left:segment.x-(segment.length+3)/2,top:segment.y-2,width:segment.length+3,transform:[{rotate:`${segment.angle}deg`}]};
+            return <React.Fragment key={i}>
+              <View style={[styles.route,styles.futureRoute,line]} />
+              <Animated.View style={[styles.route,line,{opacity:travel.interpolate({inputRange:[i/100,(i+1)/100],outputRange:[0,1],extrapolate:'clamp'})}]} />
+            </React.Fragment>;
+          })}
+          <Animated.View style={[styles.bikeAnchor,{transform:[{translateX:travel.interpolate({inputRange:inputs,outputRange:JOURNEY_POINTS.map(p=>p.x)})},{translateY:travel.interpolate({inputRange:inputs,outputRange:JOURNEY_POINTS.map(p=>p.y)})}]}]}>
+            <Animated.View style={[styles.bikePivot,{transform:[{rotate:travel.interpolate({inputRange:inputs,outputRange:headings})}]}]}>
+              <Image source={require('../../assets/splash/journey-rider.png')} style={styles.bike} resizeMode="contain" />
+            </Animated.View>
+          </Animated.View>
+          <Pin /><Pin drop />
+        </View>
+        <Text style={styles.loadingLabel} accessibilityLiveRegion="polite">{checkingAccount ? 'Checking your account…' : 'Getting things ready…'}</Text>
       </View>
-      <View style={styles.road} />
-      <View style={[styles.portal, styles.pickupPortal]} />
-      <View style={[styles.portal, styles.dropPortal]} />
-      <Animated.View style={[styles.bike, { opacity: bikeOpacity, transform: [{ translateX: bikeX }, { scale: bikeScale }] }]}>
-        <Image source={require('../../assets/vehicles/map/bike_delivery.png')} resizeMode="contain" style={styles.bikeImage} />
-      </Animated.View>
-      <View style={styles.routeCaption}><Feather name="navigation" size={spacing.md} color={colors.homePickup} /><Text style={styles.routeCaptionText}>Moving with you, every stop.</Text></View>
-    </View>
-
-    <View style={[styles.progressSection, { width: routeWidth }]}>
-      <Text style={styles.loadingLabel}>{checkingAccount ? 'Checking your account…' : 'Getting things ready…'}</Text>
-      <View style={styles.progressTrack}><Animated.View style={[styles.progressSweep, { width: routeWidth * 0.25, transform: [{ translateX: progressX }] }]} /></View>
     </View>
   </View>;
 }
-
-const styles = StyleSheet.create({
-  page: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.splashBackground, paddingHorizontal: spacing.xxl },
-  brand: { alignItems: 'center', marginBottom: spacing.xxxl },
-  logo: { width: 84, height: 84 },
-  title: { ...typography.headlineMd, fontSize: 30, lineHeight: 38, fontWeight: '800', letterSpacing: 2, color: colors.homeAction, marginTop: spacing.sm },
-  tagline: { ...typography.bodyMd, color: colors.secondary, marginTop: spacing.xs },
-  routeCard: { height: 166, backgroundColor: colors.surface, borderRadius: borderRadius.xxl, overflow: 'hidden', borderWidth: 1, borderColor: colors.splashHalo },
-  routeLabels: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
-  routeEndpoint: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  endpointDot: { width: spacing.sm, height: spacing.sm, borderRadius: borderRadius.full },
-  pickupDot: { backgroundColor: colors.homePickup },
-  dropDot: { backgroundColor: colors.error },
-  endpointText: { ...typography.labelSm, fontSize: 10, fontWeight: '700', letterSpacing: 0.8, color: colors.secondary },
-  road: { position: 'absolute', left: spacing.lg, right: spacing.lg, top: 95, borderTopWidth: 2, borderStyle: 'dashed', borderColor: colors.outlineVariant },
-  bike: { position: 'absolute', width: 88, height: 78, top: 41, left: 0 },
-  bikeImage: { width: '100%', height: '100%', transform: [{ scaleX: -1 }] },
-  portal: { position: 'absolute', top: 64, width: spacing.lg, height: spacing.rowHeightSm, borderRadius: borderRadius.full, borderWidth: 2 },
-  pickupPortal: { left: spacing.sm, borderColor: colors.homePickup, backgroundColor: colors.successContainer },
-  dropPortal: { right: spacing.sm, borderColor: colors.homeAction, backgroundColor: colors.splashHalo },
-  routeCaption: { position: 'absolute', bottom: spacing.sm, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  routeCaptionText: { ...typography.labelSm, color: colors.secondary },
-  progressSection: { marginTop: spacing.xxxl, gap: spacing.md },
-  loadingLabel: { ...typography.labelSm, color: colors.homeAction, textAlign: 'center' },
-  progressTrack: { height: spacing.xs, backgroundColor: colors.splashHalo, borderRadius: borderRadius.full, overflow: 'hidden' },
-  progressSweep: { height: spacing.xs, backgroundColor: colors.homePickup, borderRadius: borderRadius.full },
+const styles=StyleSheet.create({
+  page:{flex:1,alignItems:'center',justifyContent:'center',backgroundColor:colors.splashBackground},
+  canvas:{position:'absolute',width:SPLASH_SIZE.width,height:SPLASH_SIZE.height,overflow:'hidden',backgroundColor:colors.splashBackground},
+  background:{...StyleSheet.absoluteFillObject,width:'100%',height:'100%'},
+  brand:{position:'absolute',top:80,width:'100%',alignItems:'center'},
+  logo:{width:158,height:164},
+  title:{...typography.headlineLg,fontSize:30,lineHeight:40,fontWeight:'700',color:colors.homeAction,marginTop:spacing.xs},
+  tagline:{...typography.bodyMd,color:colors.secondary,marginTop:spacing.xs},
+  route:{position:'absolute',height:4,borderRadius:borderRadius.full,backgroundColor:colors.homePickup},
+  futureRoute:{backgroundColor:colors.reviewAction},
+  bikeAnchor:{position:'absolute',left:0,top:0,width:0,height:0},
+  bikePivot:{position:'absolute',left:-38,top:-38,width:76,height:76},
+  bike:{position:'absolute',left:0,top:-18,width:76,height:76},
+  pinGroup:{position:'absolute',width:32,height:40},
+  pinHead:{position:'absolute',top:0,width:32,height:32,borderRadius:borderRadius.full,backgroundColor:colors.homePickup,alignItems:'center',justifyContent:'center'},
+  pinTip:{position:'absolute',top:17,left:6,width:20,height:20,borderRadius:borderRadius.sm,backgroundColor:colors.homePickup,transform:[{rotate:'45deg'}]},
+  pinHole:{width:12,height:12,borderRadius:borderRadius.full,backgroundColor:colors.surface},
+  drop:{backgroundColor:colors.homeAction},
+  pinLabel:{position:'absolute',left:34,top:0,width:58,height:28,alignItems:'center',justifyContent:'center',paddingHorizontal:spacing.xs,borderRadius:borderRadius.full,backgroundColor:colors.surface},
+  dropLabel:{width:48},
+  pinText:{...typography.labelSm,fontSize:11,lineHeight:16,fontWeight:'600',color:colors.homeAction},
+  loadingLabel:{...typography.labelSm,position:'absolute',bottom:34,width:'100%',textAlign:'center',color:colors.secondary},
 });

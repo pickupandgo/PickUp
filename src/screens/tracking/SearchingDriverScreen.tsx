@@ -1,3 +1,4 @@
+import BrandMark from '../../components/atoms/BrandMark';
 import React, { useEffect, useRef } from 'react';
 import {
   View,
@@ -93,7 +94,7 @@ const SearchingDriverScreen: React.FC<SearchingDriverScreenProps & { navigation?
             >
               <Feather name="menu" size={24} color={colors.primary} />
             </Pressable>
-            <Text style={styles.headerTitle}>Pick Up</Text>
+            <BrandMark textStyle={styles.headerTitle} />
           </View>
           <View style={styles.profileIconBox}>
             <Feather name="user" size={16} color={colors.onSurfaceVariant} />

@@ -2,7 +2,8 @@ import React from 'react';
 import TestRenderer, { act, type ReactTestRenderer } from 'react-test-renderer';
 import { Text } from 'react-native';
 import { useBookingPayment } from '../src/hooks/useBookingPayment';
-import { getBookingPayment } from '../src/api/payments';
+import { getBookingPayment, getFareQuote } from '../src/api/payments';
+import { getRide } from '../src/api/engine';
 import { formatPaise, paymentLabel } from '../src/utils/paymentPresentation';
 import { BookingContext } from '../src/state/BookingContext';
 import DigitalReceiptScreen from '../src/screens/payment/DigitalReceiptScreen';
@@ -11,7 +12,8 @@ import TripCompletedScreen from '../src/screens/support/TripCompletedScreen';
 
 let mockUser: any = { uid: 'A' };
 jest.mock('@react-native-firebase/auth', () => ({ getAuth: () => ({ currentUser: mockUser }) }));
-jest.mock('../src/api/payments', () => ({ getBookingPayment: jest.fn() }));
+jest.mock('../src/api/payments', () => ({ getBookingPayment: jest.fn(), getFareQuote: jest.fn() }));
+jest.mock('../src/api/engine', () => ({ ...jest.requireActual('../src/api/engine'), getRide: jest.fn(async () => undefined) }));
 const payment = (bookingId = 'pay-A', paymentStatus = 'UNPAID'): any => ({ bookingId, externalRef: 'ENG-A', farePaise: 12005, paymentStatus,
  paymentMethod: 'PAY_AT_DELIVERY', confirmedAt: '2026-10-30T10:00:00Z',
  stops: [{ sequence: 1, payablePaise: 10000, state: 'DELIVERED' }, { sequence: 2, payablePaise: 2005, state: 'NOT_DELIVERED' }],
@@ -40,19 +42,16 @@ it('shows selected A payment details while B is active, without synthetic paid/t
  expect(text()).not.toContain('ENG-B'); expect(text()).not.toContain('9999'); expect(text()).not.toContain('Payment Successful');
  expect(text()).toContain('Detailed fare breakdown is not available.');
 });
-it('routes historical invoice/help/rating with selected identity', async () => {
+it('routes historical receipt with selected identity without exposing ended driver chat or ratings', async () => {
  const navigation = { navigate: jest.fn() };
  await act(async () => { renderer = TestRenderer.create(<HistoricalTripDetailScreen navigation={navigation} route={{ params: { trip: selected } }} />); });
- for (const label of ['View payment details', 'Need Help', 'Ratings unavailable']) {
-   const node = renderer!.root.findAllByType(Text).find(n => String(n.props.children).toLowerCase().includes(label.toLowerCase()));
-   if (!node) continue;
-   let target: any = (node as any).parent;
-   while (target && typeof target.props.onPress !== 'function') target = target.parent;
-   if (target) act(() => target.props.onPress());
- }
- expect(navigation.navigate).toHaveBeenCalledWith('ActiveTripStack', { screen: 'DriverRatingScreen', params: expect.objectContaining({ trip: selected }) });
- expect(navigation.navigate).toHaveBeenCalledWith('ActiveTripStack', { screen: 'ActiveTripChatScreen', params: expect.objectContaining({ trip: selected, bookingId: 'pay-A' }) });
+ const button=(renderer!.root as any).findByProps({accessibilityLabel:'View receipt'});
+ act(()=>button.props.onPress());
  expect(navigation.navigate).toHaveBeenCalledWith('BookingStack', { screen: 'DigitalReceiptScreen', params: expect.objectContaining({ trip: selected, tripId: 'trip-A' }) });
+ act(() => (renderer!.root as any).findByProps({accessibilityLabel:'Help with this trip'}).props.onPress());
+ expect(navigation.navigate).toHaveBeenCalledWith('MainTabs', { screen:'HelpScreen', params:{tripId:'trip-A',tripReference:'ENG-A'} });
+ expect(text()).not.toContain('Ratings unavailable');
+ expect(navigation.navigate).not.toHaveBeenCalledWith('ActiveTripStack',expect.anything());
 });
 it('does not present delivered-but-uncompleted or mixed outcomes as all-success', async () => {
  await act(async () => { renderer = TestRenderer.create(<BookingContext.Provider value={context}><TripCompletedScreen route={{ params: { trip: { ...selected, status: 'DELIVERED' } } }} /></BookingContext.Provider>); });
@@ -90,4 +89,13 @@ it('rejects payment details returned for another booking', async () => {
  function Capture() { state = useBookingPayment('expected'); return null; }
  await act(async () => { renderer = TestRenderer.create(<Capture />); });
  expect(state.booking).toBeUndefined(); expect(state.error).toBeDefined();
+});
+
+it('reads the selected historical ride frozen fee breakdown without borrowing active B prices', async () => {
+ (getRide as jest.Mock).mockResolvedValueOnce({id:'ride-A',quoteId:'quote-A'});
+ (getFareQuote as jest.Mock).mockResolvedValueOnce({quoteId:'quote-A',deliveryFarePaise:10914,customerPlatformFeePaise:1091,customerPlatformFeeBps:1000,payablePaise:12005,taxPaise:0});
+ const historical={...selected,rideId:'ride-A'};
+ await act(async()=>{renderer=TestRenderer.create(<BookingContext.Provider value={context}><HistoricalTripDetailScreen route={{params:{trip:historical}}}/></BookingContext.Provider>);});
+ expect(getRide).toHaveBeenCalledWith('ride-A',expect.anything());expect(getFareQuote).toHaveBeenCalledWith('quote-A',expect.anything());
+ expect(text()).toContain('Platform fee');expect(text()).toContain('\u20B910.91');expect(text()).not.toContain('9999');
 });

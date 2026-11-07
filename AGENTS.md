@@ -137,7 +137,7 @@ clear its journal. Failed journal cleanup blocks booking through the existing re
 ## Profile hub (2026-11-02)
 
 ProfileScreen is the single account hub: identity/Edit profile, Saved addresses, Notifications,
-read-only English language and one Logout entry. History belongs to Trips tab. Separate
+and one Logout entry. Language preference was removed at user request (2026-11-02). History belongs to Trips tab. Separate
 CustomerSettingsScreen source removed; old route aliases ProfileScreen. Do not reintroduce
 Profile/Settings/Account loops, duplicate notification buttons or a selectable language until
 implemented. Logout confirmation no longer renders a fake Settings page behind its dialog.
@@ -150,3 +150,31 @@ not unrelated chats, before passive chat requests begin. Chat polls trip status 
 and prefers current/retired matching trip state over stale route snapshots. Late auth/closed
 errors and aborted sends must not restore old content or clear a new session. Background/blur
 clears unsent drafts as requested by the developer design; attachments remain disabled.
+
+## Customer branding (2026-11-02)
+
+Displayed name is Multiple Ride, centralized in src/config/brand.ts with the existing blue P
+pin logo from assets/logo.png. Use BrandMark for branded headers. Android launcher/adaptive
+icons use that same logo (default template artwork removed). Pickup/drop and payment enum
+labels are operational terms, not app branding; keep their meaning and technical identifiers.
+
+## Trip history (2026-11-02)
+
+TripHistoryScreen has no Scheduled/Recent tabs, scheduling props or scheduled empty state.
+History groups actual server trips by month and provides local All/Completed/Cancelled filters.
+Use actual trip.id in detail navigation, never externalRef. HistoricalTripDetailScreen is a
+read-only selected-trip view with complete addresses, real reference sharing, actual vehicle,
+backend payment status and frozen quote breakdown through the matching ride. Never hardcode
+CASH, a zero fare, driver names/ratings or platform fees for historical trips. Completed-trip
+help routes to MainTabs/HelpScreen with the selected reference, never closed driver chat.
+
+## Help tab / future admin support chat (2026-11-02)
+
+Bottom tabs are Home, Trips, Help, Profile. HelpScreen uses public user-supplied contacts
+centralized in config/support.ts; supportContact opens the dialer/email composer on tap only.
+Trip history/receipt Help preserves selected trip reference. SupportChatScreen is explicitly
+Coming soon/read-only UI until a separate admin-support contract is implemented; do not reuse
+active driver chat or simulate delivered/admin messages. No support API/persistence exists yet.
+
+## 2.5D splash (2026-11-02)
+User rejected the 3D experiment after failed phone rendering. BrandedSplash is back to the bundled illustrated map and rider assets with standard React Native animation. journeyPath.ts defines only decorative coordinates. Route is continuous solid with green trail, labels are explicitly sized/single-line, full first journey gates splashComplete and slow auth holds at Drop without reset/fade. DeliverySplashPackage, MainApplication registration and local WebGL HTML have been removed. No WebView/GPS/API is used. Keep launch background light blue. See src/assets/splash/README.md.

@@ -1,3 +1,4 @@
+import BrandMark from '../../components/atoms/BrandMark';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -286,7 +287,7 @@ const HomeScreen: React.FC<HomeScreenProps & { navigation?: any }> = ({
           )}
         </Pressable>
 
-        <View style={styles.homeBrand} pointerEvents="none"><Text style={styles.homeBrandText}>PICKUP</Text><View style={styles.brandDot} /></View>
+        <View style={styles.homeBrand} pointerEvents="none"><BrandMark size={spacing.xxxl} textStyle={styles.homeBrandText} /></View>
 
 
       </MapCanvas>

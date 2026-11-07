@@ -1,3 +1,4 @@
+import { APP_NAME } from '../../config/brand';
 import React from 'react';
 import {
   View,
@@ -51,7 +52,7 @@ const LogoutConfirmationScreen: React.FC<LogoutConfirmationScreenProps & { navig
               </View>
 
               {/* Text */}
-              <Text style={styles.title}>Log out of Pick Up?</Text>
+              <Text style={styles.title}>Log out of {APP_NAME}?</Text>
               <Text style={styles.subtitle}>
                 You will need to sign in again to book a trip or view your history.
               </Text>

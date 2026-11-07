@@ -1,3 +1,4 @@
+import { ChatNotifications } from './src/state/ChatNotifications';
 import TripRouteDetailsScreen from './src/screens/logistics/TripRouteDetailsScreen';
 import { usePushNotifications } from './src/hooks/usePushNotifications';
 import { useChatPrivacy, useChatTripPrivacy } from './src/hooks/useChatPrivacy';
@@ -16,6 +17,8 @@ import ErrorBoundary from './src/components/common/ErrorBoundary';
 import BrandedSplash from './src/components/splash/BrandedSplash';
 
 import ActiveTripChatScreen from './src/screens/support/ActiveTripChatScreen';
+import HelpScreen from './src/screens/support/HelpScreen';
+import SupportChatScreen from './src/screens/support/SupportChatScreen';
 import ActiveTripTrackingScreen from './src/screens/tracking/ActiveTripTrackingScreen';
 import AddressSearchScreen from './src/screens/booking/AddressSearchScreen';
 import AssignmentFailedScreen from './src/screens/support/AssignmentFailedScreen';
@@ -159,6 +162,7 @@ function MainTabNavigator() {
           tabBarIcon: ({ color, focused }) => <View style={[styles.tabIcon, focused && styles.tabIconActive]}><Feather name="clock" size={spacing.xxl} color={color} /></View>
         }}
       />
+      <Tab.Screen name="HelpScreen" component={HelpScreen} options={{ tabBarLabel: 'Help', tabBarIcon: ({color,focused}) => <View style={[styles.tabIcon,focused && styles.tabIconActive]}><Feather name="help-circle" size={spacing.xxl} color={color}/></View> }}/>
       <Tab.Screen 
         name="ProfileScreen" 
         component={ProfileScreen} 
@@ -248,6 +252,7 @@ function MainNavigator() {
       <Stack.Screen name="LiveTrackingExceptionsScreen" component={TripRouteDetailsScreen} />
       {/* Global Modals/Screens in Main */}
       <Stack.Screen name="CustomerSettingsScreen" component={ProfileScreen} />
+      <Stack.Screen name="SupportChatScreen" component={SupportChatScreen} />
       <Stack.Screen name="ChangeProfilePhotoScreen" component={ChangeProfilePhotoScreen} options={{ presentation: 'transparentModal', animation: 'fade' }} />
       <Stack.Screen name="EditProfileScreen" component={EditProfileScreen} />
       <Stack.Screen name="SavedAddressesScreen" component={SavedAddressesScreen} />
@@ -322,7 +327,7 @@ function SessionContent() {
   const finishSplash = useCallback(() => setSplashComplete(true), []);
   usePushNotifications(authUid, isLoggedIn === true && hasProfile === true);
   useChatPrivacy(authUid);
-  return <BookingProvider key={authUid ?? 'signed-out'}><RootNavigator splashComplete={splashComplete} onSplashComplete={finishSplash} /></BookingProvider>;
+  return <BookingProvider key={authUid ?? 'signed-out'}><ChatNotifications onOpen={id => { if (pushNavigationRef.isReady()) pushNavigationRef.navigate("ActiveTripStack", { screen: "ActiveTripChatScreen", params: { bookingId: id } }); }}><RootNavigator splashComplete={splashComplete} onSplashComplete={finishSplash} /></ChatNotifications></BookingProvider>;
 }
 
 const styles = StyleSheet.create({

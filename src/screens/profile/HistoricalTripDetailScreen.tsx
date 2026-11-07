@@ -1,525 +1,89 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-} from 'react-native';
+import React, { useContext, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, ScrollView, Image, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { colors, spacing, borderRadius, typography } from '../../theme';
 import { useBookingPayment } from '../../hooks/useBookingPayment';
-import BookingPaymentStatus from '../../components/organisms/BookingPaymentStatus';
-import { formatPaise } from '../../utils/paymentPresentation';
-import type { Trip } from '../../api/types';
+import { useSelectedTrip } from '../../hooks/useSelectedTrip';
+import { BookingContext } from '../../state/BookingContext';
+import { getRide } from '../../api/engine';
+import { getFareQuote } from '../../api/payments';
+import { formatPaise, paymentLabel } from '../../utils/paymentPresentation';
+import { getVehicleImage, getVehicleDisplayName } from '../../utils/vehicleAssets';
+import { vehicleLabelFor } from '../../data/mockData';
+import { savedCollectionPreference } from '../../state/collectionPreference';
+import { APP_NAME } from '../../config/brand';
+import type { Trip, Ride, FareQuote } from '../../api/types';
 
-export interface HistoricalTripDetailScreenProps {
-  readonly onBack?: () => void;
-  readonly onMore?: () => void;
-  readonly onDownloadInvoice?: () => void;
-  readonly onNeedHelp?: () => void;
-  readonly onRateTrip?: () => void;
-}
+export interface HistoricalTripDetailScreenProps { readonly onBack?: () => void; readonly onDownloadInvoice?: () => void; readonly onNeedHelp?: () => void; }
 
-const HistoricalTripDetailScreen: React.FC<HistoricalTripDetailScreenProps & { navigation?: any; route?: { params?: { trip?: Trip } } }> = ({
-  onBack,
-  onMore,
-  onDownloadInvoice,
-  onNeedHelp,
-  onRateTrip,
-  navigation,
-  route,
-}) => {
-  const trip = route?.params?.trip;
-  const payment = useBookingPayment(trip?.paymentBookingId);
-  if (!trip) {
-    return (
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        <View style={styles.header}>
-          <Pressable style={styles.iconButton} onPress={() => (onBack ? onBack() : navigation?.goBack())}>
-            <Feather name="arrow-left" size={24} color={colors.primary} />
-          </Pressable>
-          <Text style={styles.headerTitle}>Trip Details</Text>
-          <View style={styles.iconButton} />
-        </View>
-        <View style={styles.emptyState}><Text style={styles.statusTime}>Trip details are unavailable.</Text></View>
-      </SafeAreaView>
-    );
-  }
-  const stops = [
-    { address: trip.pickup.address ?? 'Pickup location', contactName: undefined },
-    ...trip.stops.map((stop) => ({
-      address: stop.location.address ?? 'Delivery location',
-      contactName: stop.receiver?.name,
-    })),
-  ];
-  const selected = { trip, tripId: trip.id, paymentBookingId: trip.paymentBookingId };
-
-  return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      {/* Top App Bar */}
-      <View style={styles.header}>
-        <Pressable style={styles.iconButton} onPress={() => (onBack ? onBack() : navigation?.goBack())}>
-          <Feather name="arrow-left" size={24} color={colors.primary} />
-        </Pressable>
-        <Text style={styles.headerTitle} numberOfLines={1}>Trip Details</Text>
-        <Pressable
-          style={styles.iconButton}
-          disabled={!onMore}
-          onPress={() => onMore?.()}
-        >
-          <Feather name="more-vertical" size={24} color={colors.primary} />
-        </Pressable>
+/** Selected historical identity only; this page never changes the active booking. */
+export default function HistoricalTripDetailScreen({ onBack, onDownloadInvoice, onNeedHelp, navigation, route }: HistoricalTripDetailScreenProps & { navigation?: any; route?: { params?: { trip?: Trip; tripId?: string } } }) {
+  const context = useContext(BookingContext);
+  const trip = useSelectedTrip(route?.params, undefined);
+  const snapshot = context?.completedBooking?.trip.id === trip?.id ? context?.completedBooking : undefined;
+  const knownRide = snapshot?.ride ?? (context?.ride?.id === trip?.rideId ? context?.ride : undefined);
+  const [loadedRide, setLoadedRide] = useState<Ride>();
+  const [quote, setQuote] = useState<FareQuote>();
+  const [quoteError, setQuoteError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!trip?.rideId || knownRide) return;
+    const controller = new AbortController();
+    getRide(trip.rideId, controller.signal).then(value => { if (!controller.signal.aborted && value.id === trip.rideId) setLoadedRide(value); }).catch(() => {});
+    return () => controller.abort();
+  }, [trip?.rideId, knownRide]);
+  const ride = knownRide ?? (loadedRide?.id === trip?.rideId ? loadedRide : undefined);
+  useEffect(() => {
+    if (!ride?.quoteId) return;
+    const controller = new AbortController(); setQuote(undefined); setQuoteError(false);
+    getFareQuote(ride.quoteId, controller.signal).then(value => { if (!controller.signal.aborted && value.quoteId === ride.quoteId) setQuote(value); }).catch(() => { if (!controller.signal.aborted) setQuoteError(true); });
+    return () => controller.abort();
+  }, [ride?.quoteId, attempt]);
+  const payment = useBookingPayment(trip?.paymentBookingId ?? ride?.paymentBookingId);
+  const total = payment.booking?.farePaise ?? trip?.payablePaise ?? (typeof trip?.fare === 'number' ? Math.round(trip.fare * 100) : undefined);
+  const breakdown = quote?.quoteId === ride?.quoteId && (total === undefined || quote?.payablePaise === total) ? quote : undefined;
+  const selected = { trip, tripId: trip?.id, paymentBookingId: trip?.paymentBookingId ?? ride?.paymentBookingId };
+  const paid = payment.booking?.paymentStatus === 'PAID';
+  const method = payment.booking?.paymentMethod ?? trip?.paymentMethod ?? ride?.paymentMethod;
+  const preference = savedCollectionPreference(trip?.metadata?.specialInstructions ?? ride?.metadata?.specialInstructions);
+  const timing = method === 'PAY_AT_PICKUP' ? 'at pickup' : method === 'PAY_AT_DELIVERY' ? 'at drop' : '';
+  const choice = method === 'PREPAID_UPI' ? 'UPI payment' : `${preference ?? 'Payment'} ${timing}`.trim();
+  const completed = trip?.status === 'COMPLETED', cancelled = trip?.status === 'CANCELLED';
+  const phase = completed ? 'Completed' : cancelled ? 'Cancelled' : trip?.status === 'DELIVERED' ? 'Finalizing trip' : trip?.status.replace(/_/g, ' ') ?? 'Status unavailable';
+  const date = trip?.completedAt ?? trip?.cancelledAt ?? trip?.createdAt;
+  const reference = trip?.externalRef || trip?.id;
+  const shortReference = reference && reference.length > 20 ? `${reference.slice(0, 8)}…${reference.slice(-4)}` : reference;
+  const shareReference = async () => { if (reference) { try { await Share.share({ message: `${APP_NAME} trip reference: ${reference}` }); } catch { /* System share dismissed/unavailable. */ } } };
+  const vehicle = trip?.vehicleType ?? ride?.vehicleType;
+  const driver = snapshot?.driver ?? (context?.assignedDriver?.id === trip?.driverId ? context?.assignedDriver : undefined);
+  const driverName = (trip as (Trip & { driverName?: string }) | undefined)?.driverName ?? driver?.name;
+  const drops = trip?.stops?.length ? trip.stops.map(stop => ({ location: stop.location, sequence: stop.sequence, status: stop.status })) : trip?.drop ? [{ location: trip.drop, sequence: 1, status: undefined }] : [];
+  return <SafeAreaView style={styles.page} edges={['top', 'bottom']}>
+    <View style={styles.header}><Pressable style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Back to trips" onPress={() => onBack ? onBack() : navigation?.goBack()}><Feather name="arrow-left" size={spacing.xxl} color={colors.homeAction}/></Pressable><Text style={styles.title}>Trip details</Text></View>
+    {!trip ? <View style={styles.empty}><Text style={styles.body}>Trip details are unavailable.</Text></View> : <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={[styles.statusBanner, cancelled && styles.cancelledBanner]}><Feather name={completed ? 'check-circle' : cancelled ? 'x-circle' : 'clock'} size={spacing.xxxl} color={cancelled ? colors.error : colors.homePickup}/><View style={styles.flex}><Text style={styles.sectionTitle}>{phase}</Text><Text style={styles.muted}>{date && Number.isFinite(Date.parse(date)) ? new Date(date).toLocaleString('en-IN', { day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit' }) : 'Date unavailable'}</Text></View></View>
+      <Pressable style={styles.spread} accessibilityRole="button" accessibilityLabel="Share trip reference" onPress={() => void shareReference()}><Text style={styles.muted}>Trip reference</Text><View style={styles.inline}><Text style={styles.strong}>{shortReference}</Text><Feather name="share-2" size={spacing.lg} color={colors.homeAction}/></View></Pressable>
+      <View style={styles.card}><Text style={styles.sectionTitle}>Route details</Text><View style={styles.addressRow}><View style={styles.pickupDot}/><View style={styles.flex}><Text style={styles.label}>PICKUP</Text><Text style={styles.address}>{trip.pickup?.address || 'Address unavailable'}</Text></View></View>
+        {drops.map((drop,index) => <View style={styles.addressRow} key={drop.sequence}><View style={styles.dropDot}><Text style={styles.dropNumber}>{index+1}</Text></View><View style={styles.flex}><Text style={styles.label}>DROP{drops.length > 1 ? ` ${index+1} OF ${drops.length}` : ''}</Text><Text style={styles.address}>{drop.location.address || 'Address unavailable'}</Text>{drop.status && drop.status !== 'DELIVERED' && <Text style={styles.muted}>{drop.status.replace(/_/g,' ').toLowerCase()}</Text>}</View></View>)}
+        <View style={[styles.spread, styles.divider]}><View style={styles.flex}><Text style={styles.muted}>Distance</Text><Text style={styles.strong}>{typeof trip.totalDistanceKm === 'number' ? `${trip.totalDistanceKm.toFixed(1)} km` : 'Not available'}</Text></View><View style={[styles.flex,styles.metaColumn]}><Text style={styles.muted}>Vehicle</Text><Text style={styles.strong}>{vehicle ? vehicleLabelFor(getVehicleDisplayName(vehicle)) : 'Not available'}</Text></View></View>
       </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Status & Meta */}
-        <View style={styles.statusSection}>
-          <View style={styles.statusCard}>
-            <Feather name="check-circle" size={24} color={colors.primary} />
-            <View>
-              <Text style={styles.statusTitle}>{trip.status.replace(/_/g, ' ')}</Text>
-              <Text style={styles.statusTime}>{trip.completedAt || trip.createdAt ? new Date(trip.completedAt ?? trip.createdAt).toLocaleString('en-IN') : 'Not available'}</Text>
-            </View>
-          </View>
-          
-          <View style={styles.metaRow}>
-            <Text style={styles.metaLabel}>TRACKING ID</Text>
-            <Text style={styles.metaValue}>#{trip.id}</Text>
-          </View>
-        </View>
-
-        {/* Route Timeline */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Route Information</Text>
-          
-          <View style={styles.timelineContainer}>
-            <View style={styles.timelineLine} />
-            
-            {stops.map((stop, index) => {
-              const isFirst = index === 0;
-              const isLast = index === stops.length - 1;
-              const isPrimaryNode = isFirst || isLast;
-              
-              let stopLabel = 'Drop';
-              if (isFirst) stopLabel = 'Pickup';
-              else if (isLast) stopLabel = 'Final Drop';
-              else stopLabel = `Drop ${index}`;
-              
-              if (stop.contactName && !isFirst) {
-                stopLabel += ` • ${stop.contactName.split(' ')[0]}`;
-              }
-
-              return (
-                <View key={index} style={styles.timelineRow}>
-                  {/* Node Connector */}
-                  <View style={styles.nodeContainer}>
-                    {isFirst ? (
-                      <View style={styles.primaryNode} />
-                    ) : isLast ? (
-                      <View style={styles.finalNodeRing}>
-                        <View style={styles.finalNodeCore} />
-                      </View>
-                    ) : (
-                      <View style={styles.secondaryNode} />
-                    )}
-                  </View>
-                  
-                  {/* Content */}
-                  <View style={styles.contentColumn}>
-                    <Text style={styles.stopLabelCaps}>{stopLabel}</Text>
-                    <Text style={isPrimaryNode ? styles.stopAddressLg : styles.stopAddressMd}>
-                      {stop.address.split(',')[0]}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Payment Summary */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Payment Summary</Text>
-          
-          <BookingPaymentStatus state={payment} />
-        </View>
-
-        {/* Driver Details */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Driver</Text>
-          
-          <View style={styles.driverRow}>
-            <View style={styles.driverAvatar} />
-            <View style={styles.driverInfo}>
-              <Text style={styles.driverName}>Assigned driver</Text>
-              <View style={styles.driverMeta}>
-                <Text style={styles.driverVehicle}>Driver reference: {trip.driverId}</Text>
-                <View style={styles.dotSeparator} />
-                <Feather name="star" size={12} color={colors.onSurfaceVariant} />
-                <Text style={styles.driverVehicle}>No rating data available</Text>
-              </View>
-            </View>
-            <Pressable
-              style={styles.rateButton}
-              onPress={() => (onRateTrip ? onRateTrip() : navigation?.navigate('ActiveTripStack', { screen: 'DriverRatingScreen', params: selected }))}
-            >
-              <Text style={styles.rateButtonText}>{onRateTrip ? 'Rate Trip' : 'Ratings unavailable'}</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {/* Actions */}
-        <View style={styles.actionContainer}>
-          <Pressable
-            style={styles.primaryActionButton}
-            onPress={() =>
-              onDownloadInvoice ? onDownloadInvoice() : navigation?.navigate('BookingStack', { screen: 'DigitalReceiptScreen', params: selected })
-            }
-          >
-            <Feather name="download" size={20} color={colors.onPrimary} />
-            <Text style={styles.primaryActionText}>View payment details</Text>
-          </Pressable>
-          <Pressable
-            style={styles.secondaryActionButton}
-            onPress={() => (onNeedHelp ? onNeedHelp() : navigation?.navigate('ActiveTripStack', { screen: 'ActiveTripChatScreen', params: { ...selected, bookingId: trip.paymentBookingId } }))}
-          >
-            <Feather name="help-circle" size={20} color={colors.onSurface} />
-            <Text style={styles.secondaryActionText}>Need Help?</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-};
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.sm,
-    height: spacing.rowHeightStandard,
-    backgroundColor: colors.surfaceContainerLow,
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: typography.headlineMd.fontSize,
-    fontWeight: typography.headlineMd.fontWeight,
-    color: colors.primary,
-    fontFamily: typography.headlineMd.fontFamily,
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.marginMobile,
-    paddingVertical: spacing.md,
-    gap: spacing.xl,
-  },
-
-  // Status Section
-  statusSection: {
-    gap: spacing.md,
-  },
-  statusCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.surfaceContainerHigh,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-  },
-  statusTitle: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.headlineSm.fontFamily,
-  },
-  statusTime: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.bodyMd.fontFamily,
-    marginTop: 4,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xs,
-  },
-  metaLabel: {
-    fontSize: typography.labelCaps.fontSize,
-    fontWeight: typography.labelCaps.fontWeight,
-    color: colors.outline,
-    fontFamily: typography.labelCaps.fontFamily,
-    letterSpacing: typography.labelCaps.letterSpacing,
-  },
-  metaValue: {
-    fontSize: typography.dataMono.fontSize,
-    fontWeight: typography.dataMono.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.dataMono.fontFamily,
-  },
-
-  // Common Section Card
-  sectionCard: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.outlineVariant + '4D', // 30% opacity
-    ...shadows.card,
-  },
-  sectionTitle: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.headlineSm.fontFamily,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.xs,
-  },
-
-  // Timeline
-  timelineContainer: {
-    paddingLeft: spacing.xl,
-    position: 'relative',
-    gap: spacing.xl,
-    paddingBottom: spacing.sm,
-  },
-  timelineLine: {
-    position: 'absolute',
-    left: 8,
-    top: 8,
-    bottom: 8,
-    width: 2,
-    backgroundColor: colors.surfaceVariant,
-  },
-  timelineRow: {
-    position: 'relative',
-  },
-  nodeContainer: {
-    position: 'absolute',
-    left: -spacing.xl - 8,
-    top: 4,
-    width: 16,
-    alignItems: 'center',
-  },
-  primaryNode: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: colors.primary,
-    borderWidth: 4,
-    borderColor: colors.surfaceContainerLowest,
-  },
-  secondaryNode: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: colors.surfaceContainerHighest,
-    borderWidth: 4,
-    borderColor: colors.surfaceContainerLowest,
-  },
-  finalNodeRing: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: colors.surfaceContainerLowest,
-    borderWidth: 2,
-    borderColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  finalNodeCore: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.primary,
-  },
-  contentColumn: {},
-  stopLabelCaps: {
-    fontSize: typography.labelCaps.fontSize,
-    fontWeight: typography.labelCaps.fontWeight,
-    color: colors.outline,
-    fontFamily: typography.labelCaps.fontFamily,
-    textTransform: 'uppercase',
-    letterSpacing: typography.labelCaps.letterSpacing,
-    marginBottom: 4,
-  },
-  stopAddressLg: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.headlineSm.fontFamily,
-  },
-  stopAddressMd: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurface,
-    fontFamily: typography.bodyMd.fontFamily,
-  },
-
-  // Payment
-  paymentRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
-  },
-  paymentLabel: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.bodyMd.fontFamily,
-  },
-  paymentValueMono: {
-    fontSize: typography.dataMono.fontSize,
-    fontWeight: typography.dataMono.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.dataMono.fontFamily,
-  },
-  paymentRowTotal: {
-    borderTopWidth: 1,
-    borderTopColor: colors.surfaceVariant,
-    marginTop: spacing.xs,
-    paddingTop: spacing.md,
-  },
-  paymentTotalLabel: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.headlineSm.fontFamily,
-  },
-  paymentTotalValue: {
-    fontSize: typography.headlineMd.fontSize,
-    fontWeight: typography.headlineMd.fontWeight,
-    color: colors.primary,
-    fontFamily: typography.headlineMd.fontFamily,
-  },
-  paymentMethodRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    paddingHorizontal: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  paymentMethodBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.surfaceVariant,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
-  },
-  paymentMethodText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-
-  // Driver
-  driverRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xs,
-    gap: spacing.md,
-  },
-  driverAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.surfaceVariant,
-  },
-  driverInfo: {
-    flex: 1,
-  },
-  driverName: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.headlineSm.fontFamily,
-  },
-  driverMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
-  },
-  driverVehicle: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-  dotSeparator: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: colors.outlineVariant,
-  },
-  rateButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.surfaceVariant,
-    borderRadius: borderRadius.full,
-  },
-  rateButtonText: {
-    fontSize: typography.labelSm.fontSize,
-    fontWeight: typography.labelSm.fontWeight,
-    color: colors.primary,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-
-  // Actions
-  actionContainer: {
-    gap: spacing.sm,
-    marginBottom: spacing.xl * 2,
-  },
-  primaryActionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.primary,
-    height: 48,
-    borderRadius: borderRadius.full,
-  },
-  primaryActionText: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
-    color: colors.onPrimary,
-    fontFamily: typography.headlineSm.fontFamily,
-  },
-  secondaryActionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surfaceContainerHighest,
-    height: 48,
-    borderRadius: borderRadius.full,
-  },
-  secondaryActionText: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: typography.headlineSm.fontWeight,
-    color: colors.onSurface,
-    fontFamily: typography.headlineSm.fontFamily,
-  },
+      <View style={styles.card}><Text style={styles.sectionTitle}>Driver</Text><View style={styles.inline}>{vehicle && <View style={styles.avatar}><Image source={getVehicleImage(vehicle)} style={styles.vehicleImage} resizeMode="contain"/></View>}<View style={styles.flex}><Text style={styles.strong}>{driverName || 'Assigned driver'}</Text><Text style={styles.muted}>{vehicle ? vehicleLabelFor(getVehicleDisplayName(vehicle)) : 'Driver details unavailable'}</Text></View></View></View>
+      <View style={styles.card}><View style={styles.spread}><Text style={styles.sectionTitle}>Payment details</Text><Text style={[styles.paymentBadge, paid && styles.paid]}>{payment.booking ? paymentLabel(payment.booking) : payment.loading ? 'Checking...' : 'Status unavailable'}</Text></View><View style={styles.method}><Feather name="credit-card" size={spacing.xl} color={colors.secondary}/><Text style={styles.body}>{choice}</Text></View>
+        {breakdown ? <><View style={styles.spread}><Text style={styles.body}>Delivery fare</Text><Text style={styles.body}>{formatPaise(breakdown.deliveryFarePaise ?? breakdown.farePaise)}</Text></View>{breakdown.customerPlatformFeePaise !== undefined && <View style={styles.spread}><Text style={styles.body}>Platform fee{breakdown.customerPlatformFeeBps !== undefined ? ` (${breakdown.customerPlatformFeeBps/100}%)` : ''}</Text><Text style={styles.body}>{formatPaise(breakdown.customerPlatformFeePaise)}</Text></View>}{(breakdown.surgeChargePaise ?? 0)>0 && <View style={styles.spread}><Text style={styles.body}>Surge charge</Text><Text style={styles.body}>{formatPaise(breakdown.surgeChargePaise)}</Text></View>}{breakdown.taxPaise>0 && <View style={styles.spread}><Text style={styles.body}>Tax</Text><Text style={styles.body}>{formatPaise(breakdown.taxPaise)}</Text></View>}</> : <Text style={styles.muted}>{ride?.quoteId && !quoteError && !quote ? 'Loading fare breakdown...' : 'Detailed fare breakdown is not available.'}</Text>}
+        {(quoteError || (quote && !breakdown)) && <Pressable accessibilityRole="button" accessibilityLabel="Retry fare details" onPress={() => setAttempt(value=>value+1)}><Text style={styles.strong}>Retry breakdown</Text></Pressable>}
+        <View style={[styles.spread,styles.divider]}><Text style={styles.strong}>Total</Text><Text style={styles.sectionTitle}>{formatPaise(total)}</Text></View>
+        {payment.error && <Pressable accessibilityRole="button" accessibilityLabel="Retry payment status" onPress={payment.refresh}><Text style={styles.muted}>{payment.error}</Text><Text style={styles.strong}>Refresh payment status</Text></Pressable>}
+      </View>
+      {(payment.booking || onDownloadInvoice) && <Pressable style={styles.action} accessibilityRole="button" accessibilityLabel="View receipt" onPress={() => onDownloadInvoice ? onDownloadInvoice() : navigation?.navigate('BookingStack',{screen:'DigitalReceiptScreen',params:selected})}><Feather name="file-text" size={spacing.xxl} color={colors.homeAction}/><Text style={[styles.strong,styles.flex]}>{paid ? 'View receipt' : 'View payment details'}</Text><Feather name="chevron-right" size={spacing.xl} color={colors.secondary}/></Pressable>}
+      <Pressable style={styles.action} accessibilityRole="button" accessibilityLabel="Help with this trip" onPress={() => onNeedHelp ? onNeedHelp() : navigation?.navigate('MainTabs',{screen:'HelpScreen',params:{tripId:trip.id,tripReference:trip.externalRef || trip.id}})}><Feather name="help-circle" size={spacing.xxl} color={colors.homeAction}/><Text style={[styles.body,styles.flex]}>Need help with this trip?</Text><Feather name="chevron-right" size={spacing.xl} color={colors.secondary}/></Pressable>
+      <Text style={styles.brand}>{APP_NAME}</Text>
+    </ScrollView>}
+  </SafeAreaView>;
+}
+const styles=StyleSheet.create({
+  page:{flex:1,backgroundColor:colors.surface},flex:{flex:1,minWidth:0},header:{flexDirection:'row',alignItems:'center',gap:spacing.sm,paddingHorizontal:spacing.sm,minHeight:spacing.rowHeightStandard},iconButton:{width:spacing.rowHeightSm,height:spacing.rowHeightSm,alignItems:'center',justifyContent:'center'},title:{...typography.headlineMd,color:colors.homeAction,fontWeight:'700'},content:{padding:spacing.lg,gap:spacing.lg,paddingBottom:spacing.xxl},empty:{flex:1,padding:spacing.xxl,alignItems:'center',justifyContent:'center'},
+  statusBanner:{flexDirection:'row',alignItems:'center',gap:spacing.md,padding:spacing.lg,borderRadius:borderRadius.lg,backgroundColor:colors.selectionTint},cancelledBanner:{backgroundColor:colors.errorContainer},sectionTitle:{...typography.headlineSm,color:colors.homeAction,fontWeight:'700'},strong:{...typography.bodyMd,color:colors.homeAction,fontWeight:'600'},muted:{...typography.labelSm,color:colors.secondary,marginTop:spacing.xs},body:{...typography.bodyMd,color:colors.homeAction},spread:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:spacing.md},inline:{flexDirection:'row',alignItems:'center',gap:spacing.md},
+  card:{borderWidth:1,borderColor:colors.outlineHairline,borderRadius:borderRadius.xl,padding:spacing.lg,gap:spacing.lg},addressRow:{flexDirection:'row',alignItems:'flex-start',gap:spacing.md},pickupDot:{width:spacing.md,height:spacing.md,borderRadius:borderRadius.full,backgroundColor:colors.homePickup,marginHorizontal:spacing.xs,marginTop:spacing.xs},dropDot:{width:spacing.xl,height:spacing.xl,borderRadius:borderRadius.full,backgroundColor:colors.homeAction,alignItems:'center',justifyContent:'center'},dropNumber:{...typography.labelSm,color:colors.onPrimary},label:{...typography.labelCaps,color:colors.secondary,marginBottom:spacing.xs},address:{...typography.bodyMd,color:colors.homeAction,fontWeight:'600'},divider:{borderTopWidth:1,borderColor:colors.outlineHairline,paddingTop:spacing.md},metaColumn:{borderLeftWidth:1,borderColor:colors.outlineHairline,paddingLeft:spacing.md},avatar:{width:spacing.rowHeightStandard,height:spacing.rowHeightStandard,borderRadius:borderRadius.full,backgroundColor:colors.surfaceContainerLow,alignItems:'center',justifyContent:'center'},vehicleImage:{width:spacing.rowHeightSm+spacing.sm,height:spacing.rowHeightSm+spacing.sm},
+  paymentBadge:{...typography.labelSm,color:colors.secondary,backgroundColor:colors.surfaceContainerLow,paddingHorizontal:spacing.sm,paddingVertical:spacing.xs,borderRadius:borderRadius.md,flexShrink:1},paid:{backgroundColor:colors.successContainer,color:colors.homePickup},method:{flexDirection:'row',alignItems:'center',gap:spacing.md,padding:spacing.md,borderRadius:borderRadius.md,backgroundColor:colors.surfaceContainerLow},action:{flexDirection:'row',alignItems:'center',gap:spacing.md,padding:spacing.lg,minHeight:spacing.rowHeightStandard,borderWidth:1,borderColor:colors.outlineHairline,borderRadius:borderRadius.lg},brand:{...typography.labelSm,color:colors.secondary,textAlign:'center'},
 });
-
-export default HistoricalTripDetailScreen;

@@ -1,3 +1,4 @@
+import { useChatNotifications } from '../../state/ChatNotifications';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
@@ -45,6 +46,7 @@ const ConversationChatScreen: React.FC<ActiveTripChatScreenProps & { navigation?
   route, resolvedTrip, conversationId, conversationEnded,
 }) => {
   const context = useBooking();
+  const { setOpen } = useChatNotifications();
   const trip = resolvedTrip;
   const explicit = !!route?.params && ('tripId' in route.params || 'trip' in route.params || 'bookingId' in route.params);
   const scoped = !explicit || (!!trip && trip.id === context.trip?.id);
@@ -65,13 +67,13 @@ const ConversationChatScreen: React.FC<ActiveTripChatScreenProps & { navigation?
   const sendControllers = useRef(new Set<AbortController>());
   const [focused, setFocused] = useState(false);
   useFocusEffect(useCallback(() => {
-    setFocused(true);
+    setFocused(true); setOpen(conversationId);
     return () => {
-      setFocused(false); setMessages([]); setInputText(''); setConfirmedActive(false);
+      setOpen(undefined); setFocused(false); setMessages([]); setInputText(''); setConfirmedActive(false);
       sendControllers.current.forEach(controller => controller.abort());
       if (conversationId) clearCustomerChatConversation(conversationId);
     };
-  }, [conversationId]));
+  }, [conversationId, setOpen]));
   useEffect(() => { const sub = AppState.addEventListener('change', state => {
     const active = state !== 'background' && state !== 'inactive'; setAppActive(active);
     if (!active) { setMessages([]); setInputText(''); setConfirmedActive(false); sendControllers.current.forEach(controller => controller.abort()); }

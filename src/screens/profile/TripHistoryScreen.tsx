@@ -1,3 +1,4 @@
+import { APP_NAME } from '../../config/brand';
 import React, { useState, useEffect, useCallback, useContext, useRef } from 'react';
 import {
   View,
@@ -5,30 +6,30 @@ import {
   ScrollView,
   Pressable,
   StyleSheet,
-  ActivityIndicator,
   RefreshControl,
   Image,
+  Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors, spacing, borderRadius, typography } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { getCustomerHistory } from '../../api/engine';
 import { BookingContext } from '../../state/BookingContext';
 import Button from '../../components/atoms/Button';
 import type { Trip } from '../../api/types';
-import { getVehicleImage } from '../../utils/vehicleAssets';
+import { getVehicleImage, getVehicleDisplayName } from '../../utils/vehicleAssets';
+import { vehicleLabelFor } from '../../data/mockData';
+import { formatPaise } from '../../utils/paymentPresentation';
+import { savedCollectionPreference } from '../../state/collectionPreference';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TripHistorySkeleton, useSkeletonVisibility } from '../../components/skeleton';
 
 export interface TripHistoryScreenProps {
-  readonly onBack?: () => void;
   readonly onTripSelect?: (trip: Trip) => void;
   readonly onBookRide?: () => void;
-  readonly onScheduleRide?: () => void;
   readonly onRetry?: () => void;
   readonly customerId?: string;
   readonly initialTrips?: Trip[];
-  readonly initialTab?: 'Recent' | 'Scheduled';
   readonly navigation?: any;
 }
 
@@ -39,17 +40,16 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps> = (props) => {
 };
 
 const AccountTripHistoryScreen: React.FC<TripHistoryScreenProps> = ({
-  onBack,
   onTripSelect,
   onBookRide,
-  onScheduleRide,
   onRetry,
   customerId: customerIdProp,
   initialTrips,
-  initialTab = 'Recent',
   navigation,
 }) => {
-  const [activeTab, setActiveTab] = useState<'Recent' | 'Scheduled'>(initialTab);
+  const [filter, setFilter] = useState<'All trips' | 'Completed' | 'Cancelled'>('All trips');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const insets = useSafeAreaInsets();
   const booking = useContext(BookingContext);
   const effectiveCustomerId = customerIdProp ?? booking?.customerId;
 
@@ -144,494 +144,53 @@ const AccountTripHistoryScreen: React.FC<TripHistoryScreenProps> = ({
     }
   };
 
-  const handleScheduleRide = () => {
-    if (onScheduleRide) {
-      onScheduleRide();
-      return;
-    }
-    // The default action is explicitly labelled Book now, never a scheduled booking.
-    handleBookRide();
+  useEffect(() => {
+    if (initialTrips !== undefined) return;
+    return navigation?.addListener?.('focus', () => { void fetchTrips(); });
+  }, [navigation, initialTrips, fetchTrips]);
+  const visibleTrips = trips.filter(trip => filter === 'All trips' || trip.status === (filter === 'Completed' ? 'COMPLETED' : 'CANCELLED')).sort((a,b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
+  const month = (date: string) => Number.isFinite(Date.parse(date)) ? new Date(date).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }).toUpperCase() : 'PREVIOUS TRIPS';
+  const dateLabel = (date: string) => Number.isFinite(Date.parse(date)) ? new Date(date).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : 'Date unavailable';
+  const paymentChoice = (trip: Trip) => {
+    const preference = savedCollectionPreference(trip.metadata?.specialInstructions);
+    const timing = trip.paymentMethod === 'PAY_AT_PICKUP' ? 'at pickup' : trip.paymentMethod === 'PAY_AT_DELIVERY' ? 'at drop' : '';
+    return preference ? `${preference} ${timing}`.trim() : timing ? `Pay ${timing}` : '';
   };
-
-  // No scheduled rides exist in this backend/app, so the scheduled tab has 0 trips.
-  const visibleTrips = activeTab === 'Recent' ? trips : [];
-
   const renderTripCard = (trip: Trip) => {
-    const isCompleted = trip.status === 'COMPLETED';
-    const isCancelled = trip.status === 'CANCELLED';
-
-    return (
-      <Pressable
-        key={trip.id}
-        style={styles.tripCard}
-        onPress={() => {
-          onTripSelect?.(trip);
-          if (!isCompleted && !isCancelled) {
-            navigation?.navigate('ActiveTripStack', { screen: 'CustomerLiveTrackingScreen' });
-            return;
-          }
-          navigation?.navigate(
-            isCancelled ? 'TripCancelledStatusScreen' : 'HistoricalTripDetailScreen',
-            {
-              trip,
-              tripId: (trip as any).externalRef || trip.id,
-              pickupLocation: trip.pickup?.address,
-              dropLocation: trip.stops?.[trip.stops.length - 1]?.location?.address || (trip as any).drop?.address,
-              feeAmount: (trip as any).cancellationFee,
-            }
-          );
-        }}
-        accessibilityRole="button"
-        accessibilityLabel={`Trip on ${new Date(trip.createdAt).toLocaleDateString()}`}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.cardHeaderLeft}>
-            <View
-              style={[
-                styles.statusBadge,
-                isCompleted && styles.statusBadgeCompleted,
-                isCancelled && styles.statusBadgeCancelled,
-              ]}
-            >
-              <View
-                style={[
-                  styles.statusDot,
-                  isCompleted && styles.statusDotCompleted,
-                  isCancelled && styles.statusDotCancelled,
-                ]}
-              />
-              <Text
-                style={[
-                  styles.statusText,
-                  isCompleted && styles.statusTextCompleted,
-                  isCancelled && styles.statusTextCancelled,
-                ]}
-              >
-                {trip.status.toUpperCase()}
-              </Text>
-            </View>
-            <Text style={styles.dateText}>{new Date(trip.createdAt).toLocaleDateString()}</Text>
-          </View>
-
-          <View style={styles.cardHeaderRight}>
-            <Text style={[styles.amountText, isCancelled && styles.amountTextCancelled]}>
-              {`₹${trip.fare ?? 0}`}
-            </Text>
-            <Text
-              style={[
-                styles.paymentText,
-                isCancelled && styles.paymentTextCancelled,
-              ]}
-            >
-              {isCancelled ? 'Cancelled by User' : 'CASH'}
-            </Text>
-          </View>
-        </View>
-
-        <View style={[styles.routeInfo, isCancelled && { opacity: 0.7 }]}>
-          <View style={styles.routeTimeline}>
-            <View style={[styles.timelineDot, isCompleted ? styles.timelineDotActivePickup : styles.timelineDotInactive]} />
-            <View style={styles.timelineLine} />
-            <View style={[styles.timelineDot, isCompleted ? styles.timelineDotActiveDrop : styles.timelineDotInactive]} />
-          </View>
-          <View style={styles.routeLocations}>
-            <Text style={styles.locationText}>{trip.pickup?.address || 'Pickup location'}</Text>
-            <Text style={styles.locationText}>{trip.stops?.[trip.stops.length - 1]?.location?.address || 'No Drop Location'}</Text>
-          </View>
-        </View>
-
-        <View style={styles.cardFooter}>
-          <View style={styles.vehicleInfo}>
-            <Image
-              source={getVehicleImage((trip as any).vehicleType)}
-              style={{ width: 18, height: 18, marginRight: 4 }}
-              resizeMode="contain"
-            />
-            <Text style={styles.vehicleText}>{`${trip.weight ?? 0} kg`}</Text>
-          </View>
-          <Feather name="chevron-right" size={20} color={colors.onSurfaceVariant} />
-        </View>
-      </Pressable>
-    );
+    const completed = trip.status === 'COMPLETED', cancelled = trip.status === 'CANCELLED';
+    const drops = trip.stops?.length ? trip.stops.map(stop => stop.location) : trip.drop ? [trip.drop] : [];
+    const amount = trip.payablePaise ?? (typeof trip.fare === 'number' ? Math.round(trip.fare * 100) : undefined);
+    const vehicle = trip.vehicleType;
+    return <Pressable key={trip.id} testID={`trip-card-${trip.id}`} style={styles.card} accessibilityRole="button" accessibilityLabel={`Trip on ${new Date(trip.createdAt).toLocaleDateString()}`} onPress={() => {
+      if (onTripSelect) { onTripSelect(trip); return; }
+      if (!completed && !cancelled) navigation?.navigate('ActiveTripStack', { screen: 'CustomerLiveTrackingScreen' });
+      else navigation?.navigate('HistoricalTripDetailScreen', { trip, tripId: trip.id });
+    }}>
+      <View style={styles.spread}><View style={styles.flex}><View style={[styles.badge, completed && styles.completedBadge, cancelled && styles.cancelledBadge]}><Text style={[styles.badgeText, completed && styles.completedText, cancelled && styles.cancelledText]}>{trip.status.replace(/_/g, ' ')}</Text></View><Text style={styles.caption}>{dateLabel(trip.createdAt)}</Text></View>{!cancelled && <View style={styles.amountColumn}><Text style={styles.amount}>{formatPaise(amount)}</Text><Text style={styles.caption}>{paymentChoice(trip)}</Text></View>}</View>
+      <View style={styles.routeRow}><View style={styles.pickupColumn}><View style={styles.pickupDot}/><View style={styles.connector}/></View><View style={styles.flex}><Text style={styles.label}>PICKUP</Text><Text style={styles.address} numberOfLines={2}>{trip.pickup?.address || 'Pickup address unavailable'}</Text></View></View>
+      <View style={styles.routeRow}><View style={styles.dropDot}><Text style={styles.dropNumber}>1</Text></View><View style={styles.flex}><View style={styles.inline}><Text style={styles.label}>DROP</Text>{drops.length > 1 && <Text style={styles.stopsBadge}>+{drops.length - 1} stop{drops.length > 2 ? 's' : ''}</Text>}</View><Text style={styles.address} numberOfLines={2}>{drops[0]?.address || 'Drop address unavailable'}</Text></View></View>
+      <View style={styles.cardFooter}><View style={[styles.inline, styles.flex]}>{vehicle && <Image source={getVehicleImage(vehicle)} style={styles.vehicleImage} resizeMode="contain"/>}<Text style={styles.vehicleText} numberOfLines={1}>{vehicle ? vehicleLabelFor(getVehicleDisplayName(vehicle)) : 'Vehicle'}{typeof trip.weight === 'number' ? ` \u00B7 ${trip.weight} kg` : ''}</Text></View><Feather name="chevron-right" size={spacing.xl} color={colors.homeAction}/></View>
+    </Pressable>;
   };
-
-  return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Top App Bar */}
-      <View style={styles.header}>
-        <Pressable
-          style={styles.iconButton}
-          onPress={() => (onBack ? onBack() : navigation?.goBack())}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <Feather name="arrow-left" size={22} color={colors.primary} />
-        </Pressable>
-        <Text style={styles.headerTitle}>Trip History</Text>
-        {/* Decorative: there is no filter surface in this prototype */}
-        <View style={styles.iconButton} accessibilityRole="none">
-          <Feather name="filter" size={22} color={colors.primary} />
-        </View>
-      </View>
-
-      {/* Tabs */}
-      <View style={styles.tabWrapper}>
-        <View style={styles.tabContainer}>
-          <Pressable
-            testID="tab-recent"
-            style={[styles.tabButton, activeTab === 'Recent' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('Recent')}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: activeTab === 'Recent' }}
-          >
-            <Text style={[styles.tabText, activeTab === 'Recent' && styles.tabTextActive]}>
-              Recent
-            </Text>
-          </Pressable>
-          <Pressable
-            testID="tab-scheduled"
-            style={[styles.tabButton, activeTab === 'Scheduled' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('Scheduled')}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: activeTab === 'Scheduled' }}
-          >
-            <Text style={[styles.tabText, activeTab === 'Scheduled' && styles.tabTextActive]}>
-              Scheduled
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Tab Content: Loading, Error, Empty, or Trip List */}
-      {showSkeleton ? (
-        <TripHistorySkeleton testID="trip-history-loading" />
-      ) : error && trips.length === 0 ? (
-        <View style={styles.stateContainer} testID="trip-history-error">
-          <View style={styles.errorIconCircle}>
-            <Feather name="alert-circle" size={36} color={colors.error} />
-          </View>
-          <Text style={styles.stateTitle}>Unable to load rides</Text>
-          <Text style={styles.stateDescription}>{error}</Text>
-          <Button
-            label="Try Again"
-            onPress={handleRetry}
-            variant="primary"
-            size="md"
-            style={styles.actionButton}
-          />
-        </View>
-      ) : visibleTrips.length === 0 ? (
-        <View
-          style={styles.stateContainer}
-          testID={activeTab === 'Recent' ? 'empty-recent-state' : 'empty-scheduled-state'}
-        >
-          <View style={styles.iconCircle}>
-            <Feather
-              name={activeTab === 'Recent' ? 'clock' : 'calendar'}
-              size={36}
-              color={colors.primary}
-            />
-          </View>
-          <Text style={styles.stateTitle}>
-            {activeTab === 'Recent' ? 'No rides yet' : 'Scheduling unavailable'}
-          </Text>
-          <Text style={styles.stateDescription}>
-            {activeTab === 'Recent'
-              ? 'Your completed and previous rides will appear here once you start riding with MultipleRide.'
-              : 'Scheduled bookings are not available yet. You can book a ride for now.'}
-          </Text>
-          <Button
-            label={activeTab === 'Recent' ? 'Book a Ride' : onScheduleRide ? 'Schedule a Ride' : 'Book now'}
-            onPress={activeTab === 'Recent' ? handleBookRide : handleScheduleRide}
-            variant="primary"
-            size="md"
-            style={styles.actionButton}
-          />
-        </View>
-      ) : (
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={loading}
-              onRefresh={fetchTrips}
-              colors={[colors.primary]}
-              tintColor={colors.primary}
-            />
-          }
-        >
-          <View style={styles.tripList}>
-            {visibleTrips.map(renderTripCard)}
-          </View>
-        </ScrollView>
-      )}
-    </SafeAreaView>
-  );
+  return <SafeAreaView style={styles.page} edges={['top']}>
+    <View style={styles.header}><View style={styles.flex}><Text style={styles.title}>Your trips</Text><Text style={styles.subtitle}>All your deliveries, in one place.</Text></View><Pressable style={styles.filterButton} accessibilityRole="button" accessibilityLabel="Filter trips" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen(true)}><Feather name="filter" size={spacing.xxl} color={colors.homeAction}/>{filter !== 'All trips' && <View style={styles.filterDot}/>}</Pressable></View>
+    {showSkeleton ? <TripHistorySkeleton testID="trip-history-loading"/> : error && !trips.length ? <View style={styles.empty} testID="trip-history-error"><Feather name="alert-circle" size={spacing.xxxl} color={colors.error}/><Text style={styles.emptyTitle}>Unable to load trips</Text><Text style={styles.emptyText}>{error}</Text><Button label="Try Again" onPress={handleRetry}/></View> : !visibleTrips.length ? <View style={styles.empty} testID="empty-recent-state"><Feather name="clock" size={spacing.xxxl} color={colors.homeAction}/><Text style={styles.emptyTitle}>{trips.length ? 'No matching trips' : 'No trips yet'}</Text><Text style={styles.emptyText}>{trips.length ? 'Try another filter to see your trips.' : `Your deliveries with ${APP_NAME} will appear here.`}</Text><Button label={trips.length ? 'Show all trips' : 'Book a Ride'} onPress={trips.length ? () => setFilter('All trips') : handleBookRide}/></View> : <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchTrips} colors={[colors.homeAction]}/>}>
+      {error && <View style={styles.notice}><Text style={styles.caption}>Could not refresh trips. Showing previously loaded details.</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry trip history" onPress={handleRetry}><Text style={styles.address}>Retry</Text></Pressable></View>}
+      {visibleTrips.map((trip, index) => <View key={trip.id}>{(index === 0 || month(visibleTrips[index-1].createdAt) !== month(trip.createdAt)) && <Text style={styles.month}>{month(trip.createdAt)}</Text>}{renderTripCard(trip)}</View>)}
+    </ScrollView>}
+    <Modal visible={filtersOpen} transparent animationType="slide" onRequestClose={() => setFiltersOpen(false)}><View style={styles.modalRoot}><Pressable style={styles.backdrop} accessibilityRole="button" accessibilityLabel="Close trip filters" onPress={() => setFiltersOpen(false)}/><View style={[styles.filterSheet, {paddingBottom: Math.max(insets.bottom, spacing.lg)}]} accessibilityViewIsModal><View style={styles.spread}><Text style={styles.emptyTitle}>Filter trips</Text><Pressable style={styles.filterButton} accessibilityRole="button" accessibilityLabel="Close filters" onPress={() => setFiltersOpen(false)}><Feather name="x" size={spacing.xl} color={colors.homeAction}/></Pressable></View>{(['All trips','Completed','Cancelled'] as const).map(option => <Pressable key={option} style={styles.filterOption} accessibilityRole="radio" accessibilityLabel={option} accessibilityState={{selected:filter===option}} onPress={() => {setFilter(option);setFiltersOpen(false);}}><Text style={styles.address}>{option}</Text>{filter===option && <Feather name="check-circle" size={spacing.xl} color={colors.homePickup}/>}</Pressable>)}</View></View></Modal>
+  </SafeAreaView>;
 };
-
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.sm,
-    height: spacing.rowHeightStandard,
-    backgroundColor: colors.surface,
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: typography.headlineMd.fontSize,
-    fontWeight: '700',
-    color: colors.onSurface,
-    fontFamily: typography.headlineMd.fontFamily,
-  },
-  tabWrapper: {
-    paddingHorizontal: spacing.marginMobile,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
-    backgroundColor: colors.background,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: borderRadius.full,
-    padding: 4,
-  },
-  tabButton: {
-    flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tabButtonActive: {
-    backgroundColor: colors.primary,
-    ...shadows.sm,
-  },
-  tabText: {
-    fontSize: typography.labelSm.fontSize,
-    fontWeight: '500',
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-  tabTextActive: {
-    color: colors.onPrimary,
-  },
-  scrollView: { flex: 1 },
-  scrollContent: {
-    paddingHorizontal: spacing.marginMobile,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xxxl,
-  },
-  tripList: {
-    gap: spacing.md,
-  },
-  tripCard: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: 24,
-    padding: spacing.lg,
-    ...shadows.card,
-    borderWidth: 1,
-    borderColor: colors.surfaceVariant,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: spacing.lg,
-  },
-  cardHeaderLeft: {
-    gap: 4,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: borderRadius.full,
-    alignSelf: 'flex-start',
-  },
-  statusBadgeCompleted: {
-    backgroundColor: '#E6F4EA',
-  },
-  statusBadgeCancelled: {
-    backgroundColor: colors.errorContainer,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusDotCompleted: {
-    backgroundColor: '#137333',
-  },
-  statusDotCancelled: {
-    backgroundColor: colors.error,
-  },
-  statusText: {
-    fontSize: typography.labelCaps.fontSize,
-    fontWeight: typography.labelCaps.fontWeight,
-    fontFamily: typography.labelCaps.fontFamily,
-    letterSpacing: typography.labelCaps.letterSpacing,
-  },
-  statusTextCompleted: {
-    color: '#137333',
-  },
-  statusTextCancelled: {
-    color: colors.onErrorContainer,
-  },
-  dateText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-  cardHeaderRight: {
-    alignItems: 'flex-end',
-  },
-  amountText: {
-    fontSize: typography.dataMono.fontSize,
-    fontWeight: '500',
-    color: colors.onSurface,
-    fontFamily: typography.dataMono.fontFamily,
-  },
-  amountTextCancelled: {
-    color: colors.onSurfaceVariant,
-    textDecorationLine: 'line-through',
-  },
-  paymentText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelSm.fontFamily,
-    marginTop: 2,
-  },
-  paymentTextCancelled: {
-    color: colors.error,
-  },
-  routeInfo: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  routeTimeline: {
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  timelineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  timelineDotActivePickup: {
-    backgroundColor: colors.primary,
-    borderWidth: 2,
-    borderColor: colors.surface,
-  },
-  timelineDotActiveDrop: {
-    backgroundColor: colors.secondary,
-    borderWidth: 2,
-    borderColor: colors.surface,
-  },
-  timelineDotInactive: {
-    backgroundColor: colors.outline,
-  },
-  timelineLine: {
-    width: 2,
-    height: 32,
-    backgroundColor: colors.outlineVariant,
-    marginVertical: 4,
-  },
-  routeLocations: {
-    justifyContent: 'space-between',
-    paddingVertical: 2,
-  },
-  locationText: {
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurface,
-    fontFamily: typography.bodyMd.fontFamily,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.surfaceVariant,
-  },
-  vehicleInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  vehicleText: {
-    fontSize: typography.labelSm.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.labelSm.fontFamily,
-  },
-  stateContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xxl,
-    paddingBottom: spacing.xxxl,
-  },
-  iconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#E6F4FE',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  errorIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.errorContainer,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  stateTitle: {
-    fontSize: typography.headlineSm.fontSize,
-    fontWeight: '700',
-    color: colors.onSurface,
-    fontFamily: typography.headlineSm.fontFamily,
-    textAlign: 'center',
-    marginBottom: spacing.xs,
-  },
-  stateDescription: {
-    fontSize: typography.bodyMd.fontSize,
-    lineHeight: typography.bodyMd.lineHeight,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.bodyMd.fontFamily,
-    textAlign: 'center',
-    marginBottom: spacing.xl,
-    maxWidth: 290,
-  },
-  actionButton: {
-    minWidth: 160,
-  },
-  loadingText: {
-    marginTop: spacing.md,
-    fontSize: typography.bodyMd.fontSize,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.bodyMd.fontFamily,
-  },
+  page:{flex:1,backgroundColor:colors.surface},flex:{flex:1,minWidth:0},scroll:{flex:1},
+  header:{flexDirection:'row',alignItems:'center',padding:spacing.xl,gap:spacing.md},title:{...typography.headlineLg,color:colors.homeAction},subtitle:{...typography.bodyMd,color:colors.secondary,marginTop:spacing.xs},
+  filterButton:{width:spacing.rowHeightSm,height:spacing.rowHeightSm,borderWidth:1,borderColor:colors.outlineHairline,borderRadius:borderRadius.lg,alignItems:'center',justifyContent:'center'},filterDot:{position:'absolute',right:spacing.xs,top:spacing.xs,width:spacing.sm,height:spacing.sm,borderRadius:borderRadius.full,backgroundColor:colors.homePickup},
+  content:{paddingHorizontal:spacing.lg,paddingBottom:spacing.xxl,gap:spacing.lg},month:{...typography.labelCaps,color:colors.secondary,marginBottom:spacing.md},
+  card:{borderWidth:1,borderColor:colors.outlineHairline,borderRadius:borderRadius.xl,padding:spacing.lg,gap:spacing.md,backgroundColor:colors.surface},spread:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:spacing.md},inline:{flexDirection:'row',alignItems:'center',gap:spacing.sm},
+  badge:{alignSelf:'flex-start',paddingVertical:spacing.xs,paddingHorizontal:spacing.sm,borderRadius:borderRadius.md,backgroundColor:colors.surfaceContainerLow},completedBadge:{backgroundColor:colors.successContainer},cancelledBadge:{backgroundColor:colors.errorContainer},badgeText:{...typography.labelCaps,color:colors.secondary},completedText:{color:colors.homePickup},cancelledText:{color:colors.error},caption:{...typography.labelSm,color:colors.secondary,marginTop:spacing.xs},
+  amountColumn:{alignItems:'flex-end'},amount:{...typography.headlineMd,color:colors.homeAction,fontWeight:'700'},routeRow:{flexDirection:'row',alignItems:'flex-start',gap:spacing.md},pickupColumn:{width:spacing.xl,alignSelf:'stretch',alignItems:'center',paddingTop:spacing.xs},pickupDot:{width:spacing.md,height:spacing.md,borderRadius:borderRadius.full,backgroundColor:colors.homePickup},connector:{flex:1,minHeight:spacing.md,borderLeftWidth:1,borderColor:colors.outlineVariant,marginTop:spacing.xs},dropDot:{width:spacing.xl,height:spacing.xl,borderRadius:borderRadius.full,backgroundColor:colors.homeAction,alignItems:'center',justifyContent:'center',marginTop:spacing.xs},dropNumber:{...typography.labelSm,color:colors.onPrimary},label:{...typography.labelCaps,color:colors.secondary},address:{...typography.bodyMd,color:colors.homeAction,fontWeight:'600'},stopsBadge:{...typography.labelSm,color:colors.homePickup,backgroundColor:colors.selectionTint,borderRadius:borderRadius.sm,paddingHorizontal:spacing.xs},
+  cardFooter:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',borderTopWidth:1,borderColor:colors.outlineHairline,paddingTop:spacing.sm},vehicleImage:{width:spacing.rowHeightSm,height:spacing.xxxl},vehicleText:{...typography.labelSm,color:colors.secondary,flexShrink:1},
+  empty:{flex:1,padding:spacing.xxl,alignItems:'center',justifyContent:'center',gap:spacing.lg},emptyTitle:{...typography.headlineMd,color:colors.homeAction,fontWeight:'700'},emptyText:{...typography.bodyMd,color:colors.secondary,textAlign:'center'},notice:{padding:spacing.md,backgroundColor:colors.surfaceContainerLow,borderRadius:borderRadius.lg,gap:spacing.sm},
+  modalRoot:{flex:1,justifyContent:'flex-end'},backdrop:{...StyleSheet.absoluteFillObject,backgroundColor:colors.black,opacity:0.4},filterSheet:{backgroundColor:colors.surface,borderTopLeftRadius:borderRadius.xxl,borderTopRightRadius:borderRadius.xxl,padding:spacing.lg,gap:spacing.md},filterOption:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',minHeight:spacing.rowHeightStandard,borderBottomWidth:1,borderColor:colors.outlineHairline},
 });
-
 export default TripHistoryScreen;

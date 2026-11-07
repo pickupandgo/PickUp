@@ -1,0 +1,32 @@
+import React from 'react';
+import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import Feather from 'react-native-vector-icons/Feather';
+import { colors, spacing, borderRadius, typography } from '../../theme';
+import { SUPPORT_EMAIL, SUPPORT_PHONE_LABEL } from '../../config/support';
+import { openSupportContact } from '../../services/supportContact';
+import { APP_NAME } from '../../config/brand';
+
+export default function HelpScreen({ navigation, route }: { navigation?: any; route?: any }) {
+  const reference = typeof route?.params?.tripReference === 'string' ? route.params.tripReference : typeof route?.params?.tripId === 'string' ? route.params.tripId : undefined;
+  return <SafeAreaView style={styles.page} edges={['top']}>
+    <View style={styles.header}><Text style={styles.title}>Help & support</Text><Text style={styles.subtitle}>Support for your deliveries.</Text></View>
+    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.hero}><View style={styles.heroIcon}><Feather name="life-buoy" size={spacing.xxxl} color={colors.homePickup}/></View><Text style={styles.heroTitle}>How can we help?</Text><Text style={styles.heroText}>Questions about a booking or payment? Reach out to our support team.</Text></View>
+      {reference && <View style={styles.tripCard}><View style={styles.flex}><Text style={styles.caption}>HELP WITH TRIP</Text><Text style={styles.body} selectable>{reference}</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Switch to general help" onPress={() => navigation?.setParams?.({tripId:undefined,tripReference:undefined})}><Text style={styles.link}>Clear</Text></Pressable></View>}
+      <View style={styles.section}><Text style={styles.sectionLabel}>CONTACT US</Text>
+        <Pressable style={styles.contactCard} accessibilityRole="button" accessibilityLabel="Call support" onPress={() => void openSupportContact('call',reference)}><View style={styles.contactIcon}><Feather name="phone" size={spacing.xxl} color={colors.homePickup}/></View><View style={styles.flex}><Text style={styles.cardTitle}>Call support</Text><Text style={styles.body}>{SUPPORT_PHONE_LABEL}</Text></View><Feather name="arrow-up-right" size={spacing.xl} color={colors.secondary}/></Pressable>
+        <Pressable style={styles.contactCard} accessibilityRole="button" accessibilityLabel="Email support" onPress={() => void openSupportContact('email',reference)}><View style={styles.contactIcon}><Feather name="mail" size={spacing.xxl} color={colors.homeAction}/></View><View style={styles.flex}><Text style={styles.cardTitle}>Email support</Text><Text style={styles.email}>{SUPPORT_EMAIL}</Text></View><Feather name="arrow-up-right" size={spacing.xl} color={colors.secondary}/></Pressable>
+      </View>
+      <View style={styles.section}><Text style={styles.sectionLabel}>CHAT SUPPORT</Text><Pressable style={styles.chatCard} accessibilityRole="button" accessibilityLabel="Preview support chat" onPress={() => navigation?.navigate('SupportChatScreen',{tripReference:reference})}><View style={styles.chatHeading}><View style={styles.contactIcon}><Feather name="message-circle" size={spacing.xxl} color={colors.homeAction}/></View><Text style={styles.comingSoon}>COMING SOON</Text></View><Text style={styles.cardTitle}>Chat with support</Text><Text style={styles.body}>A dedicated place to message our team. Live messaging will be available soon.</Text><View style={styles.chatAction}><Text style={styles.link}>View chat</Text><Feather name="arrow-right" size={spacing.xl} color={colors.homeAction}/></View></Pressable></View>
+      <Text style={styles.note}>For help now, please call or email us.</Text><Text style={styles.brand}>{APP_NAME}</Text>
+    </ScrollView>
+  </SafeAreaView>;
+}
+const styles=StyleSheet.create({
+  page:{flex:1,backgroundColor:colors.surface},flex:{flex:1,minWidth:0},header:{paddingHorizontal:spacing.xl,paddingTop:spacing.lg,paddingBottom:spacing.sm,gap:spacing.xs},title:{...typography.headlineLg,color:colors.homeAction},subtitle:{...typography.bodyMd,color:colors.secondary},content:{padding:spacing.xl,gap:spacing.xxl,paddingBottom:spacing.xxxl},
+  hero:{padding:spacing.xl,borderRadius:borderRadius.xxl,backgroundColor:colors.selectionTint,borderWidth:1,borderColor:colors.selectionOutline,gap:spacing.md},heroIcon:{width:spacing.rowHeightStandard,height:spacing.rowHeightStandard,borderRadius:borderRadius.full,backgroundColor:colors.successContainer,alignItems:'center',justifyContent:'center'},heroTitle:{...typography.headlineMd,color:colors.homeAction,fontWeight:'700'},heroText:{...typography.bodyMd,color:colors.secondary},
+  section:{gap:spacing.md},sectionLabel:{...typography.labelCaps,color:colors.secondary},contactCard:{flexDirection:'row',alignItems:'center',gap:spacing.md,padding:spacing.lg,borderWidth:1,borderColor:colors.outlineHairline,borderRadius:borderRadius.xl},contactIcon:{width:spacing.rowHeightSm+spacing.sm,height:spacing.rowHeightSm+spacing.sm,borderRadius:borderRadius.lg,backgroundColor:colors.surfaceContainerLow,alignItems:'center',justifyContent:'center'},cardTitle:{...typography.bodyLg,color:colors.homeAction,fontWeight:'600'},body:{...typography.bodyMd,color:colors.secondary,marginTop:spacing.xs},email:{...typography.labelSm,color:colors.secondary,marginTop:spacing.xs},
+  chatCard:{padding:spacing.lg,borderWidth:1,borderColor:colors.outlineHairline,borderRadius:borderRadius.xl,gap:spacing.sm},chatHeading:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:spacing.sm},comingSoon:{...typography.labelSm,fontWeight:'600',color:colors.secondary,backgroundColor:colors.surfaceContainerLow,paddingHorizontal:spacing.sm,paddingVertical:spacing.xs,borderRadius:borderRadius.full},chatAction:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',borderTopWidth:1,borderColor:colors.outlineHairline,paddingTop:spacing.md,marginTop:spacing.sm},link:{...typography.bodyMd,color:colors.homeAction,fontWeight:'600'},note:{...typography.labelSm,color:colors.secondary,textAlign:'center'},brand:{...typography.labelSm,color:colors.secondary,textAlign:'center'},
+  tripCard:{flexDirection:'row',alignItems:'center',gap:spacing.md,padding:spacing.md,borderWidth:1,borderColor:colors.outlineHairline,borderRadius:borderRadius.lg},caption:{...typography.labelCaps,color:colors.secondary},
+});

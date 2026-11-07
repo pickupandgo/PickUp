@@ -1,3 +1,4 @@
+import BrandMark from '../../components/atoms/BrandMark';
 import React, { useEffect, useRef } from 'react';
 import {
   View,
@@ -71,7 +72,7 @@ const MapLoadingScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
             <View style={styles.profileIconBox}>
               <Feather name="user" size={16} color={colors.onSurfaceVariant} />
             </View>
-            <Text style={styles.headerTitle}>Pick Up</Text>
+            <BrandMark textStyle={styles.headerTitle} />
           </View>
           <View style={styles.iconButton}>
             <Feather name="bell" size={20} color={colors.onSurfaceVariant} />

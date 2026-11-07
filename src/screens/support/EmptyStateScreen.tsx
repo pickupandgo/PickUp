@@ -1,3 +1,4 @@
+import BrandMark from '../../components/atoms/BrandMark';
 import React from 'react';
 import {
   View,
@@ -43,7 +44,7 @@ const EmptyStateScreen: React.FC<EmptyStateScreenProps & { navigation?: any }> =
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Pick Up</Text>
+        <BrandMark textStyle={styles.headerTitle} />
         <Pressable
           style={styles.iconButton}
           onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripChatScreen'))}

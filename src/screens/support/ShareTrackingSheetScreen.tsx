@@ -1,3 +1,4 @@
+import { APP_NAME } from '../../config/brand';
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, Share, Alert, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -37,7 +38,7 @@ export default function ShareTrackingSheetScreen({
     setBusy(true);
     try {
       await Share.share({
-        message: `PICKUP trip reference: ${trip.externalRef || trip.id}\nStatus: ${trip.status.replace(/_/g, ' ')}\nThis is a trip reference, not a live tracking link.`,
+        message: `${APP_NAME} trip reference: ${trip.externalRef || trip.id}\nStatus: ${trip.status.replace(/_/g, ' ')}\nThis is a trip reference, not a live tracking link.`,
       });
       // Opening/dismissing the chooser is not proof of delivery. Do not show a fake success.
     } catch {

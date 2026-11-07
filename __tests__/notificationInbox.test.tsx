@@ -49,3 +49,25 @@ it('ignores a delayed old-account response after the account changes', async () 
  await act(async () => { finish({ items: [event], nextCursor: null }); });
  expect(state.items).toEqual([]);
 });
+
+it('marks older pages too and updates only server-acknowledged reads', async () => {
+ const older = { ...event, id: 'older-event' };
+ (paymentsRequest as jest.Mock).mockResolvedValueOnce({ items: [event], nextCursor: 'page-two' })
+  .mockResolvedValueOnce({ items: [older], nextCursor: null })
+  .mockResolvedValue({ success: true });
+ let state!: ReturnType<typeof useNotificationInbox>;
+ function Capture() { state = useNotificationInbox(true); return null; }
+ await act(async () => { renderer = TestRenderer.create(<Capture />); });
+ await act(async () => { await state.markAllRead(); });
+ expect(paymentsRequest).toHaveBeenCalledWith('/v1/notifications/inbox?cursor=page-two', expect.anything());
+ expect(paymentsRequest).toHaveBeenCalledWith('/v1/notifications/inbox/older-event/read', expect.objectContaining({ method: 'POST' }));
+ expect(state.items[0].readAt).not.toBeNull();
+});
+it('preserves unread cards when mark-all fails', async () => {
+ (paymentsRequest as jest.Mock).mockResolvedValueOnce({ items: [event], nextCursor: null }).mockRejectedValueOnce(new Error('offline'));
+ let state!: ReturnType<typeof useNotificationInbox>;
+ function Capture() { state = useNotificationInbox(true); return null; }
+ await act(async () => { renderer = TestRenderer.create(<Capture />); });
+ await act(async () => { await expect(state.markAllRead()).rejects.toThrow('offline'); });
+ expect(state.items[0].readAt).toBeNull();
+});

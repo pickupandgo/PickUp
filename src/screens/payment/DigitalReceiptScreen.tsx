@@ -1,3 +1,4 @@
+import BrandMark from '../../components/atoms/BrandMark';
 import React, { useMemo } from 'react';
 import {
   View,
@@ -69,10 +70,10 @@ const DigitalReceiptScreen: React.FC<DigitalReceiptScreenProps & { navigation?: 
         >
           <Feather name="arrow-left" size={24} color={colors.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>PICKUP</Text>
+        <BrandMark textStyle={styles.headerTitle} />
         <Pressable
           style={styles.iconButton}
-          onPress={() => (onHelp ? onHelp() : navigation?.navigate('ActiveTripStack', { screen: 'ActiveTripChatScreen', params: selectedParams }))}
+          onPress={() => (onHelp ? onHelp() : navigation?.navigate('MainTabs', { screen: 'HelpScreen', params: { tripId: trip?.id, tripReference: trip?.externalRef ?? trip?.id ?? payment.booking?.externalRef } }))}
         >
           <Feather name="help-circle" size={24} color={colors.primary} />
         </Pressable>

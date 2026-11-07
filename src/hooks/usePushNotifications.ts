@@ -1,3 +1,4 @@
+import { APP_NAME } from '../config/brand';
 import { useEffect } from "react";
 import { Alert, AppState, Platform } from "react-native";
 import {
@@ -37,7 +38,7 @@ export const usePushNotifications = (uid: string | null, enabled: boolean) => {
         AppState.currentState === "active" &&
         (await ownsPush(message.data))
       ) {
-        Alert.alert("PICKUP update", "Open your inbox to view this update.", [
+        Alert.alert(`${APP_NAME} update`, "Open your inbox to view this update.", [
           { text: "Later", style: "cancel" },
           {
             text: "Open",

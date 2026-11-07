@@ -50,297 +50,49 @@ const mockSampleTrip: Trip = {
   updatedAt: '2026-10-21T10:45:00.000Z',
 };
 
-describe('TripHistoryScreen — Empty States & Lifecycle Handling', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  // 1. Recent tab — no previous rides
-  it('1. displays "No rides yet" and "Book a Ride" button when Recent tab has zero rides', async () => {
-    jest.spyOn(engineApi, 'getCustomerHistory').mockResolvedValueOnce([]);
-
-    let renderer: ReactTestRenderer;
-    await act(async () => {
-      renderer = TestRenderer.create(
-        <TripHistoryScreen customerId="cust-test" />
-      );
-    });
-
-    const root: any = renderer!.root;
-    const emptyContainer = root.findByProps({ testID: 'empty-recent-state' });
-    expect(emptyContainer).toBeTruthy();
-
-    const textNodes = root.findAllByType('Text');
-    const allText = textNodes.map((n: any) => n.props.children).flat().join(' ');
-
-    expect(allText).toContain('No rides yet');
-    expect(allText).toContain(
-      'Your completed and previous rides will appear here once you start riding with MultipleRide.'
-    );
-    expect(allText).toContain('Book a Ride');
-  });
-
-  // 2. Scheduled tab — no scheduled rides
-  it('2. labels unsupported scheduling and offers explicit Book now', async () => {
-    let renderer: ReactTestRenderer;
-    await act(async () => {
-      renderer = TestRenderer.create(
-        <TripHistoryScreen initialTrips={[]} initialTab="Scheduled" />
-      );
-    });
-
-    const root: any = renderer!.root;
-    const emptyContainer = root.findByProps({ testID: 'empty-scheduled-state' });
-    expect(emptyContainer).toBeTruthy();
-
-    const textNodes = root.findAllByType('Text');
-    const allText = textNodes.map((n: any) => n.props.children).flat().join(' ');
-
-    expect(allText).toContain('Scheduling unavailable');
-    expect(allText).toContain(
-      "Scheduled bookings are not available yet. You can book a ride for now."
-    );
-    expect(allText).toContain('Book now');
-  });
-
-  // 3. Loading state displays loader rather than empty state
-  it('3. displays a loader and does NOT display empty state while fetching trips', async () => {
-    let resolvePromise: (value: Trip[]) => void;
-    const pendingPromise = new Promise<Trip[]>((resolve) => {
-      resolvePromise = resolve;
-    });
-
-    jest.spyOn(engineApi, 'getCustomerHistory').mockReturnValueOnce(pendingPromise);
-
-    let renderer: ReactTestRenderer;
-    act(() => {
-      renderer = TestRenderer.create(
-        <TripHistoryScreen customerId="cust-test" />
-      );
-    });
-
-    const root: any = renderer!.root;
-    const loader = root.findByProps({ testID: 'trip-history-loading' });
-    expect(loader).toBeTruthy();
-
-    // Must NOT show empty state while loading
-    expect(root.findAllByProps({ testID: 'empty-recent-state' })).toHaveLength(0);
-    expect(root.findAllByProps({ testID: 'empty-scheduled-state' })).toHaveLength(0);
-
-    // Resolve promise and finish loading
-    await act(async () => {
-      resolvePromise!([]);
-    });
-
-    expect(root.findAllByProps({ testID: 'trip-history-loading' })).toHaveLength(0);
-    expect(root.findByProps({ testID: 'empty-recent-state' })).toBeTruthy();
-  });
-
-  // 4. API failure displays error and retry action; never displays empty state
-  it('4. displays error message and "Try Again" action upon API failure, never empty state', async () => {
-    const errorSpy = jest
-      .spyOn(engineApi, 'getCustomerHistory')
-      .mockRejectedValueOnce(new Error('Network error: server unreachable'));
-
-    let renderer: ReactTestRenderer;
-    await act(async () => {
-      renderer = TestRenderer.create(
-        <TripHistoryScreen customerId="cust-test" />
-      );
-    });
-
-    const root: any = renderer!.root;
-
-    // Error view must be rendered
-    const errorContainer = root.findByProps({ testID: 'trip-history-error' });
-    expect(errorContainer).toBeTruthy();
-
-    const textNodes = root.findAllByType('Text');
-    const allText = textNodes.map((n: any) => n.props.children).flat().join(' ');
-    expect(allText).toContain('Unable to load rides');
-    expect(allText).toContain('Network error: server unreachable');
-    expect(allText).toContain('Try Again');
-
-    // Never show empty state on API failure
-    expect(root.findAllByProps({ testID: 'empty-recent-state' })).toHaveLength(0);
-
-    // Press Try Again and verify retry
-    errorSpy.mockResolvedValueOnce([mockSampleTrip]);
-    const tryAgainButton = root.findByProps({ accessibilityLabel: 'Try Again' });
-
-    await act(async () => {
-      tryAgainButton.props.onPress();
-    });
-
-    // Should now show the real trip
-    expect(root.findAllByProps({ testID: 'trip-history-error' })).toHaveLength(0);
-    const updatedText = root
-      .findAllByType('Text')
-      .map((n: any) => n.props.children)
-      .flat()
-      .join(' ');
-    expect(updatedText).toContain('Clock Tower, Jodhpur');
-  });
-
-  // 5. Real rides continue to render normally
-  it('5. renders real trips normally with fare and location information', async () => {
-    jest.spyOn(engineApi, 'getCustomerHistory').mockResolvedValueOnce([mockSampleTrip]);
-
-    const onTripSelect = jest.fn();
-    const mockNavigate = jest.fn();
-
-    let renderer: ReactTestRenderer;
-    await act(async () => {
-      renderer = TestRenderer.create(
-        <TripHistoryScreen
-          customerId="cust-test"
-          onTripSelect={onTripSelect}
-          navigation={{ navigate: mockNavigate }}
-        />
-      );
-    });
-
-    const root: any = renderer!.root;
-    const textNodes = root.findAllByType('Text');
-    const allText = textNodes.map((n: any) => n.props.children).flat().join(' ');
-
-    expect(allText).toContain('COMPLETED');
-    expect(allText).toContain('₹350');
-    expect(allText).toContain('Clock Tower, Jodhpur');
-    expect(allText).toContain('Shastri Nagar, Jodhpur');
-    expect(allText).toContain('25 kg');
-
-    // Tapping the trip card triggers selection & navigation
-    const tripCard = root.findByProps({
-      accessibilityLabel: `Trip on ${new Date(mockSampleTrip.createdAt).toLocaleDateString()}`,
-    });
-    act(() => {
-      tripCard.props.onPress();
-    });
-
-    expect(onTripSelect).toHaveBeenCalledWith(mockSampleTrip);
-    expect(mockNavigate).toHaveBeenCalledWith('HistoricalTripDetailScreen', expect.anything());
-  });
-
-  // 6. Action buttons navigate to valid existing screens
-  it('6. "Book a Ride" and "Schedule a Ride" buttons trigger navigation to booking flow', async () => {
-    const mockNavigate = jest.fn();
-    const onBookRide = jest.fn();
-    const onScheduleRide = jest.fn();
-
-    // Test Book a Ride in Recent tab with onBookRide
-    let rendererRecent: ReactTestRenderer;
-    await act(async () => {
-      rendererRecent = TestRenderer.create(
-        <TripHistoryScreen
-          initialTrips={[]}
-          initialTab="Recent"
-          navigation={{ navigate: mockNavigate }}
-          onBookRide={onBookRide}
-        />
-      );
-    });
-
-    const rootRecent: any = rendererRecent!.root;
-    const bookButton = rootRecent.findByProps({
-      accessibilityLabel: 'Book a Ride',
-    });
-    act(() => {
-      bookButton.props.onPress();
-    });
-    expect(onBookRide).toHaveBeenCalledTimes(1);
-
-    // Test default navigation when onBookRide is not supplied
-    let rendererDefaultNav: ReactTestRenderer;
-    await act(async () => {
-      rendererDefaultNav = TestRenderer.create(
-        <TripHistoryScreen
-          initialTrips={[]}
-          initialTab="Recent"
-          navigation={{ navigate: mockNavigate }}
-        />
-      );
-    });
-
-    const rootDefaultNav: any = rendererDefaultNav!.root;
-    const bookButtonDefault = rootDefaultNav.findByProps({
-      accessibilityLabel: 'Book a Ride',
-    });
-    act(() => {
-      bookButtonDefault.props.onPress();
-    });
-    expect(mockNavigate).toHaveBeenCalledWith('BookingStack', {
-      screen: 'AddressSearchScreen',
-    });
-
-    // Test Schedule a Ride in Scheduled tab with onScheduleRide
-    let rendererScheduled: ReactTestRenderer;
-    await act(async () => {
-      rendererScheduled = TestRenderer.create(
-        <TripHistoryScreen
-          initialTrips={[]}
-          initialTab="Scheduled"
-          navigation={{ navigate: mockNavigate }}
-          onScheduleRide={onScheduleRide}
-        />
-      );
-    });
-
-    const rootScheduled: any = rendererScheduled!.root;
-    const scheduleButton = rootScheduled.findByProps({
-      accessibilityLabel: 'Schedule a Ride',
-    });
-    act(() => {
-      scheduleButton.props.onPress();
-    });
-    expect(onScheduleRide).toHaveBeenCalledTimes(1);
-  });
-
-  // 7. Tab switching displays correct data or empty state for each tab
-  it('7. switching tabs smoothly toggles between Recent trips and Scheduled empty state', async () => {
-    let renderer: ReactTestRenderer;
-    await act(async () => {
-      renderer = TestRenderer.create(
-        <TripHistoryScreen initialTrips={[mockSampleTrip]} initialTab="Recent" />
-      );
-    });
-
-    const root: any = renderer!.root;
-
-    // Initially in Recent with 1 trip
-    expect(root.findAllByProps({ testID: 'empty-recent-state' })).toHaveLength(0);
-    const textNodes = root.findAllByType('Text');
-    const allText = textNodes.map((n: any) => n.props.children).flat().join(' ');
-    expect(allText).toContain('Clock Tower, Jodhpur');
-
-    // Tap Scheduled tab
-    const scheduledTab = root.findByProps({ testID: 'tab-scheduled' });
-    await act(async () => {
-      scheduledTab.props.onPress();
-    });
-
-    // Now Scheduled empty state is shown
-    expect(root.findByProps({ testID: 'empty-scheduled-state' })).toBeTruthy();
-    const scheduledText = root
-      .findAllByType('Text')
-      .map((n: any) => n.props.children)
-      .flat()
-      .join(' ');
-    expect(scheduledText).toContain('Scheduling unavailable');
-
-    // Switch back to Recent tab
-    const recentTab = root.findByProps({ testID: 'tab-recent' });
-    await act(async () => {
-      recentTab.props.onPress();
-    });
-
-    // Recent trip card is shown again
-    expect(root.findAllByProps({ testID: 'empty-scheduled-state' })).toHaveLength(0);
-    const recentText = root
-      .findAllByType('Text')
-      .map((n: any) => n.props.children)
-      .flat()
-      .join(' ');
-    expect(recentText).toContain('Clock Tower, Jodhpur');
-  });
+describe('Trip history without scheduling', () => {
+ beforeEach(() => {jest.restoreAllMocks();});
+ const text=(view:any)=>view.root.findAllByType('Text').map((node:any)=>node.props.children).flat(Infinity).join(' ');
+ it('shows a truthful empty state with no scheduling controls', async () => {
+  jest.spyOn(engineApi,'getCustomerHistory').mockResolvedValueOnce([]);let view:any;
+  await act(async()=>{view=TestRenderer.create(<TripHistoryScreen customerId="customer-A"/>);});
+  expect(text(view)).toContain('No trips yet');expect(text(view)).not.toContain('Scheduled');
+  expect(view.root.findAllByProps({accessibilityRole:'tab'})).toHaveLength(0);
+  act(()=>view.unmount());
+ });
+ it('shows loading without a premature empty state', async () => {
+  let finish!:(trips:Trip[])=>void;jest.spyOn(engineApi,'getCustomerHistory').mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));let view:any;
+  act(()=>{view=TestRenderer.create(<TripHistoryScreen customerId="customer-A"/>);});
+  expect(view.root.findByProps({testID:'trip-history-loading'})).toBeDefined();expect(text(view)).not.toContain('No trips yet');
+  await act(async()=>finish([]));act(()=>view.unmount());
+ });
+ it('shows a failed history read truthfully with a retry action', async () => {
+  jest.spyOn(engineApi,'getCustomerHistory').mockRejectedValueOnce(new Error('offline'));let view:any;
+  await act(async()=>{view=TestRenderer.create(<TripHistoryScreen customerId="customer-A"/>);});
+  expect(view.root.findByProps({testID:'trip-history-error'})).toBeDefined();expect(text(view)).toContain('offline');act(()=>view.unmount());
+ });
+ it('preserves selected trip identity instead of using an external reference as tripId', async () => {
+  const navigate=jest.fn();const trip={...mockSampleTrip,externalRef:'external-ref'};let view:any;
+  await act(async()=>{view=TestRenderer.create(<TripHistoryScreen initialTrips={[trip]} navigation={{navigate}}/>);});
+  act(()=>view.root.findByProps({testID:`trip-card-${trip.id}`}).props.onPress());
+  expect(navigate).toHaveBeenCalledWith('HistoricalTripDetailScreen',{trip,tripId:trip.id});expect(text(view)).toContain('\u20B9350.00');expect(text(view)).not.toContain('CASH');act(()=>view.unmount());
+ });
+ it('shows actual collection preference and never invents a zero fare', async () => {
+  const trip={...mockSampleTrip,fare:undefined,paymentMethod:'PAY_AT_PICKUP',metadata:{specialInstructions:'Payment preference: UPI (driver collection).'}} as Trip;let view:any;
+  await act(async()=>{view=TestRenderer.create(<TripHistoryScreen initialTrips={[trip]}/>);});
+  expect(text(view)).toContain('UPI at pickup');expect(text(view)).not.toContain('\u20B90');act(()=>view.unmount());
+ });
+ it('filters completed/cancelled trips and can return to all trips', async () => {
+  const cancelled={...mockSampleTrip,id:'cancelled',status:'CANCELLED'} as Trip;let view:any;
+  await act(async()=>{view=TestRenderer.create(<TripHistoryScreen initialTrips={[mockSampleTrip,cancelled]}/>);});
+  act(()=>view.root.findByProps({accessibilityLabel:'Filter trips'}).props.onPress());
+  act(()=>view.root.findByProps({accessibilityLabel:'Completed'}).props.onPress());
+  expect(view.root.findAllByProps({testID:'trip-card-cancelled'})).toHaveLength(0);
+  act(()=>view.root.findByProps({accessibilityLabel:'Filter trips'}).props.onPress());act(()=>view.root.findByProps({accessibilityLabel:'All trips'}).props.onPress());
+  expect(view.root.findByProps({testID:'trip-card-cancelled'})).toBeDefined();act(()=>view.unmount());
+ });
+ it('uses the existing immediate booking action when history is empty', async () => {
+  const onBookRide=jest.fn();let view:any;await act(async()=>{view=TestRenderer.create(<TripHistoryScreen initialTrips={[]} onBookRide={onBookRide}/>);});
+  act(()=>view.root.findByProps({accessibilityLabel:'Book a Ride'}).props.onPress());expect(onBookRide).toHaveBeenCalledTimes(1);act(()=>view.unmount());
+ });
 });

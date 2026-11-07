@@ -1,3 +1,4 @@
+import BrandMark from '../../components/atoms/BrandMark';
 import React, { useEffect, useRef } from 'react';
 import {
   View,
@@ -93,7 +94,7 @@ const LiveTrackingExceptionsScreen: React.FC<{ navigation?: any }> = ({ navigati
             >
               <Feather name="arrow-left" size={24} color={colors.primary} />
             </Pressable>
-            <Text style={styles.headerTitle}>Pick Up</Text>
+            <BrandMark textStyle={styles.headerTitle} />
           </View>
           <Pressable
             style={styles.iconButton}

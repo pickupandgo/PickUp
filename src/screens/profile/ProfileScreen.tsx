@@ -43,7 +43,6 @@ export default function ProfileScreen({ onEditProfile, onSavedAddresses, onNotif
         {menuRow('Saved addresses', 'Manage your pickup and drop locations', 'map-pin', () => onSavedAddresses ? onSavedAddresses() : navigation?.navigate('SavedAddressesScreen'))}
         {menuRow('Notifications', 'Booking updates and messages', 'bell', () => notifications ? notifications() : navigation?.navigate('NotificationCenterScreen'), true)}
       </View></View>
-      <View style={styles.section}><Text style={styles.sectionLabel}>PREFERENCES</Text><View style={styles.menuCard}><View style={styles.menuRow}><View style={styles.menuIcon}><Feather name="globe" size={spacing.xl} color={colors.homeAction} /></View><View style={styles.flex}><Text style={styles.menuTitle}>Language</Text><Text style={styles.caption}>App language</Text></View><Text style={styles.language}>English</Text></View></View></View>
       <Pressable style={styles.logout} accessibilityRole="button" accessibilityLabel="Logout" onPress={() => onLogout ? onLogout() : navigation?.navigate('LogoutConfirmationScreen')}><Feather name="log-out" size={spacing.xl} color={colors.error} /><Text style={styles.logoutText}>Log out</Text></Pressable>
     </ScrollView>}
   </SafeAreaView>;
@@ -62,7 +61,6 @@ const styles = StyleSheet.create({
   menuCard: { borderWidth: 1, borderColor: colors.outlineHairline, borderRadius: borderRadius.xl, overflow: 'hidden', backgroundColor: colors.surface },
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, minHeight: spacing.rowHeightStandard + spacing.lg }, rowBorder: { borderBottomWidth: 1, borderColor: colors.outlineHairline },
   menuIcon: { width: spacing.rowHeightSm, height: spacing.rowHeightSm, borderRadius: borderRadius.lg, backgroundColor: colors.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' }, menuTitle: { ...typography.bodyMd, fontWeight: '600', color: colors.homeAction }, caption: { ...typography.labelSm, color: colors.secondary, marginTop: spacing.xs },
-  language: { ...typography.labelSm, color: colors.secondary, fontWeight: '500' },
   logout: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, minHeight: spacing.rowHeightStandard, borderWidth: 1, borderColor: colors.errorContainer, borderRadius: borderRadius.lg, marginTop: spacing.sm }, logoutText: { ...typography.bodyMd, color: colors.error, fontWeight: '600' },
   errorCard: { padding: spacing.md, borderRadius: borderRadius.lg, backgroundColor: colors.errorContainer }, errorText: { ...typography.bodyMd, color: colors.onErrorContainer }, retry: { minHeight: spacing.rowHeightSm, justifyContent: 'center' },
 });

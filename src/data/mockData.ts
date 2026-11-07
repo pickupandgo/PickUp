@@ -1,3 +1,4 @@
+import { APP_NAME } from '../config/brand';
 /**
  * Mock data layer for the Pick Up Customer App.
  * All static text, image URIs, and list data is decoupled here.
@@ -387,9 +388,9 @@ export const mockBookingReview = {
 // ─── Strings / Labels ────────────────────────────────────────────────────────
 
 export const strings = {
-  appName: 'Pick Up',
+  appName: APP_NAME,
   login: {
-    title: 'Welcome to Pick Up',
+    title: `Welcome to ${APP_NAME}`,
     subtitle: 'Your trusted logistics partner',
     phonePlaceholder: 'Enter mobile number',
     continueButton: 'Continue',

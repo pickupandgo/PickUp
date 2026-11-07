@@ -1,3 +1,4 @@
+import BrandMark from '../../components/atoms/BrandMark';
 import React from 'react';
 import {
   View,
@@ -35,7 +36,7 @@ const NetworkErrorScreen: React.FC<NetworkErrorScreenProps & { navigation?: any 
         >
           <Feather name="arrow-left" size={24} color={colors.onSurfaceVariant} />
         </Pressable>
-        <Text style={styles.headerTitle}>Pick Up</Text>
+        <BrandMark textStyle={styles.headerTitle} />
         <Pressable
           style={styles.iconButton}
           onPress={() => (onMore ? onMore() : navigation?.goBack())}

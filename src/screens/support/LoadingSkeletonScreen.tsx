@@ -1,3 +1,4 @@
+import BrandMark from '../../components/atoms/BrandMark';
 import React, { useEffect } from 'react';
 import {
   View,
@@ -81,7 +82,7 @@ const LoadingSkeletonScreen: React.FC<LoadingSkeletonScreenProps & { navigation?
             <Feather name="menu" size={24} color={colors.onSurfaceVariant} />
           </Pressable>
         </View>
-        <Text style={styles.headerTitle}>Pick Up</Text>
+        <BrandMark textStyle={styles.headerTitle} />
         <Pressable
           style={styles.profileButton}
           onPress={() => (onProfile ? onProfile() : navigation?.navigate('ProfileScreen'))}

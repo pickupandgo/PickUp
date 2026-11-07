@@ -95,6 +95,7 @@ const GALLERY_ONLY = new Set([
 ]);
 // Audited compatibility destinations. Keep reasons explicit; do not silently count them as reachable.
 const compatibility = {
+  DriverRatingScreen: 'Legacy rating route retained for compatibility; unsupported rating actions removed from history.',
   CustomerSettingsScreen: 'Legacy settings route aliases the single Profile hub; duplicate settings/account UI removed.',
   TripCompletedSummaryScreen: 'Legacy summary route opens the unified completion screen; duplicate source removed.',
   DeclaredValueSelectionScreen: 'Legacy value edit opens merged GoodsDetailsScreen focused on declared value; separate UI removed.',

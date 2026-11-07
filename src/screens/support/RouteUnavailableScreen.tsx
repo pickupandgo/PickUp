@@ -1,3 +1,4 @@
+import BrandMark from '../../components/atoms/BrandMark';
 import React from 'react';
 import {
   View,
@@ -32,7 +33,7 @@ const RouteUnavailableScreen: React.FC<RouteUnavailableScreenProps & { navigatio
             <View style={styles.profileIconBox}>
               <Feather name="user" size={16} color={colors.onSurfaceVariant} />
             </View>
-            <Text style={styles.headerTitle}>Pick Up</Text>
+            <BrandMark textStyle={styles.headerTitle} />
           </View>
           <Pressable
             style={styles.iconButton}

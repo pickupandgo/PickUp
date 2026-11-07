@@ -1,3 +1,4 @@
+import { APP_NAME } from '../../config/brand';
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable, Image, Modal, BackHandler } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -76,7 +77,7 @@ export default function TripCompletedScreen({ onDone, navigation, route }: TripC
   return <SafeAreaView style={styles.page} edges={['top', 'bottom']}>
     <View style={styles.header}><Pressable style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Back to Home" onPress={home}><Feather name="arrow-left" size={spacing.xxl} color={colors.homeAction} /></Pressable><Text style={styles.headerTitle}>{completed ? 'Trip completed' : phase}</Text></View>
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      <View style={styles.hero}><View style={styles.halo}><View style={styles.success}><Feather name={completed && !mixed ? 'check' : 'info'} size={spacing.xxxl} color={colors.onPrimary} /></View></View><Text style={styles.heroTitle}>{phase}</Text><Text style={styles.subtitle}>{mixed ? 'Some delivery stops need attention.' : completed ? 'Your trip is complete. Thank you for choosing PICKUP.' : 'Waiting for final trip confirmation.'}</Text></View>
+      <View style={styles.hero}><View style={styles.halo}><View style={styles.success}><Feather name={completed && !mixed ? 'check' : 'info'} size={spacing.xxxl} color={colors.onPrimary} /></View></View><Text style={styles.heroTitle}>{phase}</Text><Text style={styles.subtitle}>{mixed ? 'Some delivery stops need attention.' : completed ? `Your trip is complete. Thank you for choosing ${APP_NAME}.` : 'Waiting for final trip confirmation.'}</Text></View>
       {trip && <View style={styles.card}><Text style={styles.cardTitle}>Trip summary</Text>
         <View style={styles.addressRow}><View style={styles.pickupDot} /><View style={styles.flex}><Text style={styles.label}>PICKUP</Text><Text style={styles.body}>{trip.pickup?.address || 'Address unavailable'}</Text></View></View>
         {stops.map((stop, index) => <View style={styles.addressRow} key={stop.sequence}><View style={styles.dropDot}><Text style={styles.dropNumber}>{index + 1}</Text></View><View style={styles.flex}><Text style={styles.label}>DROP{stops.length > 1 ? ` ${index + 1} OF ${stops.length}` : ''}</Text><Text style={styles.body}>{stop.location?.address || 'Address unavailable'}</Text>{stop.status && stop.status !== 'DELIVERED' && <Text style={styles.statusNote}>{stop.status.replace(/_/g, ' ').toLowerCase()}</Text>}</View></View>)}

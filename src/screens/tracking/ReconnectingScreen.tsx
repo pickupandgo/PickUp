@@ -1,3 +1,4 @@
+import { APP_NAME } from '../../config/brand';
 import React, { useEffect, useRef } from 'react';
 import {
   View,
@@ -113,7 +114,7 @@ const ReconnectingScreen: React.FC<ReconnectingScreenProps & { navigation?: any 
 
           <Text style={styles.title}>Connection Lost</Text>
           <Animated.Text style={[styles.subtitle, { opacity: pulseValue }]}>
-            Reconnecting to Pick Up...
+            Reconnecting to {APP_NAME}...
           </Animated.Text>
 
           {/* Indeterminate Progress Bar */}
