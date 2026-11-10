@@ -1,3 +1,5 @@
+import { usePartnerProfile } from '../../hooks/usePartnerProfile';
+import { useLocalAvatar } from '../../hooks/useLocalAvatar';
 import React, { useCallback } from 'react';
 import {
   View,
@@ -10,19 +12,16 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { getAuth } from '@react-native-firebase/auth';
 import Icon from '../../components/atoms/Icon';
-import {
-  colors,
-  typography,
-  spacing,
-  borderRadius,
-} from '../../theme';
+import { colors } from '../../theme';
+import { AccountHeader, AccountGroup } from '../../components/account/AccountLayout';
+import { SettingsRow } from '../../components/molecules/SettingsRow';
 import type { AccountScreenProps } from '../../types/navigation';
 import { useAuth } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n';
-import { usePartnerProfile } from '../../hooks/usePartnerProfile';
+import { useDriverOnboarding } from '../../hooks/useDriverOnboarding';
 import { DocumentNavigationCard } from '../../components/documents/DocumentNavigationCard';
-import { PartnerAppHeader } from '../../components/molecules/PartnerAppHeader';
 
 export interface ProfileScreenProps {
   readonly navigation: AccountScreenProps<'Profile'>['navigation'];
@@ -33,387 +32,110 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   navigation,
   testID,
 }) => {
-  const { logout } = useAuth();
-  const { t, locale } = useI18n();
+  const { logout, error: authError, isLoading: authBusy } = useAuth();
+  const { t } = useI18n();
+  const { summary } = useDriverOnboarding();
+  const avatar = useLocalAvatar();
   const profile = usePartnerProfile();
-  const name = profile.profile?.name || 'Partner';
 
-  const handleLanguage = useCallback(
-    () => navigation.navigate('LanguageSelection'),
-    [navigation],
-  );
+  const firebaseUser = getAuth().currentUser;
+  const name =
+    profile.profile?.name ||
+    summary?.profileName ||
+    firebaseUser?.displayName ||
+    firebaseUser?.phoneNumber ||
+    'Driver';
+
   const handleSettings = useCallback(
     () => navigation.navigate('Settings'),
     [navigation],
   );
-  const handleNotifications = useCallback(
-    () => navigation.navigate('Notifications'),
-    [navigation],
-  );
-
   const handleLogout = useCallback(() => {
     Alert.alert(t('profile.logoutTitle'), t('profile.logoutMsg'), [
       { text: t('common.cancel'), style: 'cancel' },
       {
         text: t('profile.logout'),
         style: 'destructive',
-        onPress: logout,
+        onPress: () => {
+          void logout().catch(() =>
+            Alert.alert('Could not sign out', 'Please try again.'),
+          );
+        },
       },
     ]);
   }, [logout, t]);
 
-  const resolvedAvatar = profile.profile?.photoUrl;
+  const resolvedAvatar = profile.profile?.photoUrl || avatar.uri;
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID} edges={['top', 'left', 'right']}>
-      {/* Top app bar */}
-      <PartnerAppHeader onMenu={handleSettings} onNotifications={handleNotifications} />
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Hero */}
-        <View style={styles.hero}>
-          <Pressable
-            style={styles.avatarWrap}
-            onPress={() => navigation.navigate('EditProfile')}
-            accessibilityRole="button"
-            accessibilityLabel="Edit profile photo and details"
-          >
-            {resolvedAvatar ? (
-              <Image
-                source={{ uri: resolvedAvatar }}
-                style={styles.avatarImg}
-              />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Icon name="person" size={44} color={colors.onSurfaceVariant} />
+      <AccountHeader title="Account" />
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.profileCard}>
+          <View style={styles.profileRow}>
+            <Pressable style={styles.avatarWrap} onPress={profile.profile?.photoUrl ? () => navigation.navigate('EditProfile') : avatar.choose} disabled={avatar.busy}
+              accessibilityLabel={profile.profile?.photoUrl ? 'Edit profile photo and details' : 'Change device photo'} accessibilityState={{ busy: avatar.busy }} accessibilityRole="button">
+              {resolvedAvatar ? <Image key={`${avatar.uid}:${resolvedAvatar}`} source={{ uri: resolvedAvatar }} onError={avatar.remove} style={styles.avatarImg} /> :
+                <View style={styles.avatarPlaceholder}><Icon name="person" size={35} color={colors.homeMuted} /></View>}
+              <View style={styles.avatarEditBadge}>
+                {avatar.busy ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <Icon name="photo_camera" size={12} color={colors.onPrimary} />}
               </View>
-            )}
-            <View style={styles.avatarEditBadge}>
-              <Icon name="edit" size={14} color={colors.onPrimary} />
+            </Pressable>
+            <View style={styles.profileText}>
+              <Text style={styles.name}>{name}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Edit Profile" onPress={() => navigation.navigate('EditProfile')}><Text>Edit Profile</Text></Pressable>
+              <Text style={styles.subtitle}>Driver account</Text>
+              <Text style={styles.photoNote}>Photo saved on this device only.</Text>
             </View>
-          </Pressable>
-          {profile.loading ? <ActivityIndicator accessibilityLabel="Loading profile" color={colors.primary} /> : <Text style={styles.name}>{name}</Text>}
-          {profile.error ? <><Text style={styles.profileError} accessibilityRole="alert">{profile.error}</Text><Pressable onPress={profile.refresh} accessibilityRole="button" style={styles.editButton}><Text style={styles.editText}>Retry</Text></Pressable></> : null}
-          <Pressable onPress={() => navigation.navigate('EditProfile')} accessibilityRole="button" accessibilityLabel="Edit Profile" style={styles.editButton}><Text style={styles.editText}>Edit Profile</Text><Icon name="edit" size={16} color={colors.startupBlue} /></Pressable>
-        </View>
-
-
-        {/* Documents */}
-        <DocumentNavigationCard title="Documents" icon="folder_open" onPress={() => navigation.navigate('DocumentsHub')} />
-
-        {/* Account */}
-        <View>
-          <Text style={styles.sectionHeading}>{t('profile.account')}</Text>
-          <View style={styles.listCard}>
-            <Pressable
-              style={[styles.row, styles.rowBorder]}
-              onPress={handleLanguage}
-            >
-              <View style={styles.rowLeft}>
-                <Icon name="language" size={20} color={colors.outline} />
-                <Text style={styles.rowLabel}>{t('profile.language')}</Text>
-              </View>
-              <View style={styles.rowRight}>
-                <Text style={styles.rowValue}>
-                  {locale === 'hi'
-                    ? t('language.hindi')
-                    : t('language.english')}
-                </Text>
-                <Icon
-                  name="chevron_right"
-                  size={18}
-                  color={colors.onSurfaceVariant}
-                />
-              </View>
-            </Pressable>
-            <Pressable
-              style={[styles.row, styles.rowBorder]}
-              onPress={handleNotifications}
-              accessibilityRole="button"
-              accessibilityLabel="Notifications"
-            >
-              <View style={styles.rowLeft}>
-                <Icon
-                  name="notifications_active"
-                  size={20}
-                  color={colors.outline}
-                />
-                <Text style={styles.rowLabel}>
-                  {t('profile.notifications')}
-                </Text>
-              </View>
-              <Icon name="chevron_right" size={18} color={colors.outline} />
-            </Pressable>
-            <Pressable style={styles.row} onPress={handleSettings}>
-              <View style={styles.rowLeft}>
-                <Icon name="settings" size={20} color={colors.outline} />
-                <Text style={styles.rowLabel}>{t('profile.settings')}</Text>
-              </View>
-              <Icon name="chevron_right" size={18} color={colors.outline} />
-            </Pressable>
           </View>
+          {avatar.error ? <Text accessibilityRole="alert" style={styles.error}>{avatar.error}</Text> : null}
+          {avatar.uri && !profile.profile?.photoUrl ? <Pressable accessibilityRole="button" accessibilityLabel="Remove device photo" disabled={avatar.busy} onPress={avatar.remove} style={styles.removePhoto}>
+            <Text style={styles.removePhotoLabel}>Remove device photo</Text>
+          </Pressable> : null}
         </View>
 
-        {/* Logout */}
-        <Pressable
-          style={styles.logoutBtn}
-          onPress={handleLogout}
-          accessibilityRole="button"
-        >
-          <Icon name="logout" size={18} color={colors.onSurfaceVariant} />
-          <Text style={styles.logoutText}>{t('profile.logout')}</Text>
+        <View>
+          <Text style={styles.sectionHeading}>DRIVER</Text>
+          <AccountGroup>
+            <DocumentNavigationCard title="Documents" subtitle="Personal, vehicle & KYC" icon="folder_open" compact mint
+              onPress={() => navigation.navigate('DocumentsHub')} />
+            <SettingsRow label={t('profile.settings')} subtitle="Preferences, help & privacy" iconName="settings" compact last onPress={handleSettings} />
+          </AccountGroup>
+        </View>
+
+        <Pressable onPress={handleLogout} disabled={authBusy} accessibilityRole="button" accessibilityLabel="Sign out"
+          accessibilityState={{ disabled: authBusy, busy: authBusy }} style={({ pressed }) => [styles.logoutBtn, (pressed || authBusy) && styles.dimmed]}>
+          {authBusy ? <ActivityIndicator size="small" color={colors.error} /> : <Icon name="logout" size={20} color={colors.error} />}
+          <Text style={styles.logoutText}>Sign out</Text>
         </Pressable>
+        {authError ? <Text accessibilityRole="alert" style={styles.error}>{authError}</Text> : null}
+        <Text style={styles.brandFooter}>Multiple Ride Partner</Text>
       </ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    height: 56,
-    paddingHorizontal: spacing.containerPadding,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.outlineVariant,
-  },
-  headerBtn: {
-    padding: 4,
-  },
-  headerTitle: {
-    ...typography.headlineMd,
-    color: colors.primary,
-  },
-  scrollContent: {
-    width: '100%',
-    maxWidth: 720,
-    alignSelf: 'center',
-    paddingHorizontal: spacing.containerPadding,
-    paddingBottom: spacing.xxl,
-    gap: spacing.lg,
-  },
-  // Hero
-  hero: {
-    alignItems: 'center',
-    marginTop: spacing.xl,
-  },
-  avatarWrap: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    marginBottom: spacing.containerPadding,
-    borderWidth: 1,
-    borderColor: colors.outlineVariant,
-    backgroundColor: colors.surfaceContainerHighest,
-  },
-  avatarImg: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 48,
-  },
-  avatarPlaceholder: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarEditBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.surface,
-  },
-  name: {
-    ...typography.headlineMd,
-    color: colors.onSurface,
-    textAlign: 'center',
-  },
-  editButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingHorizontal: spacing.containerPadding },
-  editText: { ...typography.headlineSm, color: colors.startupBlue },
-  profileError: { ...typography.bodyMd, color: colors.error, textAlign: 'center' },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    marginTop: 2,
-  },
-  locationText: {
-    ...typography.bodyMd,
-    color: colors.onSurfaceVariant,
-  },
-  // Cards
-  card: {
-    borderWidth: 1,
-    borderColor: colors.outlineVariant,
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: borderRadius.lg,
-    padding: spacing.containerPadding,
-    gap: spacing.gutter,
-  },
-  completionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  completionLabel: {
-    ...typography.labelSm,
-    color: colors.onSurfaceVariant,
-    textTransform: 'uppercase',
-  },
-  completionPct: {
-    ...typography.dataMono,
-    color: colors.primary,
-  },
-  progressTrack: {
-    height: 4,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.surfaceVariant,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: colors.primary,
-  },
-  completionHint: {
-    ...typography.bodyMd,
-    color: colors.onSurfaceVariant,
-    fontSize: 13,
-  },
-  // Subscription
-  subRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  subLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  subIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primaryFixed,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  subPlan: {
-    ...typography.headlineSm,
-    color: colors.onSurface,
-  },
-  subValidity: {
-    ...typography.bodyMd,
-    color: colors.onSurfaceVariant,
-    fontSize: 13,
-  },
-  manageText: {
-    ...typography.labelCaps,
-    color: colors.primary,
-  },
-  // Sections / lists
-  sectionHeading: {
-    ...typography.labelCaps,
-    color: colors.onSurfaceVariant,
-    marginBottom: spacing.gutter,
-    marginLeft: spacing.unit,
-  },
-  listCard: {
-    borderWidth: 1,
-    borderColor: colors.outlineVariant,
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: borderRadius.lg,
-    overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.containerPadding,
-    height: 56,
-  },
-  rowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.outlineVariant,
-  },
-  rowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  rowLabel: {
-    ...typography.bodyMd,
-    color: colors.onSurface,
-  },
-  rowRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  rowValue: {
-    ...typography.bodyMd,
-    color: colors.onSurfaceVariant,
-    fontSize: 13,
-  },
-  badgeVerified: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.surfaceVariant,
-  },
-  badgeVerifiedText: {
-    ...typography.labelCaps,
-    color: colors.onSurface,
-  },
-  badgePending: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 4,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderColor: colors.outlineVariant,
-  },
-  badgePendingText: {
-    ...typography.labelCaps,
-    color: colors.onSurfaceVariant,
-  },
-  // Logout
-  logoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    height: 48,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderColor: colors.outlineVariant,
-    marginTop: spacing.xs,
-  },
-  logoutText: {
-    ...typography.labelCaps,
-    color: colors.onSurfaceVariant,
-  },
+  safeArea: { flex: 1, backgroundColor: colors.surfaceContainerLowest },
+  scrollContent: { flexGrow: 1, width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 24, paddingBottom: 28, gap: 28 },
+  profileCard: { borderWidth: 1, borderColor: colors.homeBorder, borderRadius: 12, padding: 16, gap: 10 },
+  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  avatarWrap: { width: 56, height: 56 },
+  avatarImg: { width: 56, height: 56, borderRadius: 28 },
+  avatarPlaceholder: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.surfaceContainerHigh, alignItems: 'center', justifyContent: 'center' },
+  avatarEditBadge: { position: 'absolute', right: -2, bottom: -1, width: 22, height: 22, borderRadius: 11, backgroundColor: colors.homeGreen, borderWidth: 2, borderColor: colors.surfaceContainerLowest, alignItems: 'center', justifyContent: 'center' },
+  profileText: { flex: 1, minWidth: 0, gap: 4 },
+  name: { fontSize: 15, lineHeight: 21, fontWeight: '600', color: colors.primary },
+  subtitle: { fontSize: 12, lineHeight: 18, color: colors.onSurfaceMuted },
+  photoNote: { fontSize: 10, lineHeight: 16, color: colors.onSurfaceMuted, marginTop: 5 },
+  removePhoto: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' },
+  removePhotoLabel: { fontSize: 11, lineHeight: 17, color: colors.onSurfaceMuted },
+  sectionHeading: { fontSize: 10, lineHeight: 16, fontWeight: '600', letterSpacing: 0.8, color: colors.onSurfaceMuted, marginBottom: 12, marginLeft: 3 },
+  logoutBtn: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 12, borderWidth: 1, borderColor: colors.homeBorder, borderRadius: 11 },
+  logoutText: { fontSize: 13, lineHeight: 19, fontWeight: '500', color: colors.error },
+  dimmed: { opacity: 0.6 },
+  error: { fontSize: 12, lineHeight: 18, color: colors.error },
+  brandFooter: { marginTop: 'auto', paddingTop: 28, textAlign: 'center', fontSize: 11, lineHeight: 17, color: colors.onSurfaceMuted },
 });
 
 export default ProfileScreen;

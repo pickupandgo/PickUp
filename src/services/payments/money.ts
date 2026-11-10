@@ -2,6 +2,9 @@
 
 export const PAISE_PER_RUPEE = 100;
 
+/** Missing server fare is unavailable, never an invented zero or a driver earning. */
+export const fareText = (paise?: number): string => paise === undefined ? 'Unavailable' : formatRupees(paiseToRupees(paise));
+
 /** Recharges are entered in whole rupees. */
 export function rupeesToPaise(rupees: number): number {
   if (!Number.isSafeInteger(rupees) || rupees <= 0) {

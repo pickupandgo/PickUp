@@ -1,3 +1,4 @@
+import { isTerminalTrip } from '../trip/tripLifecycle';
 import { AppState } from 'react-native';
 import { TripController } from '../trip/TripController';
 import { TripService } from '../trip/TripService';
@@ -8,7 +9,8 @@ import { getCurrentDriverId, setDriverAvailability } from '../engine/dispatch';
 export interface TrackingDependencies {
   configure(enabled: boolean, tripId: string | null): Promise<void>;
   recover(): Promise<ActiveTrip | null>;
-  apply(trip: ActiveTrip): void;
+  apply(trip: ActiveTrip | null): void;
+  identity?(): string | null;
   subscribe(listener: (trip: ActiveTrip | null) => void): () => void;
   loadOnline?(): Promise<boolean>;
   saveOnline?(online: boolean): Promise<void>;
@@ -43,6 +45,7 @@ export class TrackingService {
   private unsubscribe?: () => void;
   private timer?: ReturnType<typeof setInterval>;
   private foreground?: { remove(): void };
+  private owner: string | null | undefined;
   private ready = false;
   private availabilityWork: Promise<void> = Promise.resolve();
   private preferenceRevision = 0;
@@ -58,8 +61,9 @@ export class TrackingService {
       const controller = TripController.getInstance();
       this.instance = new TrackingService({
         configure: TrackingAdapter.configure,
-        recover: () => recoverTrackedTrip(TripService.getInstance(), () => controller.getTrip()),
-        apply: trip => controller.applyServerTrip(trip),
+        recover: () => controller.loadInitialTrip(),
+        apply: trip => controller.setTrip(trip),
+        identity: () => controller.getSessionUid(),
         subscribe: listener => controller.subscribe(listener),
         loadOnline: TrackingAdapter.loadOnline,
         saveOnline: TrackingAdapter.saveOnline,
@@ -76,6 +80,7 @@ export class TrackingService {
   startSession() {
     if (this.session) return;
     this.session = true;
+    this.owner = this.deps.identity?.();
     this.ready = !this.deps.loadOnline;
     ++this.generation;
     const generation = this.generation;
@@ -87,9 +92,11 @@ export class TrackingService {
       this.recover().catch(() => {});
     }).catch(() => { if (generation === this.generation) this.ready = true; });
     this.unsubscribe = this.deps.subscribe(trip => {
+      if (this.deps.identity && this.deps.identity() !== this.owner) {
+        this.stopSession().catch(() => {}); return;
+      }
       ++this.revision;
-      this.tripId = trip && !['COMPLETED', 'CANCELLED', 'DELIVERED'].includes(trip.engineStatus ?? '') &&
-        !['completed', 'cancelled', 'expired'].includes(trip.status) ? trip.id : null;
+      this.tripId = trip && !isTerminalTrip(trip) ? trip.id : null;
       this.sync().catch(() => { /* Recovery retries; native errors remain visible. */ });
     });
     this.foreground = AppState.addEventListener('change', state => {
@@ -129,22 +136,25 @@ export class TrackingService {
   async recover() {
     if (!this.session || this.recovery) return this.recovery;
     const generation = this.generation, revision = this.revision;
-    this.recovery = (async () => {
+    const pending = (async () => {
       try {
         const trip = await this.deps.recover();
-        if (!this.session || generation !== this.generation || revision !== this.revision) return;
-        if (trip) this.deps.apply(trip);
-        else this.tripId = null; // Only an authoritative empty response ends recovery.
-        await this.sync(true); // Probe/recover a stopped native service without adding a publisher.
+        if (!this.session || generation !== this.generation) return;
+        if (revision === this.revision) {
+          this.deps.apply(trip);
+          if (!trip) this.tripId = null;
+        }
+        await this.sync(true);
       } catch { /* A connection failure is not evidence that a trip ended. */ }
-      finally { this.recovery = null; }
     })();
-    return this.recovery;
+    this.recovery = pending;
+    try { await pending; } finally { if (this.recovery === pending) this.recovery = null; }
   }
 
   async stopSession() {
     this.session = false; this.online = false; this.tripId = null;
     ++this.generation;
+    this.recovery = null;
     this.unsubscribe?.(); this.unsubscribe = undefined;
     this.foreground?.remove(); this.foreground = undefined;
     if (this.timer) clearInterval(this.timer);
@@ -177,7 +187,9 @@ export class TrackingService {
     const enabled = this.session && (this.online || this.tripId !== null);
     const tripId = this.tripId;
     const key = `${enabled}:${tripId ?? ''}`;
+    const generation = this.generation;
     const work = this.configuring.catch(() => {}).then(async () => {
+      if (enabled && (generation !== this.generation || tripId !== this.tripId || !this.session)) return;
       if (key === this.applied && (!recoverNative || !enabled)) return;
       await this.deps.configure(enabled, tripId);
       this.applied = key;

@@ -72,6 +72,24 @@ function payoutBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe('exact trip earning lookup', () => {
+  it('reads the selected payment trip and preserves integer paise and hold state', async () => {
+    const client = fakeClient(earningBody({ status: 'ON_HOLD', grossAmountPaise: 6820, platformFeePaise: 620, netAmountPaise: 6200 }));
+    const value = await createPaymentsApi(client).getTripEarning(TRIP_ID);
+    expect(value).toMatchObject({ tripId: TRIP_ID, status: 'ON_HOLD', netAmountPaise: 6200 });
+    expect(client.request).toHaveBeenCalledWith({ method: 'GET', path: `/v1/earnings/trip/${TRIP_ID}` });
+  });
+  it('rejects a different trip and does not convert an unavailable response to zero', async () => {
+    await expect(createPaymentsApi(fakeClient(earningBody({ tripId: BOOKING_ID }))).getTripEarning(TRIP_ID)).rejects.toThrow();
+    await expect(createPaymentsApi(fakeClient(new Error('offline'))).getTripEarning(TRIP_ID)).rejects.toThrow('offline');
+    await expect(createPaymentsApi(fakeClient(null)).getTripEarning(TRIP_ID)).resolves.toBeNull();
+  });
+  it('keeps mixed cash/payout portions separate without deriving them on the client', async () => {
+    const value = await createPaymentsApi(fakeClient(earningBody({ settlement: 'MIXED', netCashPaise: 20000, payoutAmountPaise: 25000 }))).getTripEarning(TRIP_ID);
+    expect(value).toMatchObject({ settlement: 'MIXED', netCashPaise: 20000, payoutAmountPaise: 25000 });
+  });
+});
+
 const summaryBody = {
   awaitingSettlementPaise: 27_000,
   payablePaise: 45_000,

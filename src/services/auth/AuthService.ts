@@ -1,8 +1,11 @@
+import { LocalAvatarStore } from '../account/LocalAvatarStore';
 import { ApiClient } from '../api/ApiClient';
 import { pushSession } from '../notifications/notifications';
-import { TrackingService } from '../tracking/TrackingService';
 import { ChatService } from '../chat/ChatService';
 import { env } from '../../config/env';
+import { TripController } from '../trip/TripController';
+import { TrackingService } from '../tracking/TrackingService';
+import { getCurrentDriverId } from '../engine/dispatch';
 import {
   getAuth,
   onAuthStateChanged,
@@ -43,7 +46,7 @@ export interface IAuthService {
   bootstrapDriver(): Promise<DriverAccount>;
   getOnboarding(): Promise<DriverOnboardingSummary>;
   logout(): Promise<void>;
-  observeAuthState?(callback: (user: User | null) => void): () => void;
+  observeAuthState?(callback: (user: User | null) => void, onIdentityChange?: (uid: string | null) => void): () => void;
   getConfirmation?(): ConfirmationResult | null;
   getRemainingCooldown?(phone?: string): number;
   hasActiveSession?(phone?: string): boolean;
@@ -452,6 +455,9 @@ export class FirebaseAuthService implements IAuthService {
   }
 
   async logout(): Promise<void> {
+    const driverId = getCurrentDriverId();
+    TripController.getInstance().clearTrip();
+    await LocalAvatarStore.clear(driverId).catch(() => {});
     ChatService.getInstance().clear(true);
     try {
       await TrackingService.getInstance().logout().catch(() => {});
@@ -469,15 +475,26 @@ export class FirebaseAuthService implements IAuthService {
     }
   }
 
-  observeAuthState(callback: (user: User | null) => void): () => void {
+  observeAuthState(callback: (user: User | null) => void, onIdentityChange?: (uid: string | null) => void): () => void {
     let active = true;
     let generation = 0;
+    let observedUid: string | null | undefined;
     const stop = onAuthStateChanged(getAuth(), async (user: User | null) => {
+      if (!active || getAuth().currentUser?.uid !== user?.uid) return;
       const request = ++generation;
       const current = () =>
         active &&
         generation === request &&
         getAuth().currentUser?.uid === user?.uid;
+      if (!current()) return;
+      TripController.getInstance().setSession(user?.uid ?? null);
+      const uid = user?.uid ?? null;
+      if (uid !== observedUid) {
+        const previousUid = observedUid;
+        observedUid = uid;
+        void LocalAvatarStore.clear(previousUid).catch(() => {});
+        onIdentityChange?.(uid);
+      }
       if (user) {
         console.log('[AUTH] Auth state restored');
         try {

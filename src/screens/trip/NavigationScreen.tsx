@@ -1,3 +1,5 @@
+import { TripMapSheet } from '../../components/organisms/TripMapSheet';
+import { useTripMapLayout } from '../../hooks/useTripMapLayout';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import {
   View,
@@ -6,19 +8,25 @@ import {
   StyleSheet,
   Platform,
   Linking,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import {
+  colors,
+  typography,
+  spacing,
+  borderRadius,
+  shadows,
+} from '../../theme';
 import { DriverMap, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
 import { TrackingService } from '../../services/tracking/TrackingService';
-import { useActiveTrip } from '../../hooks/useActiveTrip';
+import { useLiveTrip } from '../../hooks/useActiveTrip';
+import { TripLoadNotice } from '../../components/molecules/TripLoadNotice';
 import { useTripRoute } from '../../hooks/useTripRoute';
 import type { HomeScreenProps } from '../../types/navigation';
-import {ChatUnreadBadge} from '../../components/notifications/ChatUnreadBadge';
+import { ChatUnreadBadge } from '../../components/notifications/ChatUnreadBadge';
 
 export interface NavigationScreenProps {
   readonly navigation: HomeScreenProps<'Navigation'>['navigation'];
@@ -31,6 +39,7 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
   route: navRoute,
   testID,
 }) => {
+  const mapLayout = useTripMapLayout();
   const {
     currentLocation,
     permissionState,
@@ -39,9 +48,12 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
     requestPermission,
     getCurrentLocation,
   } = useDriverLocation();
-  const trip = useActiveTrip(navRoute.params?.tripId);
-  const { route: routingData, error: routeError } = useTripRoute();
-
+  const trip = useLiveTrip(navRoute.params.tripId);
+  const {
+    route: routingData,
+    error: routeError,
+    retry: retryRoute,
+  } = useTripRoute({ tripId: navRoute.params.tripId });
 
   const granted = permissionState === 'granted';
 
@@ -66,7 +78,10 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
         coordinate: { latitude: stop.latitude, longitude: stop.longitude },
         isCurrent: index === trip.currentStopIndex,
         completed: stop.status === 'completed',
-        label: stop.type === 'drop' && trip.stops.length > 2 ? String(index) : undefined,
+        label:
+          stop.type === 'drop' && trip.stops.length > 2
+            ? String(index)
+            : undefined,
       })),
     };
   }, [trip, routingData]);
@@ -81,7 +96,8 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
     ? (routingData.totalDistanceMeters / 1000).toFixed(1)
     : undefined;
 
-  const destinationName = currentStop?.label || currentStop?.address?.split(',')[0] || 'Destination';
+  const destinationName =
+    currentStop?.label || currentStop?.address?.split(',')[0] || 'Destination';
 
   // ── Derived UI states ──────────────────────────────────────────────
   const showPermissionModal = !granted;
@@ -106,22 +122,25 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
   }, [currentStop]);
 
   const handleChat = useCallback(() => {
-    if (trip) navigation.navigate('ActiveTripChat', { tripId: trip.id, paymentTripId: trip.paymentTripId ?? undefined });
+    if (trip)
+      navigation.navigate('ActiveTripChat', {
+        tripId: trip.id,
+        paymentTripId: trip.paymentTripId ?? undefined,
+      });
   }, [navigation, trip]);
-
-  const handleCall = useCallback(() => {
-    Alert.alert('Contact customer', 'Reach the customer through in-app chat.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Open Chat', onPress: handleChat },
-    ]);
-  }, [handleChat]);
 
   const handleMarkArrived = useCallback(() => {
     if (!trip || !currentStop) return;
     if (isPickup) {
-      navigation.navigate('ArrivedAtPickup', { tripId: trip.id, stopId: currentStop.id });
+      navigation.navigate('ArrivedAtPickup', {
+        tripId: trip.id,
+        stopId: currentStop.id,
+      });
     } else {
-      navigation.navigate('DropOTP', { tripId: trip.id, stopId: currentStop.id });
+      navigation.navigate('DropOTP', {
+        tripId: trip.id,
+        stopId: currentStop.id,
+      });
     }
   }, [navigation, trip, currentStop, isPickup]);
 
@@ -136,15 +155,17 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
   }, [requestPermission, getCurrentLocation]);
 
   const handleRetryNetwork = useCallback(() => {
-    getCurrentLocation().catch(() => {});
-  }, [getCurrentLocation]);
+    if (routeError?.code === 'GPS_UNAVAILABLE')
+      getCurrentLocation().catch(() => {});
+    retryRoute();
+  }, [getCurrentLocation, retryRoute, routeError]);
 
   if (!trip) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator color={colors.primary} />
-        <Text style={styles.loadingText}>Loading navigation...</Text>
-      </View>
+      <TripLoadNotice
+        tripId={navRoute.params.tripId}
+        onHome={() => navigation.popToTop()}
+      />
     );
   }
 
@@ -155,14 +176,21 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
         <DriverMap
           currentLocation={currentLocation || undefined}
           routeData={routeData}
-          showControls={false}
+          cameraScopeKey={trip.id}
+          viewportPadding={mapLayout.viewportPadding}
+          heading={currentLocation?.bearing}
+          showControls
           followDriver
           style={StyleSheet.absoluteFill}
         />
       </View>
 
       {/* Top bar */}
-      <SafeAreaView edges={['top']} style={styles.topBar}>
+      <SafeAreaView
+        edges={['top']}
+        style={styles.topBar}
+        onLayout={mapLayout.onTopLayout}
+      >
         <Pressable style={styles.topBtn} onPress={() => navigation.goBack()}>
           <Icon name="arrow_back" size={22} color={colors.primary} />
         </Pressable>
@@ -174,10 +202,16 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
 
       {/* GPS lost toast */}
       {gpsLost && (
-        <SafeAreaView edges={['top']} style={styles.gpsToastWrap} pointerEvents="none">
+        <SafeAreaView
+          edges={['top']}
+          style={styles.gpsToastWrap}
+          pointerEvents="none"
+        >
           <View style={styles.gpsToast}>
             <Icon name="warning" size={18} color={colors.error} />
-            <Text style={styles.gpsToastText}>GPS Signal Lost. Searching for location...</Text>
+            <Text style={styles.gpsToastText}>
+              GPS Signal Lost. Searching for location...
+            </Text>
           </View>
         </SafeAreaView>
       )}
@@ -193,9 +227,36 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
       )}
 
       {/* Bottom sheet */}
-      <SafeAreaView edges={['bottom']} style={styles.sheet}>
+      <TripMapSheet
+        title="Trip controls"
+        onHeightChange={mapLayout.onSheetHeight}
+        footer={
+          <Pressable
+            style={styles.primaryBtn}
+            onPress={handleMarkArrived}
+            accessibilityRole="button"
+          >
+            <Text style={styles.primaryBtnText}>
+              {isPickup ? 'PICKUP DETAILS' : 'DROP DETAILS'}
+            </Text>
+          </Pressable>
+        }
+      >
         <View style={styles.sheetInner}>
-          <View style={styles.dragHandle} />
+          {networkLost ? (
+            <View style={{ paddingVertical: spacing.gutter }}>
+              <Text style={styles.networkTitle}>
+                {routeError?.message ?? 'Road routing unavailable'}
+              </Text>
+              <Pressable
+                onPress={handleRetryNetwork}
+                accessibilityRole="button"
+              >
+                <Text style={styles.retryText}>RETRY ROUTE</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
           <View style={styles.tripInfoRow}>
             <View style={styles.flexShrink}>
               <Text style={styles.destName} numberOfLines={1}>
@@ -207,28 +268,40 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
                   {displayDistance != null ? `${displayDistance} km` : '—'}
                 </Text>
                 <View style={styles.metaDot} />
-                <Text style={styles.metaMins}>{displayEta != null ? `${displayEta} mins` : '—'}</Text>
+                <Text style={styles.metaMins}>
+                  {displayEta != null ? `${displayEta} mins` : '—'}
+                </Text>
               </View>
             </View>
             <View style={styles.secondaryActions}>
-              <Pressable style={styles.circleAction} onPress={handleCall} accessibilityLabel="Call">
-                <Icon name="call" size={20} color={colors.primary} />
+              <Pressable
+                disabled
+                accessibilityRole="button"
+                accessibilityLabel="Calling unavailable"
+                style={[styles.circleAction, { opacity: 0.4 }]}
+              >
+                <Icon name="phone_disabled" size={20} color={colors.primary} />
               </Pressable>
-              <Pressable style={styles.circleAction} onPress={handleChat} accessibilityLabel="Chat">
+              <Pressable
+                style={styles.circleAction}
+                onPress={handleChat}
+                accessibilityLabel="Chat"
+              >
                 <Icon name="chat" size={20} color={colors.primary} />
                 <ChatUnreadBadge backendTripId={trip.paymentTripId} />
               </Pressable>
             </View>
           </View>
-          <Pressable style={styles.mapsBtn} onPress={openExternalMaps} accessibilityRole="button">
+          <Pressable
+            style={styles.mapsBtn}
+            onPress={openExternalMaps}
+            accessibilityRole="button"
+          >
             <Icon name="navigation" size={18} color={colors.primary} />
             <Text style={styles.mapsBtnText}>OPEN IN GOOGLE MAPS</Text>
           </Pressable>
-          <Pressable style={styles.primaryBtn} onPress={handleMarkArrived} accessibilityRole="button">
-            <Text style={styles.primaryBtnText}>MARK ARRIVED</Text>
-          </Pressable>
         </View>
-      </SafeAreaView>
+      </TripMapSheet>
 
       {/* Permission modal */}
       {showPermissionModal && (
@@ -239,28 +312,20 @@ export const NavigationScreen: React.FC<NavigationScreenProps> = ({
             </View>
             <Text style={styles.modalTitle}>Enable Location Services</Text>
             <Text style={styles.modalBody}>
-              MultipleRide Partner collects and shares your precise location with the trip service and your
-              assigned customer during delivery, including while minimized or with the screen
-              locked. Android runs a location foreground service. Sharing stops when you go offline without
-              an active trip or sign out.
+              MultipleRide Partner collects and shares your precise location
+              with the trip service and your assigned customer during delivery,
+              including while minimized or with the screen locked. Android runs
+              a location foreground service. Sharing stops when you go offline
+              without an active trip or sign out.
             </Text>
-            <Pressable style={styles.modalBtn} onPress={handleGrantPermission} accessibilityRole="button">
+            <Pressable
+              style={styles.modalBtn}
+              onPress={handleGrantPermission}
+              accessibilityRole="button"
+            >
               <Text style={styles.modalBtnText}>GRANT PERMISSION</Text>
             </Pressable>
           </View>
-        </View>
-      )}
-
-      {/* Network lost overlay */}
-      {networkLost && (
-        <View style={styles.networkOverlay}>
-          <View style={styles.networkIcon}>
-            <Icon name="wifi_off" size={40} color={colors.outlineVariant} />
-          </View>
-          <Text style={styles.networkTitle}>{routeError?.message ?? 'Road routing unavailable'}</Text>
-          <Pressable style={styles.retryBtn} onPress={handleRetryNetwork} accessibilityRole="button">
-            <Text style={styles.retryText}>RETRY</Text>
-          </Pressable>
         </View>
       )}
     </View>
@@ -363,11 +428,7 @@ const styles = StyleSheet.create({
     borderColor: colors.outlineVariant,
     ...shadows.lg,
   },
-  sheetInner: {
-    paddingHorizontal: spacing.containerPadding,
-    paddingTop: spacing.containerPadding,
-    paddingBottom: spacing.sm,
-  },
+  sheetInner: {},
   dragHandle: {
     width: 40,
     height: 4,

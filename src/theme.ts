@@ -92,6 +92,18 @@ export const colors = {
 
   // Semantic convenience aliases
   success: '#2e7d32',
+  // Compact Driver Home palette.
+  homeGreen: '#08884b',
+  homeMint: '#e5f6eb',
+  homeLandscape: '#eff9f3',
+  homeHill: '#e2f2e7',
+  homeTree: '#badcbe',
+  homeRoute: '#91b99b',
+  homeBorder: '#e1e5eb',
+  homeMuted: '#81868e',
+  homeOffline: '#9b9da0',
+  homeTabIndicator: '#8ed6b3',
+  historyCancelledSurface: '#ffeded',
   warning: '#f57c00',
   info: '#1976d2',
 

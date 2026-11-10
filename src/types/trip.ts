@@ -65,7 +65,10 @@ export interface TripStop {
 
 export interface TripOffer {
   readonly dispatchOfferId?: string;
+  readonly customerFarePaise?: number;
   readonly id: string;
+  readonly offerId?: string;
+  readonly distanceKind?: 'straight_line' | 'road';
   readonly estimatedEarning: number;
   readonly currency: string;
   readonly pickupStop: TripStop;
@@ -79,7 +82,6 @@ export interface TripOffer {
   readonly partnerAmount?: number;
   readonly weightKg?: number;
   readonly goodsDescription?: string;
-  readonly distanceKind?: 'approximate';
 }
 
 export interface ActiveTrip {
@@ -133,6 +135,8 @@ export interface TripEarnings {
 }
 
 export interface HistoricalTrip {
+  readonly paymentTripId?: string | null;
+  readonly customerFarePaise?: number;
   readonly id: string;
   readonly date: string;
   readonly time: string;
@@ -143,7 +147,7 @@ export interface HistoricalTrip {
   readonly totalWeight: string;
   readonly vehicleType: string;
   readonly vehicleRegistration: string;
-  readonly earnings: TripEarnings;
+  readonly earnings: TripEarnings | null;
 }
 
 export interface CancellationRequest {

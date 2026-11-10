@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { AppState, View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { colors, typography, borderRadius, spacing } from '../../theme';
 
 export interface TimerBadgeProps {
@@ -16,29 +16,37 @@ export const TimerBadge: React.FC<TimerBadgeProps> = ({
   testID,
 }) => {
   const [secondsLeft, setSecondsLeft] = useState(() => {
-    const diff = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+    const diff = Number.isFinite(expiresAt) ? Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)) : 0;
     return diff;
   });
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const callback = useRef(onExpired);
+  callback.current = onExpired;
 
   useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      const remaining = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+    let expired = false;
+    const clear = () => { if (intervalRef.current) clearInterval(intervalRef.current); intervalRef.current = null; };
+    const check = () => {
+      const remaining = Number.isFinite(expiresAt) ? Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)) : 0;
       setSecondsLeft(remaining);
-      if (remaining <= 0) {
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-        }
-        onExpired?.();
-      }
-    }, 1000);
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
+      if (remaining <= 0 && !expired) {
+        expired = true;
+        clear();
+        callback.current?.();
       }
     };
-  }, [expiresAt, onExpired]);
+    const resume = () => {
+      clear(); check();
+      if (!expired && AppState.currentState !== 'background' && AppState.currentState !== 'inactive')
+        intervalRef.current = setInterval(check, 250);
+    };
+    resume();
+    const subscription = AppState.addEventListener('change', state => state === 'active' ? resume() : clear());
+
+    return () => {
+      clear(); subscription.remove();
+    };
+  }, [expiresAt]);
 
   const minutes = Math.floor(secondsLeft / 60);
   const seconds = secondsLeft % 60;

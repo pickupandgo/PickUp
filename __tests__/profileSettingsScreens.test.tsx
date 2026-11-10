@@ -4,6 +4,8 @@ import { Image, Linking, Pressable, SectionList, StyleSheet, Text, TextInput } f
 import { PartnerAppHeader } from '../src/components/molecules/PartnerAppHeader';
 import { PrimaryButton } from '../src/components/atoms/PrimaryButton';
 import { AppHeader } from '../src/components/molecules/AppHeader';
+import { AccountHeader } from '../src/components/account/AccountLayout';
+import { SettingsRow } from '../src/components/molecules/SettingsRow';
 import { DocumentNavigationCard } from '../src/components/documents/DocumentNavigationCard';
 import { ProfileScreen } from '../src/screens/account/ProfileScreen';
 import { SettingsScreen } from '../src/screens/account/SettingsScreen';
@@ -44,18 +46,16 @@ test('Profile displays server name/photo and routes both clear edit entry points
   await press('Edit Profile'); await press('Edit profile photo and details');
   expect(navigation.navigate.mock.calls).toEqual([['EditProfile'], ['EditProfile']]);
   expect(text()).not.toMatch(/Subscription|Pro Plan|MULTIPLERIDE PARTNER/);
-  await press('Open menu'); expect(navigation.navigate).toHaveBeenLastCalledWith('Settings');
+  await act(() => view.root.findByType(SettingsRow).props.onPress()); expect(navigation.navigate).toHaveBeenLastCalledWith('Settings');
 }, 15000); // Allow the first Profile render to cold-load React Native Image on Windows.
-test('Settings has no Subscription and all retained rows navigate or log out correctly', async () => {
+test('Settings retains preferences and privacy once; documents and logout remain on Account', async () => {
   await render(<SettingsScreen navigation={navigation as never} />);
-  const list = view.root.findByType(SectionList);
-  const items = list.props.sections.flatMap((section: { data: { label: string; value?: string }[] }) => section.data);
-  expect(items.map((item: { label: string }) => item.label)).toEqual(['Profile', 'Language', 'Vehicle Details', 'Personal Documents', 'Notifications', 'Floating window', 'Privacy', 'Help & Support', 'Logout']);
-  expect(items[1].value).toBe('हिन्दी');
-  for (const item of items) await act(async () => { await list.props.renderItem({ item }).props.onPress(); });
-  expect(navigation.navigate.mock.calls).toEqual([['EditProfile'], ['LanguageSelection'], ['VehicleDocuments'], ['PersonalDocuments'], ['Notifications'], ['FloatingWindow'], ['Privacy'], ['HelpSupport']]);
-  expect(mockLogout).toHaveBeenCalledTimes(1);
-  await act(() => view.root.findByType(AppHeader).props.onBackPress()); expect(navigation.goBack).toHaveBeenCalled();
+  const rows = view.root.findAllByType(SettingsRow);
+  expect(rows.map(row => row.props.label)).toEqual(['Language', 'Floating window', 'Notifications', 'Help & support', 'Privacy & permissions']);
+  for (const row of rows) await act(() => row.props.onPress());
+  expect(navigation.navigate.mock.calls).toEqual([['LanguageSelection'], ['FloatingWindow'], ['Notifications'], ['Support'], ['Privacy']]);
+  expect(text()).not.toMatch(/Subscription|Logout/);
+  await act(() => view.root.findByType(AccountHeader).props.onBack()); expect(navigation.goBack).toHaveBeenCalled();
 });
 test('Privacy category cards open the correct legal, permission and support routes', async () => {
   await render(<PrivacyScreen navigation={navigation as never} route={{} as never} />);

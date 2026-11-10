@@ -118,7 +118,7 @@ describe('engine routes (Phase 8 contract)', () => {
     await engine.startTrip(TRIP_ID);
     await engine.arriveAtStop(TRIP_ID, STOP_1);
     await engine.verifyStopOtp(TRIP_ID, STOP_1, '5678');
-    await engine.confirmStopDelivery(TRIP_ID, STOP_1, 'file:///proof.jpg');
+    await engine.confirmStopDelivery(TRIP_ID, STOP_1, `proof:${STOP_1}`);
     await engine.failStop(TRIP_ID, STOP_1, 'Receiver not home');
     await engine.completeTrip(TRIP_ID);
 
@@ -135,7 +135,7 @@ describe('engine routes (Phase 8 contract)', () => {
       [
         'POST',
         `/trips/${TRIP_ID}/stop/confirm-delivery`,
-        { stopId: STOP_1, photo: { uri: 'file:///proof.jpg' } },
+        { stopId: STOP_1, photo: { uri: `proof:${STOP_1}` } },
       ],
       [
         'POST',
@@ -147,7 +147,10 @@ describe('engine routes (Phase 8 contract)', () => {
   });
 
   it('takes identity from the token: no body ever names a driver', async () => {
-    mockAnswers = [{ success: true, ride: {}, trip: tripView() }];
+    mockAnswers = [
+      { success: true, ride: {}, trip: tripView() }, { success: true },
+      { success: true, driver: { id: 'driverUid123', isAvailable: true } }, { success: true },
+    ];
     await engine.acceptRideRequest(RIDE_ID);
     await engine.rejectRideRequest(RIDE_ID);
     await engine.setDriverAvailability('driverUid123', true);
@@ -275,7 +278,48 @@ describe('engine trip DTO', () => {
   });
 });
 
+describe('availability acknowledgement', () => {
+  it('rejects another driver acknowledgement and recovers after failure', async () => {
+    mockAnswers = [{ success: true, driver: { id: 'wrong-driver', isAvailable: true } }];
+    await expect(engine.setDriverAvailability('driverUid123', true)).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    mockAnswers = [{ success: true, driver: { id: 'driverUid123', isAvailable: false } }];
+    await expect(engine.setDriverAvailability('driverUid123', false)).resolves.toBeUndefined();
+  });
+
+  it('does not treat a busy driver response as Online', async () => {
+    mockAnswers = [{ success: true, driver: { id: 'driverUid123', isAvailable: false } }];
+    await expect(engine.setDriverAvailability('driverUid123', true)).rejects.toMatchObject({ code: 'DRIVER_BUSY' });
+  });
+
+  it('serializes delayed Online before the newer Offline write', async () => {
+    let resolve!: (value: unknown) => void;
+    mockAnswers = [new Promise(yes => { resolve = yes; }), { success: true, driver: { id: 'driverUid123', isAvailable: false } }];
+    const online = engine.setDriverAvailability('driverUid123', true);
+    const offline = engine.setDriverAvailability('driverUid123', false);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(requests).toHaveLength(1);
+    resolve({ success: true, driver: { id: 'driverUid123', isAvailable: true } });
+    await Promise.all([online, offline]);
+    expect(requests.map(request => request.body)).toEqual([{ isAvailable: true }, { isAvailable: false }]);
+  });
+});
+
 describe('engine trip -> app trip', () => {
+  it('maps distinct real history facts without inventing earnings, vehicle registration or missing fare', () => {
+    const a = engine.engineTripToHistoricalTrip(engine.parseEngineTrip(tripView({ status: 'COMPLETED', payablePaise: 6820, vehicleType: 'BIKE', weight: 10 })));
+    const b = engine.engineTripToHistoricalTrip(engine.parseEngineTrip(tripView({ id: STOP_2, status: 'CANCELLED', payablePaise: undefined, vehicleType: 'MINI_TRUCK' })));
+    expect(a).toMatchObject({ id: TRIP_ID, customerFarePaise: 6820, vehicleType: 'BIKE', totalWeight: '10 kg', earnings: null });
+    expect(b).toMatchObject({ id: STOP_2, status: 'cancelled', customerFarePaise: undefined, earnings: null });
+  });
+  it('fetches real paged driver history and refuses another driver response', async () => {
+    mockAnswers = [{ success: true, trips: [tripView({ status: 'COMPLETED' })], nextCursor: TRIP_ID }];
+    const first = await engine.getDriverHistoryPage();
+    expect(first.trips[0].id).toBe(TRIP_ID);
+    await engine.getDriverHistoryPage(first.nextCursor!);
+    expect(requests[1].path).toBe(`/trips/history/driver/driverUid123/page/${TRIP_ID}`);
+    mockAnswers = [{ success: true, trips: [tripView({ status: 'COMPLETED', driverId: 'someone-else' })], nextCursor: null }];
+    await expect(engine.getDriverHistoryPage()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+  });
   const toApp = (overrides: Record<string, unknown>) =>
     engine.engineTripToActiveTrip(engine.parseEngineTrip(tripView(overrides)));
 

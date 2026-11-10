@@ -46,6 +46,8 @@ export interface EarningDto {
   readonly bookingId: string;
   readonly tripId: string;
   readonly settlement: 'ONLINE' | 'CASH' | 'MIXED';
+  readonly netCashPaise?: number;
+  readonly payoutAmountPaise?: number;
   readonly status: EarningStatusDto;
   readonly grossAmountPaise: number;
   readonly platformFeePaise: number;
@@ -155,6 +157,9 @@ export function parseEarning(value: unknown): EarningDto {
   const other = wholeNumber(json.otherDeductionsPaise, 'earning deductions');
   const tds = wholeNumber(json.tdsAmountPaise, 'earning TDS');
   const net = wholeNumber(json.netAmountPaise, 'earning net');
+  const netCash = json.netCashPaise === undefined ? undefined : wholeNumber(json.netCashPaise, 'cash net');
+  const payout = json.payoutAmountPaise === undefined ? undefined : wholeNumber(json.payoutAmountPaise, 'payout amount');
+  if (netCash !== undefined && payout !== undefined && netCash + payout !== net) invalid('earning cash/payout split');
   if (net !== gross - fee - other - tds) {
     // The server's own invariant; refuse to show numbers that do not add up.
     invalid('earning amounts');
@@ -164,6 +169,8 @@ export function parseEarning(value: unknown): EarningDto {
     bookingId: text(json.bookingId, 'booking id', UUID_PATTERN),
     tripId: text(json.tripId, 'trip id', UUID_PATTERN),
     settlement: oneOf(json.settlement, SETTLEMENTS, 'earning settlement'),
+    netCashPaise: netCash,
+    payoutAmountPaise: payout,
     status: oneOf(json.status, EARNING_STATUSES, 'earning status'),
     grossAmountPaise: gross,
     platformFeePaise: fee,

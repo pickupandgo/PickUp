@@ -11,6 +11,8 @@ import {
   EARNING_STATUSES,
   parseBankAccount,
   parseEarningPage,
+  parseEarning,
+  type EarningDto,
   parseEarningsSummary,
   parsePayouts,
   type BankAccountDto,
@@ -138,6 +140,7 @@ export interface PaymentsApi {
   getCollection(tripId: string, collectionId: string): Promise<CollectionDto>;
 
   getEarningsSummary(): Promise<EarningsSummaryDto>;
+  getTripEarning(tripId: string): Promise<EarningDto | null>;
   listEarnings(params?: {
     status?: EarningStatusDto;
     limit?: number;
@@ -341,6 +344,15 @@ export function createPaymentsApi(client: PaymentsClient): PaymentsApi {
       return parseEarningsSummary(
         await client.request({ method: 'GET', path: '/v1/earnings/summary' }),
       );
+    },
+
+    async getTripEarning(tripId) {
+      text(tripId, 'payment trip id', UUID_PATTERN);
+      const value = await client.request({ method: 'GET', path: `/v1/earnings/trip/${tripId}` });
+      if (value === null) return null;
+      const earning = parseEarning(value);
+      if (earning.tripId !== tripId) invalid('earning trip identity');
+      return earning;
     },
 
     async listEarnings(params = {}) {

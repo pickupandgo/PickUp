@@ -1,3 +1,5 @@
+import { TripMapSheet } from '../../components/organisms/TripMapSheet';
+import { useTripMapLayout } from '../../hooks/useTripMapLayout';
 import React, { useCallback, useMemo } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Icon from '../../components/atoms/Icon';
@@ -13,6 +15,7 @@ import { DriverMap, RouteData, StopType } from '../../map';
 import { useDriverLocation } from '../../location';
 import { useLiveTrip } from '../../hooks/useActiveTrip';
 import { historyStatus, historyVehicle } from '../../services/trip/tripHistoryPresentation';
+import { TripLoadNotice } from '../../components/molecules/TripLoadNotice';
 import { useArrivalDetection } from '../../hooks/useArrivalDetection';
 import { useTripRoute } from '../../hooks/useTripRoute';
 import { useCollectableTrips } from '../../hooks/useCollectableTrips';
@@ -20,7 +23,7 @@ import { CollectPaymentBanner } from '../../components/molecules/CollectPaymentB
 import type { DriverTripDto } from '../../services/payments/collectionsDto';
 import type { TripStop } from '../../types/trip';
 import type { HomeScreenProps } from '../../types/navigation';
-import {ChatUnreadBadge} from '../../components/notifications/ChatUnreadBadge';
+import { ChatUnreadBadge } from '../../components/notifications/ChatUnreadBadge';
 
 export interface ActiveTripScreenProps {
   readonly navigation: HomeScreenProps<'ActiveTrip'>['navigation'];
@@ -43,9 +46,12 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   route: navRoute,
   testID,
 }) => {
+  const mapLayout = useTripMapLayout();
   const { currentLocation } = useDriverLocation();
   const trip = useLiveTrip(navRoute.params.tripId);
-  const { route: routingData } = useTripRoute();
+  const { route: routingData } = useTripRoute({
+    tripId: navRoute.params.tripId,
+  });
   const collectable = useCollectableTrips();
 
   // Near a stop: open that stop's screen. The arrival itself is the driver's explicit action
@@ -102,7 +108,11 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
   }, [navigation, trip]);
 
   const handleSupport = useCallback(() => {
-    if (trip) navigation.navigate('ActiveTripChat', { tripId: trip.id, paymentTripId: trip.paymentTripId ?? undefined });
+    if (trip)
+      navigation.navigate('ActiveTripChat', {
+        tripId: trip.id,
+        paymentTripId: trip.paymentTripId ?? undefined,
+      });
   }, [navigation, trip]);
 
   const handleCollect = useCallback(
@@ -113,9 +123,10 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
 
   if (!trip) {
     return (
-      <View style={styles.loading}>
-        <Text style={styles.loadingText}>Loading Trip...</Text>
-      </View>
+      <TripLoadNotice
+        tripId={navRoute.params.tripId}
+        onHome={() => navigation.popToTop()}
+      />
     );
   }
 
@@ -148,7 +159,10 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
         <DriverMap
           currentLocation={currentLocation || undefined}
           routeData={routeData}
-          showControls={false}
+          cameraScopeKey={trip.id}
+          viewportPadding={mapLayout.viewportPadding}
+          heading={currentLocation?.bearing}
+          showControls
           followDriver
           style={StyleSheet.absoluteFill}
         />
@@ -157,6 +171,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
       {/* Top overlay: back / status / support */}
       <SafeAreaView
         edges={['top']}
+        onLayout={mapLayout.onTopLayout}
         style={styles.topOverlay}
         pointerEvents="box-none"
       >
@@ -173,18 +188,51 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
               {currentStop?.label ?? ''}
             </Text>
           </View>
-          <Pressable style={styles.circleBtn} onPress={handleSupport}>
-            <Icon name="support_agent" size={22} color={colors.onSurface} />
+          <Pressable
+            style={styles.circleBtn}
+            onPress={handleSupport}
+            accessibilityRole="button"
+            accessibilityLabel="Chat with customer"
+          >
+            <Icon name="chat" size={22} color={colors.onSurface} />
             <ChatUnreadBadge backendTripId={trip.paymentTripId} />
           </Pressable>
         </View>
       </SafeAreaView>
 
       {/* Bottom info panel */}
-      <SafeAreaView edges={['bottom']} style={styles.bottomPanel}>
+      <TripMapSheet
+        title={`Current ${arrivingLabel}`}
+        onHeightChange={mapLayout.onSheetHeight}
+        footer={
+          <View style={styles.actions}>
+            <Pressable
+              style={styles.navBtn}
+              onPress={handleNavigate}
+              accessibilityRole="button"
+            >
+              <Icon name="navigation" size={18} color={colors.onPrimary} />
+              <Text style={styles.navBtnText}>NAVIGATE</Text>
+            </Pressable>
+            <Pressable
+              style={styles.detailsBtn}
+              onPress={handleTripDetails}
+              accessibilityRole="button"
+            >
+              <Icon name="list_alt" size={18} color={colors.primary} />
+              <Text style={styles.detailsBtnText}>TRIP DETAILS</Text>
+            </Pressable>
+          </View>
+        }
+      >
         <View style={styles.panelInner}>
           {/* Payment to collect now (pay at pickup / delivery), from the payments backend */}
-          <CollectPaymentBanner trips={collectable} onPress={handleCollect} />
+          <CollectPaymentBanner
+            trips={collectable.filter(
+              value => value.tripId === trip.paymentTripId,
+            )}
+            onPress={handleCollect}
+          />
 
           {/* ETA + status */}
           <View style={styles.etaRow}>
@@ -251,10 +299,7 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
                           {label} (Current)
                         </Text>
                         {!!stop.address && (
-                          <Text
-                            style={styles.tlCurrentAddress}
-                            numberOfLines={1}
-                          >
+                          <Text style={styles.tlCurrentAddress}>
                             {stop.address}
                           </Text>
                         )}
@@ -267,28 +312,8 @@ export const ActiveTripScreen: React.FC<ActiveTripScreenProps> = ({
               );
             })}
           </View>
-
-          {/* Actions */}
-          <View style={styles.actions}>
-            <Pressable
-              style={styles.navBtn}
-              onPress={handleNavigate}
-              accessibilityRole="button"
-            >
-              <Icon name="navigation" size={18} color={colors.onPrimary} />
-              <Text style={styles.navBtnText}>NAVIGATE</Text>
-            </Pressable>
-            <Pressable
-              style={styles.detailsBtn}
-              onPress={handleTripDetails}
-              accessibilityRole="button"
-            >
-              <Icon name="list_alt" size={18} color={colors.primary} />
-              <Text style={styles.detailsBtnText}>TRIP DETAILS</Text>
-            </Pressable>
-          </View>
         </View>
-      </SafeAreaView>
+      </TripMapSheet>
     </View>
   );
 };
@@ -366,9 +391,6 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   panelInner: {
-    paddingHorizontal: spacing.containerPadding,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
     gap: spacing.containerPadding,
   },
   etaRow: {

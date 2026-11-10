@@ -9,8 +9,9 @@ const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(
 function setup() {
   let notify: (value: ActiveTrip | null) => void = () => {};
   const configure = jest.fn(async (_enabled: boolean, _tripId: string | null) => {}), recover = jest.fn(async (): Promise<ActiveTrip | null> => null);
-  const deps: TrackingDependencies = { configure, recover, subscribe: listener => { notify = listener; return jest.fn(); }, apply: value => notify(value) };
-  return { service: new TrackingService(deps), configure, recover, notify: (v: ActiveTrip | null) => notify(v) };
+  const apply = jest.fn((value: ActiveTrip | null) => notify(value));
+  const deps: TrackingDependencies = { configure, recover, subscribe: listener => { notify = listener; return jest.fn(); }, apply };
+  return { service: new TrackingService(deps), configure, recover, apply, notify: (v: ActiveTrip | null) => notify(v) };
 }
 beforeEach(() => jest.useFakeTimers());
 it('restores explicit Online preference and detaches React without stopping native sharing', async () => {
@@ -84,4 +85,34 @@ it('restores a cancellation from the known trip when the active index becomes em
   service.getTripById.mockClear();
   expect(await recoverTrackedTrip(service, () => cancelled)).toBeNull();
   expect(service.getTripById).not.toHaveBeenCalled();
+});
+
+it('authoritative empty recovery retires subscribed trip state as well as native tracking', async () => {
+  const h = setup(); h.recover.mockResolvedValueOnce(trip()); h.service.startSession(); await settle();
+  h.recover.mockResolvedValueOnce(null); await h.service.recover(); await settle();
+  expect(h.apply).toHaveBeenLastCalledWith(null);
+  expect(h.configure).toHaveBeenLastCalledWith(false, null);
+  await h.service.stopSession();
+});
+
+it('keeps DELIVERED resumable until the engine confirms COMPLETED', async () => {
+  const h = setup(); h.service.startSession(); await settle();
+  h.notify(trip('DELIVERED')); await settle();
+  expect(h.configure).toHaveBeenLastCalledWith(true, 'trip-a');
+  h.notify(trip('COMPLETED')); await settle();
+  expect(h.configure).toHaveBeenLastCalledWith(false, null);
+  await h.service.stopSession();
+});
+
+it('an old-session finally cannot clear a new-session recovery', async () => {
+  const h = setup(); let oldResolve!: (value: ActiveTrip | null) => void;
+  let newResolve!: (value: ActiveTrip | null) => void;
+  h.recover.mockReturnValueOnce(new Promise(resolve => { oldResolve = resolve; }));
+  h.service.startSession(); await settle(); await h.service.stopSession();
+  h.recover.mockReturnValueOnce(new Promise(resolve => { newResolve = resolve; }));
+  h.service.startSession(); await settle(); oldResolve(trip()); await settle();
+  h.service.recover(); expect(h.recover).toHaveBeenCalledTimes(2);
+  newResolve({ ...trip(), id: 'trip-b' }); await settle();
+  expect(h.configure).toHaveBeenLastCalledWith(true, 'trip-b');
+  await h.service.stopSession();
 });

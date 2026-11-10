@@ -6,6 +6,7 @@ import Icon from '../atoms/Icon';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
 export interface EarningsCardProps {
+  readonly compact?: boolean;
   readonly label: string;
   readonly amount: number | null;
   readonly loading?: boolean;
@@ -19,6 +20,7 @@ export interface EarningsCardProps {
 }
 
 export const EarningsCard: React.FC<EarningsCardProps> = ({
+  compact = false,
   label,
   amount,
   loading = false,
@@ -31,25 +33,25 @@ export const EarningsCard: React.FC<EarningsCardProps> = ({
   testID,
 }) => {
   return (
-    <View style={[styles.container, style]} testID={testID} accessibilityRole="none">
+    <View style={[styles.container, compact && styles.compact, style]} testID={testID} accessibilityRole="none">
       <View style={styles.header}>
-        <View style={styles.iconContainer}>
+        {!compact && <View style={styles.iconContainer}>
           <Icon name={iconName} style={styles.icon} />
-        </View>
-        <Text style={styles.label}>{label}</Text>
+        </View>}
+        <Text style={[styles.label, compact && styles.compactLabel]}>{label}</Text>
       </View>
       {loading ? <ActivityIndicator accessibilityLabel="Loading today’s earnings" /> :
-        <Text style={styles.amount}>{amount === null ? '—' : formatRupees(amount, currency)}</Text>}
+        <Text style={[styles.amount, compact && styles.compactAmount]}>{amount === null ? '—' : formatRupees(amount, currency)}</Text>}
       {!loading && (error || amount === null) ? (
-        <Text style={styles.trips} accessibilityLiveRegion="polite"
-          accessibilityLabel={error ?? 'Earnings unavailable'}>Earnings unavailable</Text>
+        <Text style={[styles.trips, compact && styles.compactCaption]} accessibilityLiveRegion="polite"
+          accessibilityLabel={error ?? 'Earnings unavailable'}>{compact ? 'Currently unavailable' : 'Earnings unavailable'}</Text>
       ) : null}
-      <View style={styles.footer}>
+      <View style={[styles.footer, compact && styles.compactFooter]}>
         {tripCount !== undefined ? (
           <Text style={styles.trips}>{tripCount} trips</Text>
         ) : <View />}
         {onDetailsPress ? (
-          <DashboardAction label="DETAILS" onPress={onDetailsPress} style={styles.action} />
+          <DashboardAction label={compact ? 'Details →' : 'DETAILS'} variant={compact ? 'link' : 'button'} onPress={onDetailsPress} style={styles.action} />
         ) : null}
       </View>
     </View>
@@ -107,6 +109,11 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceVariant,
   },
   action: { maxWidth: '100%' },
+  compact: { minHeight: 110, borderWidth: 1, borderColor: colors.homeBorder, borderRadius: 10, elevation: 0, shadowOpacity: 0, gap: 0, paddingBottom: 0 },
+  compactLabel: { fontSize: 13, lineHeight: 18, letterSpacing: 0, fontWeight: '600', color: colors.primary },
+  compactAmount: { fontSize: 20, lineHeight: 27, marginTop: 6, fontWeight: '600', color: colors.primary },
+  compactCaption: { fontSize: 11, lineHeight: 15, color: colors.homeMuted },
+  compactFooter: { flexDirection: 'column', alignItems: 'flex-start', gap: 0 },
 });
 
 export default EarningsCard;

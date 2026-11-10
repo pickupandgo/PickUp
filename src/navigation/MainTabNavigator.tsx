@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { TrackingService } from '../services/tracking/TrackingService';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { NotificationBanner } from '../components/notifications/NotificationRuntime';
 import Icon from '../components/atoms/Icon';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -21,10 +21,10 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const TAB_ICONS: Record<keyof MainTabParamList, string> = {
   HomeTab: 'home',
-  TripsTab: 'route',
+  TripsTab: 'calendar_today',
   EarningsTab: 'payments',
   WalletTab: 'account_balance_wallet',
-  AccountTab: 'person',
+  AccountTab: 'person_outline',
 };
 
 const TAB_LABEL_KEYS: Record<keyof MainTabParamList, string> = {
@@ -52,11 +52,17 @@ export const MainTabNavigator: React.FC = () => {
         tabBarIcon: ({ focused }) => (
           <Icon
             name={TAB_ICONS[route.name]}
-            color={focused ? colors.primary : colors.outline}
+            color={focused ? colors.primary : colors.homeMuted}
             style={styles.tabIcon}
           />
         ),
-        tabBarLabel: t(TAB_LABEL_KEYS[route.name]),
+        tabBarLabel: ({ focused }) => (
+          <View style={styles.labelWrap}>
+            <Text style={[styles.tabLabel, { color: focused ? colors.primary : colors.homeMuted }]}>{t(TAB_LABEL_KEYS[route.name])}</Text>
+            <View style={[styles.indicator, !focused && styles.indicatorHidden]} />
+          </View>
+        ),
+        tabBarAccessibilityLabel: t(TAB_LABEL_KEYS[route.name]),
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.outline,
         tabBarLabelStyle: styles.tabLabel,
@@ -83,18 +89,25 @@ export const MainTabNavigator: React.FC = () => {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   tabIcon: {
-    fontSize: 24,
+    fontSize: 22,
   },
   tabLabel: {
     ...typography.labelSm,
     fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '400',
   },
   tabBar: {
     borderTopWidth: 1,
-    borderTopColor: colors.outlineVariant,
+    borderTopColor: colors.homeBorder,
     backgroundColor: colors.surfaceContainerLowest,
+    elevation: 0,
+    shadowOpacity: 0,
   },
-  tabItem: { paddingBottom: 4 },
+  tabItem: { paddingTop: 4, paddingBottom: 2 },
+  labelWrap: { alignItems: 'center', gap: 3 },
+  indicator: { width: 17, height: 3, borderRadius: 2, backgroundColor: colors.homeTabIndicator },
+  indicatorHidden: { opacity: 0 },
 });
 
 export default MainTabNavigator;

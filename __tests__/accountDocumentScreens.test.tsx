@@ -16,7 +16,7 @@ import { useDocumentPage, useDocumentPreview } from '../src/hooks/useDocumentPre
 jest.setTimeout(30_000);
 jest.mock('react-native', () => Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(jest.requireActual('react-native')), Pressable: { value: 'Pressable' } }));
 jest.mock('../src/components/atoms/Icon', () => 'Icon');
-const mockLogout = jest.fn(); const mockRefresh = jest.fn(async () => {});
+const mockLogout = jest.fn(async () => {}); const mockRefresh = jest.fn(async () => {});
 jest.mock('../src/hooks/useAuth', () => ({ useAuth: () => ({ logout: mockLogout }) }));
 jest.mock('../src/i18n', () => ({ useI18n: () => ({ t: (key: string) => key, locale: 'en' }) }));
 const photo = { id: 'photo', version: 1, documentType: 'DRIVER_PHOTO', status: 'VERIFIED', createdAt: '2026-11-01' };
@@ -44,7 +44,7 @@ beforeEach(() => {
 });
 afterEach(async () => { if (view) await act(() => view.unmount()); jest.restoreAllMocks(); });
 
-test('Account removes Pro Plan and Manage but retains language/settings/notifications/logout', async () => {
+test('Account keeps document access, one settings entry and confirmed sign out', async () => {
   const alert = jest.spyOn(Alert, 'alert');
   await render(<ProfileScreen navigation={navigation as never} />);
   expect(text()).not.toContain('profile.proPlan'); expect(text()).not.toContain('profile.manage'); expect(text()).not.toContain('profile.activeUntil');
@@ -55,8 +55,10 @@ test('Account removes Pro Plan and Manage but retains language/settings/notifica
   expect(navigation.navigate).toHaveBeenCalledWith('DocumentsHub');
   navigation.navigate.mockClear();
   const pressText = (value: string) => view.root.findAllByType(Pressable).find(node => node.findAllByType(Text).some(t => t.props.children === value))!;
-  await act(() => { pressText('profile.language').props.onPress(); pressText('profile.settings').props.onPress(); pressText('profile.notifications').props.onPress(); pressText('profile.logout').props.onPress(); });
-  expect(navigation.navigate.mock.calls).toEqual([['LanguageSelection'], ['Settings'], ['Notifications']]);
+  expect(text()).not.toContain('profile.language');
+  await act(() => { pressText('profile.settings').props.onPress(); pressText('Sign out').props.onPress(); });
+  expect(navigation.navigate.mock.calls).toEqual([['Settings']]);
+  expect(view.root.findAllByType(Pressable).some(node => node.props.accessibilityLabel === 'Notifications')).toBe(false);
   const buttons = alert.mock.calls[0][2]!;
   await act(async () => buttons.find(button => button.style === 'destructive')!.onPress!());
   expect(mockLogout).toHaveBeenCalled();
@@ -100,14 +102,14 @@ test('PDF viewer provides all pages, current page indicator and back navigation'
   await act(() => header.props.onBackPress()); expect(navigation.goBack).toHaveBeenCalled();
 });
 
-test('Documents Hub has exactly three categories and their dedicated routes', async () => {
+test('Documents Hub separates three document categories from vehicle management', async () => {
   await render(<DocumentsHubScreen navigation={navigation as never} route={{} as never} />);
   const cards = view.root.findAllByType(Pressable);
-  expect(cards.filter(card => ['Vehicle Details', 'Personal Documents', 'KYC Status'].includes(card.props.accessibilityLabel))).toHaveLength(3);
-  for (const title of ['Vehicle Details', 'Personal Documents', 'KYC Status']) {
+  expect(cards.filter(card => ['Personal documents', 'Vehicle documents', 'KYC status', 'Vehicle details'].includes(card.props.accessibilityLabel))).toHaveLength(4);
+  for (const title of ['Personal documents', 'Vehicle documents', 'KYC status', 'Vehicle details']) {
     await act(() => cards.find(card => card.props.accessibilityLabel === title)!.props.onPress());
   }
-  expect(navigation.navigate.mock.calls).toEqual([['VehicleDocuments'], ['PersonalDocuments'], ['KYCStatus']]);
+  expect(navigation.navigate.mock.calls).toEqual([['PersonalDocuments'], ['VehicleDocuments'], ['KYCStatus'], ['VehicleStatus']]);
 });
 test('KYC overview preserves aggregate state, rejected reasons and missing required documents', async () => {
   await render(<KYCStatusScreen navigation={navigation as never} route={{} as never} />);
@@ -131,29 +133,29 @@ test('Vehicle Details uses the active registration and its actual RC/Insurance r
   expect(text()).toContain('Actual model');
   expect(view.root.findAllByType(DocumentCard).map(card => card.props.document.record.id)).toEqual(['rc-a', 'insurance-a']);
 });
-test('Hub category icons and cards share a neutral premium treatment', async () => {
+test('Hub rows share the compact grouped treatment and can grow for long content', async () => {
   await render(<DocumentsHubScreen navigation={navigation as never} route={{} as never} />);
   const cards = view.root.findAllByType(DocumentNavigationCard);
-  expect(cards).toHaveLength(3);
+  expect(cards).toHaveLength(4);
   for (const card of cards) {
     const glyphs = card.findAllByType(Icon);
-    expect(glyphs[0].props.color).toBe(colors.navigationIcon);
-    expect(glyphs[0].props.size).toBe(22);
-    expect(StyleSheet.flatten(glyphs[0].parent!.props.style)).toMatchObject({ width: 40, height: 40, backgroundColor: colors.surfaceContainerLow });
+    expect(glyphs[0].props.color).toBe(card.props.mint ? colors.homeGreen : colors.navigationIcon);
+    expect(glyphs[0].props.size).toBe(21);
+    expect(StyleSheet.flatten(glyphs[0].parent!.props.style)).toMatchObject({ width: 36, height: 36, backgroundColor: card.props.mint ? colors.homeMint : colors.surfaceContainerLow });
     expect(glyphs[1].props.color).toBe(colors.onSurfaceMuted);
     const button = card.findByType(Pressable);
     const normal = StyleSheet.flatten(button.props.style({ pressed: false }));
-    expect(normal).toMatchObject({ minHeight: 88, borderRadius: 16, borderWidth: 1, borderColor: colors.outlineSubtle, backgroundColor: colors.surfaceContainerLowest });
+    expect(normal).toMatchObject({ minHeight: 64 });
     expect(normal.height).toBeUndefined(); expect(normal.maxHeight).toBeUndefined();
     expect(StyleSheet.flatten(button.props.style({ pressed: true })).backgroundColor).toBe(colors.surfaceContainerLow);
     for (const label of card.findAllByType(Text)) expect(label.props.numberOfLines).toBeUndefined();
   }
   expect(StyleSheet.flatten(view.root.findByType(ScrollView).props.contentContainerStyle)).toMatchObject({ width: '100%', maxWidth: 720, alignSelf: 'center' });
 });
-test('Profile Documents uses the same neutral icon/container without rendering previews', async () => {
+test('Profile Documents uses the grouped mint row without rendering previews', async () => {
   await render(<ProfileScreen navigation={navigation as never} />);
   const card = view.root.findByType(DocumentNavigationCard);
   const glyph = card.findAllByType(Icon)[0];
-  expect(glyph.props).toMatchObject({ name: 'folder_open', color: colors.navigationIcon, size: 22 });
+  expect(glyph.props).toMatchObject({ name: 'folder_open', color: colors.homeGreen, size: 21 });
   expect(view.root.findAllByType(DocumentCard)).toHaveLength(0);
 });

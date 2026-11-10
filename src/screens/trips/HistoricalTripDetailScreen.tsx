@@ -89,3 +89,5 @@ const styles = StyleSheet.create({
   eventDot: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.navigationIcon, alignItems: 'center', justifyContent: 'center' }, errorDot: { backgroundColor: colors.error },
 });
 export default TripDetailsScreen;
+
+export { DriverHistoryDetail } from './EngineTripHistoryDetail';

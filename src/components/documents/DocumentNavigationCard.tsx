@@ -1,12 +1,14 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Icon from '../atoms/Icon';
+import { AccountMenuRow } from '../account/AccountLayout';
 import { borderRadius, colors, shadows, spacing, typography } from '../../theme';
 
 /** Shared neutral treatment for the Profile entry and all Documents Hub categories. */
-export function DocumentNavigationCard({ title, subtitle, icon, onPress }: {
-  title: string; subtitle?: string; icon: string; onPress: () => void;
+export function DocumentNavigationCard({ title, subtitle, icon, onPress, compact = false, mint = false, last = false }: {
+  title: string; subtitle?: string; icon: string; onPress: () => void; compact?: boolean; mint?: boolean; last?: boolean;
 }) {
+  if (compact) return <AccountMenuRow title={title} subtitle={subtitle} icon={icon} onPress={onPress} mint={mint} last={last} />;
   return <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={onPress}
     style={({ pressed }) => [styles.card, subtitle && styles.category, pressed && styles.pressed]}>
     <View style={styles.iconContainer}><Icon name={icon} size={22} color={colors.navigationIcon} /></View>

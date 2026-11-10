@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getAuth } from '@react-native-firebase/auth';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import { AuthStack } from './stacks/AuthStack';
@@ -13,6 +13,9 @@ import {
 import { DriverOnboardingScreen } from '../screens/onboarding/DriverOnboardingFlow';
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
 import { ActiveTripChatScreen } from '../screens/trip/ActiveTripChatScreen';
+import { SupportScreen } from '../screens/account/SupportScreen';
+import { PrivacyScreen } from '../screens/account/PrivacyScreen';
+import { SupportContactPanel } from '../components/account/SupportContactPanel';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -116,6 +119,14 @@ export const RootNavigator: React.FC<{
           setBootstrapError(null);
           setInitializing(false);
         }
+      }, uid => {
+        if (!mounted.current) return;
+        ++generation.current;
+        setIsAuthenticated(false);
+        setAccount(null);
+        setOnboarding(null);
+        setBootstrapError(null);
+        setInitializing(uid !== null);
       });
       return () => {
         authMounted.current = false;
@@ -148,6 +159,7 @@ export const RootNavigator: React.FC<{
     return (
       <AccountState
         title="We could not verify your account"
+        showSupport
         message={bootstrapError}
         primaryLabel="Try again"
         onPrimary={bootstrap}
@@ -166,6 +178,7 @@ export const RootNavigator: React.FC<{
       return (
         <AccountState
           title="Account review"
+          showSupport
           message="Could not load your onboarding state."
           primaryLabel="Try again"
           onPrimary={bootstrap}
@@ -185,7 +198,7 @@ export const RootNavigator: React.FC<{
 
   return (
     <Stack.Navigator
-      key={isAuthenticated ? 'partner' : 'auth'}
+      key={isAuthenticated ? `driver:${getAuth().currentUser?.uid ?? ''}` : 'guest'}
       screenOptions={{ headerShown: false }}
       initialRouteName={isAuthenticated ? 'Main' : 'Auth'}
     >
@@ -195,6 +208,8 @@ export const RootNavigator: React.FC<{
       account.approvalStatus === 'APPROVED' ? (
         <>
           <Stack.Screen name="Main" component={MainTabNavigator} />
+          <Stack.Screen name="Support" component={SupportScreen} />
+          <Stack.Screen name="Privacy" component={PrivacyScreen} />
           <Stack.Screen name="TripChat" component={ActiveTripChatScreen} />
           <Stack.Screen
             name="Notifications"
@@ -210,6 +225,7 @@ export const RootNavigator: React.FC<{
 };
 
 const AccountState: React.FC<{
+  showSupport?: boolean;
   title: string;
   message: string;
   primaryLabel?: string;
@@ -223,8 +239,9 @@ const AccountState: React.FC<{
   onPrimary,
   secondaryLabel,
   onSecondary,
+  showSupport,
 }) => (
-  <View style={styles.container}>
+  <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.container, { flex: undefined, flexGrow: 1 }]}>
     <Text style={styles.title}>{title}</Text>
     <Text style={styles.message}>{message}</Text>
     {primaryLabel && onPrimary ? (
@@ -237,7 +254,8 @@ const AccountState: React.FC<{
         <Text style={styles.secondaryText}>{secondaryLabel}</Text>
       </Pressable>
     ) : null}
-  </View>
+    {showSupport ? <View style={{ width: '100%', marginTop: 24 }}><SupportContactPanel /></View> : null}
+  </ScrollView>
 );
 
 const styles = StyleSheet.create({

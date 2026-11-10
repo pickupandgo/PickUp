@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AppState } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { TripController } from '../services/trip/TripController';
+import { TripController, type TripResource } from '../services/trip/TripController';
 import type { ActiveTrip } from '../types/trip';
 
 /**
@@ -11,26 +11,31 @@ import type { ActiveTrip } from '../types/trip';
  * specific trip is loaded from the engine. Otherwise the driver's current
  * active trip is loaded as a fallback.
  */
-export function useActiveTrip(tripId?: string) {
-  const [activeTrip, setActiveTrip] = useState<ActiveTrip | null>(null);
+export function useTripResource(tripId?: string, loadOnMount = true): TripResource {
+  const [resource, setResource] = useState<TripResource>(() => TripController.getInstance().getResource(tripId));
 
   useEffect(() => {
     const controller = TripController.getInstance();
 
-    if (tripId) {
-      controller.loadTrip(tripId);
-    } else if (!controller.getTrip()) {
-      controller.loadInitialTrip();
+    const unsubscribe = controller.subscribe(() => setResource(controller.getResource(tripId)));
+    if (loadOnMount) {
+      const read = tripId ? controller.loadTrip(tripId) : controller.loadInitialTrip();
+      read.catch(() => {}); // The controller exposes the error to the retry UI.
     }
-
-    const unsubscribe = controller.subscribe(setActiveTrip);
 
     return () => {
       unsubscribe();
     };
-  }, [tripId]);
+  }, [tripId, loadOnMount]);
 
-  return activeTrip;
+  // A route change must not briefly render the previous id before the effect runs.
+  const sessionUid = TripController.getInstance().getSessionUid();
+  return resource.sessionUid !== sessionUid || (resource.trip && tripId && resource.trip.id !== tripId)
+    ? { sessionUid, trip: null, status: 'loading', error: null } : resource;
+}
+
+export function useActiveTrip(tripId?: string) {
+  return useTripResource(tripId).trip;
 }
 
 /**
@@ -39,18 +44,19 @@ export function useActiveTrip(tripId?: string) {
  * never acts on stale state. Null until the engine's answer for this trip id is in.
  */
 export function useLiveTrip(tripId: string): ActiveTrip | null {
-  const trip = useActiveTrip(tripId);
+  const resource = useTripResource(tripId);
+  const trip = resource.status === 'error' ? null : resource.trip;
 
   useFocusEffect(
     useCallback(() => {
-      TripController.getInstance().loadTrip(tripId);
+      TripController.getInstance().loadTrip(tripId).catch(() => {});
     }, [tripId]),
   );
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') {
-        TripController.getInstance().loadTrip(tripId);
+        TripController.getInstance().loadTrip(tripId).catch(() => {});
       }
     });
     return () => subscription.remove();

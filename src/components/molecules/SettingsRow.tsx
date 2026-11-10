@@ -1,9 +1,14 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable, ViewStyle } from 'react-native';
 import Icon from '../atoms/Icon';
+import { AccountMenuRow } from '../account/AccountLayout';
 import { colors, typography, spacing } from '../../theme';
 
 export interface SettingsRowProps {
+  readonly compact?: boolean;
+  readonly subtitle?: string;
+  readonly mint?: boolean;
+  readonly last?: boolean;
   readonly label: string;
   readonly value?: string;
   readonly iconName: string;
@@ -14,6 +19,7 @@ export interface SettingsRowProps {
 }
 
 export const SettingsRow: React.FC<SettingsRowProps> = ({
+  compact = false, subtitle, mint = false, last = false,
   label,
   value,
   iconName,
@@ -22,6 +28,7 @@ export const SettingsRow: React.FC<SettingsRowProps> = ({
   style,
   testID,
 }) => {
+  if (compact) return <AccountMenuRow title={label} subtitle={subtitle} value={value} icon={iconName} mint={mint} last={last} onPress={onPress} testID={testID} />;
   return (
     <Pressable
       style={({ pressed }) => [

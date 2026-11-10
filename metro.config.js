@@ -11,7 +11,12 @@ const config = {
     // The engine backend was copied into the workspace and ships its own
     // node_modules. Exclude it so Metro doesn't watch it or hit Haste module
     // naming collisions while bundling the app.
-    blockList: /[\\/]Drive_with_engine[\\/].*/,
+    blockList: [
+      /[\\/]Drive_with_engine[\\/].*/,
+      // CMake creates and removes temporary folders during native builds.
+      // They are not Metro inputs; watching them can crash fs.watch on Windows.
+      /[\\/]android[\\/](?:app[\\/])?(?:\.cxx|\.gradle|build)(?:[\\/].*)?$/,
+    ],
   },
 };
 

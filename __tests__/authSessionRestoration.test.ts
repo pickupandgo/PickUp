@@ -1,5 +1,6 @@
 import type { User } from '@react-native-firebase/auth';
 import { FirebaseAuthService } from '../src/services/auth/AuthService';
+import { LocalAvatarStore } from '../src/services/account/LocalAvatarStore';
 
 const mockSession: { currentUser: User | null } = { currentUser: null };
 const mockSetToken = jest.fn();
@@ -53,6 +54,27 @@ describe('Firebase session restoration never reuses an obsolete identity', () =>
     resolve('synthetic-current-token');
     await pending;
     expect(mockSetToken).toHaveBeenCalledWith('synthetic-current-token');
+    expect(listener).toHaveBeenCalledWith(user);
+  });
+  it('invalidates only the previous identity avatar at an account change', async () => {
+    const clear = jest.spyOn(LocalAvatarStore, 'clear').mockResolvedValue(undefined);
+    const { user, resolve } = pendingUser(); mockSession.currentUser = user;
+    const first = mockEvent(user); resolve('synthetic-current-token'); await first;
+    const next = { uid: 'next-fixture-driver', getIdToken: async () => 'synthetic-next-token' } as User;
+    mockSession.currentUser = next; await mockEvent(next);
+    expect(clear).toHaveBeenLastCalledWith(user.uid);
+    clear.mockRestore();
+  });
+  it('notifies the identity boundary before waiting for token restoration', async () => {
+    stop();
+    const identity = jest.fn();
+    stop = service.observeAuthState(listener, identity);
+    const { user, resolve } = pendingUser();
+    mockSession.currentUser = user;
+    const pending = mockEvent(user);
+    expect(identity).toHaveBeenCalledWith(user.uid);
+    expect(listener).not.toHaveBeenCalled();
+    resolve('synthetic-current-token'); await pending;
     expect(listener).toHaveBeenCalledWith(user);
   });
   it('cannot restore a token that finishes after signout', async () => {

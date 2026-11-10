@@ -2,7 +2,19 @@ import type { ActiveTrip } from '../../types/trip';
 import { ArrivalDetectionService } from './ArrivalDetectionService';
 import { TripService, type TripActionResult } from './TripService';
 import { isOutcomeUnknown } from './tripErrors';
-import { getCurrentDriverId } from '../engine/dispatch';
+import { getAuth } from '@react-native-firebase/auth';
+import { isTerminalTrip } from './tripLifecycle';
+
+export interface TripResource {
+  sessionUid: string | null;
+  trip: ActiveTrip | null;
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  error: unknown;
+}
+
+const signedInUid = (): string | null => {
+  try { return getAuth().currentUser?.uid ?? null; } catch { return null; }
+};
 
 /**
  * The driver's current trip, as the engine last reported it, and the driver's trip actions.
@@ -20,8 +32,12 @@ export class TripController {
   private currentTrip: ActiveTrip | null = null;
   private listeners = new Set<(trip: ActiveTrip | null) => void>();
   private inFlight = new Map<string, Promise<unknown>>();
-  private sessionUid = getCurrentDriverId();
-  private sessionEpoch = 0;
+  private uid: string | null = null;
+  private generation = 0;
+  private revision = 0;
+  private trips = new Map<string, ActiveTrip>();
+  private loads = new Map<string, Pick<TripResource, 'status' | 'error'>>();
+  private tripRevisions = new Map<string, number>();
 
   private constructor() {}
 
@@ -32,33 +48,72 @@ export class TripController {
     return TripController.instance;
   }
 
-  setTrip(trip: ActiveTrip | null) {
-    this.currentTrip = trip;
+  /** Called synchronously at the Firebase identity boundary, before token restoration. */
+  setSession(uid: string | null) {
+    if (uid === this.uid) return;
+    this.uid = uid;
+    this.reset();
+  }
+
+  /** Compatibility for native/session teardown; clears every identity-scoped resource. */
+  resetSession() { this.reset(); }
+
+  private reset() {
+    ++this.generation;
+    ++this.revision;
+    this.currentTrip = null;
+    this.trips.clear();
+    this.loads.clear();
+    this.tripRevisions.clear();
+    this.inFlight.clear();
     this.notifyListeners();
-    ArrivalDetectionService.getInstance().syncTripState(trip);
+  }
+
+  getSessionUid() {
+    this.setSession(signedInUid());
+    return this.uid;
+  }
+
+  private context() {
+    this.getSessionUid();
+    return { uid: this.uid, generation: this.generation };
+  }
+
+  private current(context: { uid: string | null; generation: number }) {
+    this.getSessionUid();
+    return context.uid !== null && context.uid === this.uid && context.generation === this.generation;
+  }
+
+  private assertCurrent(context: { uid: string | null; generation: number }) {
+    if (!this.current(context)) throw new Error('Your sign-in session changed. Reload your trip.');
+  }
+
+  setTrip(trip: ActiveTrip | null) {
+    this.getSessionUid();
+    if (!this.uid) return;
+    if (trip) this.applyServerTrip(trip, true);
+    else this.retireActive();
   }
 
   getTrip(): ActiveTrip | null {
-    this.checkSession();
+    this.getSessionUid();
     return this.currentTrip;
   }
 
-  private checkSession() {
-    const uid = getCurrentDriverId();
-    if (uid !== this.sessionUid) {
-      this.sessionUid = uid;
-      this.resetSession();
-    }
+  hasPendingAcceptance(): boolean {
+    this.getSessionUid();
+    return [...this.inFlight.keys()].some(key => key.startsWith('accept:'));
   }
 
-  resetSession() {
-    ++this.sessionEpoch;
-    this.inFlight.clear();
-    this.setTrip(null);
+  getResource(tripId?: string): TripResource {
+    this.getSessionUid();
+    const trip = tripId ? this.trips.get(tripId) ?? null : this.currentTrip;
+    const load = this.loads.get(tripId ?? 'active');
+    return { sessionUid: this.uid, trip, status: load?.status ?? (trip ? 'ready' : 'idle'), error: load?.error ?? null };
   }
 
   subscribe(listener: (trip: ActiveTrip | null) => void) {
-    this.checkSession();
+    this.getSessionUid();
     this.listeners.add(listener);
     listener(this.currentTrip);
     return () => {
@@ -68,11 +123,12 @@ export class TripController {
 
   private notifyListeners() {
     this.listeners.forEach(listener => listener(this.currentTrip));
+    void ArrivalDetectionService.getInstance().syncTripState(this.currentTrip).catch(() => {});
   }
 
   /** Applies a trip the engine returned, unless it is older than the one already shown. */
-  applyServerTrip(trip: ActiveTrip) {
-    const current = this.currentTrip;
+  private applyServerTrip(trip: ActiveTrip, activate = false) {
+    const current = this.trips.get(trip.id);
     if (
       current &&
       current.id === trip.id &&
@@ -82,21 +138,43 @@ export class TripController {
     ) {
       return;
     }
-    this.setTrip(trip);
+    if (current && isTerminalTrip(current) && !isTerminalTrip(trip)) return;
+    this.trips.set(trip.id, trip);
+    this.loads.set(trip.id, { status: 'ready', error: null });
+    ++this.revision;
+    if (isTerminalTrip(trip)) {
+      if (this.currentTrip?.id === trip.id) this.currentTrip = null;
+    } else if (activate || this.currentTrip?.id === trip.id) {
+      this.currentTrip = trip;
+    }
+    this.notifyListeners();
+  }
+
+  private retireActive() {
+    if (this.currentTrip) {
+      const id = this.currentTrip.id;
+      this.tripRevisions.set(id, (this.tripRevisions.get(id) ?? 0) + 1);
+      this.trips.delete(id);
+      this.loads.set(id, { status: 'ready', error: null });
+    }
+    this.currentTrip = null;
+    ++this.revision;
+    this.notifyListeners();
   }
 
   /** Runs `work` once per key at a time: a duplicate tap gets the running request's outcome. */
-  private once<T>(key: string, work: (isCurrent: () => boolean) => Promise<T>): Promise<T> {
-    this.checkSession();
-    const uid = this.sessionUid, epoch = this.sessionEpoch;
-    if (!uid) return Promise.reject(new Error('Please sign in again.'));
-    const isCurrent = () => uid !== null && uid === getCurrentDriverId() && epoch === this.sessionEpoch;
+  private once<T>(key: string, work: () => Promise<T>): Promise<T> {
+    const context = this.context();
+    if (!context.uid) return Promise.reject(new Error('Please sign in to load your trip.'));
     const running = this.inFlight.get(key);
     if (running) {
       return running as Promise<T>;
     }
-    const promise = work(isCurrent).then(result => {
-      if (!isCurrent()) throw new Error('Partner session changed. Please sign in again.');
+    const promise = Promise.resolve().then(() => {
+      this.assertCurrent(context);
+      return work();
+    }).then(result => {
+      this.assertCurrent(context);
       return result;
     }).finally(() => {
       if (this.inFlight.get(key) === promise) this.inFlight.delete(key);
@@ -111,14 +189,20 @@ export class TripController {
     tripId: string,
     work: () => Promise<TripActionResult>,
   ): Promise<TripActionResult> {
-    return this.once(`${key}:${tripId}`, async isCurrent => {
+    const context = this.context();
+    const tripRevision = this.tripRevisions.get(tripId);
+    return this.once(`${key}:${tripId}`, async () => {
       try {
         const result = await work();
-        if (isCurrent()) this.applyServerTrip(result.trip);
+        this.assertCurrent(context);
+        if (this.tripRevisions.get(tripId) !== tripRevision) throw new Error('This trip view was cleared. Reload it.');
+        if (result.trip.id !== tripId) throw new Error('The server returned a different trip. Please retry.');
+        this.applyServerTrip(result.trip, this.currentTrip === null);
         return result;
       } catch (error) {
         // Never move forward on a failure: show what the engine has now.
-        if (isCurrent()) this.loadTrip(tripId).catch(() => undefined);
+        if (this.current(context) && this.tripRevisions.get(tripId) === tripRevision)
+          this.loadTrip(tripId).catch(() => undefined);
         throw error;
       }
     });
@@ -132,13 +216,15 @@ export class TripController {
    * and only a trip for this very ride counts.
    */
   acceptOffer(rideId: string): Promise<ActiveTrip> {
-    return this.once(`accept:${rideId}`, async isCurrent => {
+    const context = this.context();
+    return this.once(`accept:${rideId}`, async () => {
       const service = TripService.getInstance();
       let trip: ActiveTrip;
       try {
         trip = await service.acceptTrip(rideId);
       } catch (error) {
-        if (!isCurrent() || !isOutcomeUnknown(error)) {
+        this.assertCurrent(context);
+        if (!isOutcomeUnknown(error)) {
           throw error;
         }
         const active = await service.getActiveTrip().catch(() => null);
@@ -147,7 +233,9 @@ export class TripController {
         }
         trip = active;
       }
-      if (isCurrent()) this.applyServerTrip(trip);
+      this.assertCurrent(context);
+      if (trip.rideId && trip.rideId !== rideId) throw new Error('The server returned a different booking. Please reload.');
+      this.applyServerTrip(trip, true);
       return trip;
     });
   }
@@ -219,44 +307,76 @@ export class TripController {
    * admin's retry or closure of a failed drop, a cancellation). Throws on failure.
    */
   refreshTrip(tripId: string): Promise<ActiveTrip> {
-    return this.once(`refresh:${tripId}`, async isCurrent => {
+    const context = this.context();
+    const tripRevision = this.tripRevisions.get(tripId);
+    return this.once(`refresh:${tripId}`, async () => {
       const trip = await TripService.getInstance().refreshTrip(tripId);
-      if (isCurrent()) this.applyServerTrip(trip);
+      this.assertCurrent(context);
+      if (this.tripRevisions.get(tripId) !== tripRevision) throw new Error('This trip view was cleared. Reload it.');
+      if (trip.id !== tripId) throw new Error('The server returned a different trip. Please retry.');
+      this.applyServerTrip(trip, this.currentTrip === null);
       return trip;
     });
   }
 
   /** Clear the current trip (e.g. after returning home post-completion). */
-  clearTrip() {
-    this.setTrip(null);
+  clearTrip(tripId?: string) {
+    this.getSessionUid();
+    if (!tripId) { this.reset(); return; }
+    this.tripRevisions.set(tripId, (this.tripRevisions.get(tripId) ?? 0) + 1);
+    this.trips.delete(tripId);
+    this.loads.set(tripId, { status: 'ready', error: null });
+    if (this.currentTrip?.id === tripId) this.currentTrip = null;
+    ++this.revision;
+    this.notifyListeners();
   }
 
-  async loadInitialTrip() {
-    try {
-      await this.once('restore-active', async isCurrent => {
-        const before = this.currentTrip;
-        const trip = await TripService.getInstance().getActiveTrip();
-        if (!isCurrent() || this.currentTrip !== before) return;
-        if (trip) this.applyServerTrip(trip);
-        else this.setTrip(null);
-      });
-    } catch (e) {
-      console.warn('Failed to load initial active trip', e);
-    }
+  loadInitialTrip(): Promise<ActiveTrip | null> {
+    return this.read();
   }
 
-  /** Load a specific trip by id (e.g. the one the driver just accepted). Failures are silent. */
-  async loadTrip(tripId: string) {
-    try {
-      await this.once(`load:${tripId}`, async isCurrent => {
-        const trip = await TripService.getInstance().getTripById(tripId);
-        if (trip && isCurrent()) {
-          this.applyServerTrip(trip);
+  /** Exact-id reads do not replace a different active trip. Errors remain retryable UI state. */
+  loadTrip(tripId: string): Promise<ActiveTrip | null> {
+    return this.read(tripId);
+  }
+
+  private read(tripId?: string): Promise<ActiveTrip | null> {
+    const context = this.context();
+    const key = tripId ?? 'active';
+    return this.once(`read:${key}`, async () => {
+      const revision = this.revision;
+      const tripRevision = tripId ? this.tripRevisions.get(tripId) : undefined;
+      this.loads.set(key, { status: 'loading', error: null });
+      this.notifyListeners();
+      try {
+        const service = TripService.getInstance();
+        const trip = await (tripId ? service.getTripById(tripId) : service.getActiveTrip());
+        this.assertCurrent(context);
+        if (tripId && this.tripRevisions.get(tripId) !== tripRevision) return null;
+        if (tripId && trip && trip.id !== tripId) throw new Error('The server returned a different trip. Please retry.');
+        // A response started before acceptance, completion or explicit clearing is obsolete.
+        if (!tripId && revision !== this.revision) {
+          this.loads.set(key, { status: 'ready', error: null });
+          this.notifyListeners();
+          return this.currentTrip;
         }
-      });
-    } catch (e) {
-      console.warn('Failed to load trip', tripId, e);
-    }
+        if (trip) this.applyServerTrip(trip, !tripId);
+        else if (!tripId) this.retireActive();
+        else {
+          this.trips.delete(tripId);
+          if (this.currentTrip?.id === tripId) this.retireActive();
+        }
+        this.loads.set(key, { status: 'ready', error: null });
+        this.notifyListeners();
+        return trip;
+      } catch (error) {
+        if (this.current(context) && (!tripId || this.tripRevisions.get(tripId) === tripRevision)) {
+          this.loads.set(key, { status: 'error', error });
+          this.notifyListeners();
+        }
+        throw error;
+      }
+    });
   }
 
   // Expose this for development/testing if needed, but primarily we rely on loadInitialTrip

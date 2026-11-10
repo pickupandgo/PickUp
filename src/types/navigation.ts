@@ -27,7 +27,7 @@ export type HomeStackParamList = {
   PickupOTP: { readonly tripId: string; readonly stopId: string };
   DropOTP: { readonly tripId: string; readonly stopId: string };
   DeliveryProofCamera: { readonly tripId: string; readonly stopId: string };
-  DeliveryProofPreview: { readonly tripId: string; readonly stopId: string; readonly photoUri: string };
+  DeliveryProofPreview: { readonly tripId: string; readonly stopId: string; readonly photoUri: string; readonly photoType?: string };
   TripCompleted: { readonly tripId: string; readonly notificationTrip?: ActiveTrip };
   /** Pickup / delivery payment. `tripId` is the payments backend's trip id (not the engine's). */
   CollectPayment: { readonly tripId: string };
@@ -114,6 +114,8 @@ export type MainTabParamList = {
 // ─── Root Navigator ────────────────────────────────────────────────
 
 export type RootStackParamList = {
+  Support: undefined;
+  Privacy: undefined;
   Auth: NavigatorScreenParams<AuthStackParamList>;
   Onboarding: NavigatorScreenParams<AuthStackParamList>;
   Main: NavigatorScreenParams<MainTabParamList>;
@@ -144,7 +146,7 @@ export type TripsScreenProps<T extends keyof TripsStackParamList> =
 export type EarningsScreenProps<T extends keyof EarningsStackParamList> =
   CompositeScreenProps<
     NativeStackScreenProps<EarningsStackParamList, T>,
-    BottomTabScreenProps<MainTabParamList>
+    CompositeScreenProps<BottomTabScreenProps<MainTabParamList>, NativeStackScreenProps<RootStackParamList>>
   >;
 
 export type WalletScreenProps<T extends keyof WalletStackParamList> =

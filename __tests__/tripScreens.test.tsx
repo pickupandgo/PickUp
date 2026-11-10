@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
+import { KeyboardAvoidingView, ScrollView, Platform } from 'react-native';
 import { PrimaryButton } from '../src/components/atoms/PrimaryButton';
 import { SecondaryButton } from '../src/components/atoms/SecondaryButton';
 import { OTPInput } from '../src/components/atoms/OTPInput';
@@ -10,12 +11,16 @@ import {
   parseTrip,
 } from '../src/services/payments/collectionsDto';
 import { TripController } from '../src/services/trip/TripController';
-import { otpVerificationLabels } from '../src/data/mockData';
+import { otpVerificationLabels, tripCompletedLabels } from '../src/data/mockData';
+import { TripCompletedScreen } from '../src/screens/trip/TripCompletedScreen';
 import type { ActiveTrip, TripStop } from '../src/types/trip';
 import { ArrivedAtPickupScreen } from '../src/screens/trip/ArrivedAtPickupScreen';
 import { PickupOTPScreen } from '../src/screens/trip/PickupOTPScreen';
 import { DropOTPScreen } from '../src/screens/trip/DropOTPScreen';
 import { DeliveryProofPreviewScreen } from '../src/screens/trip/DeliveryProofPreviewScreen';
+jest.mock('../src/hooks/useTripEarning', () => ({ useTripEarning: () => ({ earning: null, loading: false, error: null, reload: jest.fn() }) }));
+import { uploadDeliveryProof } from '../src/services/trip/DeliveryProofService';
+jest.mock('../src/services/trip/DeliveryProofService', () => ({ uploadDeliveryProof: jest.fn(async () => 'proof:33333333-3333-4333-8333-333333333331') }));
 
 jest.mock('@react-native-firebase/auth', () => ({
   getAuth: () => ({ currentUser: { uid: 'driver-1' } }),
@@ -41,10 +46,12 @@ const mockState: {
 jest.mock('../src/hooks/useActiveTrip', () => ({
   useLiveTrip: () => mockState.trip,
   useActiveTrip: () => mockState.trip,
+  useTripResource: () => ({ trip: mockState.trip, sessionUid: 'driver-1', status: 'ready', error: null }),
 }));
 jest.mock('../src/hooks/usePaymentGate', () => ({
   usePaymentGate: () => mockState.gate,
 }));
+jest.mock('../src/hooks/useCollectableTrips', () => ({ useCollectableTrips: () => [] }));
 jest.mock('../src/location', () => ({
   useDriverLocation: () => ({ currentLocation: null }),
 }));
@@ -165,7 +172,7 @@ function gate(raw: Record<string, unknown> | null): UsePaymentGateResult {
 }
 
 const navigation = () =>
-  ({ navigate: jest.fn(), goBack: jest.fn(), popToTop: jest.fn() } as any);
+  ({ navigate: jest.fn(), goBack: jest.fn(), popToTop: jest.fn(), popTo: jest.fn() } as any);
 
 async function render(element: React.ReactElement) {
   let renderer!: ReactTestRenderer.ReactTestRenderer;
@@ -188,6 +195,38 @@ const button = (renderer: ReactTestRenderer.ReactTestRenderer, label: string) =>
 
 const texts = (renderer: ReactTestRenderer.ReactTestRenderer) =>
   JSON.stringify(renderer.toJSON());
+
+describe('completion identity and terminal confirmation', () => {
+  it('does not show a completed summary from a mismatched hook result or route snapshot', async () => {
+    mockState.trip = trip('COMPLETED', [pickup, drop()]);
+    const r = await render(<TripCompletedScreen navigation={navigation()}
+      route={{ params: { tripId: 'different-trip', notificationTrip: mockState.trip } } as any} />);
+    expect(JSON.stringify(r.toJSON())).toContain('Trip unavailable');
+    expect(button(r, tripCompletedLabels.backToHomeLabel)).toBeUndefined();
+  });
+
+  it('does not claim completion while the matching server trip is still active', async () => {
+    mockState.trip = trip('DELIVERED', [pickup, drop()]);
+    const r = await render(<TripCompletedScreen navigation={navigation()}
+      route={{ params: { tripId: TRIP_ID } } as any} />);
+    expect(JSON.stringify(r.toJSON())).toContain('Completion has not been confirmed');
+    expect(button(r, tripCompletedLabels.backToHomeLabel)).toBeUndefined();
+  });
+
+  it('uses the selected completed trip and leaves another current trip intact on Home', async () => {
+    const controller = TripController.getInstance();
+    controller.setTrip({ ...trip('IN_TRANSIT', [pickup, drop()]), id: 'another-active-trip' });
+    mockState.trip = trip('COMPLETED', [pickup, drop()]);
+    const nav = navigation();
+    const r = await render(<TripCompletedScreen navigation={nav}
+      route={{ params: { tripId: TRIP_ID, notificationTrip: controller.getTrip() } } as any} />);
+    expect(button(r, tripCompletedLabels.backToHomeLabel)).toBeDefined();
+    await ReactTestRenderer.act(async () => button(r, tripCompletedLabels.backToHomeLabel)!.onPress());
+    expect(controller.getTrip()?.id).toBe('another-active-trip');
+    expect(nav.popToTop).toHaveBeenCalled();
+    controller.clearTrip();
+  });
+});
 
 afterEach(() => {
   jest.restoreAllMocks();
@@ -299,6 +338,30 @@ describe('pickup screen (review G table)', () => {
 
 describe('pickup OTP screen', () => {
   const route = { params: { tripId: TRIP_ID, stopId: pickup.id } } as any;
+  it('uses native Android resize once, scrolls OTP content, and keeps Verify outside that scroll', async () => {
+    jest.replaceProperty(Platform, 'OS', 'android');
+    mockState.trip = trip('DRIVER_ARRIVED', [pickup]); mockState.gate = gate({});
+    const r = await render(<PickupOTPScreen navigation={navigation()} route={route} />);
+    expect(r.root.findByType(KeyboardAvoidingView).props.behavior).toBeUndefined();
+    const scroll = r.root.findByType(ScrollView);
+    expect(scroll.props.keyboardShouldPersistTaps).toBe('handled');
+    expect(scroll.findAllByType(OTPInput)).toHaveLength(1);
+    expect(scroll.findAllByType(PrimaryButton)).toHaveLength(0);
+    expect(button(r, VERIFY)).toBeDefined();
+    await ReactTestRenderer.act(async () => r.unmount());
+  });
+  it('never auto-redirects a verified OTP screen after Back; Continue returns to the existing pickup route', async () => {
+    jest.useFakeTimers();
+    mockState.trip = trip('PICKUP_VERIFIED', [pickup]);
+    mockState.gate = gate({ handoverAllowed: true });
+    const nav = navigation();
+    const r = await render(<PickupOTPScreen navigation={nav} route={route} />);
+    await ReactTestRenderer.act(async () => jest.advanceTimersByTime(5000));
+    expect(nav.navigate).not.toHaveBeenCalled(); expect(nav.popTo).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(async () => button(r, 'Continue')!.onPress());
+    expect(nav.popTo).toHaveBeenCalledWith('ArrivedAtPickup', { tripId: TRIP_ID, stopId: pickup.id });
+    await ReactTestRenderer.act(async () => r.unmount()); jest.useRealTimers();
+  });
 
   it('cannot verify before the payment backend allows the handover', async () => {
     mockState.trip = trip('DRIVER_ARRIVED', [pickup]);
@@ -487,6 +550,7 @@ describe('drop screen (review G table)', () => {
 });
 
 describe('delivery proof', () => {
+  beforeEach(() => jest.mocked(uploadDeliveryProof).mockResolvedValue('proof:33333333-3333-4333-8333-333333333331'));
   const route = {
     params: { tripId: TRIP_ID, stopId: STOP_ID, photoUri: 'file:///proof.jpg' },
   } as any;
@@ -530,5 +594,16 @@ describe('delivery proof', () => {
     expect(texts(r)).toContain('trip.delivered');
     expect(button(r, 'trip.completeTrip')).toBeDefined();
     expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('never confirms delivery when the upload fails', async () => {
+    mockState.trip = trip('DROP_PROGRESS', [{ ...pickup, status: 'completed' }, drop({ otpVerified: true })], 1);
+    jest.mocked(uploadDeliveryProof).mockRejectedValue(new Error('Upload failed. Retry.'));
+    const confirm = jest.spyOn(TripController.prototype, 'confirmDropDelivery');
+    const r = await render(<DeliveryProofPreviewScreen navigation={navigation()} route={route} />);
+    await ReactTestRenderer.act(async () => buttons(r)[0].onPress());
+    expect(confirm).not.toHaveBeenCalled();
+    expect(texts(r)).toContain('Upload failed. Retry.');
+    expect(texts(r)).not.toContain('trip.delivered');
   });
 });

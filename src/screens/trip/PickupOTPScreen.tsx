@@ -1,10 +1,12 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Platform,
   KeyboardAvoidingView,
+  ScrollView,
+  Keyboard,
 } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,6 +15,7 @@ import { otpVerificationLabels } from '../../data/mockData';
 import { AppHeader } from '../../components/molecules/AppHeader';
 import { OTPInput } from '../../components/atoms/OTPInput';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
+import { TripLoadNotice } from '../../components/molecules/TripLoadNotice';
 import { useLiveTrip } from '../../hooks/useActiveTrip';
 import { usePaymentGate } from '../../hooks/usePaymentGate';
 import { useI18n } from '../../i18n';
@@ -60,38 +63,38 @@ export const PickupOTPScreen: React.FC<PickupOTPScreenProps> = ({
   const [otp, setOtp] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const submitting = useRef(false);
 
   // Verified (by this screen, or found so after a timeout and a re-read): back to the pickup
   // screen, where the driver starts the trip.
   const verified = trip ? VERIFIED.has(engineStatusOf(trip)) : false;
-  useEffect(() => {
-    if (!verified) {
-      return undefined;
-    }
-    const timer = setTimeout(() => {
-      navigation.navigate('ArrivedAtPickup', { tripId, stopId });
-    }, 1200);
-    return () => clearTimeout(timer);
-  }, [verified, navigation, tripId, stopId]);
-
   const allowed = gate.view.kind === 'mock' || pickupHandoverAllowed(gate.gate);
 
   const handleVerify = useCallback(async () => {
+    if (submitting.current || !allowed || otp.length !== OTP_LENGTH) return;
+    submitting.current = true;
     setIsLoading(true);
     setError(null);
     try {
       await TripController.getInstance().verifyPickupOTP(tripId, otp);
+      Keyboard.dismiss();
     } catch (e) {
       setError(describeTripError(e, t));
       gate.refresh();
     } finally {
+      submitting.current = false;
       setIsLoading(false);
     }
-  }, [otp, tripId, t, gate]);
+  }, [otp, tripId, t, gate, allowed]);
 
   const handleComplete = useCallback(async (value: string) => {
     setOtp(value);
   }, []);
+
+  if (!trip)
+    return (
+      <TripLoadNotice tripId={tripId} onHome={() => navigation.popToTop()} />
+    );
 
   if (verified) {
     return (
@@ -103,6 +106,14 @@ export const PickupOTPScreen: React.FC<PickupOTPScreenProps> = ({
           <Text style={styles.feedbackTitle}>
             {otpVerificationLabels.successTitle}
           </Text>
+          <PrimaryButton
+            label="Continue"
+            onPress={() => {
+              if (engineStatusOf(trip) === 'PICKUP_VERIFIED')
+                navigation.popTo('ArrivedAtPickup', { tripId, stopId });
+              else navigation.popTo('ActiveTrip', { tripId });
+            }}
+          />
         </View>
       </SafeAreaView>
     );
@@ -117,9 +128,14 @@ export const PickupOTPScreen: React.FC<PickupOTPScreenProps> = ({
       />
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.content}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          style={{ flex: 1 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
           <Text style={styles.title}>
             {otpVerificationLabels.pickupOtpTitle}
           </Text>
@@ -140,17 +156,18 @@ export const PickupOTPScreen: React.FC<PickupOTPScreenProps> = ({
             value={otp}
             onChange={setOtp}
             onComplete={handleComplete}
+            disabled={isLoading || !allowed}
             hasError={error !== null}
             style={styles.otpInput}
           />
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        </View>
+        </ScrollView>
 
         <PrimaryButton
           label={otpVerificationLabels.verifyLabel}
           onPress={handleVerify}
-          disabled={otp.length < OTP_LENGTH || !allowed || !trip}
+          disabled={otp.length < OTP_LENGTH || !allowed || !trip || isLoading}
           loading={isLoading}
           style={styles.verifyButton}
         />
@@ -169,7 +186,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.containerPadding,
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
+    paddingBottom: spacing.containerPadding,
     gap: spacing.containerPadding,
     paddingTop: spacing.lg,
   },

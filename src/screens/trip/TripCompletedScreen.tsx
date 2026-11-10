@@ -4,6 +4,8 @@ import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { tripCompletedLabels } from '../../data/mockData';
+import { useLiveTrip } from '../../hooks/useActiveTrip';
+import { TripLoadNotice } from '../../components/molecules/TripLoadNotice';
 import { JourneyRecap } from '../../components/organisms/JourneyRecap';
 import { PrimaryButton } from '../../components/atoms/PrimaryButton';
 import { SecondaryButton } from '../../components/atoms/SecondaryButton';
@@ -12,7 +14,6 @@ import { useCollectableTrips } from '../../hooks/useCollectableTrips';
 import { CollectPaymentBanner } from '../../components/molecules/CollectPaymentBanner';
 import type { DriverTripDto } from '../../services/payments/collectionsDto';
 import type { HomeScreenProps } from '../../types/navigation';
-import { useLiveTrip } from '../../hooks/useActiveTrip';
 import { useTripHistory } from '../../hooks/useTripHistory';
 import { TripFinancialDetails } from '../../components/trips/TripFinancialDetails';
 import { DeliveryPhotoGallery } from '../../components/trips/DeliveryPhotoGallery';
@@ -33,7 +34,8 @@ export const TripCompletedScreen: React.FC<TripCompletedScreenProps> = ({
   route,
   testID,
 }) => {
-  const trip = useLiveTrip(route.params.tripId);
+  const tripId = route.params.tripId;
+  const trip = useLiveTrip(tripId);
   const history = useTripHistory(route.params.tripId);
   const record = history.items.find(item => item.id === route.params.tripId);
   const completed = trip?.engineStatus === 'COMPLETED' || record?.status === 'COMPLETED';
@@ -47,14 +49,18 @@ export const TripCompletedScreen: React.FC<TripCompletedScreenProps> = ({
 
   const handleBackToHome = useCallback(() => {
     // Clear the finished trip and return to the root of HomeStack.
-    if (!route.params.notificationTrip || TripController.getInstance().getTrip()?.id === route.params.tripId)
-      TripController.getInstance().clearTrip();
+    TripController.getInstance().clearTrip(tripId);
     navigation.popToTop();
-  }, [navigation, route.params.notificationTrip, route.params.tripId]);
+  }, [navigation, tripId]);
 
   const handleViewEarnings = useCallback(() => {
     navigation.getParent()?.navigate('EarningsTab', { screen: 'EarningsHistory' });
   }, [navigation]);
+
+  if (!trip || trip.id !== tripId || (trip.engineStatus ? trip.engineStatus !== 'COMPLETED' : trip.status !== 'completed')) {
+    return <TripLoadNotice tripId={tripId} onHome={() => navigation.popToTop()}
+      message="Completion has not been confirmed for this trip. Return Home to check its current status." />;
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} testID={testID}>
@@ -68,7 +74,7 @@ export const TripCompletedScreen: React.FC<TripCompletedScreenProps> = ({
         </View>
 
         {/* Pay-at-delivery fare still to collect (payments backend) */}
-        <CollectPaymentBanner trips={collectable} onPress={handleCollect} />
+        <CollectPaymentBanner trips={collectable.filter(value => value.tripId === trip.paymentTripId)} onPress={handleCollect} />
 
         <TripFinancialDetails earning={record?.earning ?? null} loading={history.financeLoading} />
         {history.error ? <Text style={styles.statValue}>{history.error}</Text> : null}

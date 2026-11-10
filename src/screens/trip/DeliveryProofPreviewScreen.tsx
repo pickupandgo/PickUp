@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,6 +11,9 @@ import { SecondaryButton } from '../../components/atoms/SecondaryButton';
 import { useLiveTrip } from '../../hooks/useActiveTrip';
 import { useI18n } from '../../i18n';
 import { TripController } from '../../services/trip/TripController';
+import { uploadDeliveryProof, type ProofUpload, type ProofPhase } from '../../services/trip/DeliveryProofService';
+import { getCurrentDriverId } from '../../services/engine/dispatch';
+import { env } from '../../config/env';
 import {
   describeTripError,
   engineStatusOf,
@@ -33,12 +36,24 @@ export interface DeliveryProofPreviewScreenProps {
 export const DeliveryProofPreviewScreen: React.FC<
   DeliveryProofPreviewScreenProps
 > = ({ navigation, route, testID }) => {
-  const { tripId, stopId, photoUri } = route.params;
+  const { tripId, stopId, photoUri, photoType } = route.params;
   const { t } = useI18n();
   const trip = useLiveTrip(tripId);
   const [busy, setBusy] = useState<'deliver' | 'complete' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completionPending, setCompletionPending] = useState(false);
+  const [uploadPhase, setUploadPhase] = useState<ProofPhase | null>(null);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const proof = useRef<ProofUpload | undefined>(undefined);
+  const locked = useRef<string | null>(null);
+  const mounted = useRef(true);
+  const scope = `${tripId}:${stopId}:${photoUri}`;
+  const currentScope = useRef(scope); currentScope.current = scope;
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => {
+    proof.current = undefined; locked.current = null;
+    setPhotoFailed(false); setBusy(null); setError(null); setUploadPhase(null); setCompletionPending(false);
+  }, [tripId, stopId, photoUri]);
 
   // Delivered according to the engine (this request, or found so after a timeout and a re-read).
   const stop = trip?.stops.find(s => s.id === stopId);
@@ -46,20 +61,33 @@ export const DeliveryProofPreviewScreen: React.FC<
   const allDone = trip ? engineStatusOf(trip) === 'DELIVERED' : false;
 
   const handleConfirm = useCallback(async () => {
+    if (locked.current || photoFailed) return;
+    locked.current = scope;
+    const uid = getCurrentDriverId();
+    const current = () => mounted.current && currentScope.current === scope && getCurrentDriverId() === uid;
     setBusy('deliver');
     setError(null);
     try {
+      const reference = env.IS_MOCK_MODE ? photoUri : await uploadDeliveryProof({
+        tripId, stopId, uri: photoUri, contentType: photoType, previous: proof.current,
+        isCurrent: current,
+        onPrepared: value => { if (current()) proof.current = value; },
+        onPhase: value => { if (current()) setUploadPhase(value); },
+      });
+      if (!current()) return;
+      setUploadPhase(null);
       await TripController.getInstance().confirmDropDelivery(
         tripId,
         stopId,
-        photoUri,
+        reference,
       );
     } catch (e) {
-      setError(describeTripError(e, t));
+      if (current()) setError(e instanceof Error && !(e as { code?: string }).code ? e.message : describeTripError(e, t));
     } finally {
-      setBusy(null);
+      if (locked.current === scope) locked.current = null;
+      if (current()) { setBusy(null); setUploadPhase(null); }
     }
-  }, [tripId, stopId, photoUri, t]);
+  }, [tripId, stopId, photoUri, photoType, photoFailed, scope, t]);
 
   const handleComplete = useCallback(async () => {
     setBusy('complete');
@@ -148,9 +176,11 @@ export const DeliveryProofPreviewScreen: React.FC<
             </View>
           ) : (
             <Image
+              key={photoUri}
               source={{ uri: photoUri }}
               style={styles.previewImage}
               resizeMode="cover"
+              onError={() => { setPhotoFailed(true); setError('This photo is no longer available. Retake it before confirming.'); }}
             />
           )}
         </View>
@@ -168,18 +198,21 @@ export const DeliveryProofPreviewScreen: React.FC<
         <View style={styles.actions}>
           <PrimaryButton
             label={
-              error ? t('trip.tryAgain') : 'CONFIRM DELIVERY'
+              uploadPhase === 'preparing' ? 'Preparing photo…' : uploadPhase === 'uploading' ? 'Uploading photo…' : uploadPhase === 'verifying' ? 'Verifying photo…' : error ? t('trip.tryAgain') : deliveryProofLabels.confirmLabel
             }
             onPress={handleConfirm}
             loading={busy === 'deliver'}
-            disabled={busy !== null || !trip}
+            disabled={busy !== null || !trip || photoFailed}
           />
           {error ? (
+            <>
+            <SecondaryButton label={deliveryProofLabels.retakeLabel} onPress={handleRetake} disabled={busy !== null} />
             <SecondaryButton
               label={t('trip.backToDrop')}
               onPress={() => navigation.navigate('DropOTP', { tripId, stopId })}
               disabled={busy !== null}
             />
+            </>
           ) : (
             <SecondaryButton
               label={deliveryProofLabels.retakeLabel}

@@ -5,19 +5,34 @@ import { spacing, shadows, borderRadius, colors } from '../theme';
 
 export interface MapControlsProps {
   onRecenter?: () => void;
+  onOverview?: () => void;
+  recenterLabel?: string;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   style?: object;
 }
 
-export const MapControls: React.FC<MapControlsProps> = ({ 
-  onRecenter, 
-  onZoomIn, 
+export const MapControls: React.FC<MapControlsProps> = ({
+  onRecenter,
+  onOverview,
+  recenterLabel = 'Recenter map',
+  onZoomIn,
   onZoomOut,
-  style 
+  style,
 }) => {
   return (
     <View style={[styles.container, style]}>
+      {onOverview ? (
+        <View style={styles.buttonWrapper}>
+          <IconButton
+            iconName="route"
+            size={24}
+            color={colors.onSurface}
+            onPress={onOverview}
+            accessibilityLabel="Show full route"
+          />
+        </View>
+      ) : null}
       {onRecenter && (
         <View style={styles.buttonWrapper}>
           <IconButton
@@ -25,30 +40,42 @@ export const MapControls: React.FC<MapControlsProps> = ({
             size={24}
             color={colors.onSurface}
             onPress={onRecenter}
-            accessibilityLabel="Recenter map"
+            accessibilityLabel={recenterLabel}
           />
         </View>
       )}
-      
+
       {(onZoomIn || onZoomOut) && (
         <View style={styles.zoomGroup}>
           {onZoomIn && (
-            <TouchableOpacity 
-              style={[styles.zoomButton, styles.zoomButtonTop]} 
+            <TouchableOpacity
+              style={[styles.zoomButton, styles.zoomButtonTop]}
               onPress={onZoomIn}
               accessibilityLabel="Zoom in"
             >
-              <IconButton iconName="add" size={24} color={colors.onSurface} onPress={onZoomIn} accessibilityLabel="Zoom in" />
+              <IconButton
+                iconName="add"
+                size={24}
+                color={colors.onSurface}
+                onPress={onZoomIn}
+                accessibilityLabel="Zoom in"
+              />
             </TouchableOpacity>
           )}
           {onZoomIn && onZoomOut && <View style={styles.divider} />}
           {onZoomOut && (
-            <TouchableOpacity 
-              style={[styles.zoomButton, styles.zoomButtonBottom]} 
+            <TouchableOpacity
+              style={[styles.zoomButton, styles.zoomButtonBottom]}
               onPress={onZoomOut}
               accessibilityLabel="Zoom out"
             >
-              <IconButton iconName="remove" size={24} color={colors.onSurface} onPress={onZoomOut} accessibilityLabel="Zoom out" />
+              <IconButton
+                iconName="remove"
+                size={24}
+                color={colors.onSurface}
+                onPress={onZoomOut}
+                accessibilityLabel="Zoom out"
+              />
             </TouchableOpacity>
           )}
         </View>
@@ -91,5 +118,5 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: colors.outlineVariant,
     marginHorizontal: spacing.xs,
-  }
+  },
 });

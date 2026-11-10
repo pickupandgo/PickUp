@@ -13,9 +13,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from '../../components/atoms/Icon';
 import { StatusPill } from '../../components/atoms/StatusPill';
-import { AppHeader } from '../../components/molecules/AppHeader';
+import { HomeBrandMark } from '../../components/molecules/HomeArtwork';
 import { InlineErrorBanner } from '../../components/molecules/InlineErrorBanner';
-import { colors, typography, spacing, borderRadius } from '../../theme';
+import { colors } from '../../theme';
 import { useI18n } from '../../i18n';
 import { useDriverEarnings } from '../../hooks/useDriverEarnings';
 import { formatRupees, paiseToRupees } from '../../services/payments/money';
@@ -48,7 +48,7 @@ const RECENT_PAYOUTS = 3;
  * is computed on the phone, and the wallet balance is not earnings.
  */
 export const EarningsHistoryScreen: React.FC<EarningsHistoryScreenProps> = ({
-  testID,
+  testID, navigation,
 }) => {
   const { t } = useI18n();
   const {
@@ -89,183 +89,96 @@ export const EarningsHistoryScreen: React.FC<EarningsHistoryScreenProps> = ({
   );
 
   const notice = useMemo(() => bankNotice(bankAccount), [bankAccount]);
+  const handleHelp = useCallback(() => navigation.navigate('Support'), [navigation]);
 
-  const header = useMemo(
-    () => (
-      <View style={styles.headerContent}>
-        {error ? (
-          <InlineErrorBanner
-            message={error}
-            onRetry={handleRefresh}
-            retryLabel={t('wallet.retry')}
-          />
-        ) : null}
-
-        {/* Payable: what the next weekly payout carries */}
-        <View style={styles.heroCard}>
-          <Text style={styles.heroLabel}>{t('earnings.payable')}</Text>
-          {summary ? (
-            <Text style={styles.heroValue}>{money(summary.payablePaise)}</Text>
-          ) : isLoading ? (
-            <ActivityIndicator
-              style={styles.heroLoading}
-              color={colors.onPrimary}
-              accessibilityLabel={t('earnings.payable')}
-            />
-          ) : (
-            <Text style={styles.heroValue}>—</Text>
-          )}
-          <Text style={styles.heroHint}>{t('earnings.payableNext')}</Text>
-          {bankAccountKnown ? (
-            <View style={styles.bankRow}>
-              <Icon
-                name={notice.ok ? 'account_balance' : 'info'}
-                size={16}
-                color={notice.ok ? colors.inversePrimary : colors.tertiaryFixed}
-              />
-              <Text
-                style={[styles.bankText, !notice.ok && styles.bankTextWarn]}
-              >
-                {t(notice.key, notice.vars ? { ...notice.vars } : undefined)}
-              </Text>
-            </View>
-          ) : null}
+  const header = useMemo(() => (
+    <View style={styles.headerContent}>
+      {error ? <InlineErrorBanner message={error} onRetry={handleRefresh} retryLabel={t('wallet.retry')} /> : null}
+      <View style={styles.heroCard}>
+        <View style={styles.heroMain}>
+          <View style={styles.heroTop}>
+            <Text style={styles.heroLabel}>Available for payout</Text>
+            <Icon name="account_balance" size={28} color={colors.homeGreen} />
+          </View>
+          {summary ? <Text style={styles.heroValue}>{money(summary.payablePaise)}</Text> : isLoading ?
+            <ActivityIndicator style={styles.heroLoading} color={colors.homeGreen} accessibilityLabel={t('earnings.payable')} /> :
+            <Text style={styles.heroValue}>{'\u2014'}</Text>}
+          <Text style={styles.heroHint}>Your eligible bank payout balance</Text>
         </View>
-
-        {/* The other states, each a filter */}
-        <View style={styles.tiles}>
-          {SUMMARY_TILES.map(tile => {
-            const view = EARNING_STATUS_VIEW[tile.status];
-            const selected = filter === tile.status;
-            return (
-              <Pressable
-                key={tile.status}
-                style={[styles.tile, selected && styles.tileSelected]}
-                onPress={() => toggleFilter(tile.status)}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                accessibilityHint={t(view.hintKey)}
-              >
-                <View style={styles.tileHeader}>
-                  <Icon
-                    name={view.icon}
-                    size={16}
-                    color={colors.onSurfaceVariant}
-                  />
-                  <Text style={styles.tileLabel} numberOfLines={1}>
-                    {t(view.labelKey)}
-                  </Text>
-                </View>
-                <Text style={styles.tileValue}>
-                  {summary ? money(summary[tile.field]) : '—'}
-                </Text>
-                <Text style={styles.tileHint} numberOfLines={2}>
-                  {t(view.hintKey)}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        {summary ? (
-          <Text style={styles.summaryLine}>
-            {t('earnings.summaryLine', {
-              count: summary.tripCount,
-              gross: money(summary.grossPaise),
-              fee: money(summary.platformFeePaise),
-            })}
+        {bankAccountKnown ? <View style={styles.bankRow}>
+          <Icon name={notice.ok ? 'account_balance' : 'info_outline'} size={19} color={notice.ok ? colors.homeGreen : colors.warning} />
+          <Text style={styles.bankText}>
+            {bankAccount ? t(notice.key, notice.vars ? { ...notice.vars } : undefined) : 'Bank account not linked'}
           </Text>
-        ) : null}
+          {!notice.ok && <Pressable onPress={handleHelp} style={styles.helpLink} accessibilityRole="button" accessibilityLabel="Get help with bank account setup">
+            <Text style={styles.helpLabel}>Get help</Text>
+          </Pressable>}
+        </View> : null}
+      </View>
 
-        {/* Recent weekly payouts */}
-        <Text style={styles.sectionTitle}>{t('earnings.payouts')}</Text>
-        <View style={styles.card}>
-          {payouts.length === 0 ? (
-            <Text style={styles.emptyText}>{t('earnings.noPayouts')}</Text>
-          ) : (
-            payouts.slice(0, RECENT_PAYOUTS).map((payout, index, shown) => {
-              const view = PAYOUT_STATUS_VIEW[payout.status];
-              return (
-                <View
-                  key={payout.payoutId}
-                  style={[
-                    styles.payoutRow,
-                    index < shown.length - 1 && styles.rowBorder,
-                  ]}
-                >
-                  <View style={styles.flexShrink}>
-                    <Text style={styles.rowTitle}>
-                      {money(payout.amountPaise)}
-                    </Text>
-                    <Text style={styles.rowSub}>
-                      {shortDate(payout.processedAt ?? payout.createdAt)} ·{' '}
-                      {t('earnings.payoutTo', {
-                        last4: payout.bankAccountLast4,
-                      })}
-                    </Text>
-                    {payout.utr ? (
-                      <Text style={styles.rowSub}>
-                        {t('earnings.utr', { utr: payout.utr })}
-                      </Text>
-                    ) : null}
-                  </View>
-                  <StatusPill label={t(view.labelKey)} variant={view.variant} />
-                </View>
-              );
-            })
-          )}
+      <View style={styles.tiles}>
+        {SUMMARY_TILES.filter(tile => tile.status !== 'SETTLED_IN_CASH').map((tile, index) => {
+          const view = EARNING_STATUS_VIEW[tile.status];
+          const selected = filter === tile.status;
+          return <Pressable key={tile.status} onPress={() => toggleFilter(tile.status)} accessibilityRole="button"
+            accessibilityState={{ selected }} accessibilityHint={t(view.hintKey)}
+            style={[styles.tile, index % 2 === 0 && styles.tileLeft, index < 2 && styles.tileTop, selected && styles.tileSelected]}>
+            <Text style={styles.tileLabel}>{tile.status === 'PAID' ? 'Paid to bank' : t(view.labelKey)}</Text>
+            <Text style={styles.tileValue}>{summary ? money(summary[tile.field]) : '\u2014'}</Text>
+          </Pressable>;
+        })}
+      </View>
+
+      <Pressable style={styles.cashCard} onPress={() => toggleFilter('SETTLED_IN_CASH')}
+        accessibilityRole="button" accessibilityState={{ selected: filter === 'SETTLED_IN_CASH' }}
+        accessibilityHint={t('earnings.cashKeptHint')}>
+        <View style={styles.cashIcon}><Icon name="account_balance_wallet" size={27} color={colors.homeGreen} /></View>
+        <View style={styles.cashContent}>
+          <View style={styles.cashHeading}>
+            <Text style={styles.cashLabel}>Cash collected</Text>
+            <Text style={styles.cashAmount}>{summary ? money(summary.settledInCashPaise) : '\u2014'}</Text>
+          </View>
+          <Text style={styles.rowSub}>Kept by you; fees deducted from wallet.</Text>
+          {summary ? <Text style={styles.summaryLine}>{t('earnings.summaryLine', {
+            count: summary.tripCount, gross: money(summary.grossPaise), fee: money(summary.platformFeePaise),
+          })}</Text> : null}
         </View>
+      </Pressable>
 
-        {/* Per-trip list filter */}
-        <Text style={styles.sectionTitle}>{t('earnings.history')}</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}
-        >
-          {[null, ...EARNING_STATUSES].map(status => {
-            const selected = filter === status;
-            return (
-              <Pressable
-                key={status ?? 'ALL'}
-                style={[
-                  styles.chip,
-                  selected ? styles.chipSelected : styles.chipUnselected,
-                ]}
-                onPress={() => toggleFilter(status)}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    selected
-                      ? styles.chipTextSelected
-                      : styles.chipTextUnselected,
-                  ]}
-                >
-                  {status
-                    ? t(EARNING_STATUS_VIEW[status].labelKey)
-                    : t('earnings.filterAll')}
-                </Text>
-              </Pressable>
-            );
-          })}
+      <View style={styles.payoutSection}>
+        <View style={styles.sectionRow}>
+          <Text style={styles.sectionTitle}>{t('earnings.payouts')}</Text>
+          {payouts.length === 0 && <Text style={styles.rowSub}>{t('earnings.noPayouts')}</Text>}
+        </View>
+        {payouts.slice(0, RECENT_PAYOUTS).map(payout => {
+          const view = PAYOUT_STATUS_VIEW[payout.status];
+          return <View key={payout.payoutId} style={styles.payoutRow}>
+            <View style={styles.flexShrink}>
+              <Text style={styles.rowTitle}>{money(payout.amountPaise)}</Text>
+              <Text style={styles.rowSub}>{shortDate(payout.processedAt ?? payout.createdAt)} {'\u00b7'} {t('earnings.payoutTo', { last4: payout.bankAccountLast4 })}</Text>
+              {payout.utr ? <Text style={styles.rowSub}>{t('earnings.utr', { utr: payout.utr })}</Text> : null}
+            </View>
+            <StatusPill label={t(view.labelKey)} variant={view.variant} />
+          </View>;
+        })}
+      </View>
+
+      <View style={styles.historyHeader}>
+        <Text style={styles.historyTitle}>Trip earnings</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+          {[null, 'SETTLED_IN_CASH' as const, ...EARNING_STATUSES.filter(status => status !== 'SETTLED_IN_CASH')].map(status => (
+            <Pressable key={status ?? 'ALL'} onPress={() => toggleFilter(status)} accessibilityRole="button"
+              accessibilityState={{ selected: filter === status }} hitSlop={{ top: 6, bottom: 6 }}
+              style={[styles.chip, filter === status ? styles.chipSelected : styles.chipUnselected]}>
+              <Text style={[styles.chipText, filter === status ? styles.chipTextSelected : styles.chipTextUnselected]}>
+                {status === 'SETTLED_IN_CASH' ? 'Cash' : status ? t(EARNING_STATUS_VIEW[status].labelKey) : t('earnings.filterAll')}
+              </Text>
+            </Pressable>
+          ))}
         </ScrollView>
       </View>
-    ),
-    [
-      error,
-      handleRefresh,
-      t,
-      summary,
-      isLoading,
-      bankAccountKnown,
-      notice,
-      filter,
-      toggleFilter,
-      payouts,
-    ],
-  );
+    </View>
+  ), [error, handleRefresh, handleHelp, t, summary, isLoading, bankAccount, bankAccountKnown, notice, filter, toggleFilter, payouts]);
 
   const renderItem: ListRenderItem<EarningDto> = useCallback(
     ({ item }) => {
@@ -283,29 +196,17 @@ export const EarningsHistoryScreen: React.FC<EarningsHistoryScreenProps> = ({
               <Icon
                 name={view.icon}
                 size={20}
-                color={colors.onSurfaceVariant}
+                color={item.status === 'SETTLED_IN_CASH' ? colors.homeGreen : colors.onSurfaceMuted}
               />
             </View>
             <View style={styles.flexShrink}>
               <Text style={styles.rowTitle}>
                 {t('earnings.trip', { date: shortDate(item.createdAt) })}
               </Text>
-              <StatusPill
-                label={t(view.labelKey)}
-                variant={view.variant}
-                style={styles.rowPill}
-              />
+              <Text style={styles.rowSub}>{item.status === 'SETTLED_IN_CASH' ? 'Cash kept by you' : t(view.labelKey)}</Text>
             </View>
-            <View style={styles.earningRight}>
-              <Text style={styles.earningAmount}>
-                {money(item.netAmountPaise)}
-              </Text>
-              <Icon
-                name={open ? 'expand_less' : 'expand_more'}
-                size={20}
-                color={colors.outline}
-              />
-            </View>
+            <Text style={styles.earningAmount}>{money(item.netAmountPaise)}</Text>
+            <Icon name={open ? 'expand_less' : 'expand_more'} size={20} color={colors.onSurfaceMuted} />
           </View>
           {open ? (
             <View style={styles.breakdown}>
@@ -383,8 +284,8 @@ export const EarningsHistoryScreen: React.FC<EarningsHistoryScreenProps> = ({
 
   if (!available) {
     return (
-      <SafeAreaView style={styles.safeArea} testID={testID}>
-        <AppHeader title={t('earnings.title')} showBackButton={false} />
+      <SafeAreaView style={styles.safeArea} testID={testID} edges={['top', 'left', 'right']}>
+        <EarningsHeader onHelp={handleHelp} />
         <View style={styles.headerContent}>
           <InlineErrorBanner message={t('earnings.unavailable')} />
         </View>
@@ -393,8 +294,8 @@ export const EarningsHistoryScreen: React.FC<EarningsHistoryScreenProps> = ({
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} testID={testID} edges={['top']}>
-      <AppHeader title={t('earnings.title')} showBackButton={false} />
+    <SafeAreaView style={styles.safeArea} testID={testID} edges={['top', 'left', 'right']}>
+      <EarningsHeader onHelp={handleHelp} />
       <FlatList
         data={earnings}
         keyExtractor={item => item.earningId}
@@ -436,239 +337,79 @@ const BreakdownLine: React.FC<{
   </View>
 );
 
+function EarningsHeader({ onHelp }: { onHelp: () => void }) {
+  return <View style={styles.screenHeader}>
+    <HomeBrandMark /><View style={styles.brandDivider} />
+    <Text style={styles.screenTitle}>Earnings</Text>
+    <Pressable onPress={onHelp} accessibilityRole="button" accessibilityLabel="Earnings help" style={styles.headerButton}>
+      <Icon name="help_outline" size={23} color={colors.primary} />
+    </Pressable>
+  </View>;
+}
+
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  listContent: {
-    paddingHorizontal: spacing.containerPadding,
-    paddingBottom: spacing.xxl,
-  },
-  headerContent: {
-    gap: spacing.gutter,
-    paddingBottom: spacing.gutter,
-    paddingHorizontal: 0,
-  },
-  heroCard: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.xl,
-    padding: spacing.md,
-    gap: spacing.unit,
-    marginTop: spacing.xs,
-  },
-  heroLabel: {
-    ...typography.labelCaps,
-    color: colors.inversePrimary,
-  },
-  heroValue: {
-    ...typography.displaySm,
-    color: colors.onPrimary,
-  },
-  heroLoading: {
-    alignSelf: 'flex-start',
-    height: 36,
-  },
-  heroHint: {
-    ...typography.labelSm,
-    color: colors.inversePrimary,
-  },
-  bankRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-    paddingTop: spacing.xs,
-    borderTopWidth: 1,
-    borderTopColor: colors.primaryContainer,
-  },
-  bankText: {
-    ...typography.labelSm,
-    color: colors.inversePrimary,
-    flex: 1,
-  },
-  bankTextWarn: {
-    color: colors.tertiaryFixed,
-  },
-  tiles: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  tile: {
-    flexBasis: '48%',
-    flexGrow: 1,
-    backgroundColor: colors.surfaceContainerLowest,
-    borderWidth: 1,
-    borderColor: colors.outlineVariant,
-    borderRadius: borderRadius.lg,
-    padding: spacing.gutter,
-    gap: spacing.unit,
-  },
-  tileSelected: {
-    borderColor: colors.primary,
-    borderWidth: 2,
-  },
-  tileHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.unit,
-  },
-  tileLabel: {
-    ...typography.labelSm,
-    color: colors.onSurfaceVariant,
-    flexShrink: 1,
-  },
-  tileValue: {
-    ...typography.headlineSm,
-    color: colors.primary,
-  },
-  tileHint: {
-    ...typography.labelSm,
-    fontSize: 11,
-    color: colors.outline,
-  },
-  summaryLine: {
-    ...typography.labelSm,
-    color: colors.onSurfaceVariant,
-    paddingHorizontal: spacing.unit,
-  },
-  sectionTitle: {
-    ...typography.headlineSm,
-    color: colors.primary,
-    marginTop: spacing.xs,
-    paddingHorizontal: spacing.unit,
-  },
-  card: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderWidth: 1,
-    borderColor: colors.outlineVariant,
-    borderRadius: borderRadius.xl,
-    paddingHorizontal: spacing.containerPadding,
-    paddingVertical: spacing.xs,
-  },
-  payoutRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.gutter,
-    paddingVertical: spacing.gutter,
-  },
-  rowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.outlineVariant,
-  },
-  flexShrink: {
-    flexShrink: 1,
-    flexGrow: 1,
-  },
-  rowTitle: {
-    ...typography.bodyMd,
-    fontWeight: '500',
-    color: colors.primary,
-  },
-  rowSub: {
-    ...typography.labelSm,
-    color: colors.onSurfaceVariant,
-  },
-  rowPill: {
-    marginTop: spacing.unit,
-  },
-  chips: {
-    gap: spacing.xs,
-    paddingHorizontal: spacing.unit,
-  },
-  chip: {
-    paddingHorizontal: spacing.gutter,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-  },
-  chipSelected: {
-    backgroundColor: colors.primary,
-  },
-  chipUnselected: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.outlineVariant,
-  },
-  chipText: {
-    ...typography.labelSm,
-  },
-  chipTextSelected: {
-    color: colors.onPrimary,
-  },
-  chipTextUnselected: {
-    color: colors.onSurfaceVariant,
-  },
-  earningRow: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderWidth: 1,
-    borderColor: colors.outlineVariant,
-    borderRadius: borderRadius.lg,
-    padding: spacing.gutter,
-    gap: spacing.gutter,
-  },
-  earningMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.gutter,
-  },
-  earningIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  earningRight: {
-    alignItems: 'flex-end',
-    gap: spacing.unit,
-  },
-  earningAmount: {
-    ...typography.dataMono,
-    color: colors.primary,
-  },
-  breakdown: {
-    borderTopWidth: 1,
-    borderTopColor: colors.outlineVariant,
-    paddingTop: spacing.xs,
-    gap: spacing.unit,
-  },
-  breakRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  breakLabel: {
-    ...typography.bodyMd,
-    color: colors.onSurfaceVariant,
-  },
-  breakValue: {
-    ...typography.dataMono,
-    color: colors.onSurface,
-  },
-  breakLabelStrong: {
-    ...typography.headlineSm,
-    color: colors.primary,
-  },
-  breakValueStrong: {
-    ...typography.headlineSm,
-    color: colors.primary,
-  },
-  separator: {
-    height: spacing.xs,
-  },
-  emptyText: {
-    ...typography.bodyMd,
-    color: colors.outline,
-    paddingVertical: spacing.gutter,
-  },
-  emptyList: {
-    textAlign: 'center',
-  },
-  footerLoading: {
-    paddingVertical: spacing.lg,
-  },
+  safeArea: { flex: 1, backgroundColor: colors.surfaceContainerLowest },
+  screenHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 20, minHeight: 56, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.homeBorder },
+  brandDivider: { width: 1, height: 24, backgroundColor: colors.homeBorder },
+  screenTitle: { flex: 1, fontSize: 18, lineHeight: 24, fontWeight: '600', color: colors.primary },
+  headerButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
+  listContent: { paddingHorizontal: 20, paddingBottom: 28 },
+  headerContent: { gap: 24, paddingTop: 20, paddingBottom: 12 },
+  heroCard: { borderWidth: 1, borderColor: colors.homeBorder, borderRadius: 14, overflow: 'hidden', backgroundColor: colors.surfaceContainerLowest },
+  heroMain: { backgroundColor: colors.homeLandscape, paddingHorizontal: 16, paddingVertical: 16, gap: 6 },
+  heroTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  heroLabel: { flex: 1, fontSize: 13, lineHeight: 19, fontWeight: '500', color: colors.onSurfaceMuted },
+  heroValue: { fontSize: 26, lineHeight: 33, fontWeight: '600', color: colors.primary },
+  heroLoading: { alignSelf: 'flex-start', height: 33 },
+  heroHint: { fontSize: 12, lineHeight: 18, color: colors.onSurfaceMuted },
+  bankRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingLeft: 16, paddingRight: 8, paddingVertical: 3, minHeight: 48, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.homeBorder },
+  bankText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 18, color: colors.onSurfaceMuted },
+  helpLink: { minHeight: 44, minWidth: 60, paddingHorizontal: 8, justifyContent: 'center', alignItems: 'center' },
+  helpLabel: { fontSize: 12, lineHeight: 18, fontWeight: '600', color: colors.homeGreen },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap' },
+  tile: { width: '50%', paddingHorizontal: 10, paddingVertical: 14, minHeight: 68, gap: 5 },
+  tileTop: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.homeBorder },
+  tileLeft: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.homeBorder },
+  tileSelected: { backgroundColor: colors.homeMint },
+  tileLabel: { fontSize: 12, lineHeight: 18, color: colors.onSurfaceMuted },
+  tileValue: { fontSize: 18, lineHeight: 24, fontWeight: '500', color: colors.primary },
+  cashCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 16, borderRadius: 12, backgroundColor: colors.surfaceContainerLow },
+  cashIcon: { paddingTop: 4 },
+  cashContent: { flex: 1, minWidth: 0, gap: 4 },
+  cashHeading: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', columnGap: 10, rowGap: 4 },
+  cashLabel: { fontSize: 13, lineHeight: 19, fontWeight: '600', color: colors.primary },
+  cashAmount: { fontSize: 18, lineHeight: 24, fontWeight: '600', color: colors.primary },
+  summaryLine: { fontSize: 11, lineHeight: 17, color: colors.onSurfaceMuted },
+  payoutSection: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.homeBorder, paddingBottom: 18 },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
+  sectionTitle: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: colors.primary },
+  payoutRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 14 },
+  flexShrink: { flexShrink: 1, flexGrow: 1, minWidth: 0, gap: 4 },
+  rowTitle: { fontSize: 13, lineHeight: 19, fontWeight: '500', color: colors.primary },
+  rowSub: { fontSize: 11, lineHeight: 17, color: colors.onSurfaceMuted },
+  historyHeader: { gap: 16 },
+  historyTitle: { fontSize: 16, lineHeight: 22, fontWeight: '600', color: colors.primary },
+  chips: { gap: 8, paddingVertical: 2 },
+  chip: { borderRadius: 8, minHeight: 28, paddingHorizontal: 12, paddingVertical: 5 },
+  chipSelected: { backgroundColor: colors.primary, borderWidth: 1, borderColor: colors.primary },
+  chipUnselected: { borderWidth: 1, borderColor: colors.outlineVariant },
+  chipText: { fontSize: 11, lineHeight: 16 },
+  chipTextSelected: { color: colors.onPrimary },
+  chipTextUnselected: { color: colors.onSurfaceVariant },
+  earningRow: { paddingVertical: 16, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.homeBorder },
+  earningMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  earningIcon: { width: 28, alignItems: 'center', justifyContent: 'center' },
+  earningAmount: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: colors.primary, flexShrink: 1 },
+  breakdown: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.homeBorder, paddingTop: 12, gap: 8 },
+  breakRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  breakLabel: { flex: 1, fontSize: 12, lineHeight: 18, color: colors.onSurfaceMuted },
+  breakValue: { fontSize: 12, lineHeight: 18, color: colors.primary, flexShrink: 1 },
+  breakLabelStrong: { flex: 1, fontSize: 13, lineHeight: 19, fontWeight: '600', color: colors.primary },
+  breakValueStrong: { fontSize: 13, lineHeight: 19, fontWeight: '600', color: colors.primary, flexShrink: 1 },
+  separator: { height: 0 },
+  emptyText: { fontSize: 12, lineHeight: 18, color: colors.onSurfaceMuted, paddingVertical: 20 },
+  emptyList: { textAlign: 'center' },
+  footerLoading: { paddingVertical: 20 },
 });
 
 export default EarningsHistoryScreen;

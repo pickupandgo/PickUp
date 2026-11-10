@@ -18,6 +18,7 @@
 import { getAuth } from '@react-native-firebase/auth';
 import type {
   ActiveTrip,
+  HistoricalTrip,
   TripOffer,
   TripStatus,
   TripStop,
@@ -83,6 +84,12 @@ function finite(value: unknown): number | undefined {
 
 function optionalText(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function moneyPaise(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) invalid('customer fare');
+  return value;
 }
 
 // ─── DTOs ───────────────────────────────────────────────────────────────────
@@ -212,7 +219,7 @@ function parseStop(value: unknown): EngineStop {
     sequence,
     location: parseLocation(json.location, 'stop location'),
     status: status as EngineStopStatus,
-    payablePaise: finite(json.payablePaise),
+    payablePaise: moneyPaise(json.payablePaise),
     otpVerified: json.otpVerified === true,
     failureReason: optionalText(json.failureReason),
   };
@@ -260,10 +267,10 @@ export function parseEngineTrip(value: unknown): EngineTrip {
     completedStops: finite(json.completedStops),
     remainingStops: finite(json.remainingStops),
     status: status as EngineTripStatus,
-    fare: finite(json.fare),
-    payablePaise: finite(json.payablePaise),
-    weight: finite(json.weight),
     vehicleType: optionalText(json.vehicleType),
+    weight: finite(json.weight),
+    fare: finite(json.fare),
+    payablePaise: moneyPaise(json.payablePaise),
     totalDistanceKm: finite(json.totalDistanceKm),
     createdAt: optionalText(json.createdAt),
     updatedAt: optionalText(json.updatedAt),
@@ -305,6 +312,7 @@ function parseActionResult(value: unknown): EngineActionResult {
 
 /** A pending ride request as returned by GET /ride-requests/:driverId. */
 export interface EngineRideRequest {
+  readonly payablePaise?: number;
   readonly rideId: string;
   readonly offerId?: string;
   readonly pickup: EngineLocation;
@@ -339,6 +347,7 @@ function parseRideRequest(value: unknown): EngineRideRequest {
     vehicleType: optionalText(json.vehicleType),
     weight: finite(json.weight),
     fare: finite(json.fare),
+    payablePaise: moneyPaise(json.payablePaise),
     paymentMethod: optionalText(json.paymentMethod),
     status: optionalText(json.status) ?? 'UNKNOWN',
     createdAt: optionalText(json.createdAt) ?? '',
@@ -351,16 +360,31 @@ function parseRideRequest(value: unknown): EngineRideRequest {
 const enc = encodeURIComponent;
 
 /** PATCH /drivers/:id/availability: mark the signed-in driver available or not. */
+let availabilityQueue: Promise<void> = Promise.resolve();
 export const setDriverAvailability = async (
   driverId: string,
   isAvailable: boolean,
 ): Promise<void> => {
-  await getEngineClient().request({
-    method: 'PATCH',
-    path: `/drivers/${enc(driver(driverId))}/availability`,
-    body: { isAvailable },
-    retry: false,
+  driver(driverId);
+  // Order Online/Offline writes; a delayed earlier write must not overtake a newer one.
+  const operation = availabilityQueue.catch(() => {}).then(async () => {
+    driver(driverId);
+    const json = record(await getEngineClient().request({
+      method: 'PATCH', path: `/drivers/${enc(driverId)}/availability`,
+      body: { isAvailable }, retry: false,
+    }), 'availability acknowledgement');
+    driver(driverId);
+    const acknowledged = record(json.driver, 'availability driver');
+    if (json.success !== true || acknowledged.id !== driverId || typeof acknowledged.isAvailable !== 'boolean')
+      invalid('availability acknowledgement');
+    if (acknowledged.isAvailable !== isAvailable) {
+      throw new EngineApiError(isAvailable ? 'DRIVER_BUSY' : 'AVAILABILITY_UNCONFIRMED',
+        isAvailable ? 'You may already have an active trip. Refresh to resume it.' : 'Offline status could not be confirmed. Please retry.',
+        isAvailable ? 409 : 0);
+    }
   });
+  availabilityQueue = operation.catch(() => {});
+  await operation;
 };
 
 /** Explicit one-shot adapter. Continuous publishing belongs exclusively to TrackingService/native. */
@@ -513,11 +537,13 @@ export const confirmStopDelivery = async (
   tripId: string,
   stopId: string,
   photoUri: string,
-) =>
-  tripAction(tripId, 'stop/confirm-delivery', {
+) => {
+  if (!/^proof:[0-9a-f-]{36}$/i.test(photoUri)) throw new Error('Upload and verify the delivery photo first.');
+  return tripAction(tripId, 'stop/confirm-delivery', {
     stopId: uuid(stopId, 'stop id'),
     photo: { uri: photoUri },
   });
+};
 
 /** POST /trips/:id/stop/fail: the receiver could not take the goods (reason 3-200 characters). */
 export const failStop = async (
@@ -701,7 +727,9 @@ export const rideRequestToOffer = (r: EngineRideRequest): TripOffer => {
   return {
     id: r.rideId,
     dispatchOfferId: r.offerId,
-    estimatedEarning: r.fare ?? 0,
+    offerId: r.offerId,
+    estimatedEarning: r.fare ?? 0, // Legacy model field; never label this customer fare as driver net.
+    customerFarePaise: r.payablePaise,
     currency: '₹',
     pickupStop: {
       id: `${r.rideId}-pickup`,
@@ -714,11 +742,38 @@ export const rideRequestToOffer = (r: EngineRideRequest): TripOffer => {
     },
     dropStops,
     totalDistanceKm: Math.round(routeKm(r.pickup, r.drops) * 10) / 10,
+    distanceKind: 'straight_line',
     loadType: 'other',
     vehicleType: r.vehicleType ?? 'Vehicle category unavailable',
     // Fail closed when the server supplies no deadline; never invent an offer lifetime.
     expiresAt: Number.isFinite(expiresMs) ? expiresMs : 0,
     weightKg: r.weight !== undefined && r.weight >= 0 ? r.weight : undefined,
-    distanceKind: 'approximate',
   };
 };
+
+export const engineTripToHistoricalTrip = (trip: EngineTrip): HistoricalTrip => {
+  const active = engineTripToActiveTrip(trip);
+  const stamp = trip.completedAt ?? trip.createdAt;
+  const date = stamp ? new Date(stamp) : null;
+  const valid = date && Number.isFinite(date.getTime());
+  return { id: trip.id, paymentTripId: trip.paymentTripId, customerFarePaise: trip.payablePaise,
+    date: valid ? date.toLocaleDateString('en-IN') : 'Date unavailable',
+    time: valid ? date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '',
+    status: active.status, stops: active.stops, loadType: active.loadType,
+    goodsType: 'Not available', totalWeight: trip.weight === undefined ? 'Not available' : `${trip.weight} kg`,
+    vehicleType: trip.vehicleType ?? 'Vehicle unavailable', vehicleRegistration: 'Registration unavailable', earnings: null };
+};
+
+export async function getDriverHistoryPage(cursor?: string): Promise<{ trips: HistoricalTrip[]; nextCursor: string | null }> {
+  const uid = getCurrentDriverId();
+  if (!uid) throw new EngineApiError('NOT_SIGNED_IN', 'Please sign in again.', 401);
+  if (cursor) uuid(cursor, 'history cursor');
+  const json = record(await getEngineClient().request({ method: 'GET',
+    path: `/trips/history/driver/${enc(uid)}${cursor ? `/page/${cursor}` : ''}`, retry: false }), 'history');
+  driver(uid);
+  if (json.success !== true || !Array.isArray(json.trips)) invalid('history');
+  const trips = json.trips.map(parseEngineTrip);
+  if (trips.some(trip => trip.driverId !== uid || !['COMPLETED', 'CANCELLED'].includes(trip.status))) invalid('history trip ownership/status');
+  const nextCursor = json.nextCursor === null || json.nextCursor === undefined ? null : uuid(String(json.nextCursor), 'history cursor');
+  return { trips: trips.map(engineTripToHistoricalTrip), nextCursor };
+}

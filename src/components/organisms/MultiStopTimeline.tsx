@@ -18,9 +18,14 @@ export const MultiStopTimeline: React.FC<MultiStopTimelineProps> = ({
   testID,
 }) => {
   return (
-    <View style={[styles.container, style]} testID={testID} accessibilityRole="list">
+    <View
+      style={[styles.container, style]}
+      testID={testID}
+      accessibilityRole="list"
+    >
       {stops.map((stop, index) => {
-        const isCompleted = index < currentStopIndex || stop.status === 'completed';
+        const isCompleted =
+          index < currentStopIndex || stop.status === 'completed';
         const isCurrent = index === currentStopIndex;
         const isFuture = index > currentStopIndex;
         const isLast = index === stops.length - 1;
@@ -43,32 +48,46 @@ export const MultiStopTimeline: React.FC<MultiStopTimelineProps> = ({
                   <Icon name="local_shipping" style={styles.iconCurrent} />
                 </View>
               )}
-              {isFuture && (
-                <View style={styles.iconContainerFuture} />
-              )}
-              
+              {isFuture && <View style={styles.iconContainerFuture} />}
+
               {!isLast && (
-                <View style={[
-                  styles.line, 
-                  { backgroundColor: isCompleted ? colors.outlineVariant : colors.surfaceContainerHighest }
-                ]} />
+                <View
+                  style={[
+                    styles.line,
+                    {
+                      backgroundColor: isCompleted
+                        ? colors.outlineVariant
+                        : colors.surfaceContainerHighest,
+                    },
+                  ]}
+                />
               )}
             </View>
 
-            <View style={[styles.contentColumn, !isLast && { paddingBottom: spacing.lg }]}>
+            <View
+              style={[
+                styles.contentColumn,
+                !isLast && { paddingBottom: spacing.lg },
+              ]}
+            >
               {isCurrent ? (
                 <>
                   <Text style={styles.currentLabel}>CURRENT STOP</Text>
                   <Text style={styles.currentTitle}>{displayLabel}</Text>
-                  <Text style={styles.currentAddress} numberOfLines={1}>{stop.address}</Text>
+                  <Text style={styles.currentAddress}>{stop.address}</Text>
                 </>
               ) : (
                 <>
-                  <Text style={[styles.standardTitle, isFuture && { color: colors.onSurfaceVariant }]}>
+                  <Text
+                    style={[
+                      styles.standardTitle,
+                      isFuture && { color: colors.onSurfaceVariant },
+                    ]}
+                  >
                     {displayLabel}
                   </Text>
-                  {isFuture && stop.address && (
-                    <Text style={styles.futureAddress} numberOfLines={1}>{stop.address}</Text>
+                  {stop.address && (
+                    <Text style={styles.futureAddress}>{stop.address}</Text>
                   )}
                 </>
               )}
@@ -97,7 +116,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingTop: 2,
   },
-  
+
   // Icons
   iconContainerCompleted: {
     width: 24,
@@ -113,7 +132,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.outline,
   },
-  
+
   iconContainerCurrent: {
     width: 32,
     height: 32,
@@ -126,7 +145,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#000000',
   },
-  
+
   iconContainerFuture: {
     width: 24,
     height: 24,
@@ -135,13 +154,13 @@ const styles = StyleSheet.create({
     borderColor: colors.outlineVariant,
     backgroundColor: colors.surface,
   },
-  
+
   line: {
     width: 1,
     flex: 1,
     marginVertical: 4,
   },
-  
+
   // Text
   currentLabel: {
     ...typography.labelSm,

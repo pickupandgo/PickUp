@@ -1,5 +1,13 @@
+import { TripMapSheet } from '../../components/organisms/TripMapSheet';
+import { useTripMapLayout } from '../../hooks/useTripMapLayout';
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  Pressable,
+} from 'react-native';
 import Icon from '../../components/atoms/Icon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -21,6 +29,7 @@ import { usePaymentGate } from '../../hooks/usePaymentGate';
 import { useI18n } from '../../i18n';
 import { pickupHandoverAllowed } from '../../services/payments/collectionFlow';
 import { TripController } from '../../services/trip/TripController';
+import { TripLoadNotice } from '../../components/molecules/TripLoadNotice';
 import {
   describeTripError,
   engineStatusOf,
@@ -50,6 +59,7 @@ export const ArrivedAtPickupScreen: React.FC<ArrivedAtPickupScreenProps> = ({
   testID,
 }) => {
   const { t } = useI18n();
+  const mapLayout = useTripMapLayout();
   const { currentLocation } = useDriverLocation();
   const { tripId, stopId } = route.params;
   const trip = useLiveTrip(tripId);
@@ -178,7 +188,7 @@ export const ArrivedAtPickupScreen: React.FC<ArrivedAtPickupScreenProps> = ({
             <PrimaryButton
               label={t('trip.backHome')}
               onPress={() => {
-                TripController.getInstance().clearTrip();
+                TripController.getInstance().clearTrip(tripId);
                 navigation.popToTop();
               }}
             />
@@ -197,27 +207,44 @@ export const ArrivedAtPickupScreen: React.FC<ArrivedAtPickupScreenProps> = ({
     }
   };
 
+  if (!trip)
+    return (
+      <TripLoadNotice tripId={tripId} onHome={() => navigation.popToTop()} />
+    );
+
   return (
     <View style={styles.safeArea} testID={testID}>
       {/* Absolute back button overlay on map */}
-      <SafeAreaView edges={['top']} style={styles.backButtonContainer}>
-        <Icon name="arrow_back" style={styles.backButtonIcon} />
-        <View
-          style={styles.backButtonTouch}
-          onTouchEnd={() => navigation.goBack()}
-        />
+      <SafeAreaView
+        edges={['top']}
+        style={styles.backButtonContainer}
+        onLayout={mapLayout.onTopLayout}
+      >
+        <Pressable
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
+          <Icon name="arrow_back" style={styles.backButtonIcon} />
+        </Pressable>
       </SafeAreaView>
 
-      <View style={styles.mapContainer}>
+      <View style={StyleSheet.absoluteFill}>
         <DriverMap
           currentLocation={currentLocation || undefined}
           routeData={routeData}
+          cameraScopeKey={trip.id}
+          viewportPadding={mapLayout.viewportPadding}
+          heading={currentLocation?.bearing}
           followDriver={true}
-          showControls={false}
+          showControls
         />
       </View>
 
-      <View style={styles.bottomPanel}>
+      <TripMapSheet
+        title="Pickup details"
+        onHeightChange={mapLayout.onSheetHeight}
+      >
         {!trip ? (
           <View style={styles.loading}>
             <ActivityIndicator color={colors.primary} />
@@ -273,7 +300,7 @@ export const ArrivedAtPickupScreen: React.FC<ArrivedAtPickupScreenProps> = ({
             ) : null}
           </>
         )}
-      </View>
+      </TripMapSheet>
     </View>
   );
 };

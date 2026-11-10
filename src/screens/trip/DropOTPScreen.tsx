@@ -7,7 +7,6 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   TextInput,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius } from '../../theme';
@@ -26,6 +25,7 @@ import {
   isCollectable,
 } from '../../services/payments/collectionFlow';
 import { TripController } from '../../services/trip/TripController';
+import { TripLoadNotice } from '../../components/molecules/TripLoadNotice';
 import {
   describeTripError,
   engineStatusOf,
@@ -210,10 +210,7 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
   const renderBody = () => {
     if (!trip) {
       return (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-          <Text style={styles.subtitle}>{t('trip.loading')}</Text>
-        </View>
+        <TripLoadNotice tripId={tripId} onHome={() => navigation.popToTop()} />
       );
     }
     if (status === 'CANCELLED') {
@@ -223,7 +220,7 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
           <PrimaryButton
             label={t('trip.backHome')}
             onPress={() => {
-              TripController.getInstance().clearTrip();
+              TripController.getInstance().clearTrip(tripId);
               navigation.popToTop();
             }}
           />
@@ -423,11 +420,12 @@ export const DropOTPScreen: React.FC<DropOTPScreenProps> = ({
       />
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
         >
           {error ? (
             <InlineErrorBanner

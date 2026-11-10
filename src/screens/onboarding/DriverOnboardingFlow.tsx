@@ -1,3 +1,4 @@
+import { SupportContactPanel } from '../../components/account/SupportContactPanel';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -1108,26 +1109,7 @@ export const DriverOnboardingScreen: React.FC<Props> = ({
               />
             </>
           ) : null}
-          {step === 'HELP' ? (
-            <>
-              <Text style={s.title}>We're here to help.</Text>
-              <Text style={s.body}>
-                Check each review reason, then return to the identity or vehicle
-                step to upload a clear replacement when corrections are allowed.
-                For account issues, contact your MultipleRide onboarding team
-                using the support channel provided during registration.
-              </Text>
-              <Notice title="Protect your information">
-                Upload evidence only through the secure document workflow. Do
-                not send identity documents, OTPs or tokens through ordinary
-                support messages.
-              </Notice>
-              <Action
-                title="View verification status"
-                onPress={() => go('STATUS')}
-              />
-            </>
-          ) : null}
+          {step === 'HELP' ? <SupportContactPanel /> : null}
         </ScrollView>
       </KeyboardAvoidingView>
       <View style={s.tabs}>
