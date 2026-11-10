@@ -237,7 +237,7 @@ describe('M19 E2E Testing - Multi-Drop Hardening', () => {
       {
         driverId,
         stopId: stopIds[0],
-        photo: { uri: 'file://fake-photo.jpg' },
+        photo: { uri: 'proof:11111111-1111-4111-8111-111111111111' },
       },
     ).expect(201);
 
@@ -295,7 +295,7 @@ describe('M19 E2E Testing - Multi-Drop Hardening', () => {
         {
           driverId,
           stopId: stopIds[i],
-          photo: { uri: `file://photo-${i}.jpg` },
+          photo: { uri: `proof:11111111-1111-4111-8111-111111111111` },
         },
       ).expect(201);
 
@@ -336,8 +336,8 @@ describe('M19 E2E Testing - Multi-Drop Hardening', () => {
     // Validate receiver isolation and stop metadata
     expect(trip.stops[0].receiver.name).toBe('Receiver 1');
     expect(trip.stops[4].receiver.name).toBe('Receiver 5');
-    expect(trip.stops[0].deliveryProof.uri).toBe('file://fake-photo.jpg');
-    expect(trip.stops[4].deliveryProof.uri).toBe('file://photo-4.jpg');
+    expect(trip.stops[0].deliveryProof.uri).toBe('proof:11111111-1111-4111-8111-111111111111');
+    expect(trip.stops[4].deliveryProof.uri).toBe('proof:11111111-1111-4111-8111-111111111111');
     expect(
       trip.stops.map((s: { payablePaise: number }) => s.payablePaise),
     ).toEqual(quote.drops.map((d) => d.payablePaise));

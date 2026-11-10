@@ -481,6 +481,19 @@ export class FakePaymentBackend {
         ? ok(quoteView(quote))
         : notFound('QUOTE_NOT_FOUND', 'Fare quote not found');
     }
+    // Fixture-only verified receipt. Real object/type/version/scan checks live in the backend tests.
+    if (
+      method === 'POST' &&
+      (match = /^\/v1\/internal\/delivery-proofs\/([0-9a-f-]+)\/read$/.exec(
+        path,
+      ))
+    ) {
+      return ok({
+        proofId: match[1],
+        ready: true,
+        url: 'https://storage.example/test-proof',
+      });
+    }
     if (method === 'POST' && path === '/v1/internal/bookings') {
       return this.register(body ?? {});
     }

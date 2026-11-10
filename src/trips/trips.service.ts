@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { otpMatches } from '../common/otp';
+import { randomUUID } from 'node:crypto';
 import { engineError, paymentBackendUnavailable } from '../common/errors';
 import { DriversService } from '../drivers/drivers.service';
 import type {
@@ -133,18 +134,40 @@ export class TripsService {
   }
 
   async getDriverHistory(subject: string): Promise<TripView[]> {
+    return (await this.getDriverHistoryPage(subject)).trips;
+  }
+
+  async getDriverHistoryPage(subject: string, cursor?: string) {
+    if (
+      cursor &&
+      (!UUID.test(cursor) ||
+        !(await this.prisma.engineTrip.findFirst({
+          where: {
+            id: cursor,
+            driverSubject: subject,
+            status: { in: ['COMPLETED', 'CANCELLED'] },
+          },
+          select: { id: true },
+        })))
+    )
+      throw new BadRequestException('Invalid history cursor');
     const trips = await this.prisma.engineTrip.findMany({
       where: {
         driverSubject: subject,
         status: { in: ['COMPLETED', 'CANCELLED'] },
       },
-      orderBy: { updatedAt: 'desc' },
-      take: 50,
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: 51,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: { id: true },
     });
-    return Promise.all(
-      trips.map(async (trip) => tripView(await this.load(trip.id))),
-    );
+    const page = trips.slice(0, 50);
+    return {
+      trips: await Promise.all(
+        page.map(async (trip) => tripView(await this.load(trip.id))),
+      ),
+      nextCursor: trips.length > 50 ? page[page.length - 1]!.id : null,
+    };
   }
 
   async getCurrentStop(tripId: string, subject: string) {
@@ -474,6 +497,89 @@ export class TripsService {
     };
   }
 
+  private proofBinding(bundle: TripBundle, stop: TripBundle['stops'][number]) {
+    if (!bundle.trip.paymentTripId)
+      throw paymentBackendUnavailable('The payment trip is not ready');
+    return {
+      paymentTripId: bundle.trip.paymentTripId,
+      engineTripId: bundle.trip.id,
+      engineStopId: stop.id,
+      sequence: stop.sequence,
+      subject: bundle.trip.driverSubject,
+    };
+  }
+
+  private async proofCall(
+    path: string,
+    body: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const result = await this.backend.call({
+      method: 'POST',
+      path: `/v1/internal/delivery-proofs${path}`,
+      body,
+      requestId: randomUUID(),
+    });
+    if (result.kind === 'REFUSED')
+      throw engineError(result.status, result.code, result.message);
+    if (result.kind !== 'OK' || !result.body || typeof result.body !== 'object')
+      throw paymentBackendUnavailable(
+        'Delivery evidence storage could not be reached. Please retry.',
+      );
+    return result.body as Record<string, unknown>;
+  }
+
+  async initiateProof(
+    tripId: string,
+    subject: string,
+    stopId: string,
+    input: { contentType: unknown; sizeBytes: unknown },
+  ) {
+    const bundle = await this.loadForDriver(tripId, subject);
+    const stop = assertDeliverableStop(bundle, stopId);
+    if (
+      !input ||
+      !['image/jpeg', 'image/png'].includes(String(input.contentType)) ||
+      !Number.isInteger(input.sizeBytes) ||
+      Number(input.sizeBytes) < 1 ||
+      Number(input.sizeBytes) > 5 * 1024 * 1024
+    )
+      throw new BadRequestException('Use a JPEG or PNG photo up to 5 MB');
+    return this.proofCall('', {
+      ...this.proofBinding(bundle, stop),
+      contentType: input.contentType,
+      sizeBytes: input.sizeBytes,
+    });
+  }
+
+  async completeProof(
+    tripId: string,
+    subject: string,
+    stopId: string,
+    proofId: string,
+  ) {
+    if (!UUID.test(proofId))
+      throw new BadRequestException('A valid proof ID is required');
+    const bundle = await this.loadForDriver(tripId, subject);
+    const stop = assertDeliverableStop(bundle, stopId);
+    return this.proofCall(
+      `/${proofId}/complete`,
+      this.proofBinding(bundle, stop),
+    );
+  }
+
+  /** Re-authorize every read, even after restart. The persisted reference is not a public URL. */
+  async readProof(tripId: string, subject: string, stopId: string) {
+    const bundle = await this.load(tripId);
+    this.assertParticipant(bundle, subject);
+    const stop = bundle.stops.find((item) => item.id === stopId);
+    const proofId = stop?.proofUri?.startsWith('proof:')
+      ? stop.proofUri.slice(6)
+      : '';
+    if (!stop || !UUID.test(proofId))
+      throw new NotFoundException('Durable delivery evidence is unavailable');
+    return this.proofCall(`/${proofId}/read`, this.proofBinding(bundle, stop));
+  }
+
   /** Delivered, backend first: the drop is committed only once the payment backend accepts. */
   async confirmStopDeliveryWithProof(
     tripId: string,
@@ -489,6 +595,23 @@ export class TripsService {
     if (already?.status === 'DELIVERED') {
       return { changed: false, trip: tripView(bundle), paymentSync: 'NONE' };
     }
+    const proofId =
+      typeof photo?.uri === 'string' && photo.uri.startsWith('proof:')
+        ? photo.uri.slice(6)
+        : '';
+    if (!UUID.test(proofId))
+      throw new BadRequestException(
+        'Upload and verify the delivery photo before confirming',
+      );
+    const proofStop = assertDeliverableStop(bundle, stopId);
+    const verified = await this.proofCall(
+      `/${proofId}/read`,
+      this.proofBinding(bundle, proofStop),
+    );
+    if (verified.ready !== true || verified.proofId !== proofId)
+      throw new BadRequestException(
+        'Delivery photo upload has not been verified',
+      );
     const commandId = await this.mutate(
       tripId,
       subject,

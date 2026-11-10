@@ -84,7 +84,7 @@ describe('Drops, delivery and completion (e2e)', () => {
       options.driver,
       {
         stopId: second,
-        photo: { uri: 'file://wrong.jpg' },
+        photo: { uri: 'proof:11111111-1111-4111-8111-111111111111' },
       },
     );
     expect(otherDelivery.status).toBe(400);
@@ -150,7 +150,7 @@ describe('Drops, delivery and completion (e2e)', () => {
         options.driver,
         {
           stopId,
-          photo: { uri: 'file://too-early.jpg' },
+          photo: { uri: 'proof:11111111-1111-4111-8111-111111111111' },
         },
       );
       expect(photo.status).toBe(400);
@@ -207,7 +207,7 @@ describe('Drops, delivery and completion (e2e)', () => {
         options.driver,
         {
           stopId,
-          photo: { uri: 'file://proof.jpg' },
+          photo: { uri: 'proof:11111111-1111-4111-8111-111111111111' },
         },
       );
       expect(refused.status).toBe(409);
@@ -237,7 +237,7 @@ describe('Drops, delivery and completion (e2e)', () => {
         options.driver,
         {
           stopId,
-          photo: { uri: 'file://proof.jpg' },
+          photo: { uri: 'proof:11111111-1111-4111-8111-111111111111' },
         },
       ).expect(201);
       expect(delivered.body).toMatchObject({
@@ -284,7 +284,7 @@ describe('Drops, delivery and completion (e2e)', () => {
         options.driver,
         {
           stopId,
-          photo: { uri: 'file://proof-1.jpg' },
+          photo: { uri: 'proof:11111111-1111-4111-8111-111111111111' },
         },
       ).expect(201);
       expect(delivered.body).toMatchObject({
@@ -300,7 +300,7 @@ describe('Drops, delivery and completion (e2e)', () => {
       });
       expect(stop).toMatchObject({
         status: 'DELIVERED',
-        proofUri: 'file://proof-1.jpg',
+        proofUri: 'proof:11111111-1111-4111-8111-111111111111',
       });
       expect(
         ctx.backend.bookings.get(trip.paymentBookingId)?.stops[0]?.status,
@@ -384,7 +384,7 @@ describe('Drops, delivery and completion (e2e)', () => {
             options.driver,
             {
               stopId,
-              photo: { uri: 'file://proof.jpg' },
+              photo: { uri: 'proof:11111111-1111-4111-8111-111111111111' },
             },
           ),
         ),
@@ -544,7 +544,7 @@ describe('Drops, delivery and completion (e2e)', () => {
         options.driver,
         {
           stopId,
-          photo: { uri: 'file://second-try.jpg' },
+          photo: { uri: 'proof:11111111-1111-4111-8111-111111111111' },
         },
       ).expect(201);
       expect(

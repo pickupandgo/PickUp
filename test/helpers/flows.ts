@@ -218,7 +218,7 @@ export async function deliverStop(
     ctx,
     `/trips/${trip.tripId}/stop/confirm-delivery`,
     options.driver,
-    { stopId, photo: { uri: `file://proof-${index + 1}.jpg` } },
+    { stopId, photo: { uri: 'proof:11111111-1111-4111-8111-111111111111' } },
   ).expect(201);
 }
 

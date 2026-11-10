@@ -89,7 +89,20 @@ export class TripsController {
     assertSameIdentity(subject, driverId, 'driverId');
     return {
       success: true,
-      trips: await this.tripsService.getDriverHistory(subject),
+      ...(await this.tripsService.getDriverHistoryPage(subject)),
+    };
+  }
+
+  @Get('history/driver/:driverId/page/:cursor')
+  async driverHistoryPage(
+    @CurrentSubject() subject: string,
+    @Param('driverId') driverId: string,
+    @Param('cursor') cursor: string,
+  ) {
+    assertSameIdentity(subject, driverId, 'driverId');
+    return {
+      success: true,
+      ...(await this.tripsService.getDriverHistoryPage(subject, cursor)),
     };
   }
 
@@ -241,6 +254,35 @@ export class TripsController {
       currentStop: result.trip.currentStop, // null when all stops done
       ...result,
     };
+  }
+
+  @Post(':tripId/stops/:stopId/proof')
+  initiateProof(
+    @CurrentSubject() subject: string,
+    @Param('tripId') tripId: string,
+    @Param('stopId') stopId: string,
+    @Body() body: { contentType: unknown; sizeBytes: unknown },
+  ) {
+    return this.tripsService.initiateProof(tripId, subject, stopId, body);
+  }
+
+  @Post(':tripId/stops/:stopId/proof/:proofId/complete')
+  completeProof(
+    @CurrentSubject() subject: string,
+    @Param('tripId') tripId: string,
+    @Param('stopId') stopId: string,
+    @Param('proofId') proofId: string,
+  ) {
+    return this.tripsService.completeProof(tripId, subject, stopId, proofId);
+  }
+
+  @Get(':tripId/stops/:stopId/proof')
+  readProof(
+    @CurrentSubject() subject: string,
+    @Param('tripId') tripId: string,
+    @Param('stopId') stopId: string,
+  ) {
+    return this.tripsService.readProof(tripId, subject, stopId);
   }
 
   /** The receiver could not take the goods. The payment backend decides retry or resolution. */

@@ -74,7 +74,7 @@ describe('Security of the engine integration (e2e)', () => {
         `/trips/${trip.tripId}/stop/confirm-delivery`,
         fake,
         {
-          photo: { uri: 'file://x.jpg' },
+          photo: { uri: 'proof:11111111-1111-4111-8111-111111111111' },
         },
       );
       expect(confirm.status).toBe(403);
@@ -207,7 +207,7 @@ describe('Security of the engine integration (e2e)', () => {
         options.driver,
         {
           stopId,
-          photo: { uri: 'file://proof.jpg' },
+          photo: { uri: 'proof:11111111-1111-4111-8111-111111111111' },
           status: 'DELIVERED',
           paymentStatus: 'PAID',
         },

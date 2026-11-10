@@ -131,7 +131,7 @@ describe('Engine outbox (e2e)', () => {
       options.driver,
       {
         stopId,
-        photo: { uri: 'file://proof.jpg' },
+        photo: { uri: 'proof:11111111-1111-4111-8111-111111111111' },
       },
     );
     expect(unknown.status).toBe(503);
@@ -150,7 +150,7 @@ describe('Engine outbox (e2e)', () => {
       options.driver,
       {
         stopId,
-        photo: { uri: 'file://proof.jpg' },
+        photo: { uri: 'proof:11111111-1111-4111-8111-111111111111' },
       },
     ).expect(201);
     expect(retried.body).toMatchObject({
@@ -170,7 +170,7 @@ describe('Engine outbox (e2e)', () => {
     });
     expect(stop).toMatchObject({
       status: 'DELIVERED',
-      proofUri: 'file://proof.jpg',
+      proofUri: 'proof:11111111-1111-4111-8111-111111111111',
     });
   });
 
