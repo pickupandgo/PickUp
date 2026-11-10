@@ -327,6 +327,14 @@ export class EarningsService {
     return earning;
   }
 
+  /** Exact payment trip lookup; absence is not a zero or a paid earning. */
+  async getForDriverTrip(driverId: string, tripId: string): Promise<EarningWithSources | null> {
+    return this.prisma.driverEarning.findFirst({
+      where: { driverId, tripId },
+      include: EARNING_SOURCES,
+    });
+  }
+
   async get(earningId: string): Promise<EarningWithSources> {
     const earning = await this.prisma.driverEarning.findUnique({
       where: { id: earningId },

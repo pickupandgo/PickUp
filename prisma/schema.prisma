@@ -804,6 +804,7 @@ model BookingStop {
 /// Payment-scoped subset of M6 trips: one trip per booking, created at assignment. vehicle_id
 /// and current_stop_id are owned by the trip engine for now (documented deviation).
 model Trip {
+  deliveryProofs DeliveryProof[]
   id                 String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   bookingId          String     @unique(map: "uq_trips_booking") @map("booking_id") @db.Uuid
   driverId           String     @map("driver_id") @db.Uuid
@@ -827,6 +828,27 @@ model Trip {
   @@index([driverId, status], map: "idx_trips_driver_status")
   @@index([status], map: "idx_trips_status")
   @@map("trips")
+}
+
+/// Private, version-pinned delivery evidence; never a phone URI or permanent public URL.
+model DeliveryProof {
+  id String @id @db.Uuid
+  paymentTripId String @map("payment_trip_id") @db.Uuid
+  engineTripId String @map("engine_trip_id") @db.Uuid
+  engineStopId String @map("engine_stop_id") @db.Uuid
+  sequence Int @db.SmallInt
+  ownerSubject String @map("owner_subject") @db.VarChar(128)
+  key String @unique @db.VarChar(500)
+  contentType String @map("content_type") @db.VarChar(50)
+  sizeBytes Int @map("size_bytes")
+  checksumSha256 String? @map("checksum_sha256") @db.VarChar(64)
+  storageVersionId String? @map("storage_version_id") @db.VarChar(1024)
+  storageETag String? @map("storage_etag") @db.VarChar(200)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  verifiedAt DateTime? @map("verified_at") @db.Timestamptz(6)
+  trip Trip @relation(fields: [paymentTripId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  @@index([paymentTripId, sequence])
+  @@map("delivery_proofs")
 }
 
 /// PW 1.6: versioned platform-fee rules. Amounts, type and window start are never edited and

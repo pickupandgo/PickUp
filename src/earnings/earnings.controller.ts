@@ -45,4 +45,13 @@ export class EarningsController {
       await this.earnings.getForDriver(requireDriver(principal).id, earningId),
     );
   }
+
+  @Get('trip/:tripId')
+  async forTrip(
+    @CurrentPrincipal() principal: Principal,
+    @Param('tripId', new ParseUUIDPipe({ version: '4' })) tripId: string,
+  ): Promise<EarningResponse | null> {
+    const earning = await this.earnings.getForDriverTrip(requireDriver(principal).id, tripId);
+    return earning ? toEarningResponse(earning) : null;
+  }
 }

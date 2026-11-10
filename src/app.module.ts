@@ -1,4 +1,5 @@
 import { RoutingModule } from './routing/routing.module';
+import { DeliveryProofsModule } from './delivery-proofs/delivery-proofs.module';
 import { DynamicModule, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -50,6 +51,7 @@ export class AppModule {
         OnboardingModule,
         FareModule,
         RoutingModule,
+        DeliveryProofsModule,
         WalletModule,
         FeesModule,
         EarningsModule,
