@@ -32,32 +32,34 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const subscriber = onAuthStateChanged(authInstance, async (user: any) => {
       if (user) {
         console.log('[AUTH] Auth state restored for Customer UID:', user.uid);
-        const profile = await getCustomerProfile(user.uid);
-        const profileDone = await isProfileComplete(user.uid);
-        setUserProfile(profile);
-        setHasProfile(profileDone);
+        const localProfile = await getCustomerProfile(user.uid);
+        setUserProfile(localProfile);
         setIsLoggedIn(true);
 
-        // Try syncing remote profile from backend
+        // Authoritatively check backend customer profile
         try {
           const remoteProfile = await fetchUserProfileApi();
-          if (remoteProfile && remoteProfile.fullName && remoteProfile.email) {
+          if (remoteProfile) {
             const mappedData: CustomerProfileData = {
-              fullName: remoteProfile.fullName,
-              email: remoteProfile.email,
-              phone: remoteProfile.phone,
-              age: remoteProfile.age,
-              address: remoteProfile.address,
-              photoUri: remoteProfile.photoUri,
+              fullName: remoteProfile.fullName || localProfile?.fullName || '',
+              email: remoteProfile.email || localProfile?.email || '',
+              phone: remoteProfile.phone || localProfile?.phone || user.phoneNumber || '',
+              age: localProfile?.age,
+              address: localProfile?.address,
+              photoUri: localProfile?.photoUri,
             };
             await setProfileComplete(mappedData, user.uid);
             setUserProfile(mappedData);
             setHasProfile(true);
-          } else if (remoteProfile === null && !profileDone) {
+          } else {
+            // Customer profile is not yet provisioned on the backend
             setHasProfile(false);
           }
         } catch (e) {
-          console.log('[PROFILE] Could not sync remote profile from backend:', e);
+          console.warn('[PROFILE] Could not verify remote customer profile:', e);
+          // If offline or network error, fallback to local profile check if previously completed
+          const profileDone = await isProfileComplete(user.uid);
+          setHasProfile(profileDone);
         }
       } else {
         console.log('[AUTH] Auth state unauthenticated for Customer');
@@ -71,6 +73,29 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const login = async () => {
     const authUser = getAuth().currentUser;
+    if (authUser) {
+      try {
+        const remoteProfile = await fetchUserProfileApi();
+        if (remoteProfile) {
+          const localProfile = await getCustomerProfile(authUser.uid);
+          const mappedData: CustomerProfileData = {
+            fullName: remoteProfile.fullName || localProfile?.fullName || '',
+            email: remoteProfile.email || localProfile?.email || '',
+            phone: remoteProfile.phone || localProfile?.phone || authUser.phoneNumber || '',
+            age: localProfile?.age,
+            address: localProfile?.address,
+            photoUri: localProfile?.photoUri,
+          };
+          await setProfileComplete(mappedData, authUser.uid);
+          setUserProfile(mappedData);
+          setHasProfile(true);
+          setIsLoggedIn(true);
+          return;
+        }
+      } catch (e) {
+        console.warn('[PROFILE] Backend check failed during login:', e);
+      }
+    }
     const profile = await getCustomerProfile(authUser?.uid);
     const profileDone = await isProfileComplete(authUser?.uid);
     setUserProfile(profile);
@@ -81,35 +106,23 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const markProfileDone = async (data?: CustomerProfileData) => {
     const authUser = getAuth().currentUser;
     if (data) {
-      let mappedData: CustomerProfileData = {
-        fullName: data.fullName.trim(),
-        email: data.email.trim(),
-        phone: data.phone?.trim(),
+      // Must successfully persist to backend; never swallow failures
+      const remoteProfile = await saveUserProfileApi(data);
+      const mappedData: CustomerProfileData = {
+        fullName: remoteProfile.fullName || data.fullName.trim(),
+        email: remoteProfile.email || data.email.trim(),
+        phone: remoteProfile.phone || data.phone?.trim() || '',
         age: data.age?.trim() || undefined,
         address: data.address?.trim() || undefined,
         photoUri: data.photoUri?.trim() || undefined,
       };
 
-      try {
-        const remoteProfile = await saveUserProfileApi(data);
-        if (remoteProfile) {
-          mappedData = {
-            fullName: remoteProfile.fullName,
-            email: remoteProfile.email,
-            phone: remoteProfile.phone,
-            age: remoteProfile.age,
-            address: remoteProfile.address,
-            photoUri: remoteProfile.photoUri,
-          };
-        }
-      } catch (backendErr) {
-        console.warn('[PROFILE] Backend sync skipped or unavailable. Profile saved locally scoped by UID:', backendErr);
-      }
-
       await setProfileComplete(mappedData, authUser?.uid);
       setUserProfile(mappedData);
       setHasProfile(true);
     } else {
+      // If called without data, also call backend registration
+      await saveUserProfileApi({ fullName: '', email: '' });
       await setProfileComplete(undefined, authUser?.uid);
       setHasProfile(true);
     }
@@ -121,20 +134,26 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
       try {
         const remoteProfile = await fetchUserProfileApi();
         if (remoteProfile) {
+          const localProfile = await getCustomerProfile(authUser.uid);
           const mappedData: CustomerProfileData = {
-            fullName: remoteProfile.fullName,
-            email: remoteProfile.email,
-            phone: remoteProfile.phone,
-            age: remoteProfile.age,
-            address: remoteProfile.address,
-            photoUri: remoteProfile.photoUri,
+            fullName: remoteProfile.fullName || localProfile?.fullName || '',
+            email: remoteProfile.email || localProfile?.email || '',
+            phone: remoteProfile.phone || localProfile?.phone || authUser.phoneNumber || '',
+            age: localProfile?.age,
+            address: localProfile?.address,
+            photoUri: localProfile?.photoUri,
           };
           await setProfileComplete(mappedData, authUser.uid);
           setUserProfile(mappedData);
           setHasProfile(true);
           return;
+        } else {
+          setHasProfile(false);
+          return;
         }
-      } catch {}
+      } catch (err) {
+        console.warn('[PROFILE] Failed to refresh profile from backend:', err);
+      }
       const profile = await getCustomerProfile(authUser.uid);
       setUserProfile(profile);
       const profileDone = await isProfileComplete(authUser.uid);

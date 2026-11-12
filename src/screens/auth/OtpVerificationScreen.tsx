@@ -22,6 +22,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { KeyboardAwareScrollView } from '../../components/organisms';
 import { useI18n } from '../../i18n';
 
 export interface OtpVerificationScreenProps {
@@ -174,7 +175,11 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
         <View style={styles.iconButton} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header Section */}
         <View style={styles.titleSection}>
           <Text style={styles.title}>
@@ -255,7 +260,7 @@ const OtpVerificationScreen: React.FC<OtpVerificationScreenProps & { navigation?
             icon={(isLoading || isVerifying) ? <MaterialIcons name="loop" size={20} color={colors.onSurfaceVariant} /> : undefined}
           />
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };

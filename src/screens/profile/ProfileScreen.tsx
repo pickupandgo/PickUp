@@ -1,10 +1,9 @@
-import React from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, ScrollView, Pressable, StyleSheet, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { colors, spacing, borderRadius, typography } from '../../theme';
-import { strings } from '../../data/mockData';
 import { useSession } from '../../state/SessionContext';
 import { useI18n } from '../../i18n';
 import { getAuth } from '@react-native-firebase/auth';
@@ -45,11 +44,24 @@ const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any }> = ({
   onNotificationPress,
   navigation,
 }) => {
-  const { userProfile } = useSession();
+  const { userProfile, refreshProfile } = useSession();
   const { t } = useI18n();
   const currentUser = getAuth().currentUser;
 
-  const displayName = userProfile?.fullName || currentUser?.displayName || t('profile.customerFallback');
+  // Auto-refresh profile on mount and on navigation focus
+  useEffect(() => {
+    refreshProfile?.().catch(() => {});
+  }, [refreshProfile]);
+
+  useEffect(() => {
+    const unsubscribe = navigation?.addListener?.('focus', () => {
+      refreshProfile?.().catch(() => {});
+    });
+    return unsubscribe;
+  }, [navigation, refreshProfile]);
+
+  const photoUri = userProfile?.photoUri || currentUser?.photoURL;
+  const displayName = userProfile?.fullName || currentUser?.displayName || t('profile.customerFallback') || 'Customer';
   const displayPhone =
     normalizePhoneNumber(userProfile?.phone) ||
     normalizePhoneNumber(currentUser?.phoneNumber) ||
@@ -62,7 +74,11 @@ const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any }> = ({
         title={t('profile.title')}
         leadingIcon={
           <View style={styles.avatarSmall}>
-            <Feather name="user" size={16} color={colors.primary} />
+            {photoUri ? (
+              <Image source={{ uri: photoUri }} style={styles.avatarSmallImage} resizeMode="cover" />
+            ) : (
+              <Feather name="user" size={16} color={colors.primary} />
+            )}
           </View>
         }
         trailingIcon={<Feather name="bell" size={22} color={colors.primary} />}
@@ -80,7 +96,11 @@ const ProfileScreen: React.FC<ProfileScreenProps & { navigation?: any }> = ({
         {/* Profile Header */}
         <View style={styles.profileHeader}>
           <View style={styles.avatarLarge}>
-            <Feather name="user" size={40} color={colors.onSurfaceVariant} />
+            {photoUri ? (
+              <Image source={{ uri: photoUri }} style={styles.avatarLargeImage} resizeMode="cover" />
+            ) : (
+              <Feather name="user" size={40} color={colors.onSurfaceVariant} />
+            )}
           </View>
           <Text style={styles.userName}>{displayName}</Text>
           <View style={styles.phoneRow}>
@@ -159,6 +179,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceContainerHigh,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarSmallImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
   },
   scrollView: {
     flex: 1,
@@ -183,6 +209,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  avatarLargeImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
   },
   userName: {
     fontSize: typography.headlineMd.fontSize,

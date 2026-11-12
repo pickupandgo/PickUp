@@ -13,6 +13,7 @@ import {
   AppleAuthProvider,
   OAuthProvider,
   EmailAuthProvider,
+  PhoneAuthProvider,
   linkWithCredential,
   type User,
   type ConfirmationResult,
@@ -489,6 +490,13 @@ export const signOut = async (): Promise<void> => {
     await fbSignOut(getAuth());
     currentConfirmationResult = null;
     activePhoneNumber = null;
+    try {
+      if (GoogleSignin) {
+        await GoogleSignin.signOut();
+      }
+    } catch {
+      // Non-fatal if Google Sign-In wasn't active
+    }
     console.log('[AUTH] Firebase sign-out completed');
   } catch (error) {
     console.warn('[AUTH] Error during sign-out:', error);
@@ -498,4 +506,63 @@ export const signOut = async (): Promise<void> => {
 
 export const getCurrentUser = (): User | null => {
   return getAuth().currentUser;
+};
+
+/** Sends an SMS OTP to verify and link a phone number to the current authenticated user */
+export const sendPhoneVerificationForLinking = async (
+  phoneNumber: string,
+  forceResend: boolean = false,
+): Promise<ConfirmationResult> => {
+  return sendPhoneOTP(phoneNumber, forceResend);
+};
+
+/**
+ * Confirms OTP and links the phone number to the current authenticated Firebase user.
+ * Refreshes the ID token to ensure the phone_number claim is populated on the JWT.
+ */
+export const verifyAndLinkPhone = async (otp: string, phoneNumber?: string): Promise<User> => {
+  const cleanOtp = otp.trim();
+  if (!cleanOtp || cleanOtp.length !== 6) {
+    throw new Error('Please enter a complete 6-digit OTP.');
+  }
+  if (!currentConfirmationResult) {
+    throw new Error('No active verification session. Please request a new OTP.');
+  }
+
+  const currentUser = getAuth().currentUser;
+  if (!currentUser) {
+    throw new Error('No authenticated user session found to link phone.');
+  }
+
+  console.log('[AUTH] Verifying and linking phone to UID:', currentUser.uid);
+
+  try {
+    const verificationId = (currentConfirmationResult as any).verificationId;
+    if (verificationId) {
+      const credential = PhoneAuthProvider.credential(verificationId, cleanOtp);
+      if (typeof (currentUser as any).linkWithCredential === 'function') {
+        await (currentUser as any).linkWithCredential(credential);
+      } else {
+        await linkWithCredential(currentUser, credential);
+      }
+    } else {
+      await currentConfirmationResult.confirm(cleanOtp);
+    }
+
+    if (phoneNumber) {
+      try {
+        activePhoneNumber = formatToE164(phoneNumber);
+      } catch {
+        activePhoneNumber = phoneNumber;
+      }
+    }
+
+    // Force refresh token so next API request contains verified phone_number claim
+    await currentUser.getIdToken(true);
+    console.log('[AUTH] Phone successfully linked to UID:', currentUser.uid);
+    return currentUser;
+  } catch (error: any) {
+    console.warn('[AUTH] Phone linking failed:', error?.code || error?.message);
+    throw error;
+  }
 };

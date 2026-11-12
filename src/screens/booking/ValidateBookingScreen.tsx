@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { KeyboardAwareScrollView } from '../../components/organisms';
 import { useI18n } from '../../i18n';
 
 export interface ValidateBookingScreenProps {
@@ -41,7 +42,24 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        footer={
+          <View style={styles.bottomBar}>
+            <Pressable
+              style={styles.confirmButton}
+              onPress={() => navigation?.navigate('BookingConfirmedScreen')}
+              accessibilityRole="button"
+              accessibilityLabel={t('booking.confirmAndBook')}
+            >
+              <Text style={styles.confirmText}>{t('booking.confirmAndBook')}</Text>
+              <Feather name="arrow-right" size={18} color={colors.onPrimary} />
+            </Pressable>
+          </View>
+        }
+      >
         {/* Section 1: Route Validation */}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>{t('booking.routeValidation')}</Text>
@@ -193,20 +211,7 @@ const ValidateBookingScreen: React.FC<ValidateBookingScreenProps & { navigation?
           </View>
         </View>
 
-      </ScrollView>
-
-      {/* Bottom Action Bar */}
-      <View style={styles.bottomBar}>
-        <Pressable
-          style={styles.confirmButton}
-          onPress={() => navigation?.navigate('BookingConfirmedScreen')}
-          accessibilityRole="button"
-          accessibilityLabel={t('booking.confirmAndBook')}
-        >
-          <Text style={styles.confirmText}>{t('booking.confirmAndBook')}</Text>
-          <Feather name="arrow-right" size={18} color={colors.onPrimary} />
-        </Pressable>
-      </View>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };

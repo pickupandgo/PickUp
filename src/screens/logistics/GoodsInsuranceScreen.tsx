@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { KeyboardAwareScrollView } from '../../components/organisms';
 import { useI18n } from '../../i18n';
 
 export interface GoodsInsuranceScreenProps {
@@ -52,11 +53,26 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
       </View>
 
       {/* Content */}
-      <ScrollView
+      <KeyboardAwareScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        footer={
+          <View style={styles.bottomBar}>
+            <Pressable
+              style={styles.continueButton}
+              onPress={() => {
+                onContinue?.();
+                navigation?.navigate('FareEstimateScreen');
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.continue')}
+            >
+              <Text style={styles.continueText}>{t('common.continueCaps')}</Text>
+            </Pressable>
+          </View>
+        }
       >
         {/* Header Section */}
         <View style={styles.titleSection}>
@@ -128,22 +144,7 @@ const GoodsInsuranceScreen: React.FC<GoodsInsuranceScreenProps & { navigation?: 
             </View>
           </View>
         </Pressable>
-      </ScrollView>
-
-      {/* Bottom Action Bar */}
-      <View style={styles.bottomBar}>
-        <Pressable
-          style={styles.continueButton}
-          onPress={() => {
-            onContinue?.();
-            navigation?.navigate('FareEstimateScreen');
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={t('common.continue')}
-        >
-          <Text style={styles.continueText}>{t('common.continueCaps')}</Text>
-        </Pressable>
-      </View>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };

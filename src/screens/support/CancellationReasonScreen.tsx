@@ -28,11 +28,14 @@ const CANCELLATION_REASON_KEYS = [
   { id: 'other', key: 'cancellation.other' },
 ];
 
-const CancellationReasonScreen: React.FC<CancellationReasonScreenProps & { navigation?: any }> = ({
+const CancellationReasonScreen: React.FC<
+  CancellationReasonScreenProps & { navigation?: any; route?: any }
+> = ({
   onSubmit,
   onBack,
   onHelp,
   navigation,
+  route,
 }) => {
   const { t } = useI18n();
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
@@ -130,7 +133,12 @@ const CancellationReasonScreen: React.FC<CancellationReasonScreenProps & { navig
           label={t('common.submitCaps')}
           onPress={() => {
             handleSubmit();
-            navigation?.navigate('CancellationChargeConfirmationScreen');
+            const reasonText = selectedReason === 'other' ? otherText.trim() : selectedReason;
+            navigation?.navigate('CancellationChargeConfirmationScreen', {
+              reason: reasonText,
+              trip: route?.params?.trip,
+              ride: route?.params?.ride,
+            });
           }}
           variant="primary"
           fullWidth

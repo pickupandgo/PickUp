@@ -1,14 +1,22 @@
-import React from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useI18n } from '../../i18n';
+import { useBooking } from '../../state/BookingContext';
+import {
+  getCancellationEstimate,
+  executeTripCancellation,
+} from '../../services/cancellationService';
+import { toApiError } from '../../api/http';
 
 export interface CancellationChargeConfirmationScreenProps {
   readonly feeAmount?: string;
@@ -17,15 +25,85 @@ export interface CancellationChargeConfirmationScreenProps {
   readonly onKeepTrip?: () => void;
 }
 
-const CancellationChargeConfirmationScreen: React.FC<CancellationChargeConfirmationScreenProps & { navigation?: any }> = ({
-  feeAmount = '₹112.50',
-  policyText,
+const CancellationChargeConfirmationScreen: React.FC<
+  CancellationChargeConfirmationScreenProps & { navigation?: any; route?: any }
+> = ({
+  feeAmount: propFeeAmount,
+  policyText: propPolicyText,
   onCancelAccept,
   onKeepTrip,
   navigation,
+  route,
 }) => {
   const { t } = useI18n();
-  const effectivePolicy = policyText || t('cancellation.proximityPolicy');
+  const {
+    trip: contextTrip,
+    ride: contextRide,
+    draft,
+    assignedDriver: contextDriver,
+    customerId,
+    setTrip,
+  } = useBooking();
+
+  const [isCancelling, setIsCancelling] = useState(false);
+  const isCancellingRef = useRef(false);
+
+  const activeTrip = route?.params?.trip || contextTrip;
+  const activeRide = route?.params?.ride || contextRide;
+  const activeDriver = route?.params?.assignedDriver || contextDriver;
+  const reason = route?.params?.reason || 'Customer cancelled booking';
+
+  const estimate = useMemo(() => {
+    return getCancellationEstimate({
+      trip: activeTrip,
+      ride: activeRide,
+      draft,
+      assignedDriver: activeDriver,
+    });
+  }, [activeTrip, activeRide, draft, activeDriver]);
+
+  const effectiveFee =
+    propFeeAmount || route?.params?.feeAmount || estimate.formattedFee;
+  const effectivePolicy =
+    propPolicyText ||
+    route?.params?.policyText ||
+    t('cancellation.proximityPolicy');
+
+  const handleCancelAndAccept = async () => {
+    if (isCancellingRef.current) return;
+    isCancellingRef.current = true;
+    setIsCancelling(true);
+
+    try {
+      const result = await executeTripCancellation({
+        trip: activeTrip,
+        ride: activeRide,
+        customerId,
+        reason,
+      });
+
+      if (activeTrip && setTrip) {
+        setTrip({ ...activeTrip, status: 'CANCELLED' });
+      }
+
+      onCancelAccept?.();
+
+      navigation?.navigate('CancellationResultScreen', {
+        tripId: result.tripId || estimate.tripReference,
+        feeAmount: result.feeAmount || estimate.formattedFee,
+        cancelledTrip: result.cancelledTrip,
+      });
+    } catch (err: unknown) {
+      const apiErr = toApiError(err);
+      Alert.alert(
+        'Cancellation Error',
+        apiErr.userMessage || 'Could not cancel booking. Please try again.'
+      );
+    } finally {
+      isCancellingRef.current = false;
+      setIsCancelling(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -55,7 +133,7 @@ const CancellationChargeConfirmationScreen: React.FC<CancellationChargeConfirmat
           <View style={styles.chargeCard}>
             <View style={styles.feeRow}>
               <Text style={styles.feeLabel}>{t('cancellation.feeAmount')}</Text>
-              <Text style={styles.feeValue}>{feeAmount}</Text>
+              <Text style={styles.feeValue}>{effectiveFee}</Text>
             </View>
             <View style={styles.divider} />
             <Text style={styles.policyText}>{effectivePolicy}</Text>
@@ -64,18 +142,21 @@ const CancellationChargeConfirmationScreen: React.FC<CancellationChargeConfirmat
           {/* Actions */}
           <View style={styles.actionsContainer}>
             <Pressable
-              style={[styles.customButton, styles.cancelButton]}
-              onPress={() => {
-                onCancelAccept?.();
-                navigation?.navigate('CancellationConfirmationScreen');
-              }}
+              style={[styles.customButton, styles.cancelButton, isCancelling && { opacity: 0.7 }]}
+              onPress={handleCancelAndAccept}
+              disabled={isCancelling}
               accessibilityRole="button"
             >
-              <Text style={styles.cancelButtonText}>{t('cancellation.cancelAndAcceptCharge')}</Text>
+              {isCancelling ? (
+                <ActivityIndicator size="small" color={colors.onError} />
+              ) : (
+                <Text style={styles.cancelButtonText}>{t('cancellation.cancelAndAcceptCharge')}</Text>
+              )}
             </Pressable>
             <Pressable
               style={[styles.customButton, styles.keepButton]}
               onPress={() => (onKeepTrip ? onKeepTrip() : navigation?.goBack())}
+              disabled={isCancelling}
               accessibilityRole="button"
             >
               <Text style={styles.keepButtonText}>{t('cancellation.keepTripCaps')}</Text>
@@ -99,7 +180,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: colors.inverseSurface + 'CC', // Dimmed inverse surface (80%)
+    backgroundColor: colors.inverseSurface + 'CC',
   },
   sheetContainer: {
     backgroundColor: colors.surface,

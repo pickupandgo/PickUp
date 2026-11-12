@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,14 @@ import {
   Pressable,
   StyleSheet,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
 import { getAuth } from '@react-native-firebase/auth';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import Button from '../../components/atoms/Button';
+import { KeyboardAwareScrollView } from '../../components/organisms';
 import { useSession } from '../../state/SessionContext';
 import {
   getActivePhoneNumber,
@@ -20,6 +22,8 @@ import {
   formatToE164,
   linkEmailPassword,
   mapFirebaseAuthError,
+  sendPhoneVerificationForLinking,
+  verifyAndLinkPhone,
 } from '../../auth/authService';
 import { useI18n } from '../../i18n';
 
@@ -44,8 +48,8 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { route?: any; na
   const { t } = useI18n();
   const currentUser = getAuth().currentUser;
 
-  // Genuine verified phone from Firebase Auth or active OTP session
-  const verifiedPhone = useMemo(() => {
+  // Genuine verified phone from Firebase Auth, route params, or active OTP session
+  const initialVerifiedPhone = useMemo(() => {
     const raw =
       currentUser?.phoneNumber ||
       route?.params?.phoneNumber ||
@@ -53,12 +57,37 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { route?: any; na
     return normalizePhoneNumber(raw);
   }, [currentUser?.phoneNumber, route?.params?.phoneNumber]);
 
+  // Verified / linked phone state
+  const [linkedPhone, setLinkedPhone] = useState<string | null>(initialVerifiedPhone);
+  const effectiveVerifiedPhone = linkedPhone || initialVerifiedPhone;
+
   // For users who signed up via Email, Google, or Apple, phone is not yet in Auth.
-  // Allow them to input their mobile number.
+  // Allow them to input their mobile number and verify it via OTP.
   const [manualPhone, setManualPhone] = useState<string>(() => {
-    if (verifiedPhone) return '';
+    if (initialVerifiedPhone) return '';
     return userProfile?.phone ? userProfile.phone.replace(/^\+91/, '').replace(/\D/g, '') : '';
   });
+
+  // Phone linking state for non-phone authenticated users
+  const [otpSent, setOtpSent] = useState<boolean>(false);
+  const [otp, setOtp] = useState<string>('');
+  const [isSendingOtp, setIsSendingOtp] = useState<boolean>(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState<boolean>(false);
+  const [resendCooldown, setResendCooldown] = useState<number>(0);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+
+  // Resend cooldown timer
+  useEffect(() => {
+    let interval: any = null;
+    if (resendCooldown > 0) {
+      interval = setInterval(() => {
+        setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [resendCooldown]);
 
   // Full Name: Genuine display name from Google/Apple or route params or profile
   const [fullName, setFullName] = useState<string>(() => {
@@ -115,8 +144,74 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { route?: any; na
 
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const isSubmittingRef = useRef(false);
+
+  const handleSendPhoneOtp = async () => {
+    setError(null);
+    setPhoneError(null);
+    const cleanManual = manualPhone.replace(/\D/g, '');
+    if (cleanManual.length !== 10) {
+      setPhoneError(t('profile.verifiedPhoneRequired') || 'Please enter a valid 10-digit mobile number.');
+      return;
+    }
+    let formatted = '';
+    try {
+      formatted = formatToE164(cleanManual);
+    } catch {
+      setPhoneError(t('profile.verifiedPhoneRequired') || 'Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    setIsSendingOtp(true);
+    try {
+      await sendPhoneVerificationForLinking(formatted, true);
+      setOtpSent(true);
+      setResendCooldown(30);
+    } catch (err: any) {
+      setPhoneError(mapFirebaseAuthError(err));
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleVerifyPhoneOtp = async () => {
+    setError(null);
+    setPhoneError(null);
+    const cleanOtp = otp.trim();
+    if (cleanOtp.length !== 6) {
+      setPhoneError(t('auth.invalidOtp') || 'Please enter the 6-digit OTP sent to your phone.');
+      return;
+    }
+    const cleanManual = manualPhone.replace(/\D/g, '');
+    let formatted = '';
+    try {
+      formatted = formatToE164(cleanManual);
+    } catch {
+      setPhoneError(t('profile.verifiedPhoneRequired') || 'Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    try {
+      await verifyAndLinkPhone(cleanOtp, formatted);
+      setLinkedPhone(formatted);
+      setOtpSent(false);
+      setOtp('');
+      setPhoneError(null);
+      console.log('[PROFILE] Phone successfully linked and verified:', formatted);
+    } catch (err: any) {
+      setPhoneError(mapFirebaseAuthError(err));
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
 
   const handleSave = async () => {
+    if (isSaving || isSubmittingRef.current) {
+      return;
+    }
+
     setError(null);
     setLinkConflict(null);
 
@@ -136,20 +231,13 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { route?: any; na
       return;
     }
 
-    // Phone validation: either verifiedPhone exists or valid 10-digit manualPhone
-    let phoneToPersist = verifiedPhone;
-    if (!phoneToPersist) {
-      const cleanManual = manualPhone.replace(/\D/g, '');
-      if (cleanManual.length !== 10) {
-        setError(t('profile.verifiedPhoneRequired') || 'Please enter a valid 10-digit mobile number.');
-        return;
-      }
-      try {
-        phoneToPersist = formatToE164(cleanManual);
-      } catch {
-        setError(t('profile.verifiedPhoneRequired') || 'Please enter a valid 10-digit mobile number.');
-        return;
-      }
+    // Phone validation: MUST have a verified phone linked to the Firebase account
+    if (!effectiveVerifiedPhone) {
+      setError(
+        t('profile.verifiedPhoneRequired') ||
+          'A verified mobile number is required by MultipleRide. Please verify your mobile number with OTP before continuing.',
+      );
+      return;
     }
 
     const trimmedAge = age.trim();
@@ -173,6 +261,7 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { route?: any; na
       }
     }
 
+    isSubmittingRef.current = true;
     setIsSaving(true);
 
     // Link credential if requested
@@ -191,6 +280,7 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { route?: any; na
             'This email is already associated with another account. Please use a different email or log in with that account.';
           setLinkConflict(conflictMsg);
           setError(conflictMsg);
+          isSubmittingRef.current = false;
           setIsSaving(false);
           return;
         } else if (linkErr?.code === 'auth/provider-already-linked') {
@@ -198,6 +288,7 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { route?: any; na
         } else {
           const msg = mapFirebaseAuthError(linkErr);
           setError(msg);
+          isSubmittingRef.current = false;
           setIsSaving(false);
           return;
         }
@@ -211,16 +302,46 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { route?: any; na
           email: trimmedEmail,
           age: trimmedAge || undefined,
           address: address.trim() || undefined,
-          phone: phoneToPersist,
+          phone: effectiveVerifiedPhone,
           photoUri: photoUri || undefined,
         });
       }
       onSave?.();
       await login();
     } catch (err: any) {
-      const msg = err?.userMessage || err?.message || t('profile.saveFailed') || 'Failed to save profile.';
+      console.warn('[PROFILE] Customer profile persistence failed:', err);
+      const code = err?.code || err?.body?.error?.code || err?.response?.data?.code;
+      const serverMsg = err?.serverMessage || err?.userMessage || err?.response?.data?.message || err?.message;
+      const isNetworkError = err?.kind === 'network' || err?.kind === 'timeout' || err?.name === 'NetworkError';
+      console.log('[PROFILE_SAVE_DIAGNOSTICS]', { kind: err?.kind, status: err?.status, code: code || 'NONE', isNetwork: isNetworkError });
+
+      let msg = serverMsg;
+
+      if (code === 'ACCOUNT_ROLE_CONFLICT' || serverMsg?.includes('ROLE_CONFLICT') || serverMsg?.includes('driver')) {
+        msg = t('profile.driverRoleConflict') ||
+          'This phone number or account is already registered as a driver. MultipleRide requires separate accounts for drivers and customers.';
+      } else if (code === 'PHONE_ALREADY_REGISTERED' || serverMsg?.includes('PHONE_TAKEN') || serverMsg?.includes('already registered')) {
+        msg = t('profile.phoneAlreadyRegistered') ||
+          'This phone number is already registered to another customer.';
+      } else if (code === 'PHONE_VERIFICATION_REQUIRED' || serverMsg?.includes('phone number is required') || serverMsg?.includes('OTP')) {
+        msg = t('profile.phoneVerificationRequired') ||
+          'A verified mobile number is required by security policy. Please complete phone verification with OTP.';
+      } else if (isNetworkError) {
+        msg = t('error.noInternetMsg') ||
+          'Unable to reach MultipleRide servers. Please check your connection and try again.';
+      } else if (err?.status === 409) {
+        msg = serverMsg || t('profile.saveFailed') || 'This account or detail is already registered.';
+      } else if (err?.status === 403) {
+        msg = serverMsg || t('common.somethingWentWrong') || 'Access denied. Please check your account details.';
+      } else if (err?.status && err.status >= 500) {
+        msg = t('error.serverUnavailableMsg') || "We're working on it. Please try again later.";
+      } else if (!msg) {
+        msg = t('profile.saveFailed') || 'Failed to save profile. Please try again.';
+      }
+
       setError(msg);
     } finally {
+      isSubmittingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -231,20 +352,64 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { route?: any; na
     }
   };
 
+  const handleSignOut = async () => {
+    if (isSigningOut || isSaving || isSubmittingRef.current) return;
+    setIsSigningOut(true);
+    setError(null);
+    try {
+      await logout();
+      if (navigation?.reset) {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'LoginScreen' }],
+        });
+      } else if (navigation?.navigate) {
+        navigation.navigate('LoginScreen');
+      }
+    } catch (err: any) {
+      console.warn('[PROFILE] Sign out failed:', err);
+      const msg = err?.message || t('common.somethingWentWrong') || 'Failed to sign out. Please try again.';
+      setError(msg);
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      <ScrollView
+      <KeyboardAwareScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        footer={
+          <View style={styles.footer}>
+            <Button
+              label={isSaving ? t('profile.saving') : t('common.saveAndContinue')}
+              onPress={handleSave}
+              variant="primary"
+              fullWidth
+              disabled={isSaving || isSigningOut}
+              loading={isSaving}
+            />
+          </View>
+        }
       >
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerTopRow}>
             <Text style={styles.title}>{t('profile.createProfileTitle')}</Text>
-            <Pressable onPress={logout} hitSlop={8} style={styles.logoutButton}>
-              <Text style={styles.logoutText}>{t('profile.signOut')}</Text>
+            <Pressable
+              onPress={handleSignOut}
+              disabled={isSigningOut || isSaving}
+              hitSlop={8}
+              style={[styles.logoutButton, isSigningOut && styles.buttonDisabled]}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.signOut')}
+            >
+              <Text style={styles.logoutText}>
+                {isSigningOut ? t('profile.saving') : t('profile.signOut')}
+              </Text>
             </Pressable>
           </View>
           <Text style={styles.subtitle}>{t('profile.createProfileSubtitle')}</Text>
@@ -325,30 +490,133 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { route?: any; na
           {/* Phone Number Section */}
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>
-              {verifiedPhone ? t('profile.verifiedMobileNumber') : `${t('profile.mobileNumber')} *`}
+              {effectiveVerifiedPhone
+                ? t('profile.verifiedMobileNumber') || 'Verified Mobile Number'
+                : `${t('profile.mobileNumber') || 'Mobile Number'} *`}
             </Text>
-            {verifiedPhone ? (
+            {effectiveVerifiedPhone ? (
               <View style={styles.readOnlyField}>
-                <Text style={styles.readOnlyText}>{verifiedPhone}</Text>
-                <Feather name="check-circle" size={20} color={colors.primary} />
+                <Text style={styles.readOnlyText}>{effectiveVerifiedPhone}</Text>
+                <View style={styles.verifiedBadge}>
+                  <Feather name="check-circle" size={16} color={colors.primary} />
+                  <Text style={styles.verifiedBadgeText}>
+                    {t('common.verified') || 'Verified'}
+                  </Text>
+                </View>
               </View>
             ) : (
-              <View style={styles.phoneInputRow}>
-                <View style={styles.countryCodeBadge}>
-                  <Text style={styles.countryCodeText}>+91</Text>
+              <View style={styles.phoneSectionContainer}>
+                <View style={styles.phoneInputRow}>
+                  <View style={styles.countryCodeBadge}>
+                    <Text style={styles.countryCodeText}>+91</Text>
+                  </View>
+                  <TextInput
+                    style={styles.phoneInput}
+                    placeholder={t('profile.enterMobileNumber') || '10-digit mobile number'}
+                    placeholderTextColor={colors.onSurfaceVariant}
+                    value={manualPhone}
+                    editable={!otpSent && !isSendingOtp}
+                    onChangeText={(text) => {
+                      setManualPhone(text.replace(/[^0-9]/g, ''));
+                      if (error) setError(null);
+                      if (phoneError) setPhoneError(null);
+                    }}
+                    keyboardType="phone-pad"
+                    maxLength={10}
+                  />
+                  {!otpSent && (
+                    <Pressable
+                      style={[
+                        styles.inlineVerifyButton,
+                        (manualPhone.replace(/\D/g, '').length !== 10 || isSendingOtp) &&
+                          styles.disabledButton,
+                      ]}
+                      onPress={handleSendPhoneOtp}
+                      disabled={manualPhone.replace(/\D/g, '').length !== 10 || isSendingOtp}
+                    >
+                      {isSendingOtp ? (
+                        <ActivityIndicator size="small" color={colors.onPrimary} />
+                      ) : (
+                        <Text style={styles.inlineVerifyButtonText}>
+                          {t('auth.sendOtp') || 'Verify'}
+                        </Text>
+                      )}
+                    </Pressable>
+                  )}
                 </View>
-                <TextInput
-                  style={styles.phoneInput}
-                  placeholder={t('profile.enterMobileNumber') || '10-digit mobile number'}
-                  placeholderTextColor={colors.onSurfaceVariant}
-                  value={manualPhone}
-                  onChangeText={(text) => {
-                    setManualPhone(text.replace(/[^0-9]/g, ''));
-                    if (error) setError(null);
-                  }}
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                />
+
+                {phoneError ? (
+                  <Text style={styles.inlinePhoneError}>{phoneError}</Text>
+                ) : null}
+
+                {otpSent && (
+                  <View style={styles.otpCard}>
+                    <View style={styles.otpHeaderRow}>
+                      <Text style={styles.otpCardTitle}>
+                        {t('auth.enterOtp') || 'Enter 6-digit OTP sent via SMS'}
+                      </Text>
+                      <Pressable
+                        onPress={() => {
+                          setOtpSent(false);
+                          setOtp('');
+                          setPhoneError(null);
+                        }}
+                        hitSlop={8}
+                      >
+                        <Text style={styles.changePhoneText}>
+                          {t('common.change') || 'Change Number'}
+                        </Text>
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.otpInputRow}>
+                      <TextInput
+                        style={styles.otpInput}
+                        placeholder="••••••"
+                        placeholderTextColor={colors.onSurfaceVariant}
+                        value={otp}
+                        onChangeText={(text) => {
+                          setOtp(text.replace(/[^0-9]/g, ''));
+                          if (error) setError(null);
+                          if (phoneError) setPhoneError(null);
+                        }}
+                        keyboardType="number-pad"
+                        maxLength={6}
+                      />
+                      <Pressable
+                        style={[
+                          styles.otpVerifyButton,
+                          (otp.trim().length !== 6 || isVerifyingOtp) &&
+                            styles.disabledButton,
+                        ]}
+                        onPress={handleVerifyPhoneOtp}
+                        disabled={otp.trim().length !== 6 || isVerifyingOtp}
+                      >
+                        {isVerifyingOtp ? (
+                          <ActivityIndicator size="small" color={colors.onPrimary} />
+                        ) : (
+                          <Text style={styles.otpVerifyButtonText}>
+                            {t('auth.confirm') || 'Confirm'}
+                          </Text>
+                        )}
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.resendRow}>
+                      {resendCooldown > 0 ? (
+                        <Text style={styles.resendCooldownText}>
+                          {t('auth.resendCodeIn') || 'Resend code in'} {resendCooldown}s
+                        </Text>
+                      ) : (
+                        <Pressable onPress={handleSendPhoneOtp} disabled={isSendingOtp} hitSlop={8}>
+                          <Text style={styles.resendLinkText}>
+                            {t('auth.resendCode') || 'Resend OTP'}
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -488,18 +756,7 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps & { route?: any; na
             </View>
           </View>
         </View>
-      </ScrollView>
-
-      {/* Bottom CTA */}
-      <View style={styles.footer}>
-        <Button
-          label={isSaving ? t('profile.saving') : t('common.saveAndContinue')}
-          onPress={handleSave}
-          variant="primary"
-          fullWidth
-          disabled={isSaving}
-        />
-      </View>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };
@@ -529,6 +786,9 @@ const styles = StyleSheet.create({
   logoutButton: {
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
   logoutText: {
     fontSize: 14,
@@ -763,6 +1023,114 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.error,
     fontWeight: '500',
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm,
+  },
+  verifiedBadgeText: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  phoneSectionContainer: {
+    gap: spacing.sm,
+  },
+  inlineVerifyButton: {
+    height: 48,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.xl,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 72,
+  },
+  inlineVerifyButtonText: {
+    color: colors.onPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  inlinePhoneError: {
+    fontSize: 12,
+    color: colors.error,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  otpCard: {
+    backgroundColor: colors.surfaceContainerLowest || '#F9FAFB',
+    borderWidth: 1,
+    borderColor: colors.outlineHairline,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  otpHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  otpCardTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  changePhoneText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  otpInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  otpInput: {
+    flex: 1,
+    height: 48,
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: borderRadius.xl,
+    paddingHorizontal: spacing.lg,
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.onSurface,
+    letterSpacing: 4,
+    textAlign: 'center',
+  },
+  otpVerifyButton: {
+    height: 48,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.xl,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 84,
+  },
+  otpVerifyButtonText: {
+    color: colors.onPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  resendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  resendCooldownText: {
+    fontSize: 12,
+    color: colors.onSurfaceVariant,
+  },
+  resendLinkText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
   },
   addressInputWrapper: {
     flexDirection: 'row',

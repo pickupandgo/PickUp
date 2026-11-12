@@ -306,7 +306,7 @@ function RootNavigator() {
   const { locale } = useI18n();
 
   useEffect(() => {
-    if (isLoggedIn) {
+    if (isLoggedIn && hasProfile) {
       notificationService.requestPermission().then(() => {
         notificationService.registerDeviceToken(locale as 'en' | 'hi');
       });
@@ -317,7 +317,7 @@ function RootNavigator() {
     } else if (isLoggedIn === false) {
       notificationService.unregisterDeviceToken();
     }
-  }, [isLoggedIn, locale]);
+  }, [isLoggedIn, hasProfile, locale]);
 
   if (isLoggedIn === null) {
     return (

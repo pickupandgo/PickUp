@@ -14,6 +14,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { KeyboardAwareScrollView } from '../../components/organisms';
 import { useI18n } from '../../i18n';
 
 export interface ReceiverDetailsScreenProps {
@@ -59,11 +60,25 @@ const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?
         <View style={styles.iconButton} />
       </View>
 
-      <KeyboardAvoidingView 
-        style={styles.keyboardAvoid} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        footer={
+          <View style={styles.footer}>
+            <Button
+              label={t('common.continueCaps')}
+              onPress={() => {
+                handleContinue();
+                navigation?.navigate('FareEstimateScreen');
+              }}
+              variant="primary"
+              disabled={isContinueDisabled}
+              fullWidth
+            />
+          </View>
+        }
       >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
           
           {/* Destination Header */}
           <View style={styles.destinationCard}>
@@ -128,21 +143,7 @@ const ReceiverDetailsScreen: React.FC<ReceiverDetailsScreenProps & { navigation?
             </View>
           </View>
 
-        </ScrollView>
-
-        <View style={styles.footer}>
-          <Button
-            label={t('common.continueCaps')}
-            onPress={() => {
-              handleContinue();
-              navigation?.navigate('FareEstimateScreen');
-            }}
-            variant="primary"
-            disabled={isContinueDisabled}
-            fullWidth
-          />
-        </View>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };

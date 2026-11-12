@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, borderRadius, typography, shadows } from '../../theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { KeyboardAwareScrollView } from '../../components/organisms';
 import { useBooking } from '../../state/BookingContext';
 import { useI18n } from '../../i18n';
 import { GOODS_CATEGORIES, findGoodsCategory, GoodsCategory } from '../../data/goodsCategories';
@@ -20,6 +21,22 @@ export interface GoodsDetailsScreenProps {
   readonly onBack?: () => void;
   readonly onContinue?: () => void;
 }
+
+export const isValidWeight = (val: string): boolean => {
+  const trimmed = val.trim();
+  if (!trimmed) return false;
+  const num = Number.parseFloat(trimmed);
+  return Number.isFinite(num) && num > 0 && /^\d+(\.\d+)?$/.test(trimmed);
+};
+
+export const isValidDeclaredValue = (val: string): boolean => {
+  const cleaned = val.trim().replace(/,/g, '');
+  if (!cleaned) return false;
+  const num = Number.parseFloat(cleaned);
+  return Number.isFinite(num) && num > 0 && /^\d+(\.\d+)?$/.test(cleaned);
+};
+
+export const isValidDescription = (val: string): boolean => val.trim().length > 0;
 
 const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any }> = ({
   onBack,
@@ -46,10 +63,35 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
   });
   const [weight, setWeight] = useState(draft.weightKg ? String(draft.weightKg) : '');
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lbs'>('kg');
-  const [declaredValue, setDeclaredValue] = useState(draft.declaredValue || '');
+  const [declaredValue, setDeclaredValue] = useState<string>(() => {
+    const initial = (draft.declaredValue || '').trim();
+    if (initial === '0' || initial === '0.00' || initial === '2') {
+      return '';
+    }
+    return initial;
+  });
   const [instructions, setInstructions] = useState('');
 
+  // Validation & Error States
+  const [weightTouched, setWeightTouched] = useState(false);
+  const [declaredValueTouched, setDeclaredValueTouched] = useState(false);
+  const [descriptionTouched, setDescriptionTouched] = useState(false);
+  const [typeTouched, setTypeTouched] = useState(false);
+
+  const [fieldErrors, setFieldErrors] = useState<{
+    type?: string;
+    description?: string;
+    weight?: string;
+    declaredValue?: string;
+  }>({});
+
   const selectedCategory = findGoodsCategory(selectedCategoryId);
+
+  const canContinue =
+    Boolean(selectedCategoryId) &&
+    isValidDescription(description) &&
+    isValidWeight(weight) &&
+    isValidDeclaredValue(declaredValue);
 
   const handleOpenDropdown = () => {
     Keyboard.dismiss();
@@ -62,7 +104,108 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
 
   const handleSelectCategory = (category: GoodsCategory) => {
     setSelectedCategoryId(category.id);
+    setTypeTouched(true);
+    setFieldErrors((prev) => ({ ...prev, type: undefined }));
     setIsDropdownOpen(false);
+  };
+
+  const handleDescriptionChange = (val: string) => {
+    setDescription(val);
+    setDescriptionTouched(true);
+    if (isValidDescription(val)) {
+      setFieldErrors((prev) => ({ ...prev, description: undefined }));
+    }
+  };
+
+  const handleWeightChange = (val: string) => {
+    setWeight(val);
+    setWeightTouched(true);
+    if (isValidWeight(val)) {
+      setFieldErrors((prev) => ({ ...prev, weight: undefined }));
+    } else if (weightTouched) {
+      const trimmed = val.trim();
+      if (!trimmed) {
+        setFieldErrors((prev) => ({ ...prev, weight: t('logistics.weightRequiredHint') }));
+      } else if (!/^\d+(\.\d+)?$/.test(trimmed)) {
+        setFieldErrors((prev) => ({ ...prev, weight: 'Please enter a valid numeric weight.' }));
+      } else {
+        setFieldErrors((prev) => ({ ...prev, weight: 'Weight must be greater than zero.' }));
+      }
+    }
+  };
+
+  const handleDeclaredValueChange = (val: string) => {
+    setDeclaredValue(val);
+    setDeclaredValueTouched(true);
+    if (isValidDeclaredValue(val)) {
+      setFieldErrors((prev) => ({ ...prev, declaredValue: undefined }));
+    } else if (declaredValueTouched) {
+      const cleaned = val.trim().replace(/,/g, '');
+      if (!cleaned) {
+        setFieldErrors((prev) => ({ ...prev, declaredValue: 'Declared goods value is required.' }));
+      } else if (!/^\d+(\.\d+)?$/.test(cleaned)) {
+        setFieldErrors((prev) => ({ ...prev, declaredValue: 'Please enter a valid numeric value.' }));
+      } else {
+        setFieldErrors((prev) => ({ ...prev, declaredValue: 'Declared value must be greater than zero.' }));
+      }
+    }
+  };
+
+  const handleContinue = () => {
+    const errors: {
+      type?: string;
+      description?: string;
+      weight?: string;
+      declaredValue?: string;
+    } = {};
+
+    if (!selectedCategoryId) {
+      errors.type = 'Please select a goods/load type.';
+    }
+    if (!isValidDescription(description)) {
+      errors.description = 'Goods description is required.';
+    }
+    if (!isValidWeight(weight)) {
+      const trimmed = weight.trim();
+      if (!trimmed) {
+        errors.weight = t('logistics.weightRequiredHint');
+      } else if (!/^\d+(\.\d+)?$/.test(trimmed)) {
+        errors.weight = 'Please enter a valid numeric weight.';
+      } else {
+        errors.weight = 'Weight must be greater than zero.';
+      }
+    }
+    if (!isValidDeclaredValue(declaredValue)) {
+      const cleaned = declaredValue.trim().replace(/,/g, '');
+      if (!cleaned) {
+        errors.declaredValue = 'Declared goods value is required.';
+      } else if (!/^\d+(\.\d+)?$/.test(cleaned)) {
+        errors.declaredValue = 'Please enter a valid numeric value.';
+      } else {
+        errors.declaredValue = 'Declared value must be greater than zero.';
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+
+    const parsed = Number.parseFloat(weight.trim());
+    const weightKg = Number.isFinite(parsed)
+      ? weightUnit === 'lbs'
+        ? Number((parsed * 0.453592).toFixed(3))
+        : Number(parsed.toFixed(3))
+      : undefined;
+
+    setGoods({
+      weightKg,
+      goodsType: selectedCategory?.id,
+      goodsDescription: description.trim() || (selectedCategory ? t(selectedCategory.key) : undefined),
+      declaredValue: declaredValue.trim().replace(/,/g, '') || undefined,
+    });
+    onContinue?.();
+    navigation?.navigate('GoodsInsuranceScreen');
   };
 
   return (
@@ -89,21 +232,45 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
       </View>
 
       {/* Content */}
-      <ScrollView
+      <KeyboardAwareScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        footer={
+          <View style={styles.bottomBar}>
+            <Pressable
+              testID="goods-details-continue-button"
+              style={[
+                styles.continueButton,
+                !canContinue && styles.continueButtonDisabled,
+              ]}
+              disabled={!canContinue}
+              onPress={handleContinue}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !canContinue }}
+              accessibilityLabel={t('common.continue')}
+            >
+              <Text style={[styles.continueText, !canContinue && styles.continueTextDisabled]}>
+                {t('common.continueCaps')}
+              </Text>
+            </Pressable>
+          </View>
+        }
       >
         {/* Goods Type */}
         <View style={styles.fieldGroup}>
-          <Text style={styles.fieldLabel}>{t('logistics.goodsLoadType')}</Text>
+          <Text style={[styles.fieldLabel, Boolean(fieldErrors.type) && styles.fieldLabelError]}>
+            {t('logistics.goodsLoadType')} *
+          </Text>
           <View style={styles.selectContainer}>
             <Pressable
-              style={styles.selectButton}
+              testID="goods-type-selector"
+              style={[styles.selectButton, Boolean(fieldErrors.type) && styles.inputError]}
               onPress={handleOpenDropdown}
               accessibilityRole="button"
               accessibilityLabel={t('logistics.goodsLoadType')}
+              accessibilityState={{ expanded: isDropdownOpen }}
             >
               <Text style={[styles.selectText, !selectedCategory && styles.selectPlaceholder]}>
                 {selectedCategory ? t(selectedCategory.key) : t('logistics.selectGoodsType')}
@@ -115,70 +282,118 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
               />
             </Pressable>
           </View>
+          {Boolean(fieldErrors.type) && (
+            <Text style={styles.errorHint} testID="error-goods-type">
+              {fieldErrors.type}
+            </Text>
+          )}
         </View>
 
         {/* Goods Description */}
         <View style={styles.fieldGroup}>
-          <Text style={styles.fieldLabel}>{t('logistics.goodsDescription')}</Text>
+          <Text style={[styles.fieldLabel, Boolean(fieldErrors.description) && styles.fieldLabelError]}>
+            {t('logistics.goodsDescription')} *
+          </Text>
           <TextInput
-            style={[styles.textInput, styles.textArea]}
+            testID="input-goods-description"
+            style={[
+              styles.textInput,
+              styles.textArea,
+              Boolean(fieldErrors.description) && styles.inputError,
+            ]}
             placeholder={t('logistics.goodsDescriptionPlaceholder')}
             placeholderTextColor={colors.outline}
             multiline
             numberOfLines={3}
             value={description}
-            onChangeText={setDescription}
+            onChangeText={handleDescriptionChange}
             textAlignVertical="top"
             accessibilityLabel={t('logistics.goodsDescription')}
           />
+          {Boolean(fieldErrors.description) && (
+            <Text style={styles.errorHint} testID="error-goods-description">
+              {fieldErrors.description}
+            </Text>
+          )}
         </View>
 
         {/* Weight */}
         <View style={styles.fieldGroup}>
-          <Text style={[styles.fieldLabel, styles.fieldLabelError]}>{t('logistics.approximateWeight')}</Text>
+          <Text style={[styles.fieldLabel, Boolean(fieldErrors.weight) && styles.fieldLabelError]}>
+            {t('logistics.approximateWeight')}
+          </Text>
           <View style={styles.weightRow}>
             <TextInput
-              style={[styles.textInput, styles.weightInput, styles.inputError]}
+              testID="input-approximate-weight"
+              style={[
+                styles.textInput,
+                styles.weightInput,
+                Boolean(fieldErrors.weight) && styles.inputError,
+              ]}
               placeholder={t('logistics.enterWeight')}
               placeholderTextColor={colors.outline}
               keyboardType="numeric"
               value={weight}
-              onChangeText={setWeight}
+              onChangeText={handleWeightChange}
               accessibilityLabel={t('logistics.approximateWeight')}
             />
             <View style={styles.unitToggle}>
               <Pressable
+                testID="unit-toggle-kg"
                 style={[styles.unitButton, weightUnit === 'kg' && styles.unitButtonActive]}
                 onPress={() => setWeightUnit('kg')}
+                accessibilityRole="button"
+                accessibilityLabel="Unit in kilograms"
+                accessibilityState={{ selected: weightUnit === 'kg' }}
               >
                 <Text style={[styles.unitText, weightUnit === 'kg' && styles.unitTextActive]}>kg</Text>
               </Pressable>
               <Pressable
+                testID="unit-toggle-lbs"
                 style={[styles.unitButton, weightUnit === 'lbs' && styles.unitButtonActive]}
                 onPress={() => setWeightUnit('lbs')}
+                accessibilityRole="button"
+                accessibilityLabel="Unit in pounds"
+                accessibilityState={{ selected: weightUnit === 'lbs' }}
               >
                 <Text style={[styles.unitText, weightUnit === 'lbs' && styles.unitTextActive]}>lbs</Text>
               </Pressable>
             </View>
           </View>
-          <Text style={styles.errorHint}>{t('logistics.weightRequiredHint')}</Text>
+          {Boolean(fieldErrors.weight) && (
+            <Text style={styles.errorHint} testID="error-weight">
+              {fieldErrors.weight}
+            </Text>
+          )}
         </View>
 
         {/* Declared Value */}
         <View style={styles.fieldGroup}>
-          <Text style={styles.fieldLabel}>{t('logistics.declaredGoodsValue')}</Text>
+          <Text style={[styles.fieldLabel, Boolean(fieldErrors.declaredValue) && styles.fieldLabelError]}>
+            {t('logistics.declaredGoodsValue')} *
+          </Text>
           <View style={styles.valueInputWrapper}>
-            <Text style={styles.currencyPrefix}>₹</Text>
+            <Text testID="currency-prefix" style={styles.currencyPrefix}>₹</Text>
             <TextInput
-              style={[styles.textInput, styles.valueInput]}
+              testID="input-declared-value"
+              style={[
+                styles.textInput,
+                styles.valueInput,
+                Boolean(fieldErrors.declaredValue) && styles.inputError,
+              ]}
               placeholder="0.00"
               placeholderTextColor={colors.outline}
               keyboardType="numeric"
               value={declaredValue}
-              onChangeText={setDeclaredValue}
+              onChangeText={handleDeclaredValueChange}
               accessibilityLabel={t('logistics.declaredGoodsValue')}
             />
           </View>
+          {Boolean(fieldErrors.declaredValue) && (
+            <Text style={styles.errorHint} testID="error-declared-value">
+              {fieldErrors.declaredValue}
+            </Text>
+          )}
         </View>
 
         {/* Special Instructions */}
@@ -188,6 +403,7 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
             <Text style={styles.optionalTag}>{t('logistics.optional')}</Text>
           </View>
           <TextInput
+            testID="input-special-instructions"
             style={[styles.textInput, styles.textAreaSmall]}
             placeholder={t('logistics.handlingInstructionsPlaceholder')}
             placeholderTextColor={colors.outline}
@@ -199,37 +415,7 @@ const GoodsDetailsScreen: React.FC<GoodsDetailsScreenProps & { navigation?: any 
             accessibilityLabel={t('logistics.specialInstructions')}
           />
         </View>
-      </ScrollView>
-
-      {/* Bottom Action Bar */}
-      <View style={styles.bottomBar}>
-        <Pressable
-          style={styles.continueButton}
-          onPress={() => {
-            // Weight drives the engine's fare multiplier, so persist it.
-            // The engine expects kilograms.
-            const parsed = Number.parseFloat(weight);
-            const weightKg = Number.isFinite(parsed)
-              ? weightUnit === 'lbs'
-                ? parsed * 0.453_592
-                : parsed
-              : undefined;
-
-            setGoods({
-              weightKg,
-              goodsType: selectedCategory?.id,
-              goodsDescription: description || (selectedCategory ? t(selectedCategory.key) : undefined),
-              declaredValue: declaredValue || undefined,
-            });
-            onContinue?.();
-            navigation?.navigate('GoodsInsuranceScreen');
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={t('common.continue')}
-        >
-          <Text style={styles.continueText}>{t('common.continueCaps')}</Text>
-        </Pressable>
-      </View>
+      </KeyboardAwareScrollView>
 
       {/* Goods Category Dropdown Modal */}
       <Modal
@@ -476,11 +662,18 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.marginMobile,
     ...shadows.ghostShadow,
   },
+  continueButtonDisabled: {
+    backgroundColor: colors.surfaceVariant,
+    opacity: 0.6,
+  },
   continueText: {
     fontSize: typography.headlineSm.fontSize,
     fontWeight: typography.headlineSm.fontWeight,
     color: colors.onPrimary,
     fontFamily: typography.headlineSm.fontFamily,
+  },
+  continueTextDisabled: {
+    color: colors.outline,
   },
 
   // Modal & Dropdown Sheet

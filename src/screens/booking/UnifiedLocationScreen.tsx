@@ -19,6 +19,7 @@ import { useBooking } from '../../state/BookingContext';
 import { useI18n } from '../../i18n';
 import Button from '../../components/atoms/Button';
 import DraggableBottomSheet from '../../components/organisms/DraggableBottomSheet';
+import { KeyboardAwareScrollView } from '../../components/organisms';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -429,13 +430,13 @@ const UnifiedLocationScreen: React.FC<UnifiedLocationScreenProps> = ({ route, na
         snapPoints={[200, SCREEN_HEIGHT * 0.65, SCREEN_HEIGHT * 0.85]}
         initialSnapIndex={initialMode === 'drop' ? 2 : 1}
       >
-        <ScrollView
+        <KeyboardAwareScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scrollContent}
         >
           {mode === 'edit' && editTarget === undefined ? renderTimeline() : renderForm()}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </DraggableBottomSheet>
     </View>
   );

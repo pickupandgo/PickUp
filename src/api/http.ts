@@ -14,6 +14,7 @@ export type ApiErrorKind = 'network' | 'timeout' | 'http' | 'parse' | 'config' |
 export class ApiError extends Error {
   readonly kind: ApiErrorKind;
   readonly status?: number;
+  readonly code?: string;
   readonly body?: unknown;
 
   constructor(kind: ApiErrorKind, message: string, status?: number, body?: unknown) {
@@ -22,6 +23,8 @@ export class ApiError extends Error {
     this.kind = kind;
     this.status = status;
     this.body = body;
+    const b = body as any;
+    this.code = b?.error?.code || b?.code;
   }
 
   /** Retrying may succeed: connectivity blips and server-side faults. */
@@ -45,21 +48,14 @@ export class ApiError extends Error {
         return 'Unable to determine your current location. Please try again.';
       case 'location_timeout':
         return 'Location detection timed out. Please try again.';
-      case 'location_permission':
-        return 'Location permission is required to detect your pickup location.';
-      case 'location_services':
-        return 'Please turn on Location services to detect your pickup location.';
-      case 'location_unavailable':
-        return 'Unable to determine your current location. Please try again.';
-      case 'location_timeout':
-        return 'Location detection timed out. Please try again.';
       case 'network':
         return 'No connection to the server. Check your internet and try again.';
       case 'parse':
         return 'The server sent an unexpected response.';
       case 'http':
-        if (this.status === 404) return 'Not found.';
-        if (this.status === 409) return this.serverMessage ?? 'This email address is already associated with another account.';
+        if (this.status === 404) return this.serverMessage ?? 'Not found.';
+        if (this.status === 409) return this.serverMessage ?? 'This account or detail is already registered.';
+        if (this.status === 403) return this.serverMessage ?? 'You do not have access to this resource.';
         if (this.status === 400) return this.serverMessage ?? 'That request was rejected.';
         if (this.status && this.status >= 500) return 'The server had a problem. Please try again.';
         return this.serverMessage ?? 'Something went wrong.';
@@ -69,10 +65,15 @@ export class ApiError extends Error {
   }
 
   /** NestJS puts human-readable detail in `message` on its error responses. */
-  private get serverMessage(): string | undefined {
-    const body = this.body as { message?: string | string[] } | undefined;
-    if (!body?.message) return undefined;
-    return Array.isArray(body.message) ? body.message.join(', ') : body.message;
+  get serverMessage(): string | undefined {
+    const body = this.body as { message?: string | string[]; error?: { message?: string | string[]; code?: string } } | undefined;
+    if (body?.error?.message) {
+      return Array.isArray(body.error.message) ? body.error.message.join(', ') : body.error.message;
+    }
+    if (body?.message) {
+      return Array.isArray(body.message) ? body.message.join(', ') : body.message;
+    }
+    return undefined;
   }
 }
 
@@ -84,10 +85,15 @@ export interface RequestOptions {
   readonly retries?: number;
   /** Lets callers cancel in-flight work, e.g. on screen unmount. */
   readonly signal?: AbortSignal;
+  readonly _isRetry?: boolean;
 }
 
 const buildUrl = (path: string, query?: RequestOptions['query']): string => {
-  const base = `${env.apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+  const isV1 = path.startsWith('/v1/') || path === '/v1';
+  const targetBase = (isV1 && env.paymentsApiBaseUrl) ? env.paymentsApiBaseUrl : env.apiBaseUrl;
+  const baseClean = targetBase.replace(/\/+$/, '').replace(/\/v1$/, '');
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const base = isV1 && !cleanPath.startsWith('/v1') ? `${baseClean}/v1${cleanPath}` : `${baseClean}${cleanPath}`;
   if (!query) return base;
 
   const params = Object.entries(query)
@@ -139,6 +145,8 @@ const attempt = async <T>(path: string, options: RequestOptions): Promise<T> => 
     console.log('[CUSTOMER_NEARBY] request URL:', buildUrl(path, options.query));
   }
   const { method = 'GET', body, query, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = options;
+  const targetUrl = buildUrl(path, query);
+  console.log(`[HTTP_REQ] ${method} ${path} -> ${targetUrl}`);
   const { signal: linked, cleanup, didTimeout } = linkSignals(timeoutMs, signal);
 
   const currentUser = getAuth().currentUser;
@@ -157,7 +165,7 @@ const attempt = async <T>(path: string, options: RequestOptions): Promise<T> => 
 
   let response: Response;
   try {
-    response = await fetch(buildUrl(path, query), {
+    response = await fetch(targetUrl, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
@@ -165,7 +173,9 @@ const attempt = async <T>(path: string, options: RequestOptions): Promise<T> => 
     });
   } catch (cause) {
     if (isNearby) console.log('[CUSTOMER_NEARBY] request failed');
-    if (didTimeout()) {
+    const isTimeout = didTimeout();
+    console.warn(`[HTTP_FAIL] ${method} ${path} - kind: ${isTimeout ? 'timeout' : 'network'}`);
+    if (isTimeout) {
       throw new ApiError('timeout', `Request to ${path} timed out after ${timeoutMs}ms`);
     }
     throw new ApiError('network', `Could not reach ${path}`);
@@ -184,6 +194,19 @@ const attempt = async <T>(path: string, options: RequestOptions): Promise<T> => 
   }
 
   if (!response.ok) {
+    const errorCode = (parsed as any)?.error?.code || (parsed as any)?.code || 'NONE';
+    console.warn(`[HTTP_ERR] ${method} ${path} - status: ${response.status}, code: ${errorCode}`);
+    if (response.status === 401 && currentUser && !options._isRetry) {
+      try {
+        console.log('[HTTP] Received 401, refreshing Firebase token and retrying...');
+        const freshToken = await currentUser.getIdToken(true);
+        if (freshToken) {
+          return await attempt<T>(path, { ...options, _isRetry: true });
+        }
+      } catch (refreshErr) {
+        console.warn('[HTTP] Token refresh on 401 failed:', refreshErr);
+      }
+    }
     throw new ApiError('http', `${method} ${path} failed with ${response.status}`, response.status, parsed);
   }
 

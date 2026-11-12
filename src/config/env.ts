@@ -13,9 +13,10 @@ const parseSecureBaseUrl = (value: string | undefined): string => {
   if (!url) {
     return '';
   }
-  const isHttps = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(url);
-  const isDevHttp = __DEV__ && /^http:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(url);
-  return isHttps || isDevHttp ? url : '';
+  const rootUrl = url.replace(/\/v1$/, '');
+  const isHttps = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(rootUrl);
+  const isDevHttp = __DEV__ && /^http:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(rootUrl);
+  return isHttps || isDevHttp ? rootUrl : '';
 };
 
 export const env = {

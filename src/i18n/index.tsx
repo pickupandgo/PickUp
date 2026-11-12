@@ -309,7 +309,7 @@ export const en: Dict = {
 
   // Errors & Alerts
   'error.noInternetTitle': 'No Internet Connection',
-  'error.noInternetMsg': 'Please check your connection and try again.',
+  'error.noInternetMsg': 'Unable to reach MultipleRide servers. Please check your connection and try again.',
   'error.serverUnavailableTitle': 'Server Unavailable',
   'error.serverUnavailableMsg': "We're working on it. Please try again later.",
   'error.noDriversTitle': 'No Drivers Available',
@@ -359,6 +359,9 @@ export const en: Dict = {
   'profile.emailRequired': 'Email address is required.',
   'profile.invalidAge': 'Please enter a valid age (1-120).',
   'profile.verifiedPhoneRequired': 'A verified mobile number is required to create your profile.',
+  'profile.driverRoleConflict': 'This phone number or account is already registered as a driver. MultipleRide requires separate accounts for drivers and customers.',
+  'profile.phoneAlreadyRegistered': 'This phone number is already registered to another customer.',
+  'profile.phoneVerificationRequired': 'A verified mobile number is required by security policy. Please complete phone verification with OTP.',
   'profile.saveFailed': 'Failed to save profile. Please try again.',
   'profile.primaryAddress': 'PRIMARY',
   'profile.addNewAddress': 'Add New Address',
@@ -704,6 +707,8 @@ export const en: Dict = {
   'cancellation.bookingCancelledSuccessfully': 'This booking has been successfully cancelled.',
   'cancellation.noCancellationFee': 'No cancellation fee applies',
   'cancellation.gracePeriodNotice': 'You cancelled within the grace period. No payment was captured.',
+  'cancellation.returningToHomeSingular': 'Returning to Home in 1 second',
+  'cancellation.returningToHomePlural': 'Returning to Home in {count} seconds',
   'history.viewTripHistory': 'View Trip History',
 
   // Feedback & Rating Screens
@@ -1100,7 +1105,7 @@ export const hi: Dict = {
 
   // Errors & Alerts
   'error.noInternetTitle': 'कोई इंटरनेट कनेक्शन नहीं है',
-  'error.noInternetMsg': 'कृपया अपना कनेक्शन जांचें और पुनः प्रयास करें।',
+  'error.noInternetMsg': 'मल्टीपलराइड सर्वर से जुड़ने में असमर्थ। कृपया अपना कनेक्शन जांचें और पुनः प्रयास करें।',
   'error.serverUnavailableTitle': 'सर्वर अनुपलब्ध है',
   'error.serverUnavailableMsg': 'हम इस पर काम कर रहे हैं। कृपया कुछ समय बाद पुनः प्रयास करें।',
   'error.noDriversTitle': 'कोई ड्राइवर उपलब्ध नहीं है',
@@ -1150,6 +1155,9 @@ export const hi: Dict = {
   'profile.emailRequired': 'ईमेल पता आवश्यक है।',
   'profile.invalidAge': 'कृपया 1 से 120 के बीच वैध उम्र दर्ज करें।',
   'profile.verifiedPhoneRequired': 'प्रोफ़ाइल बनाने के लिए सत्यापित मोबाइल नंबर आवश्यक है।',
+  'profile.driverRoleConflict': 'यह फ़ोन नंबर या खाता पहले से ही चालक के रूप में पंजीकृत है। मल्टीपलराइड को चालकों और ग्राहकों के लिए अलग खातों की आवश्यकता होती है।',
+  'profile.phoneAlreadyRegistered': 'यह फ़ोन नंबर पहले से ही किसी अन्य ग्राहक के नाम पर पंजीकृत है।',
+  'profile.phoneVerificationRequired': 'सुरक्षा नीति के अनुसार सत्यापित मोबाइल नंबर आवश्यक है। कृपया ओटीपी के साथ फ़ोन सत्यापन पूरा करें।',
   'profile.saveFailed': 'प्रोफ़ाइल सहेजने में विफल। कृपया पुनः प्रयास करें।',
   'profile.primaryAddress': 'प्राथमिक',
   'profile.addNewAddress': 'नया पता जोड़ें',
@@ -1495,6 +1503,8 @@ export const hi: Dict = {
   'cancellation.bookingCancelledSuccessfully': 'यह बुकिंग सफलतापूर्वक रद्द कर दी गई है।',
   'cancellation.noCancellationFee': 'कोई रद्दीकरण शुल्क लागू नहीं',
   'cancellation.gracePeriodNotice': 'आपने छूट अवधि के भीतर रद्द किया। कोई भुगतान नहीं लिया गया।',
+  'cancellation.returningToHomeSingular': '1 सेकंड में होम पर वापस जा रहे हैं',
+  'cancellation.returningToHomePlural': '{count} सेकंड में होम पर वापस जा रहे हैं',
   'history.viewTripHistory': 'यात्रा इतिहास देखें',
 
   // Feedback & Rating Screens

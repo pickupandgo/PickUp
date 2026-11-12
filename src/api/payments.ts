@@ -32,7 +32,11 @@ interface PaymentsRequestOptions {
   readonly signal?: AbortSignal;
 }
 
-const buildUrl = (path: string): string => `${env.paymentsApiBaseUrl}${path}`;
+const buildUrl = (path: string): string => {
+  const base = env.paymentsApiBaseUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${cleanPath}`;
+};
 
 const attempt = async <T>(
   path: string,

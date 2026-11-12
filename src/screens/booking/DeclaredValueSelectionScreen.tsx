@@ -12,6 +12,7 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../theme'
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Button from '../../components/atoms/Button';
+import { KeyboardAwareScrollView } from '../../components/organisms';
 import { useI18n } from '../../i18n';
 
 export interface DeclaredValueSelectionScreenProps {
@@ -65,7 +66,25 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        footer={
+          <View style={styles.footer}>
+            <Button
+              label={t('common.continue')}
+              onPress={() => {
+                handleNext();
+                navigation?.goBack();
+              }}
+              variant="primary"
+              icon={<Feather name="arrow-right" size={20} color={colors.onPrimary} />}
+              disabled={isNextDisabled}
+            />
+          </View>
+        }
+      >
         <View style={styles.textSection}>
           <Text style={styles.title}>{t('booking.declaredValue')}</Text>
           <Text style={styles.subtitle}>
@@ -122,20 +141,7 @@ const DeclaredValueSelectionScreen: React.FC<DeclaredValueSelectionScreenProps &
             </View>
           </View>
         )}
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <Button
-          label={t('common.continue')}
-          onPress={() => {
-            handleNext();
-            navigation?.goBack();
-          }}
-          variant="primary"
-          icon={<Feather name="arrow-right" size={20} color={colors.onPrimary} />}
-          disabled={isNextDisabled}
-        />
-      </View>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };

@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
 import { colors, spacing, borderRadius, typography } from '../../theme';
 import Button from '../../components/atoms/Button';
+import { KeyboardAwareScrollView } from '../../components/organisms';
 import { useSession } from '../../state/SessionContext';
 import { getAuth } from '@react-native-firebase/auth';
 import { getActivePhoneNumber, normalizePhoneNumber } from '../../auth/authService';
@@ -51,6 +52,16 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
   );
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Synchronize state when userProfile loads or changes
+  React.useEffect(() => {
+    if (userProfile) {
+      if (userProfile.fullName) setFullName(userProfile.fullName);
+      if (userProfile.email) setEmail(userProfile.email);
+      if (userProfile.age) setAge(String(userProfile.age));
+      if (userProfile.address) setAddress(userProfile.address);
+    }
+  }, [userProfile]);
 
   const handleSave = async () => {
     setError(null);
@@ -118,11 +129,22 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
         <View style={styles.backButton} />
       </View>
 
-      <ScrollView
+      <KeyboardAwareScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        footer={
+          <View style={styles.footer}>
+            <Button
+              label={isSaving ? t('profile.saving') : t('common.saveChanges')}
+              onPress={handleSave}
+              variant="primary"
+              fullWidth
+              disabled={isSaving}
+            />
+          </View>
+        }
       >
         {/* Profile Photo Section */}
         <View style={styles.photoSection}>
@@ -131,7 +153,15 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
             onPress={() => navigation?.navigate('ChangeProfilePhotoScreen')}
           >
             <View style={styles.avatarCircle}>
-              <Feather name="user" size={36} color={colors.onSurfaceVariant} />
+              {(userProfile?.photoUri || currentUser?.photoURL) ? (
+                <Image
+                  source={{ uri: userProfile?.photoUri || currentUser?.photoURL || '' }}
+                  style={styles.avatarCircleImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Feather name="user" size={36} color={colors.onSurfaceVariant} />
+              )}
             </View>
             <View style={styles.cameraOverlay}>
               <Feather name="camera" size={14} color={colors.onPrimary} />
@@ -250,18 +280,7 @@ const EditProfileScreen: React.FC<EditProfileScreenProps & { navigation?: any }>
             </View>
           </View>
         </View>
-      </ScrollView>
-
-      {/* Bottom CTA */}
-      <View style={styles.footer}>
-        <Button
-          label={isSaving ? t('profile.saving') : t('common.saveChanges')}
-          onPress={handleSave}
-          variant="primary"
-          fullWidth
-          disabled={isSaving}
-        />
-      </View>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 };
@@ -318,6 +337,12 @@ const styles = StyleSheet.create({
     borderColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarCircleImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
   },
   cameraOverlay: {
     position: 'absolute',

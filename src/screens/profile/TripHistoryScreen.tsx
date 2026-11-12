@@ -66,7 +66,14 @@ const TripHistoryScreen: React.FC<TripHistoryScreenProps & { navigation?: any }>
         onPress={() => {
           onTripSelect?.(trip);
           navigation?.navigate(
-            isCancelled ? 'TripCancelledStatusScreen' : 'HistoricalTripDetailScreen'
+            isCancelled ? 'TripCancelledStatusScreen' : 'HistoricalTripDetailScreen',
+            {
+              trip,
+              tripId: trip.externalRef || trip.id,
+              pickupLocation: trip.pickup?.address,
+              dropLocation: trip.stops?.[trip.stops.length - 1]?.location?.address || trip.drop?.address,
+              feeAmount: (trip as any).cancellationFee,
+            }
           );
         }}
       >
