@@ -27,6 +27,8 @@ jobs:
           persist-credentials: false
       - name: Build locked test dependencies
         run: docker build -f ops/staging/Dockerfile.test -t mr-staging-tests .
+      - name: Audit runtime dependency advisories
+        run: docker run --rm mr-staging-tests npm audit --omit=dev --omit=optional --audit-level=moderate
       - name: Run unit and database integration tests with no external network
         shell: bash
         run: |

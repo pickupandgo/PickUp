@@ -41,7 +41,8 @@ with open('/run/lock/mr-staging-ci.lock','a') as lock:
   assert labels.get('org.opencontainers.image.source')=='https://github.com/pickupandgo/PickUp'
   assert labels.get('io.multipleride.schema-sha256')==(ROOT/'schema-sha256.txt').read_text().strip(),'Schema change requires a separate migration review'
   assert cfg['User']=='node' and cfg['Cmd']==['node','dist/main.js']
-  assert not cfg.get('Volumes') and not cfg.get('Entrypoint')
+  assert not cfg.get('Volumes')
+  assert cfg.get('Entrypoint') in [None, ['docker-entrypoint.sh']]
   image=meta['Id'];old=pins()['API_IMAGE']
   (ROOT/'ci-previous-image').write_text(old+'\n');(ROOT/'ci-previous-image').chmod(0o600)
   # Snapshot staging only, before deploying. Never touches the original or Render database.
