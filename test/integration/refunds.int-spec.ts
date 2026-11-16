@@ -14,7 +14,6 @@ import {
   type TestAdmin,
   type TestCustomer,
   type TestDriver,
-  uniqueCategory,
 } from '../helpers/fixtures';
 import {
   advanceTrip,
@@ -91,7 +90,7 @@ describe('Refunds (payment flow Phase 6)', () => {
     ctx = await createTestApp();
     admin = await createAdmin(ctx);
     await createPool(ctx, 30);
-    category = uniqueCategory();
+    category = 'MINI_TRUCK'; // Match the verified synthetic driver's vehicle category.
     await createFeeRule(ctx.prisma, { category, value: '10' });
   });
 

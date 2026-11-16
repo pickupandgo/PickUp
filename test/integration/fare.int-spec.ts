@@ -73,7 +73,7 @@ describe('Fare quotes and pricing versions', () => {
   const FIRST_LEG_BASE_PAISE = TEST_PRICING_CONFIG.vehicles.MINI_TRUCK.firstLegBasePaise;
 
   beforeAll(async () => {
-    ctx = await createTestApp();
+    ctx = await createTestApp({ configOverrides: { FARE_CUSTOMER_PLATFORM_FEE_BPS: '0' } });
     owner = new PrismaClient({
       adapter: new PrismaPg({ connectionString: TEST_DATABASE_URL, max: 2 }),
     });

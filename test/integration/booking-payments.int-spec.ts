@@ -8,7 +8,6 @@ import {
   createAdmin,
   createCustomer,
   createFeeRule,
-  uniqueCategory,
 } from '../helpers/fixtures';
 import {
   advanceTrip,
@@ -35,7 +34,7 @@ describe('Customer prepaid booking payments', () => {
 
   beforeAll(async () => {
     ctx = await createTestApp();
-    category = uniqueCategory();
+    category = 'MINI_TRUCK'; // Match the verified synthetic driver's vehicle category.
     await createFeeRule(ctx.prisma, { category, value: '10' });
   });
 

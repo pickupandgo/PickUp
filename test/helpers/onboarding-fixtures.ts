@@ -21,10 +21,10 @@ import { buildTestConfig } from './test-config';
  */
 export async function createHistoricalEligibleDriver(
   deps: FixtureDeps & { readonly config?: AppConfig },
-  options: { readonly legalName?: string } = {},
+  options: { readonly legalName?: string; readonly vehicleCategory?: string } = {},
 ): Promise<TestDriver> {
   const config = deps.config ?? buildTestConfig();
-  const category = 'MINI_TRUCK';
+  const category = options.vehicleCategory ?? 'MINI_TRUCK';
   const identityDocuments = config.manualKyc.requiredDocuments;
   const vehicleDocuments = config.onboarding.requiredVehicleDocumentsByCategory
     ? (config.onboarding.requiredVehicleDocumentsByCategory[category] ?? [])

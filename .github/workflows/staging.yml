@@ -1,0 +1,111 @@
+name: Isolated staging validation and deployment
+on:
+  pull_request:
+    branches: [raj_backend]
+  push:
+    branches: [aws/staging-uat-readiness]
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [validate, deploy, rollback]
+        default: validate
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: multipleride-staging-${{ github.event_name == 'pull_request' && github.ref || 'release' }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: github.event_name != 'workflow_dispatch' || inputs.operation != 'rollback'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Build locked test dependencies
+        run: docker build -f ops/staging/Dockerfile.test -t mr-staging-tests .
+      - name: Run unit and database integration tests with no external network
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          trap 'docker cp mr-unit:/tmp/unit.json evidence/unit.json 2>/dev/null || true; docker cp mr-integration:/tmp/integration-batched-summary.json evidence/integration.json 2>/dev/null || true' EXIT
+          docker network create --internal mr-ci-private
+          docker run -d --name mr-ci-db --network mr-ci-private --memory 512m \
+            -e POSTGRES_DB=mr_phase2_test -e POSTGRES_USER=mr_qa_owner \
+            -e POSTGRES_PASSWORD=ci-disposable-only \
+            postgres:17-alpine@sha256:3540c0362c809df084ffac0ae69fe794515f9de92692f02178bcdce0ef0302ac
+          for n in $(seq 1 60); do docker exec mr-ci-db pg_isready -U mr_qa_owner -d mr_phase2_test && break || sleep 1; done
+          docker run --name mr-unit --network none mr-staging-tests npm test -- --runInBand --json --outputFile=/tmp/unit.json
+          docker cp mr-unit:/tmp/unit.json evidence/unit.json
+          # Sharing only the disposable DB's network namespace also exercises loopback fault-injection tests.
+          docker run --name mr-integration --network container:mr-ci-db --memory 2g \
+            -e TEST_DATABASE_URL=postgresql://mr_qa_owner:ci-disposable-only@127.0.0.1:5432/mr_phase2_test \
+            -e MR_DISPOSABLE_QA=true \
+            -e NODE_OPTIONS=--max-old-space-size=700 \
+            mr-staging-tests node ops/staging/run-integration.cjs
+          docker cp mr-integration:/tmp/integration-batched-summary.json evidence/integration.json
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: staging-test-evidence-${{ github.sha }}
+          path: evidence/
+          retention-days: 14
+  release:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy' && github.ref == 'refs/heads/aws/staging-uat-readiness' && vars.STAGING_DEPLOY_ENABLED == 'true'
+    environment: staging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Build revision and schema-pinned image
+        run: |
+          set -euo pipefail
+          SCHEMA=$(python3 ops/staging/schema-digest.py)
+          docker build --build-arg NODE_IMAGE=node:24.21.0-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            --label org.opencontainers.image.source=https://github.com/pickupandgo/PickUp \
+            --label io.multipleride.schema-sha256="$SCHEMA" \
+            -t "multipleride-staging:$GITHUB_SHA" .
+          docker save "multipleride-staging:$GITHUB_SHA" | gzip -n > image.tar.gz
+      - name: Deploy through restricted staging credential
+        env:
+          DEPLOY_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.STAGING_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.STAGING_HOST }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/mr-ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$RUNNER_TEMP/mr-ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/mr-ssh/known_hosts"
+          HASH=$(sha256sum image.tar.gz | cut -d' ' -f1)
+          ssh -i "$RUNNER_TEMP/mr-ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/mr-ssh/known_hosts" \
+            "mr-staging-deploy@$DEPLOY_HOST" "deploy $GITHUB_SHA $HASH" < image.tar.gz
+  rollback:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'rollback' && github.ref == 'refs/heads/aws/staging-uat-readiness' && vars.STAGING_DEPLOY_ENABLED == 'true'
+    environment: staging
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Restore the previously verified image without changing the database
+        env:
+          DEPLOY_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.STAGING_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.STAGING_HOST }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/mr-ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$RUNNER_TEMP/mr-ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/mr-ssh/known_hosts"
+          ssh -i "$RUNNER_TEMP/mr-ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/mr-ssh/known_hosts" \
+            "mr-staging-deploy@$DEPLOY_HOST" rollback

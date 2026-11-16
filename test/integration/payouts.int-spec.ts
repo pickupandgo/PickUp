@@ -14,7 +14,6 @@ import {
   idempotencyKey,
   type TestAdmin,
   type TestDriver,
-  uniqueCategory,
 } from '../helpers/fixtures';
 import {
   advanceTrip,
@@ -55,7 +54,7 @@ describe('Driver payouts', () => {
     ctx = await createTestApp();
     admin = await createAdmin(ctx);
     admins = await Promise.all(Array.from({ length: 10 }, () => createAdmin(ctx)));
-    category = uniqueCategory();
+    category = 'MINI_TRUCK'; // Match the verified synthetic driver's vehicle category.
     await createFeeRule(ctx.prisma, { category, value: '10' });
   });
 

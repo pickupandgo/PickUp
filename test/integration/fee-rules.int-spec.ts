@@ -89,7 +89,7 @@ describe('Platform fee rules', () => {
       customerId: customer.customerId,
       pricingVersionId: (await fixturePricingVersion(ctx.prisma)).id,
       dropPaise: [farePaise],
-      vehicleCategory: category ?? uniqueCategory(),
+      vehicleCategory: category ?? 'MINI_TRUCK',
     });
     return engine(ctx)
       .post('/v1/internal/bookings')

@@ -41,8 +41,7 @@ describe('Onboarding evidence -> GuardDuty -> admin -> eligibility (isolated)', 
     driver = await createDriver(fixtures, { approved: false });
     other = await createDriver(fixtures, { approved: false });
     adminToken = (await createAdmin(fixtures)).token;
-    const storage = app.app.get(DocumentStorageService);
-    jest.spyOn(storage, 'uploadUrl').mockImplementation(() =>
+    jest.spyOn(DocumentStorageService.prototype, 'uploadUrl').mockImplementation(() =>
       Promise.resolve({
         url: 'https://synthetic-storage.example.test/upload',
         headers: {
@@ -53,16 +52,16 @@ describe('Onboarding evidence -> GuardDuty -> admin -> eligibility (isolated)', 
         expiresInSeconds: 300,
       }),
     );
-    jest.spyOn(storage, 'verifyUpload').mockImplementation((descriptor) =>
+    jest.spyOn(DocumentStorageService.prototype, 'verifyUpload').mockImplementation((descriptor) =>
       Promise.resolve({
         checksumSha256: 'a'.repeat(64),
         storageVersionId: `v-${descriptor.documentId}`,
         storageETag: `etag-${descriptor.documentId}`,
       }),
     );
-    jest.spyOn(storage, 'assertGuardDutyClean').mockResolvedValue();
+    jest.spyOn(DocumentStorageService.prototype, 'assertGuardDutyClean').mockResolvedValue();
     jest
-      .spyOn(storage, 'downloadUrl')
+      .spyOn(DocumentStorageService.prototype, 'downloadUrl')
       .mockResolvedValue('https://synthetic-storage.example.test/private?temporary=synthetic');
   });
   afterAll(async () => {

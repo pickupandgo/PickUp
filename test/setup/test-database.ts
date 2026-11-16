@@ -11,7 +11,12 @@ export const RESTRICTED_ROLE = 'mr_app_test';
 const RESTRICTED_PASSWORD = 'mr_app_test_password';
 
 export function assertTestDatabase(url: string): string {
-  const name = new URL(url).pathname.replace(/^\//, '');
+  const parsed = new URL(url);
+  const name = parsed.pathname.replace(/^\//, '');
+  if (process.env.MR_DISPOSABLE_QA === 'true' &&
+      (name !== 'mr_phase2_test' || !['127.0.0.1', 'multipleride-qa-db'].includes(parsed.hostname))) {
+    throw new Error('Disposable QA database allowlist refused schema reset');
+  }
   if (!name.endsWith('_test')) {
     throw new Error(
       `Refusing to run integration tests against "${name}": the database name must end with _test`,
