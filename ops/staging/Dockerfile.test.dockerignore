@@ -1,0 +1,16 @@
+# Dockerfile-specific context: tests must be present, runtime secrets must not be.
+.git
+node_modules
+dist
+coverage
+src/generated
+**/__pycache__
+.env
+.env.*
+**/*.pem
+**/*.key
+**/private/**
+*.log
+*.tsbuildinfo
+.vscode
+.idea
