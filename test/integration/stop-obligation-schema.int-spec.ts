@@ -9,7 +9,6 @@ import {
   type TestAdmin,
   type TestCustomer,
   type TestDriver,
-  uniqueCategory,
 } from '../helpers/fixtures';
 import { assignDriver, registerBooking } from '../helpers/flows';
 import { createTestApp, type TestContext } from '../helpers/test-app';
@@ -34,7 +33,7 @@ describe('Per-stop obligation schema', () => {
 
   beforeAll(async () => {
     ctx = await createTestApp();
-    category = uniqueCategory();
+    category = 'MINI_TRUCK'; // Match the verified synthetic driver's vehicle category.
     await createFeeRule(ctx.prisma, { category, value: '10' });
     admin = await createAdmin(ctx);
     customer = await createCustomer(ctx);

@@ -55,7 +55,7 @@ describe('Booking registration from fare quotes', () => {
   beforeAll(async () => {
     ctx = await createTestApp();
     pricingVersionId = (await fixturePricingVersion(ctx.prisma)).id;
-    category = uniqueCategory();
+    category = 'MINI_TRUCK'; // Match the verified synthetic driver's vehicle category.
     feeRuleId = (await createFeeRule(ctx.prisma, { category, value: '10' })).id;
     fixedCategory = uniqueCategory();
     await createFeeRule(ctx.prisma, { category: fixedCategory, ruleType: 'FIXED', value: '1001' });

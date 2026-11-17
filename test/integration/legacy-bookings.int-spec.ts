@@ -11,7 +11,6 @@ import {
   type TestAdmin,
   type TestCustomer,
   type TestDriver,
-  uniqueCategory,
 } from '../helpers/fixtures';
 import {
   advanceTrip,
@@ -43,7 +42,7 @@ describe('Historical (legacy) bookings', () => {
   beforeAll(async () => {
     ctx = await createTestApp();
     admin = await createAdmin(ctx);
-    category = uniqueCategory();
+    category = 'MINI_TRUCK'; // Match the verified synthetic driver's vehicle category.
     await createFeeRule(ctx.prisma, { category, value: '10' });
   });
 
@@ -249,7 +248,7 @@ describe('Historical (legacy) bookings', () => {
     });
 
     it('keeps the fee of the pinned rule after the rule changes, for cash at pickup and delivery', async () => {
-      const own = uniqueCategory();
+      const own = 'FOUR_WHEELER';
       const rule = (value: string, reason: string) =>
         request(ctx.server)
           .post('/v1/admin/fee-rules')
@@ -259,7 +258,7 @@ describe('Historical (legacy) bookings', () => {
       await rule('10', 'Legacy integration test: the rule in force');
 
       const customer = await createCustomer(ctx);
-      const driver = await createHistoricalEligibleDriver(ctx);
+      const driver = await createHistoricalEligibleDriver(ctx, { vehicleCategory: own });
       await fundWallet(ctx, admin, driver.driverId, 20_000);
       const pickup = await legacyTrip(customer, driver, 'PAY_AT_PICKUP', { category: own });
       const delivery = await legacyTrip(customer, driver, 'PAY_AT_DELIVERY', { category: own });

@@ -10,7 +10,6 @@ import {
   type TestAdmin,
   type TestCustomer,
   type TestDriver,
-  uniqueCategory,
 } from '../helpers/fixtures';
 import {
   advanceTrip,
@@ -42,7 +41,7 @@ describe('Drops of a booking priced per drop', () => {
   beforeAll(async () => {
     ctx = await createTestApp();
     admin = await createAdmin(ctx);
-    category = uniqueCategory();
+    category = 'MINI_TRUCK'; // Match the verified synthetic driver's vehicle category.
     await createFeeRule(ctx.prisma, { category, value: '10' });
   });
 

@@ -10,7 +10,6 @@ import {
   type FixtureDeps,
   idempotencyKey,
   TEST_PRICING_CONFIG,
-  uniqueCategory,
   uniquePhone,
   uniqueSubject,
   uniqueVersionCode,
@@ -195,7 +194,7 @@ describe('Least-privilege database role', () => {
     const admin = await createAdmin(deps);
     const customer = await createCustomer(deps);
     const driver = await createDriver(deps);
-    const category = uniqueCategory();
+    const category = 'MINI_TRUCK';
 
     // Fee rule through the admin API (the API role inserts fee rules and audit rows).
     await request(ctx.server)
@@ -717,7 +716,7 @@ describe('Least-privilege database role', () => {
     const admin = await createAdmin(deps);
     const customer = await createCustomer(deps);
     const driver = await createDriver(deps);
-    const category = uniqueCategory();
+    const category = 'MINI_TRUCK';
     await request(ctx.server)
       .post('/v1/admin/fee-rules')
       .set(bearer(admin.token))
@@ -888,8 +887,8 @@ describe('Least-privilege database role', () => {
   // table owner (pickup-payment, delivery-stops).
   it('moves drops and trips only through their lifecycle', async () => {
     const customer = await createCustomer(deps);
-    const driver = await createDriver(deps);
-    const category = uniqueCategory();
+    const driver = await createDriver(deps, { vehicleCategory: 'THREE_WHEELER' });
+    const category = 'THREE_WHEELER';
     await owner.feeRule.create({
       data: {
         category,
@@ -978,8 +977,8 @@ describe('Least-privilege database role', () => {
   // are what keep it to one obligation per collection (payment flow Phase 4, stop-collections).
   it('collects and pays only the obligation owed now', async () => {
     const customer = await createCustomer(deps);
-    const driver = await createDriver(deps);
-    const category = uniqueCategory();
+    const driver = await createDriver(deps, { vehicleCategory: 'FOUR_WHEELER' });
+    const category = 'FOUR_WHEELER';
     await owner.feeRule.create({
       data: {
         category,

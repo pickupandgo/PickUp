@@ -9,7 +9,6 @@ import {
   createFeeRule,
   fixturePricingVersion,
   type TestAdmin,
-  uniqueCategory,
 } from '../helpers/fixtures';
 import {
   advanceTrip,
@@ -39,7 +38,7 @@ describe('Trips and driver earnings', () => {
   beforeAll(async () => {
     ctx = await createTestApp();
     admin = await createAdmin(ctx);
-    category = uniqueCategory();
+    category = 'MINI_TRUCK'; // Match the verified synthetic driver's vehicle category.
     await createFeeRule(ctx.prisma, { category, value: '10' });
   });
 
