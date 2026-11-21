@@ -19,7 +19,7 @@ export class ChatCleanupService implements OnModuleInit, OnModuleDestroy {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
   onModuleInit() {
-    if (this.config.nodeEnv === 'test') return;
+    if (this.config.nodeEnv === 'test' || process.env.MR_DISABLE_CHAT_CLEANUP === 'true') return;
     this.timer = setInterval(() => this.run(), 60_000);
     this.timer.unref();
     this.run();

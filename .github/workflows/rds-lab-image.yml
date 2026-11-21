@@ -1,0 +1,31 @@
+name: RDS Lab Backend Image - No Deployment
+
+on:
+  push:
+    branches:
+      - mr-aws-rds-lab-20261121
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout isolated source
+        uses: actions/checkout@v4
+
+      - name: Build backend runtime image
+        run: |
+          docker build --target runtime \
+            -t ghcr.io/pickupandgo/mr-backend-rds-lab:$GITHUB_SHA .
+
+      - name: Authenticate with GitHub Container Registry
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Publish isolated test image
+        run: docker push ghcr.io/pickupandgo/mr-backend-rds-lab:$GITHUB_SHA
