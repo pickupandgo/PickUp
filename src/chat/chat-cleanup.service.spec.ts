@@ -3,8 +3,17 @@ import type { ChatService } from './chat.service';
 import type { AppConfig } from '../config/app-config';
 
 describe('ChatCleanupService', () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
+  let previousDisableFlag: string | undefined;
+  beforeEach(() => {
+    previousDisableFlag = process.env.MR_DISABLE_CHAT_CLEANUP;
+    delete process.env.MR_DISABLE_CHAT_CLEANUP;
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    if (previousDisableFlag === undefined) delete process.env.MR_DISABLE_CHAT_CLEANUP;
+    else process.env.MR_DISABLE_CHAT_CLEANUP = previousDisableFlag;
+    jest.useRealTimers();
+  });
   function setup(nodeEnv = 'production') {
     const purgeClosedConversations = jest.fn().mockResolvedValue(0);
     const worker = new ChatCleanupService(
@@ -18,6 +27,23 @@ describe('ChatCleanupService', () => {
     worker.onModuleInit();
     jest.advanceTimersByTime(120000);
     expect(purgeClosedConversations).not.toHaveBeenCalled();
+    await worker.onModuleDestroy();
+  });
+  it('does not start or schedule destructive cleanup when explicitly disabled in production', async () => {
+    process.env.MR_DISABLE_CHAT_CLEANUP = 'true';
+    const { worker, purgeClosedConversations } = setup('production');
+    worker.onModuleInit();
+    await jest.advanceTimersByTimeAsync(180000);
+    expect(jest.getTimerCount()).toBe(0);
+    expect(purgeClosedConversations).not.toHaveBeenCalled();
+    await worker.onModuleDestroy();
+  });
+  it('retains cleanup for production when the disable flag is false', async () => {
+    process.env.MR_DISABLE_CHAT_CLEANUP = 'false';
+    const { worker, purgeClosedConversations } = setup('production');
+    worker.onModuleInit();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(purgeClosedConversations).toHaveBeenCalledTimes(1);
     await worker.onModuleDestroy();
   });
   it('bounds each tick to three batches and retries failures on the next tick', async () => {
