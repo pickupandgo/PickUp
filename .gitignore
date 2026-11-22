@@ -4,6 +4,9 @@ coverage/
 src/generated/
 *.tsbuildinfo
 *.log
+engine-evidence/
+engine-tested-image/
+engine-publish/
 # Environment files hold secrets. Only the example is committed.
 .env
 .env.*

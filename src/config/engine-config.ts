@@ -14,6 +14,8 @@ const httpUrl = z.url({ protocol: /^https?$/ });
 
 export const envSchema = z
   .object({
+    // Optional lab containment mode; never enables any production integration.
+    MR_SYNTHETIC_ONLY: booleanString.default(false),
     NODE_ENV: z
       .enum(['development', 'test', 'production'])
       .default('development'),
@@ -89,6 +91,42 @@ export const envSchema = z
     OFFER_TTL_SECONDS: z.coerce.number().int().min(5).max(600).default(15),
   })
   .superRefine((env, context) => {
+    if (env.MR_SYNTHETIC_ONLY) {
+      const require = (ok: boolean, name: string) => {
+        if (!ok)
+          context.addIssue({
+            code: 'custom',
+            path: [name],
+            message: 'synthetic isolation required',
+          });
+      };
+      let database: URL | undefined;
+      try {
+        database = new URL(env.DATABASE_URL);
+      } catch {
+        /* report names only */
+      }
+      require(env.NODE_ENV === 'production', 'NODE_ENV');
+      require(env.PORT === 3000, 'PORT');
+      require(database !== undefined &&
+        database.hostname === '172.29.63.2' &&
+        database.port === '5432' &&
+        database.pathname === '/mr_engine_synthetic_test' &&
+        database.username === 'engine_ci_runtime' &&
+        database.password.startsWith('dummy_engine_ci_'), 'DATABASE_URL');
+      require(env.DATABASE_POOL_MAX <= 5, 'DATABASE_POOL_MAX');
+      require(env.AUTH_JWKS_URL ===
+        'https://127.0.0.1:3443/jwks', 'AUTH_JWKS_URL');
+      require(env.AUTH_ISSUER === 'https://engine-ci.invalid', 'AUTH_ISSUER');
+      require(env.AUTH_AUDIENCE === 'mr-engine-ci', 'AUTH_AUDIENCE');
+      require(env.PAYMENT_BACKEND_URL ===
+        'https://127.0.0.1:3443', 'PAYMENT_BACKEND_URL');
+      require(env.PAYMENT_BACKEND_INTERNAL_API_KEY.startsWith(
+        'dummy_engine_ci_',
+      ), 'PAYMENT_BACKEND_INTERNAL_API_KEY');
+      require(env.OUTBOX_POLL_INTERVAL_MS === 0, 'OUTBOX_POLL_INTERVAL_MS');
+      require(env.DISPATCH_POLL_INTERVAL_MS === 0, 'DISPATCH_POLL_INTERVAL_MS');
+    }
     if (env.OUTBOX_MAX_BACKOFF_MS < env.OUTBOX_BASE_BACKOFF_MS) {
       context.addIssue({
         code: 'custom',
@@ -166,6 +204,16 @@ export class ConfigurationError extends Error {
 export function loadConfig(
   source: NodeJS.ProcessEnv = process.env,
 ): EngineConfig {
+  if (source.MR_SYNTHETIC_ONLY === 'true') {
+    const forbidden = Object.keys(source).filter(
+      (name) =>
+        /^(AWS_|AZURE_|RAZORPAY_|FCM_|GOOGLE_APPLICATION_CREDENTIALS$|FIREBASE_SERVICE_ACCOUNT|HTTP_PROXY$|HTTPS_PROXY$|ALL_PROXY$)/.test(
+          name,
+        ) ||
+        (name === 'NODE_TLS_REJECT_UNAUTHORIZED' && source[name] !== '1'),
+    );
+    if (forbidden.length) throw new ConfigurationError(forbidden.sort());
+  }
   const parsed = envSchema.safeParse(source);
   if (!parsed.success) {
     const names = new Set(

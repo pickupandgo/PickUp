@@ -1,0 +1,78 @@
+name: Engine synthetic integration and immutable image - No Deployment
+
+on:
+  push:
+    branches: [mr-engine-synthetic-ci-20261123]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-synthetic-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    if: github.repository == 'pickupandgo/PickUp' && github.ref == 'refs/heads/mr-engine-synthetic-ci-20261123'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Build and test on this disposable runner only
+        run: bash ops/engine-ci/run.sh
+      - name: Always clean up synthetic resources
+        if: always()
+        run: bash ops/engine-ci/cleanup.sh
+      - name: Save sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: engine-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: engine-evidence/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Transfer the exact tested runtime image
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: engine-tested-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: engine-tested-image/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  publish:
+    needs: test
+    if: github.repository == 'pickupandgo/PickUp' && github.ref == 'refs/heads/mr-engine-synthetic-ci-20261123'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: engine-tested-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: engine-tested-image/
+      - name: Publish only the verified tested image
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: bash ops/engine-ci/publish.sh
+      - name: Save immutable image reference
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: engine-publish-${{ github.run_id }}-${{ github.run_attempt }}
+          path: engine-publish/
+          retention-days: 7
+          if-no-files-found: error

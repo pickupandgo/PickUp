@@ -20,6 +20,7 @@ export function buildTestConfig(
     NODE_ENV: 'test',
     DATABASE_URL: TEST_DATABASE_URL,
     DATABASE_POOL_MAX: '20',
+    AUTH_JWKS_URL: 'http://127.0.0.1:1/unused-static-jwks',
     AUTH_ISSUER: TEST_ISSUER,
     AUTH_AUDIENCE: TEST_FIREBASE_PROJECT,
     PAYMENT_BACKEND_URL: paymentBackendUrl,

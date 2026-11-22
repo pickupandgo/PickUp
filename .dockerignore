@@ -1,0 +1,27 @@
+**
+!Dockerfile
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.build.json
+!nest-cli.json
+!prisma.config.ts
+!eslint.config.mjs
+!.prettierrc
+!.prettierignore
+!src/
+!src/**
+!prisma/
+!prisma/**
+!test/
+!test/**
+# Locally generated code is regenerated from the committed schema during build.
+src/generated/
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/node_modules/
+!.env.example
