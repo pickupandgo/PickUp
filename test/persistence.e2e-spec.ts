@@ -68,7 +68,14 @@ describe('Persistence across engine restarts (e2e)', () => {
       `/rides/${trip.rideId}`,
       first.customer,
     ).expect(200);
-    expect(after.body.ride).toEqual(before.body.ride);
+    // This response timestamp advances; every persisted field must survive.
+    const { serverTime: beforeTime, ...beforePersisted } = before.body.ride;
+    const { serverTime: afterTime, ...afterPersisted } = after.body.ride;
+    expect(Number.isFinite(Date.parse(beforeTime))).toBe(true);
+    expect(Date.parse(afterTime)).toBeGreaterThanOrEqual(
+      Date.parse(beforeTime),
+    );
+    expect(afterPersisted).toEqual(beforePersisted);
     expect(after.body.ride).toMatchObject({
       externalRef: `ENG-${trip.rideId}`,
       paymentBookingId: trip.paymentBookingId,

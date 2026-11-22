@@ -19,6 +19,7 @@ import {
 
 /** The payment backend's internal routes the engine may call (raj_backend /v1/internal/*). */
 const ALLOWED_CALLS = [
+  /^POST \/v1\/internal\/delivery-proofs\/[0-9a-f-]{36}\/read$/,
   /^GET \/v1\/internal\/drivers\/by-subject\/[^/]+\/eligibility$/,
   /^GET \/v1\/internal\/fare-quotes\/[^/]+$/,
   /^POST \/v1\/internal\/bookings$/,

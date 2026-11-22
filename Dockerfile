@@ -25,8 +25,8 @@ USER node
 CMD ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
 
 FROM deps AS production-deps
-RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund \
- && npm audit --omit=dev --audit-level=high
+RUN npm prune --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund \
+ && npm audit --omit=dev --omit=optional --audit-level=high
 
 FROM base AS runtime
 ARG SOURCE_REVISION

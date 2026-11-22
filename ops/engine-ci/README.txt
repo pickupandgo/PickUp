@@ -2,7 +2,7 @@ MultipleRide Trip Engine synthetic image pipeline — NO DEPLOYMENT
 
 Isolated branch: mr-engine-synthetic-ci-20261123
 Base raj_engine: f06c51797103eb78f173560f540a6d0e623adc22
-Runtime: Node24.21.0 Alpine (digest pinned), existing Prisma7.10.0 lock/schema.
+Runtime: Node24.21.0 Alpine (digest pinned), Prisma7.10.1 patch/schema unchanged.
 Image: ghcr.io/pickupandgo/mr-trip-engine-lab:sha-<source-commit>
 Use the resulting @sha256 digest as the immutable reference, not a mutable tag.
 
@@ -17,7 +17,10 @@ Dockerfile targets:
 
 Only GitHub-hosted ubuntu24.04; exact repository/ref guards; no AWS, SSH, Render,
 production environments, production secrets, OIDC or deployment steps.
-Source package/lock/migrations are required unchanged from the Engine base.
+Source migrations are required unchanged from the Engine base. Prisma/client/
+adapter are patch-updated together from7.10.0 to7.10.1; Zod to4.6.7; compatible
+transitive fixes refresh the dependency lock. Committed package/lock hashes are
+verified before build. The production npm audit gate remains mandatory.
 Existing raj_engine/raj_backend/Driver and the Backend image are never changed.
 
 Build/test job has contents:read only. Dependency acquisition/build/audit occurs

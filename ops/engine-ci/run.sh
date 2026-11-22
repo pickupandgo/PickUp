@@ -18,7 +18,8 @@ mkdir -p "$out" engine-tested-image
 phase(){ printf '%s\n' "$1" > "$out/phase.txt"; }
 phase source-and-build
 git merge-base --is-ancestor f06c51797103eb78f173560f540a6d0e623adc22 HEAD
-git diff --exit-code f06c51797103eb78f173560f540a6d0e623adc22 -- package.json package-lock.json prisma
+git diff --exit-code f06c51797103eb78f173560f540a6d0e623adc22 -- prisma
+sha256sum -c ops/engine-ci/dependency-lock.sha256
 test -z "$(git ls-files .env '.env.*' | grep -vFx .env.example || true)"
 export DOCKER_CONFIG=$state/docker-config
 mkdir -m 700 "$DOCKER_CONFIG"
