@@ -1,0 +1,43 @@
+name: Synthetic pinned Backend integration - No Deployment
+
+on:
+  push:
+    branches: [mr-aws-rds-lab-20261121]
+    paths:
+      - .github/workflows/synthetic-backend-integration.yml
+      - ops/synthetic-ci/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: synthetic-backend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  synthetic:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/mr-aws-rds-lab-20261121'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout isolated CI source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Run disposable synthetic integration with immutable image
+        run: bash ops/synthetic-ci/run.sh
+
+      - name: Always remove this run's synthetic resources
+        if: always()
+        run: bash ops/synthetic-ci/cleanup.sh
+
+      - name: Preserve sanitized test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: synthetic-backend-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: synthetic-evidence/
+          retention-days: 7
+          if-no-files-found: error

@@ -4,6 +4,16 @@ on:
   push:
     branches:
       - mr-aws-rds-lab-20261121
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - package.json
+      - package-lock.json
+      - src/**
+      - prisma/**
+      - prisma.config.ts
+      - tsconfig*.json
+      - nest-cli.json
 
 permissions:
   contents: read
