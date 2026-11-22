@@ -53,7 +53,7 @@ elif mode=='finish':
   'image':'ghcr.io/pickupandgo/mr-backend-rds-lab@sha256:f0514b3330d0cbb4f7f55ea62eaf6e39ca41a59c9edad2ed14b8b4bbc87ae1d4',
   'run_url':os.environ['GITHUB_SERVER_URL']+'/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+os.environ['GITHUB_RUN_ID'],
   'runner':'GitHub-hosted ubuntu-24.04','last_phase':(out/'phase.txt').read_text().strip() if (out/'phase.txt').exists() else 'not-started',
-  'configuration':read('configuration.json'),'fail_closed':read('fail-closed-tests.json'),'network':read('network-tests.json'),'http':read('http-tests.json'),
+  'configuration':read('configuration.json'),'fail_closed':read('fail-closed-tests.json'),'network':read('network-tests.json'),'http':read('http-tests.json'),'post_idle_readiness':read('post-idle.json'),
   'database':read('database.json'),'safety':read('safety.json'),'cleanup':read('cleanup.json'),
   'production_credentials_or_data_loaded':False,'Render_or_AWS_contacted':False,'Backend_image_rebuilt':False,
   'Prisma_CLI_used':False,'migration_method':'Unmodified SQL from exact image source commit, ordered psql application with SHA256 ledger',

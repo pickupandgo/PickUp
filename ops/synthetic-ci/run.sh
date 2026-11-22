@@ -151,20 +151,24 @@ helper /ci/http-tests.cjs > "$out/http-tests.json"
 phase observe-disabled-background-jobs
 # Cover at least one 60-second cleanup/payout tick without publishing a port.
 sleep 65
-test "$(docker inspect --format '{{.State.Running}}' "$prefix-api")" = true
+test "$(docker inspect --format '{{.State.Running}}' "$prefix-api")" = true || { echo 'FAIL: API exited during background observation'; exit 1; }
+helper /ci/post-idle.cjs > "$out/post-idle.json"
 snapshot > "$out/rows-after.txt"
-cmp "$out/rows-before.txt" "$out/rows-after.txt"
+cmp "$out/rows-before.txt" "$out/rows-after.txt" || { echo 'FAIL: synthetic table row counts changed'; exit 1; }
 connections=$(psql_owner -At <<'SQL'
 SELECT count(*) FROM pg_stat_activity WHERE datname='mr_synthetic_backend_ci' AND usename='ci_runtime' AND application_name='multipleride-backend';
 SQL
 )
-test "$connections" -ge 1
+printf 'Backend database connections after fresh readiness: %s\n' "$connections"
+test "$connections" -ge 1 || { echo 'FAIL: fresh readiness did not leave a Backend DB connection'; exit 1; }
 cleanup_calls=$(psql_owner -At <<'SQL'
 SELECT coalesce(sum(calls),0) FROM pg_stat_user_functions WHERE funcname='purge_closed_chat_conversations';
 SQL
 )
-test "$cleanup_calls" = 0
-test "$(sudo nsenter -t "$guardpid" -n iptables -L MR_SYNTH_OUT -n -v -x | awk '$3=="DROP"{print $1}')" = 0
+test "$cleanup_calls" = 0 || { echo 'FAIL: chat cleanup function was called'; exit 1; }
+outbound_drops=$(sudo nsenter -t "$guardpid" -n iptables -L MR_SYNTH_OUT -n -v -x | awk '$3=="DROP"{print $1}')
+printf 'Unexpected outbound drops during API execution: %s\n' "$outbound_drops"
+test "$outbound_drops" = 0 || { echo 'FAIL: unexpected outbound packet attempt'; exit 1; }
 python3 - "$count" <<'PY'
 import json,pathlib,sys
 p=pathlib.Path('synthetic-evidence'); rows=dict(line.split('|') for line in (p/'rows-after.txt').read_text().splitlines())
