@@ -40,8 +40,8 @@ if (mode === 'engine') {
     REFUND_PROVIDER: 'disabled',
     REFUND_AUTO_ON_CANCEL: 'false',
     COLLECTION_LINK_PROVIDER: 'disabled',
-    DOCUMENT_STORAGE_PROVIDER: 'disabled',
-    DOCUMENT_SCANNER_PROVIDER: 'disabled',
+    DOCUMENT_STORAGE_PROVIDER: 's3',
+    DOCUMENT_SCANNER_PROVIDER: 'http',
     MANUAL_KYC_ENABLED: 'false',
     SWAGGER_ENABLED: 'false',
   };
@@ -63,8 +63,15 @@ if (mode === 'engine') {
   a.equal(c.collections.product, null);
   a.equal(c.collections.simulated, false);
   a.equal(c.simulation.enabled, false);
-  a.equal(c.documents.storage, null);
-  a.equal(c.documents.scanner, null);
+  a.equal(c.documents.storage.endpoint, 'http://172.29.63.5:9000');
+  a.equal(c.documents.storage.bucket, 'mr-proof-ci');
+  a.equal(c.documents.storage.region, 'ap-south-1');
+  a.equal(c.documents.storage.forcePathStyle, true);
+  a.ok(c.documents.storage.accessKeyId.startsWith('dummy_'));
+  a.ok(c.documents.storage.secretAccessKey.startsWith('dummy_'));
+  a.equal(c.documents.scanner.kind, 'http');
+  a.equal(c.documents.scanner.url, 'http://172.29.63.6:9080/scan');
+  a.ok(c.documents.scanner.token.startsWith('dummy_'));
   a.equal(c.googleRoutes, undefined);
   a.equal(c.razorpay.mode, 'test');
   a.equal(c.razorpay.apiBaseUrl, 'http://127.0.0.1:9');
@@ -74,7 +81,8 @@ console.log(
     result: 'PASS',
     service: mode,
     safety_flags_verified: true,
-    providers_disabled: true,
+    financial_and_external_providers_disabled: true,
+    isolated_synthetic_storage_and_scanner_only: true,
     background_workers_disabled: true,
     production_credentials: false,
     API_started: false,

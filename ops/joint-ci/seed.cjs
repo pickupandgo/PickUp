@@ -100,6 +100,8 @@ let stage = 'validation';
     await p.$disconnect();
   }
 })().catch((e) => {
-  console.error('SYNTHETIC_SEED_FAILED ' + stage + ' ' + (e?.code || e?.name || 'UNKNOWN'));
+  console.error(
+    'SYNTHETIC_SEED_FAILED ' + stage + ' ' + (e?.code || e?.name || 'UNKNOWN'),
+  );
   process.exitCode = 1;
 });

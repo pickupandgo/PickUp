@@ -1,7 +1,7 @@
 name: Joint immutable Backend and Engine synthetic integration - No Deployment
 on:
   push:
-    branches: [mr-joint-synthetic-ci-20261123]
+    branches: [mr-joint-proof-ci-20261123]
 permissions:
   contents: read
   packages: read
@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   integration:
-    if: github.repository == 'pickupandgo/PickUp' && github.ref == 'refs/heads/mr-joint-synthetic-ci-20261123'
+    if: github.repository == 'pickupandgo/PickUp' && github.ref == 'refs/heads/mr-joint-proof-ci-20261123'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:

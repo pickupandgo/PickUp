@@ -1,7 +1,9 @@
 'use strict';
 // Black-box HTTP only. Both APIs use their unmodified default entrypoints.
 const a = require('node:assert/strict');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
+const { photo } = require('./photo.cjs');
+const sha = (b) => createHash('sha256').update(b).digest('hex');
 const mode = process.argv[2],
   checks = [];
 let state = {};
@@ -533,27 +535,254 @@ async function business() {
       a.equal((await remote(state.bookingId)).trip.status, 'DROP_PROGRESS');
     },
   );
-  // External storage must stay disabled. Do not fake a verified proof or claim completion.
+  // All success receipts below come from the real Backend after real byte reads/scans.
+  let plan;
+  const bytes = photo(),
+    proofPath = () =>
+      '/trips/' + state.tripId + '/stops/' + state.stopId + '/proof';
+  const prepare = (b) =>
+    eng(
+      'POST',
+      proofPath(),
+      'driver',
+      { contentType: 'image/png', sizeBytes: b.length },
+      201,
+    );
+  const complete = (p, status = 201) =>
+    eng(
+      'POST',
+      proofPath() + '/' + p.proofId + '/complete',
+      'driver',
+      {},
+      status,
+    );
+  const upload = async (p, b, status = 200) => {
+    const u = new URL(p.upload.url);
+    a.equal(u.origin, 'http://172.29.63.5:9000');
+    a.equal(u.username, '');
+    a.equal(u.password, '');
+    const r = await fetch(u, {
+      method: 'PUT',
+      headers: p.upload.headers,
+      body: b,
+      signal: AbortSignal.timeout(5000),
+      redirect: 'error',
+    });
+    if (r.status !== status)
+      throw new SafeFailure('BYTE_UPLOAD_' + r.status + '_EXPECTED_' + status);
+    return r.headers.get('x-amz-version-id');
+  };
   await check(
-    'actual Backend proof API fails closed with disabled object storage',
+    'real Backend prepares signed versioned photo upload for assigned driver',
     async () => {
       requireState('tripId', 'stopId');
-      const r = await eng(
-        'POST',
-        '/trips/' + state.tripId + '/stops/' + state.stopId + '/proof',
-        'driver',
-        { contentType: 'image/jpeg', sizeBytes: 1024 },
-        503,
+      plan = await prepare(bytes);
+      a.match(plan.proofId, /^[a-f0-9-]{36}$/);
+      state.proofId = plan.proofId;
+      a.equal(plan.upload.headers['x-amz-server-side-encryption'], 'AES256');
+    },
+  );
+  await check(
+    'missing object cannot receive a verification receipt',
+    async () => {
+      requireState('proofId');
+      await complete(plan, 503);
+    },
+  );
+  await check(
+    'storage denies unsigned photo read and tampered signed upload',
+    async () => {
+      requireState('proofId');
+      const u = new URL(plan.upload.url);
+      u.searchParams.delete('X-Amz-Signature');
+      const r = await fetch(u, {
+        method: 'PUT',
+        headers: plan.upload.headers,
+        body: bytes,
+      });
+      a.equal(r.status, 403);
+      const plain = new URL(plan.upload.url);
+      plain.search = '';
+      a.equal((await fetch(plain)).status, 403);
+    },
+  );
+  await check(
+    'actual wrong file bytes rejected before scanning or verification',
+    async () => {
+      requireState('proofId');
+      await upload(plan, Buffer.alloc(bytes.length, 65));
+      await complete(plan, 400);
+    },
+  );
+  await check(
+    'synthetic scanner downloads actual malicious PNG and refuses it',
+    async () => {
+      const infected = photo(17, 'EICAR-STANDARD-ANTIVIRUS-TEST-FILE'),
+        p = await prepare(infected);
+      await upload(p, infected);
+      await complete(p, 422);
+      const scan = await request(
+        'http://172.29.63.6:9080',
+        'GET',
+        '/__test/state',
       );
-      a.equal(r.code, 'PAYMENT_BACKEND_UNAVAILABLE');
-      const call = (await trace())
-        .filter((x) => x.path === '/v1/internal/delivery-proofs')
-        .at(-1);
-      a.ok(call.forwarded);
-      a.equal(call.backendStatus, 503);
+      a.ok(
+        scan.records.some(
+          (x) =>
+            x.result === 'INFECTED' &&
+            x.sha256 === sha(infected) &&
+            x.PNG_CRC_and_pixels_verified,
+        ),
+      );
+      const b = await remote(state.bookingId);
+      a.equal(b.trip.status, 'DROP_PROGRESS');
+    },
+  );
+  await check(
+    'scanner outage fails closed; no delivery or verification bypass',
+    async () => {
+      requireState('proofId');
+      await upload(plan, bytes);
+      await request('http://172.29.63.6:9080', 'POST', '/__test/unavailable', {
+        body: { enabled: true },
+      });
+      try {
+        await complete(plan, 503);
+      } finally {
+        await request(
+          'http://172.29.63.6:9080',
+          'POST',
+          '/__test/unavailable',
+          { body: { enabled: false } },
+        );
+      }
       a.equal((await remote(state.bookingId)).trip.status, 'DROP_PROGRESS');
     },
   );
+  await check(
+    'actual uploaded PNG bytes pass independent scan, checksum and immutable version verification',
+    async () => {
+      requireState('proofId');
+      state.proofVersion = await upload(plan, bytes);
+      a.match(state.proofVersion, /^[a-f0-9-]{36}$/);
+      const r = await complete(plan);
+      a.equal(r.ready, true);
+      a.equal(r.proofId, plan.proofId);
+      state.photoSha256 = sha(bytes);
+      const records = (
+        await request('http://172.29.63.6:9080', 'GET', '/__test/state')
+      ).records;
+      a.ok(
+        records.some(
+          (x) =>
+            x.versionId === state.proofVersion &&
+            x.sha256 === state.photoSha256 &&
+            x.bytes === bytes.length &&
+            x.result === 'CLEAN' &&
+            x.PNG_CRC_and_pixels_verified,
+        ),
+      );
+      const n = records.length;
+      await complete(plan);
+      a.equal(
+        (await request('http://172.29.63.6:9080', 'GET', '/__test/state'))
+          .records.length,
+        n,
+      );
+    },
+  );
+  await check(
+    'verified proof reference synchronizes DELIVERED to actual Backend',
+    async () => {
+      requireState('proofVersion');
+      const r = await eng(
+        'POST',
+        '/trips/' + state.tripId + '/stop/confirm-delivery',
+        'driver',
+        { stopId: state.stopId, photo: { uri: 'proof:' + state.proofId } },
+        201,
+      );
+      a.equal(r.tripStatus, 'DELIVERED');
+      a.equal((await remote(state.bookingId)).trip.status, 'DELIVERED');
+    },
+  );
+  await check(
+    'authorized evidence retrieval downloads exact verified photo bytes',
+    async () => {
+      requireState('proofVersion');
+      await evidenceBytes('driver');
+      await evidenceBytes('customer');
+    },
+  );
+  await check(
+    'unrelated customer and driver cannot retrieve private delivery evidence',
+    async () => {
+      requireState('proofId');
+      await eng('GET', proofPath(), 'other', undefined, 403);
+      await eng('GET', proofPath(), 'pending', undefined, 403);
+    },
+  );
+  await check(
+    'new upload version cannot replace the pinned verified delivery photo',
+    async () => {
+      requireState('proofVersion');
+      const newer = photo(99);
+      a.equal(newer.length, bytes.length);
+      const v = await upload(plan, newer);
+      a.notEqual(v, state.proofVersion);
+      a.notEqual(sha(newer), state.photoSha256);
+      await evidenceBytes('driver');
+    },
+  );
+  await check(
+    'real Backend and Engine complete paid synthetic trip; completion replay is idempotent',
+    async () => {
+      requireState('proofVersion');
+      const r = await eng(
+        'POST',
+        '/trips/' + state.tripId + '/complete',
+        'driver',
+        {},
+        201,
+      );
+      a.equal(r.tripStatus, 'COMPLETED');
+      const b = await remote(state.bookingId);
+      a.equal(b.status, 'COMPLETED');
+      a.equal(b.trip.status, 'COMPLETED');
+      a.equal(b.paidWith, 'CASH');
+      a.equal(
+        (
+          await eng(
+            'POST',
+            '/trips/' + state.tripId + '/complete',
+            'driver',
+            {},
+            201,
+          )
+        ).changed,
+        false,
+      );
+    },
+  );
+}
+async function evidenceBytes(as) {
+  const r = await eng(
+    'GET',
+    '/trips/' + state.tripId + '/stops/' + state.stopId + '/proof',
+    as,
+  );
+  a.equal(r.proofId, state.proofId);
+  a.equal(r.ready, true);
+  const u = new URL(r.url);
+  a.equal(u.origin, 'http://172.29.63.5:9000');
+  a.equal(u.searchParams.get('versionId'), state.proofVersion);
+  const f = await fetch(u, {
+    redirect: 'error',
+    signal: AbortSignal.timeout(5000),
+  });
+  a.equal(f.status, 200);
+  a.equal(f.headers.get('x-amz-version-id'), state.proofVersion);
+  a.equal(sha(Buffer.from(await f.arrayBuffer())), state.photoSha256);
 }
 async function faults() {
   await ready();
@@ -651,7 +880,7 @@ async function restart() {
       const b = await byRef(state.externalRef);
       a.equal(b.bookingId, state.bookingId);
       a.equal(b.trip.tripId, state.paymentTripId);
-      a.equal(b.trip.status, 'DROP_PROGRESS');
+      a.equal(b.trip.status, 'COMPLETED');
     },
   );
   await check(
@@ -663,12 +892,16 @@ async function restart() {
       a.equal((await remote(r.paymentBookingId)).quoteId, q.quoteId);
     },
   );
+  await check('encrypted on-disk photo version survives ' + mode, () =>
+    evidenceBytes('driver'),
+  );
 }
 (async () => {
   if (mode === 'baseline') await baseline();
   else if (mode === 'business') await business();
   else if (mode === 'faults') await faults();
-  else if (/^after-(backend|engine)-restart$/.test(mode)) await restart();
+  else if (/^after-(backend|engine|storage)-restart$/.test(mode))
+    await restart();
   else throw new SafeFailure('UNKNOWN_MODE');
   const failed = checks.filter((x) => x.result === 'FAIL').length;
   console.log(
@@ -679,7 +912,7 @@ async function restart() {
       failed,
       checks,
       limitations: [
-        'Positive DELIVERED/COMPLETED flow is not verified: durable object storage/scanning intentionally disabled; no proof is forged.',
+        'Storage is a limited isolated S3-protocol fixture; scanner is controlled PNG/EICAR test scanning, not production antivirus certification.',
       ],
       ...(mode === 'business' ? { state } : {}),
     }),

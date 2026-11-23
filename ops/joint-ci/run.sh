@@ -4,7 +4,7 @@ umask 077
 test "${GITHUB_ACTIONS:-}" = true
 test "${RUNNER_ENVIRONMENT:-}" = github-hosted
 test "${GITHUB_REPOSITORY:-}" = pickupandgo/PickUp
-test "${GITHUB_REF:-}" = refs/heads/mr-joint-synthetic-ci-20261123
+test "${GITHUB_REF:-}" = refs/heads/mr-joint-proof-ci-20261123
 [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
 prefix=mr-joint-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT
 state=$RUNNER_TEMP/$prefix
@@ -37,6 +37,11 @@ done
 mkdir "$state/backend-source" "$state/engine-source"
 git archive 1fc2d3645f0a6412a8f11e82b2037006f57d8eff prisma pricing | tar -x -C "$state/backend-source"
 git archive d920295dd7ede9c2dac033801d7ff30688e14bdf prisma | tar -x -C "$state/engine-source"
+# SQL-only remediation from a separate Backend branch; neither API image is altered.
+sqlref=9e615dd245e09f841db9881bf4c0af4fbe1190f9
+git diff --exit-code 1fc2d3645f0a6412a8f11e82b2037006f57d8eff "$sqlref" -- src Dockerfile package.json package-lock.json
+git show "$sqlref:prisma/sql/02-app-grants.sql" > "$state/proof-grants.sql"
+git show "$sqlref:prisma/migrations/20261123120000_delivery_proof_immutability/migration.sql" > "$state/proof-guard.sql"
 python3 - <<'PY'
 import ipaddress,json,subprocess
 c=ipaddress.ip_network('172.29.63.0/28');ids=subprocess.check_output(['docker','network','ls','-q'],text=True).split()
@@ -62,12 +67,27 @@ for pair in core:3 backguard:4; do
  docker run -d --name "$prefix-$name" "${common[@]}" --network "$prefix-net" --ip "172.29.63.$ip" \
   --memory 64m --memory-swap 64m --cpus .2 --pids-limit 32 --entrypoint node "$engine" -e 'setInterval(()=>{},60000)'
 done
-for name in core backguard db; do
+docker volume create --label io.multipleride.joint-ci="$prefix" "$prefix-photo-data" >/dev/null
+docker run --rm --name "$prefix-storage-init" "${common[@]}" --network none --user root --cap-add CHOWN \
+ --memory 64m --memory-swap 64m --cpus .2 --pids-limit 32 --mount "type=volume,source=$prefix-photo-data,target=/data" \
+ --entrypoint node "$backend" -e "const f=require('node:fs');f.chownSync('/data',1000,1000);f.chmodSync('/data',0o700)"
+docker run -d --name "$prefix-storeguard" "${common[@]}" --network "$prefix-net" --ip 172.29.63.5 \
+ --memory 64m --memory-swap 64m --cpus .2 --pids-limit 32 --entrypoint node "$backend" -e 'setInterval(()=>{},60000)'
+for pair in storage:5 scanner:6;do
+ name=${pair%:*};ip=${pair#*:};extra=();netargs=(--network "$prefix-net" --ip "172.29.63.$ip")
+ if test "$name" = storage;then extra=(--mount "type=volume,source=$prefix-photo-data,target=/data");netargs=(--network "container:$prefix-storeguard");fi
+ docker run -d --name "$prefix-$name" "${common[@]}" "${netargs[@]}" \
+  --memory 192m --memory-swap 192m --cpus .5 --pids-limit 64 --env-file "$state/$name.env" \
+  --mount "type=bind,source=$scripts,target=/ci,readonly" "${extra[@]}" --entrypoint node "$backend" "/ci/$name.cjs"
+done
+for name in core backguard db storeguard scanner; do
  pid=$(docker inspect --format '{{.State.Pid}}' "$prefix-$name")
  sudo nsenter -t "$pid" -n iptables -N MR_JOINT_OUT
  sudo nsenter -t "$pid" -n iptables -A MR_JOINT_OUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
- if test "$name" != db; then
+ if test "$name" = core || test "$name" = backguard; then
   sudo nsenter -t "$pid" -n iptables -A MR_JOINT_OUT -d 172.29.63.2/32 -p tcp --dport 5432 -j ACCEPT
+  sudo nsenter -t "$pid" -n iptables -A MR_JOINT_OUT -d 172.29.63.5/32 -p tcp --dport 9000 -j ACCEPT
+  sudo nsenter -t "$pid" -n iptables -A MR_JOINT_OUT -d 172.29.63.6/32 -p tcp --dport 9080 -j ACCEPT
  fi
  case "$name" in
  core)
@@ -78,6 +98,9 @@ for name in core backguard db; do
   sudo nsenter -t "$pid" -n iptables -A MR_JOINT_OUT -d 127.0.0.1/32 -p tcp --dport 3000 -j ACCEPT;;
  db)
   sudo nsenter -t "$pid" -n iptables -A MR_JOINT_OUT -d 127.0.0.1/32 -p tcp --dport 5432 -j ACCEPT;;
+ scanner)
+  sudo nsenter -t "$pid" -n iptables -A MR_JOINT_OUT -d 172.29.63.5/32 -p tcp --dport 9000 -j ACCEPT;;
+ storeguard) :;;
  esac
  sudo nsenter -t "$pid" -n iptables -A MR_JOINT_OUT -j DROP
  sudo nsenter -t "$pid" -n iptables -I OUTPUT 1 -j MR_JOINT_OUT
@@ -97,6 +120,7 @@ helper core "$engine" engine /ci/network.cjs > "$out/network-core.json"
 helper backguard "$backend" backend /ci/network.cjs > "$out/network-backguard.json"
 helper core "$engine" engine /ci/preflight.cjs engine > "$out/configuration-engine.json"
 helper backguard "$backend" backend /ci/preflight.cjs backend > "$out/configuration-backend.json"
+helper backguard "$backend" storage /ci/storage-protocol.cjs > "$out/storage-protocol.json"
 phase exact-source-synthetic-SQL-migrations
 for service in backend engine; do
  if test "$service" = backend; then db=mr_joint_backend_e2e;expected=32;tables=44;else db=mr_engine_synthetic_test;expected=4;tables=7;fi
@@ -118,7 +142,11 @@ SQL
  printf '%s migrations=%s public_tables=%s\n' "$service" "$count" "$tables" > "$out/migrations-$service.txt"
 done
 psql mr_joint_backend_e2e < "$state/roles.sql"
-psql mr_joint_backend_e2e < "$state/backend-source/prisma/sql/02-app-grants.sql"
+psql mr_joint_backend_e2e < "$state/proof-guard.sql"
+hash=$(sha256sum "$state/proof-guard.sql" | cut -d' ' -f1);id=$(cat /proc/sys/kernel/random/uuid)
+psql mr_joint_backend_e2e -c "INSERT INTO _prisma_migrations(id,checksum,finished_at,migration_name,applied_steps_count) VALUES('$id','$hash',now(),'20261123120000_delivery_proof_immutability',1);"
+printf '{"result":"PASS","sql_commit":"%s","guard_migration_sha256":"%s","applied_only_to_disposable_database":true,"image_contains_new_SQL":false}\n' "$sqlref" "$hash" > "$out/proof-security-sql.json"
+psql mr_joint_backend_e2e < "$state/proof-grants.sql"
 psql mr_joint_backend_e2e -Atc "SELECT json_build_object('runtime_role','mr_app','delivery_proofs_select',has_table_privilege('mr_app','public.delivery_proofs','SELECT'),'delivery_proofs_insert',has_table_privilege('mr_app','public.delivery_proofs','INSERT'),'delivery_proofs_update',has_table_privilege('mr_app','public.delivery_proofs','UPDATE'))" > "$out/delivery-proof-grants.json"
 psql mr_engine_synthetic_test <<'SQL'
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
@@ -152,7 +180,7 @@ for service in backend engine;do
   --mount "type=bind,source=$state/ca.pem,target=/ci-ca.pem,readonly" "$img"
 done
 python3 "$scripts/evidence.py" safety
-for name in core backguard db;do
+for name in core backguard db storeguard scanner;do
  pid=$(docker inspect --format '{{.State.Pid}}' "$prefix-$name")
  sudo nsenter -t "$pid" -n iptables -Z MR_JOINT_OUT
  sudo nsenter -t "$pid" -n ip6tables -Z OUTPUT
@@ -170,7 +198,9 @@ d=json.loads(pathlib.Path('joint-evidence/business.json').read_text());p=pathlib
 PY
  fi
 done
-for service in backend engine;do
+phase synthetic-proof-database-privilege-tests
+helper backguard "$backend" backend /ci/permissions.cjs > "$out/proof-permissions.json"
+for service in backend engine storage;do
  phase "restart-$service-and-reconnect"
  docker restart --time 10 "$prefix-$service" >/dev/null
  docker run --rm --name "$prefix-helper" "${common[@]}" --network "container:$prefix-core" \
@@ -194,7 +224,7 @@ cmp "$out/before-idle.txt" "$out/after-idle.txt"
 test "$(psql mr_joint_backend_e2e -Atc "SELECT coalesce(sum(calls),0) FROM pg_stat_user_functions WHERE funcname='purge_closed_chat_conversations'")" = 0
 test "$(psql mr_joint_backend_e2e -Atc 'SELECT (SELECT count(*) FROM payments)+(SELECT count(*) FROM payment_events)+(SELECT count(*) FROM payment_settlements)+(SELECT count(*) FROM driver_payouts)+(SELECT count(*) FROM payout_batches)+(SELECT count(*) FROM payout_events)+(SELECT count(*) FROM payment_refunds)')" = 0
 for service in backend engine;do test "$(docker inspect --format '{{.State.Running}}' "$prefix-$service")" = true;done
-for name in core backguard db;do
+for name in core backguard db storeguard scanner;do
  pid=$(docker inspect --format '{{.State.Pid}}' "$prefix-$name")
  test "$(sudo nsenter -t "$pid" -n iptables -L MR_JOINT_OUT -n -v -x | awk '$3=="DROP"{print $1}')" = 0
  test "$(sudo nsenter -t "$pid" -n ip6tables -L OUTPUT -n -v -x | awk '$3=="DROP"{print $1}')" = 0
