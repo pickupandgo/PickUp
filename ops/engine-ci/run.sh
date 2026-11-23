@@ -81,7 +81,7 @@ for name,db in [('migrate-main.env','mr_engine_synthetic_test'),('migrate-suite.
  save(name,{'DATABASE_URL':f'postgresql://ci_owner:{pw}@172.29.63.2:5432/{db}','CHECKPOINT_DISABLE':'1','PRISMA_HIDE_UPDATE_MESSAGE':'true','HOME':'/tmp'})
 save('suite.env',{'ENGINE_TEST_DATABASE_URL':f'postgresql://ci_owner:{pw}@172.29.63.2:5432/mr_engine_suite_test','NODE_ENV':'test'})
 # Only this NEW ephemeral DB role, generated dummy password, never an RDS role.
-(p/'runtime.sql').write_text(f"CREATE ROLE engine_ci_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '{pw}';\nGRANT CONNECT ON DATABASE mr_engine_synthetic_test TO engine_ci_runtime;\nGRANT USAGE ON SCHEMA public TO engine_ci_runtime;\nGRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO engine_ci_runtime;\nGRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO engine_ci_runtime;\n")
+(p/'runtime.sql').write_text(f"CREATE ROLE engine_ci_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '{pw}';\nGRANT CONNECT ON DATABASE mr_engine_synthetic_test TO engine_ci_runtime;\nGRANT USAGE ON SCHEMA public TO engine_ci_runtime;\nGRANT SELECT ON ALL TABLES IN SCHEMA public TO engine_ci_runtime;\nGRANT INSERT,UPDATE,DELETE ON engine_bookings,engine_stops,engine_offers,engine_trips,engine_outbox,engine_driver_positions TO engine_ci_runtime;\nGRANT USAGE,SELECT ON SEQUENCE engine_outbox_id_seq TO engine_ci_runtime;\n")
 PY
 test "$(docker run --rm --network none --entrypoint id "$postgres" -u postgres)" = 70
 docker run -d --name "$prefix-db" --label io.multipleride.engine-ci="$prefix" --network "$prefix-net" --ip 172.29.63.2 \
@@ -176,6 +176,7 @@ pathlib.Path('engine-evidence/safety.json').write_text(json.dumps({'result':'PAS
 PY
 # Negative probes deliberately generated drops; require zero NEW drops in runtime.
 sudo nsenter -t "$guardpid" -n iptables -Z MR_ENGINE_OUT
+sudo nsenter -t "$guardpid" -n ip6tables -Z OUTPUT
 docker start "$prefix-api"
 apipid=$(docker inspect --format '{{.State.Pid}}' "$prefix-api")
 test "$(sudo readlink "/proc/$apipid/ns/net")" = "$(sudo readlink "/proc/$guardpid/ns/net")"
@@ -193,11 +194,13 @@ helper /ci/db-probe.cjs snapshot > "$out/database-after-idle.json"
 cmp "$out/database-before-idle.json" "$out/database-after-idle.json"
 drops=$(sudo nsenter -t "$guardpid" -n iptables -L MR_ENGINE_OUT -n -v -x | awk '$3=="DROP"{print $1}')
 test "$drops" = 0
+v6drops=$(sudo nsenter -t "$guardpid" -n ip6tables -L OUTPUT -n -v -x | awk '$3=="DROP"{print $1}')
+test "$v6drops" = 0
 python3 - <<'PY'
 import json,pathlib,hashlib
 p=pathlib.Path('engine-evidence');d=json.loads((p/'database-after-idle.json').read_text())
 for r in d['migrations']:assert hashlib.sha256((pathlib.Path('prisma/migrations')/r['migration_name']/'migration.sql').read_bytes()).hexdigest()==r['checksum']
-d.update(background_observation_seconds=12,all_synthetic_table_hashes_unchanged=True,pending_outbox_sentinel_untouched=True,unexpected_runtime_IPv4_drops=0)
+d.update(background_observation_seconds=12,all_synthetic_table_hashes_unchanged=True,pending_outbox_sentinel_untouched=True,unexpected_runtime_IPv4_drops=0,unexpected_runtime_IPv6_drops=0)
 (p/'database.json').write_text(json.dumps(d,indent=2)+'\n')
 PY
 test "$(docker inspect --format '{{.State.Health.Status}}' "$prefix-api")" = healthy

@@ -21,15 +21,17 @@ test "$(docker image inspect --format '{{.Id}}' "$local")" = "$expected"
 test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$local")" = "$GITHUB_SHA"
 export DOCKER_CONFIG=$RUNNER_TEMP/engine-publish-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT
 mkdir -m 700 "$DOCKER_CONFIG"
-trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -f -- "$DOCKER_CONFIG/config.json"' EXIT
+trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -f -- "$DOCKER_CONFIG/config.json" "$DOCKER_CONFIG/manifest.json" "$DOCKER_CONFIG/lookup.err"' EXIT
 printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 unset GHCR_TOKEN
 tag=ghcr.io/pickupandgo/mr-trip-engine-lab:sha-$GITHUB_SHA
-if docker manifest inspect "$tag" >/dev/null 2>&1; then
+if docker manifest inspect "$tag" > "$DOCKER_CONFIG/manifest.json" 2> "$DOCKER_CONFIG/lookup.err"; then
  # Never replace an already published commit tag. Reuse only identical content.
  docker pull "$tag"
  test "$(docker image inspect --format '{{.Id}}' "$tag")" = "$expected"
 else
+ # Unknown auth/network/registry failures are NOT evidence that a tag is absent.
+ grep -Eiq 'manifest unknown|MANIFEST_UNKNOWN|no such manifest' "$DOCKER_CONFIG/lookup.err" || { echo 'REGISTRY_LOOKUP_NOT_PROVEN_ABSENT'; exit 1; }
  docker tag "$local" "$tag"
  docker push "$tag" | tee engine-publish/push.log
  docker pull "$tag"

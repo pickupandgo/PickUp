@@ -4,7 +4,9 @@ const { randomUUID } = require('node:crypto');
 const { request } = require('node:https');
 const { readFileSync } = require('node:fs');
 const checks = [];
+let currentCheck = 'startup';
 function check(name, fn) {
+  currentCheck = name;
   return Promise.resolve()
     .then(fn)
     .then(() => checks.push({ name, result: 'PASS' }));
@@ -172,7 +174,7 @@ async function waitForReady() {
     assert.equal(r.body.ride.id, rideId);
   });
   await check('another customer cannot read booking', async () =>
-    assert.equal((await req('/rides/' + rideId, { token: other })).status, 403),
+    assert.equal((await req('/rides/' + rideId, { token: other })).status, 404),
   );
   await check(
     'assignment reports only driver subject to Backend mock',
@@ -201,11 +203,21 @@ async function waitForReady() {
     ),
   );
   await check('other driver cannot read assigned trip', async () =>
-    assert.equal((await req('/trips/' + tripId, { token: other })).status, 403),
+    assert.equal((await req('/trips/' + tripId, { token: other })).status, 404),
   );
   const state = (await req('/__test/state', { mock: true })).body;
   await check('all Backend calls authenticated and contract-scoped', () => {
     assert.ok(state.calls.length >= 6);
+    for (const [method, path] of [
+      ['GET', /^\/v1\/internal\/fare-quotes\//],
+      ['GET', /^\/v1\/internal\/drivers\/by-subject\//],
+      ['POST', /^\/v1\/internal\/bookings$/],
+      ['POST', /^\/v1\/internal\/bookings\/[^/]+\/assign$/],
+      ['POST', /^\/v1\/internal\/trips\/[^/]+\/status$/],
+    ])
+      assert.ok(
+        state.calls.some((c) => c.method === method && path.test(c.path)),
+      );
     for (const c of state.calls) {
       assert.ok(c.contractValid);
       assert.ok(c.internalKeyValid);
@@ -268,6 +280,9 @@ async function waitForReady() {
       result: 'FAIL',
       checks,
       failed_after: checks.length,
+      failed_check: currentCheck,
+      ...(typeof e?.actual === 'number' ? { actual: e.actual } : {}),
+      ...(typeof e?.expected === 'number' ? { expected: e.expected } : {}),
       category: e?.code || e?.message || 'TEST_FAILURE',
     }),
   );

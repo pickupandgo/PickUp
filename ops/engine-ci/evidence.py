@@ -15,7 +15,7 @@ elif sys.argv[1] == 'summary':
         f=p/name
         return json.loads(f.read_text()) if f.exists() else None
     unit, suite = load('unit.json'), load('suite.json')
-    summary={'result':'PASS' if (p/'phase.txt').read_text().strip()=='all-tests-passed' else 'FAIL',
+    summary={'result':'PASS' if (p/'phase.txt').read_text().strip()=='all-tests-passed' and (load('cleanup.json') or {}).get('result')=='PASS' else 'FAIL',
         'phase':(p/'phase.txt').read_text().strip(),
         'unit':{k:unit.get(k) for k in ['success','numPassedTests','numFailedTests','numTotalTests','numPassedTestSuites']} if unit else None,
         'synthetic_E2E':{k:suite.get(k) for k in ['success','numPassedTests','numFailedTests','numTotalTests','numPassedTestSuites']} if suite else None,
