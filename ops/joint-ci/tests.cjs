@@ -718,8 +718,8 @@ async function business() {
     'unrelated customer and driver cannot retrieve private delivery evidence',
     async () => {
       requireState('proofId');
-      await eng('GET', proofPath(), 'other', undefined, 403);
-      await eng('GET', proofPath(), 'pending', undefined, 403);
+      await eng('GET', proofPath(), 'other', undefined, 404);
+      await eng('GET', proofPath(), 'pending', undefined, 404);
     },
   );
   await check(

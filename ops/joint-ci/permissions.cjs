@@ -1,7 +1,8 @@
 'use strict';
 // Actual non-owner runtime LOGIN, disposable synthetic DB only. All probes roll back.
 const a = require('node:assert/strict'),
-  { randomUUID } = require('node:crypto');
+  { randomUUID, createHash } = require('node:crypto');
+const { photo } = require('./photo.cjs');
 const { Client } =
   require('node:module').createRequire('/app/package.json')('pg');
 const checks = [];
@@ -56,6 +57,18 @@ async function deny(sql, params, code = '42501') {
     a.ok(
       source,
       'Actual HTTP flow must have verified a real synthetic photo first',
+    );
+    a.equal(
+      source.checksum_sha256,
+      createHash('sha256').update(photo()).digest('hex'),
+    );
+    a.notEqual(
+      (
+        await c.query(
+          "SELECT pg_get_userbyid(relowner) AS owner FROM pg_class WHERE oid='delivery_proofs'::regclass",
+        )
+      ).rows[0].owner,
+      'mr_app',
     );
     await c.query('BEGIN');
     await test('runtime SELECT of actual verified proof succeeds', async () =>

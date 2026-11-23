@@ -10,7 +10,7 @@ prefix=mr-joint-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT
 state=$RUNNER_TEMP/$prefix
 scripts=$GITHUB_WORKSPACE/ops/joint-ci
 out=$GITHUB_WORKSPACE/joint-evidence
-backend=ghcr.io/pickupandgo/mr-backend-rds-lab@sha256:f0514b3330d0cbb4f7f55ea62eaf6e39ca41a59c9edad2ed14b8b4bbc87ae1d4
+backend=ghcr.io/pickupandgo/mr-backend-proof-lab@sha256:16bda70f54fc987e445ca1ae26b16104e6abd8158a1e915196d76447cbe4749b
 engine=ghcr.io/pickupandgo/mr-trip-engine-lab@sha256:881dfd1efb49e0354c76b1613531dc793f4feb93e7490fc920c2c367cedb607e
 postgres=postgres:16.15-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
 mkdir -p "$out"
@@ -21,12 +21,12 @@ export MR_JOINT_BACKEND=$backend MR_JOINT_ENGINE=$engine
 python3 - <<'PY'
 import json,os,pathlib,subprocess
 images={}
-for service,sha in [('BACKEND','1fc2d3645f0a6412a8f11e82b2037006f57d8eff'),('ENGINE','d920295dd7ede9c2dac033801d7ff30688e14bdf')]:
+for service,sha in [('BACKEND','abcd1034116c493e73b660d77552d9c21a4caab3'),('ENGINE','d920295dd7ede9c2dac033801d7ff30688e14bdf')]:
  ref=os.environ['MR_JOINT_'+service];d=json.loads(subprocess.check_output(['docker','image','inspect',ref],text=True))[0]
  assert ref in d['RepoDigests'] and d['Config']['User']=='node'
  assert d['Config']['Cmd']==['node','dist/main.js'] and d['Config']['Labels']['org.opencontainers.image.revision']==sha
  assert d['Os']=='linux' and d['Architecture']=='amd64'
- images[service.lower()]={'reference':ref,'image_id':d['Id'],'source':sha,'rebuilt':False}
+ images[service.lower()]={'reference':ref,'image_id':d['Id'],'source':sha,'built_in_this_joint_job':False,'new_Backend_candidate':service=='BACKEND'}
 pathlib.Path('joint-evidence/images.json').write_text(json.dumps(images,indent=2)+'\n')
 PY
 python3 "$scripts/evidence.py" init
@@ -125,6 +125,8 @@ helper core "$engine" engine /ci/network.cjs > "$out/network-core.json"
 helper backguard "$backend" backend /ci/network.cjs > "$out/network-backguard.json"
 helper core "$engine" engine /ci/preflight.cjs engine > "$out/configuration-engine.json"
 helper backguard "$backend" backend /ci/preflight.cjs backend > "$out/configuration-backend.json"
+helper backguard ghcr.io/pickupandgo/mr-backend-rds-lab@sha256:f0514b3330d0cbb4f7f55ea62eaf6e39ca41a59c9edad2ed14b8b4bbc87ae1d4 backend /ci/presign-regression.cjs legacy > "$out/legacy-presign-diagnostic.json"
+helper backguard "$backend" backend /ci/presign-regression.cjs fixed > "$out/fixed-presign-regression.json"
 helper backguard "$backend" storage /ci/storage-protocol.cjs > "$out/storage-protocol.json"
 phase exact-source-synthetic-SQL-migrations
 for service in backend engine; do
@@ -216,6 +218,7 @@ for service in backend engine storage;do
   /ci/tests.cjs "after-$service-restart" > "$out/after-$service-restart.json"
 done
 phase background-workers-disabled-observation
+docker exec "$prefix-storage" node /ci/disk-audit.cjs > "$out/storage-disk.json"
 snapshot(){
  for db in mr_joint_backend_e2e mr_engine_synthetic_test;do
   psql "$db" -At <<'SQL'

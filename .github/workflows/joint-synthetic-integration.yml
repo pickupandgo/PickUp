@@ -1,4 +1,4 @@
-name: Joint immutable Backend and Engine synthetic integration - No Deployment
+name: Joint verified-photo lifecycle - No Deployment
 on:
   push:
     branches: [mr-joint-proof-ci-20261123]
@@ -33,6 +33,7 @@ jobs:
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
           unset REGISTRY_TOKEN
           docker pull ghcr.io/pickupandgo/mr-backend-rds-lab@sha256:f0514b3330d0cbb4f7f55ea62eaf6e39ca41a59c9edad2ed14b8b4bbc87ae1d4
+          docker pull ghcr.io/pickupandgo/mr-backend-proof-lab@sha256:16bda70f54fc987e445ca1ae26b16104e6abd8158a1e915196d76447cbe4749b
           docker pull ghcr.io/pickupandgo/mr-trip-engine-lab@sha256:881dfd1efb49e0354c76b1613531dc793f4feb93e7490fc920c2c367cedb607e
           docker pull postgres:16.15-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
       - name: Test the real pair with disposable synthetic data
