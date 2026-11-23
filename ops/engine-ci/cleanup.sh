@@ -12,9 +12,11 @@ failed=0
 for pair in unit:unit suite:suite; do
  name=${pair%:*};file=${pair#*:}
  if docker inspect "$prefix-$name" >/dev/null 2>&1; then
-  if docker cp "$prefix-$name:/tmp/$file.json" "engine-evidence/$file.raw.json" 2>/dev/null; then
-   python3 ops/engine-ci/evidence.py sanitize < "engine-evidence/$file.raw.json" > "engine-evidence/$file.json"
-   rm "engine-evidence/$file.raw.json"
+  if test "$(docker inspect --format '{{index .Config.Labels "io.multipleride.engine-ci"}}' "$prefix-$name")" != "$prefix"; then
+   failed=1;continue
+  fi
+  if docker exec "$prefix-$name" test -s "/tmp/$file.json" 2>/dev/null; then
+   docker exec "$prefix-$name" cat "/tmp/$file.json" | python3 ops/engine-ci/evidence.py sanitize > "engine-evidence/$file.json"
   fi
  fi
 done

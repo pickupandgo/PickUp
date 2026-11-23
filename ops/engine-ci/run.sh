@@ -42,9 +42,7 @@ wait_test(){
  done
  docker logs "$name" 2>&1 | python3 "$scripts/evidence.py" sanitize | tee "$out/$kind.log"
  if docker exec "$name" test -s "/tmp/$kind.json"; then
-  docker cp "$name:/tmp/$kind.json" "$out/$kind.raw.json"
-  python3 "$scripts/evidence.py" sanitize < "$out/$kind.raw.json" > "$out/$kind.json"
-  rm "$out/$kind.raw.json"
+  docker exec "$name" cat "/tmp/$kind.json" | python3 "$scripts/evidence.py" sanitize > "$out/$kind.json"
  fi
  test "$(docker exec "$name" cat /tmp/test-exit-code)" = 0
 }
@@ -148,8 +146,13 @@ for i in $(seq 1 30); do
  if docker exec "$prefix-mock" test -s /tmp/mock-pki/ca.pem; then break; fi;sleep 1
 done
 rm -f -- "$state/ca.pem"
-docker cp "$prefix-mock:/tmp/mock-pki/ca.pem" "$state/ca.pem"
+docker exec "$prefix-mock" cat /tmp/mock-pki/ca.pem > "$state/ca.pem"
 chmod 444 "$state/ca.pem"
+for i in $(seq 1 20); do
+ if helper -e "fetch('https://127.0.0.1:3443/__test/health',{signal:AbortSignal.timeout(1000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; then break; fi
+ sleep 1
+done
+helper -e "fetch('https://127.0.0.1:3443/__test/health',{signal:AbortSignal.timeout(1000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null
 docker create --name "$prefix-api" --label io.multipleride.engine-ci="$prefix" --network "container:$prefix-guard" \
  --read-only --memory 384m --memory-swap 384m --cpus 1 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges \
  --tmpfs /tmp:rw,noexec,nosuid,nodev,size=33554432,mode=1777 --env-file "$state/api.env" \
