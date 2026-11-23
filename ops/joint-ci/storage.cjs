@@ -2,7 +2,7 @@
 // Deliberately limited S3-protocol CI fixture, NOT an AWS service or production S3 emulator.
 // Real SigV4 checks, streamed bytes, CRC32/SHA256 integrity, AES-GCM files and immutable
 // on-disk object versions. No successful verification receipts are supplied by this service.
-const http = require('node:http'),
+const http = require('node:https'),
   fs = require('node:fs'),
   path = require('node:path');
 const {
@@ -126,152 +126,162 @@ function xml(res, status, code) {
   res.end('<Error><Code>' + code + '</Code></Error>');
 }
 http
-  .createServer(async (req, res) => {
-    try {
-      const u = new URL(req.url, 'http://172.29.63.5:9000');
-      if (u.pathname === '/__test/health') {
-        res.end('ok');
-        return;
-      }
-      if (u.pathname === '/__test/audit') {
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify(audit));
-        return;
-      }
-      if (
-        req.headers.host !== '172.29.63.5:9000' ||
-        !u.pathname.startsWith('/mr-proof-ci/delivery-proofs/')
-      )
-        return xml(res, 403, 'AccessDenied');
-      const chunks = [];
-      let size = 0;
-      for await (const c of req) {
-        size += c.length;
-        if (size > 1024 * 1024) return xml(res, 413, 'TooLarge');
-        chunks.push(c);
-      }
-      const raw = Buffer.concat(chunks);
-      if (!authorize(req, u, raw)) {
-        audit.denied++;
-        return xml(res, 403, 'SignatureDoesNotMatch');
-      }
-      const object = u.pathname.slice('/mr-proof-ci/'.length);
-      if (!/^delivery-proofs\/[a-f0-9-]+\/\d+\/[a-f0-9-]+$/.test(object))
-        return xml(res, 403, 'AccessDenied');
-      const dir = path.join('/data/objects', digest(object));
-      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-      if (req.method === 'PUT') {
-        const metadata =
-          u.searchParams.get('x-amz-meta-documentid') ||
-          req.headers['x-amz-meta-documentid'];
-        const sse =
-          u.searchParams.get('x-amz-server-side-encryption') ||
-          req.headers['x-amz-server-side-encryption'];
-        if (
-          sse !== 'AES256' ||
-          !metadata ||
-          raw.length !== Number(req.headers['content-length'])
-        )
-          return xml(res, 400, 'InvalidArgument');
-        const crc =
-          u.searchParams.get('x-amz-checksum-crc32') ||
-          req.headers['x-amz-checksum-crc32'];
-        if (crc) {
-          const b = Buffer.alloc(4);
-          b.writeUInt32BE(crc32(raw));
-          if (crc !== b.toString('base64')) {
-            audit.crc_failures++;
-            return xml(res, 400, 'BadDigest');
-          }
+  .createServer(
+    {
+      key: fs.readFileSync('/ci-key.pem'),
+      cert: fs.readFileSync('/ci-ca.pem'),
+    },
+    async (req, res) => {
+      try {
+        const u = new URL(req.url, 'https://172.29.63.5:9000');
+        if (u.pathname === '/__test/health') {
+          res.end('ok');
+          return;
         }
-        const v = randomUUID(),
-          iv = randomBytes(12),
-          cipher = createCipheriv('aes-256-gcm', key, iv);
-        cipher.setAAD(Buffer.from(object + '\0' + v));
-        const encrypted = Buffer.concat([cipher.update(raw), cipher.final()]);
-        const record = {
-          v,
-          object,
-          size: raw.length,
-          type: req.headers['content-type'],
-          documentid: metadata,
-          sse,
-          etag: createHash('md5').update(raw).digest('hex'),
-          sha256: digest(raw),
-          iv: iv.toString('hex'),
-          tag: cipher.getAuthTag().toString('hex'),
-        };
-        fs.writeFileSync(path.join(dir, v + '.bin'), encrypted, {
-          mode: 0o600,
-          flag: 'wx',
-        });
-        fs.writeFileSync(path.join(dir, v + '.json'), JSON.stringify(record), {
-          mode: 0o600,
-          flag: 'wx',
-        });
-        fs.writeFileSync(path.join(dir, 'latest.tmp'), v, { mode: 0o600 });
-        fs.renameSync(path.join(dir, 'latest.tmp'), path.join(dir, 'latest'));
-        audit.put++;
-        res.writeHead(200, {
+        if (u.pathname === '/__test/audit') {
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify(audit));
+          return;
+        }
+        if (
+          req.headers.host !== '172.29.63.5:9000' ||
+          !u.pathname.startsWith('/mr-proof-ci/delivery-proofs/')
+        )
+          return xml(res, 403, 'AccessDenied');
+        const chunks = [];
+        let size = 0;
+        for await (const c of req) {
+          size += c.length;
+          if (size > 1024 * 1024) return xml(res, 413, 'TooLarge');
+          chunks.push(c);
+        }
+        const raw = Buffer.concat(chunks);
+        if (!authorize(req, u, raw)) {
+          audit.denied++;
+          return xml(res, 403, 'SignatureDoesNotMatch');
+        }
+        const object = u.pathname.slice('/mr-proof-ci/'.length);
+        if (!/^delivery-proofs\/[a-f0-9-]+\/\d+\/[a-f0-9-]+$/.test(object))
+          return xml(res, 403, 'AccessDenied');
+        const dir = path.join('/data/objects', digest(object));
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        if (req.method === 'PUT') {
+          const metadata =
+            u.searchParams.get('x-amz-meta-documentid') ||
+            req.headers['x-amz-meta-documentid'];
+          const sse =
+            u.searchParams.get('x-amz-server-side-encryption') ||
+            req.headers['x-amz-server-side-encryption'];
+          if (
+            sse !== 'AES256' ||
+            !metadata ||
+            raw.length !== Number(req.headers['content-length'])
+          )
+            return xml(res, 400, 'InvalidArgument');
+          const crc =
+            u.searchParams.get('x-amz-checksum-crc32') ||
+            req.headers['x-amz-checksum-crc32'];
+          if (crc) {
+            const b = Buffer.alloc(4);
+            b.writeUInt32BE(crc32(raw));
+            if (crc !== b.toString('base64')) {
+              audit.crc_failures++;
+              return xml(res, 400, 'BadDigest');
+            }
+          }
+          const v = randomUUID(),
+            iv = randomBytes(12),
+            cipher = createCipheriv('aes-256-gcm', key, iv);
+          cipher.setAAD(Buffer.from(object + '\0' + v));
+          const encrypted = Buffer.concat([cipher.update(raw), cipher.final()]);
+          const record = {
+            v,
+            object,
+            size: raw.length,
+            type: req.headers['content-type'],
+            documentid: metadata,
+            sse,
+            etag: createHash('md5').update(raw).digest('hex'),
+            sha256: digest(raw),
+            iv: iv.toString('hex'),
+            tag: cipher.getAuthTag().toString('hex'),
+          };
+          fs.writeFileSync(path.join(dir, v + '.bin'), encrypted, {
+            mode: 0o600,
+            flag: 'wx',
+          });
+          fs.writeFileSync(
+            path.join(dir, v + '.json'),
+            JSON.stringify(record),
+            {
+              mode: 0o600,
+              flag: 'wx',
+            },
+          );
+          fs.writeFileSync(path.join(dir, 'latest.tmp'), v, { mode: 0o600 });
+          fs.renameSync(path.join(dir, 'latest.tmp'), path.join(dir, 'latest'));
+          audit.put++;
+          res.writeHead(200, {
+            etag: '"' + record.etag + '"',
+            'x-amz-version-id': v,
+            'x-amz-server-side-encryption': 'AES256',
+          });
+          res.end();
+          return;
+        }
+        if (!['HEAD', 'GET'].includes(req.method))
+          return xml(res, 405, 'MethodNotAllowed');
+        const v =
+          u.searchParams.get('versionId') ||
+          fs.readFileSync(path.join(dir, 'latest'), 'utf8');
+        if (!/^[a-f0-9-]{36}$/.test(v)) return xml(res, 404, 'NoSuchVersion');
+        const record = JSON.parse(
+          fs.readFileSync(path.join(dir, v + '.json'), 'utf8'),
+        );
+        if (record.v !== v || record.object !== object)
+          throw Error('BINDING_FAILURE');
+        const headers = {
+          'content-length': record.size,
+          'content-type': record.type,
           etag: '"' + record.etag + '"',
           'x-amz-version-id': v,
-          'x-amz-server-side-encryption': 'AES256',
-        });
-        res.end();
-        return;
-      }
-      if (!['HEAD', 'GET'].includes(req.method))
-        return xml(res, 405, 'MethodNotAllowed');
-      const v =
-        u.searchParams.get('versionId') ||
-        fs.readFileSync(path.join(dir, 'latest'), 'utf8');
-      if (!/^[a-f0-9-]{36}$/.test(v)) return xml(res, 404, 'NoSuchVersion');
-      const record = JSON.parse(
-        fs.readFileSync(path.join(dir, v + '.json'), 'utf8'),
-      );
-      if (record.v !== v || record.object !== object)
-        throw Error('BINDING_FAILURE');
-      const headers = {
-        'content-length': record.size,
-        'content-type': record.type,
-        etag: '"' + record.etag + '"',
-        'x-amz-version-id': v,
-        'x-amz-meta-documentid': record.documentid,
-        'x-amz-server-side-encryption': record.sse,
-        'cache-control': 'no-store',
-      };
-      if (req.method === 'HEAD') {
-        audit.head++;
-        res.writeHead(200, headers);
-        res.end();
-        return;
-      }
-      const decipher = createDecipheriv(
-        'aes-256-gcm',
-        key,
-        Buffer.from(record.iv, 'hex'),
-      );
-      decipher.setAAD(Buffer.from(object + '\0' + v));
-      decipher.setAuthTag(Buffer.from(record.tag, 'hex'));
-      const bytes = Buffer.concat([
-        decipher.update(fs.readFileSync(path.join(dir, v + '.bin'))),
-        decipher.final(),
-      ]);
-      if (digest(bytes) !== record.sha256)
-        throw Error('DISK_INTEGRITY_FAILURE');
-      audit.get++;
-      res.writeHead(200, headers);
-      res.end(bytes);
-    } catch (e) {
-      if (!res.headersSent)
-        xml(
-          res,
-          e.code === 'ENOENT' ? 404 : 500,
-          e.code === 'ENOENT' ? 'NoSuchKey' : 'FixtureIntegrityFailure',
+          'x-amz-meta-documentid': record.documentid,
+          'x-amz-server-side-encryption': record.sse,
+          'cache-control': 'no-store',
+        };
+        if (req.method === 'HEAD') {
+          audit.head++;
+          res.writeHead(200, headers);
+          res.end();
+          return;
+        }
+        const decipher = createDecipheriv(
+          'aes-256-gcm',
+          key,
+          Buffer.from(record.iv, 'hex'),
         );
-      else res.destroy();
-    }
-  })
+        decipher.setAAD(Buffer.from(object + '\0' + v));
+        decipher.setAuthTag(Buffer.from(record.tag, 'hex'));
+        const bytes = Buffer.concat([
+          decipher.update(fs.readFileSync(path.join(dir, v + '.bin'))),
+          decipher.final(),
+        ]);
+        if (digest(bytes) !== record.sha256)
+          throw Error('DISK_INTEGRITY_FAILURE');
+        audit.get++;
+        res.writeHead(200, headers);
+        res.end(bytes);
+      } catch (e) {
+        if (!res.headersSent)
+          xml(
+            res,
+            e.code === 'ENOENT' ? 404 : 500,
+            e.code === 'ENOENT' ? 'NoSuchKey' : 'FixtureIntegrityFailure',
+          );
+        else res.destroy();
+      }
+    },
+  )
   .listen(9000, '0.0.0.0', () =>
     console.log('SYNTHETIC_ENCRYPTED_VERSION_STORAGE_READY'),
   );

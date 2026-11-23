@@ -30,6 +30,11 @@ for service,sha in [('BACKEND','1fc2d3645f0a6412a8f11e82b2037006f57d8eff'),('ENG
 pathlib.Path('joint-evidence/images.json').write_text(json.dumps(images,indent=2)+'\n')
 PY
 python3 "$scripts/evidence.py" init
+# Private CI-only TLS identity; never logged, committed, uploaded or sent to Windows.
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=joint-ci.invalid \
+ -addext 'subjectAltName=IP:127.0.0.1,IP:172.29.63.3,IP:172.29.63.5,IP:172.29.63.6' \
+ -keyout "$state/ci-key.pem" -out "$state/ca.pem" >/dev/null 2>&1
+chmod 444 "$state/ca.pem";chmod 400 "$state/ci-key.pem";sudo chown 1000:1000 "$state/ci-key.pem"
 for image in "$backend" "$engine";do
  docker run --rm --network none --read-only --memory 128m --memory-swap 128m --cpus .5 --pids-limit 32 --cap-drop ALL --security-opt no-new-privileges \
   --entrypoint node "$image" -e "const f=require('node:fs');for(const p of ['/app/.env','/app/.env.production','/app/.git'])if(f.existsSync(p))throw Error('UNEXPECTED_RUNTIME_CONTENT');console.log('NO_EMBEDDED_ENV_PASS')"
@@ -70,7 +75,7 @@ done
 docker volume create --label io.multipleride.joint-ci="$prefix" "$prefix-photo-data" >/dev/null
 docker run --rm --name "$prefix-storage-init" "${common[@]}" --network none --user root --cap-add CHOWN \
  --memory 64m --memory-swap 64m --cpus .2 --pids-limit 32 --mount "type=volume,source=$prefix-photo-data,target=/data" \
- --entrypoint node "$backend" -e "const f=require('node:fs');f.chownSync('/data',1000,1000);f.chmodSync('/data',0o700)"
+ --entrypoint node "$backend" -e "const f=require('node:fs');f.chmodSync('/data',0o700);f.chownSync('/data',1000,1000)"
 docker run -d --name "$prefix-storeguard" "${common[@]}" --network "$prefix-net" --ip 172.29.63.5 \
  --memory 64m --memory-swap 64m --cpus .2 --pids-limit 32 --entrypoint node "$backend" -e 'setInterval(()=>{},60000)'
 for pair in storage:5 scanner:6;do
@@ -78,6 +83,7 @@ for pair in storage:5 scanner:6;do
  if test "$name" = storage;then extra=(--mount "type=volume,source=$prefix-photo-data,target=/data");netargs=(--network "container:$prefix-storeguard");fi
  docker run -d --name "$prefix-$name" "${common[@]}" "${netargs[@]}" \
   --memory 192m --memory-swap 192m --cpus .5 --pids-limit 64 --env-file "$state/$name.env" \
+  --mount "type=bind,source=$state/ci-key.pem,target=/ci-key.pem,readonly" --mount "type=bind,source=$state/ca.pem,target=/ci-ca.pem,readonly" \
   --mount "type=bind,source=$scripts,target=/ci,readonly" "${extra[@]}" --entrypoint node "$backend" "/ci/$name.cjs"
 done
 for name in core backguard db storeguard scanner; do
@@ -115,7 +121,6 @@ helper(){
   --mount "type=bind,source=$scripts,target=/ci,readonly" --mount "type=bind,source=$state/ca.pem,target=/ci-ca.pem,readonly" \
   --entrypoint node "$img" "$@"
 }
-touch "$state/ca.pem";chmod 444 "$state/ca.pem"
 helper core "$engine" engine /ci/network.cjs > "$out/network-core.json"
 helper backguard "$backend" backend /ci/network.cjs > "$out/network-backguard.json"
 helper core "$engine" engine /ci/preflight.cjs engine > "$out/configuration-engine.json"
@@ -167,10 +172,11 @@ docker run --rm --name "$prefix-seed" "${common[@]}" --network "container:$prefi
 docker run -d --name "$prefix-gateway" "${common[@]}" --network "container:$prefix-core" \
  --memory 128m --memory-swap 128m --cpus .5 --pids-limit 64 --env-file "$state/gateway.env" \
  --tmpfs /tmp:rw,noexec,nosuid,nodev,size=33554432,mode=1777 \
+ --mount "type=bind,source=$state/ci-key.pem,target=/ci-key.pem,readonly" --mount "type=bind,source=$state/ca.pem,target=/ci-ca.pem,readonly" \
  --mount "type=bind,source=$scripts,target=/ci,readonly" --entrypoint node "$engine" /ci/gateway.cjs
-for i in $(seq 1 30);do if docker exec "$prefix-gateway" test -s /tmp/joint-pki/ca.pem;then break;fi;sleep 1;done
-rm -f "$state/ca.pem"
-docker exec "$prefix-gateway" cat /tmp/joint-pki/ca.pem > "$state/ca.pem";chmod 444 "$state/ca.pem"
+for i in $(seq 1 20);do
+ if helper core "$engine" engine -e "fetch('https://127.0.0.1:3443/__test/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1;then break;fi;sleep 1
+done
 helper core "$engine" engine -e "fetch('https://127.0.0.1:3443/__test/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 for service in backend engine;do
  if test "$service" = backend;then ns=backguard;img=$backend;mem=512m;else ns=core;img=$engine;mem=384m;fi

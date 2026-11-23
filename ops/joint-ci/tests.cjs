@@ -558,7 +558,7 @@ async function business() {
     );
   const upload = async (p, b, status = 200) => {
     const u = new URL(p.upload.url);
-    a.equal(u.origin, 'http://172.29.63.5:9000');
+    a.equal(u.origin, 'https://172.29.63.5:9000');
     a.equal(u.username, '');
     a.equal(u.password, '');
     const r = await fetch(u, {
@@ -622,7 +622,7 @@ async function business() {
       await upload(p, infected);
       await complete(p, 422);
       const scan = await request(
-        'http://172.29.63.6:9080',
+        'https://172.29.63.6:9080',
         'GET',
         '/__test/state',
       );
@@ -643,14 +643,14 @@ async function business() {
     async () => {
       requireState('proofId');
       await upload(plan, bytes);
-      await request('http://172.29.63.6:9080', 'POST', '/__test/unavailable', {
+      await request('https://172.29.63.6:9080', 'POST', '/__test/unavailable', {
         body: { enabled: true },
       });
       try {
         await complete(plan, 503);
       } finally {
         await request(
-          'http://172.29.63.6:9080',
+          'https://172.29.63.6:9080',
           'POST',
           '/__test/unavailable',
           { body: { enabled: false } },
@@ -670,7 +670,7 @@ async function business() {
       a.equal(r.proofId, plan.proofId);
       state.photoSha256 = sha(bytes);
       const records = (
-        await request('http://172.29.63.6:9080', 'GET', '/__test/state')
+        await request('https://172.29.63.6:9080', 'GET', '/__test/state')
       ).records;
       a.ok(
         records.some(
@@ -685,7 +685,7 @@ async function business() {
       const n = records.length;
       await complete(plan);
       a.equal(
-        (await request('http://172.29.63.6:9080', 'GET', '/__test/state'))
+        (await request('https://172.29.63.6:9080', 'GET', '/__test/state'))
           .records.length,
         n,
       );
@@ -774,7 +774,7 @@ async function evidenceBytes(as) {
   a.equal(r.proofId, state.proofId);
   a.equal(r.ready, true);
   const u = new URL(r.url);
-  a.equal(u.origin, 'http://172.29.63.5:9000');
+  a.equal(u.origin, 'https://172.29.63.5:9000');
   a.equal(u.searchParams.get('versionId'), state.proofVersion);
   const f = await fetch(u, {
     redirect: 'error',

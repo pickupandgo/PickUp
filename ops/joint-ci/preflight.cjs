@@ -63,14 +63,14 @@ if (mode === 'engine') {
   a.equal(c.collections.product, null);
   a.equal(c.collections.simulated, false);
   a.equal(c.simulation.enabled, false);
-  a.equal(c.documents.storage.endpoint, 'http://172.29.63.5:9000');
+  a.equal(c.documents.storage.endpoint, 'https://172.29.63.5:9000');
   a.equal(c.documents.storage.bucket, 'mr-proof-ci');
   a.equal(c.documents.storage.region, 'ap-south-1');
   a.equal(c.documents.storage.forcePathStyle, true);
   a.ok(c.documents.storage.accessKeyId.startsWith('dummy_'));
   a.ok(c.documents.storage.secretAccessKey.startsWith('dummy_'));
   a.equal(c.documents.scanner.kind, 'http');
-  a.equal(c.documents.scanner.url, 'http://172.29.63.6:9080/scan');
+  a.equal(c.documents.scanner.url, 'https://172.29.63.6:9080/scan');
   a.ok(c.documents.scanner.token.startsWith('dummy_'));
   a.equal(c.googleRoutes, undefined);
   a.equal(c.razorpay.mode, 'test');

@@ -33,7 +33,7 @@ if docker volume inspect "$prefix-photo-data" >/dev/null 2>&1;then
  else failed=1;fi
 fi
 if test -d "$state";then
- rm -f -- "$state/db.env" "$state/backend.env" "$state/engine.env" "$state/gateway.env" "$state/seed.env" "$state/storage.env" "$state/scanner.env" "$state/dummy.json" "$state/roles.sql" "$state/ca.pem" "$state/state.json"
+ rm -f -- "$state/db.env" "$state/backend.env" "$state/engine.env" "$state/gateway.env" "$state/seed.env" "$state/storage.env" "$state/scanner.env" "$state/dummy.json" "$state/roles.sql" "$state/ca.pem" "$state/ci-key.pem" "$state/state.json"
 fi
 test -z "$(docker ps -aq --filter "label=io.multipleride.joint-ci=$prefix")" || failed=1
 export MR_JOINT_CLEANUP_FAILED=$failed

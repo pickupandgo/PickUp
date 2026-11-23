@@ -7,7 +7,7 @@ const { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand } =
   r('@aws-sdk/client-s3');
 const checks = [];
 const c = new S3Client({
-  endpoint: 'http://172.29.63.5:9000',
+  endpoint: 'https://172.29.63.5:9000',
   region: 'ap-south-1',
   forcePathStyle: true,
   credentials: {

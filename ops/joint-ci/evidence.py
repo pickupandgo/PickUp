@@ -19,8 +19,8 @@ if mode=='init':
  policy={'MANUAL_KYC_POLICY_VERSION':'CONTRACT_E2E_POLICY_V1','MANUAL_KYC_REQUIRED_DOCUMENTS':'IDENTITY,LICENSE','MANUAL_KYC_CHECKLIST':'FACE_MATCH,NAME_MATCH','VEHICLE_REQUIRED_DOCUMENTS':'RC,INSURANCE'}
  save('db.env',{'POSTGRES_USER':'ci_owner','POSTGRES_PASSWORD':values['owner'],'POSTGRES_DB':'mr_joint_backend_e2e'})
  save('gateway.env',{'CI_INTERNAL_KEY':values['key']})
- save('storage.env',{'CI_STORAGE_ACCESS_KEY':values['storage_access'],'CI_STORAGE_SECRET':values['storage_secret'],'CI_STORAGE_ENCRYPTION_KEY':values['cipher']})
- save('scanner.env',{'CI_SCANNER_TOKEN':values['scanner']})
+ save('storage.env',{'CI_STORAGE_ACCESS_KEY':values['storage_access'],'CI_STORAGE_SECRET':values['storage_secret'],'CI_STORAGE_ENCRYPTION_KEY':values['cipher'],'NODE_EXTRA_CA_CERTS':'/ci-ca.pem'})
+ save('scanner.env',{'CI_SCANNER_TOKEN':values['scanner'],'NODE_EXTRA_CA_CERTS':'/ci-ca.pem'})
  base={'NODE_EXTRA_CA_CERTS':'/ci-ca.pem','NODE_OPTIONS':'--max-old-space-size=256','DATABASE_POOL_MAX':'3','AUTH_ISSUER':'https://engine-ci.invalid','AUTH_AUDIENCE':'mr-engine-ci','PORT':'3000'}
  save('engine.env',{**base,'NODE_ENV':'production','MR_SYNTHETIC_ONLY':'true',
   'DATABASE_URL':f"postgresql://engine_ci_runtime:{values['engine']}@172.29.63.2:5432/mr_engine_synthetic_test",
@@ -36,9 +36,9 @@ if mode=='init':
   'MR_DISABLE_CHAT_CLEANUP':'true','FCM_ENABLED':'false','SETTLEMENT_PROVIDER':'disabled','SETTLEMENT_SYNC_INTERVAL_MINUTES':'0',
   'PAYOUT_PROVIDER':'disabled','PAYOUT_SCHEDULE_ENABLED':'false','PAYOUT_AUTO_EXECUTE':'false',
   'REFUND_PROVIDER':'disabled','REFUND_AUTO_ON_CANCEL':'false','COLLECTION_LINK_PROVIDER':'disabled',
-  'DOCUMENT_STORAGE_PROVIDER':'s3','DOCUMENT_STORAGE_ENDPOINT':'http://172.29.63.5:9000','DOCUMENT_STORAGE_REGION':'ap-south-1','DOCUMENT_STORAGE_BUCKET':'mr-proof-ci',
+  'DOCUMENT_STORAGE_PROVIDER':'s3','DOCUMENT_STORAGE_ENDPOINT':'https://172.29.63.5:9000','DOCUMENT_STORAGE_REGION':'ap-south-1','DOCUMENT_STORAGE_BUCKET':'mr-proof-ci',
   'DOCUMENT_STORAGE_ACCESS_KEY_ID':values['storage_access'],'DOCUMENT_STORAGE_SECRET_ACCESS_KEY':values['storage_secret'],'DOCUMENT_STORAGE_FORCE_PATH_STYLE':'true',
-  'DOCUMENT_SCANNER_PROVIDER':'http','DOCUMENT_SCANNER_URL':'http://172.29.63.6:9080/scan','DOCUMENT_SCANNER_TOKEN':values['scanner'],
+  'DOCUMENT_SCANNER_PROVIDER':'http','DOCUMENT_SCANNER_URL':'https://172.29.63.6:9080/scan','DOCUMENT_SCANNER_TOKEN':values['scanner'],
   'MANUAL_KYC_ENABLED':'false','SWAGGER_ENABLED':'false'}
  save('backend.env',backend)
  save('seed.env',{**policy,'NODE_ENV':'test','CONTRACT_E2E_FIXTURE':'true',

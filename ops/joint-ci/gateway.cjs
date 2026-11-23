@@ -3,33 +3,10 @@
 // are fixtures. Normal Backend status/headers/body pass through unchanged.
 const https = require('node:https'),
   http = require('node:http');
-const { mkdirSync, readFileSync } = require('node:fs');
-const { execFileSync } = require('node:child_process');
+const { readFileSync } = require('node:fs');
 const { generateKeyPairSync } = require('node:crypto');
 const jwt =
   require('node:module').createRequire('/app/package.json')('jsonwebtoken');
-mkdirSync('/tmp/joint-pki', { mode: 0o700 });
-execFileSync(
-  'openssl',
-  [
-    'req',
-    '-x509',
-    '-newkey',
-    'rsa:2048',
-    '-nodes',
-    '-days',
-    '1',
-    '-subj',
-    '/CN=joint-ci.invalid',
-    '-addext',
-    'subjectAltName=IP:127.0.0.1,IP:172.29.63.3',
-    '-keyout',
-    '/tmp/joint-pki/key.pem',
-    '-out',
-    '/tmp/joint-pki/ca.pem',
-  ],
-  { stdio: 'ignore' },
-);
 const pair = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const jwk = {
   ...pair.publicKey.export({ format: 'jwk' }),
@@ -43,8 +20,8 @@ const allowed =
   /^\/(?:health(?:\/live|\/ready)?|v1\/(?:internal\/(?:drivers|fare-quotes|bookings|trips|delivery-proofs)(?:\/.*)?|fare\/quotes(?:\/.*)?|wallet|admin\/wallets\/[0-9a-f-]+\/adjustments|trips\/[0-9a-f-]+\/collections))$/i;
 const server = https.createServer(
   {
-    key: readFileSync('/tmp/joint-pki/key.pem'),
-    cert: readFileSync('/tmp/joint-pki/ca.pem'),
+    key: readFileSync('/ci-key.pem'),
+    cert: readFileSync('/ci-ca.pem'),
   },
   async (req, res) => {
     try {
