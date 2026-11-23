@@ -40,6 +40,10 @@ export class DocumentStorageService {
           endpoint: storage.endpoint,
           region: storage.region,
           forcePathStyle: storage.forcePathStyle,
+          // A presigned PUT has no Body yet. Automatic CRC32 would otherwise sign
+          // the empty-body checksum, rejecting the driver's actual photo bytes.
+          // verifyUpload + scanning still hash/read the exact stored object version.
+          requestChecksumCalculation: 'WHEN_REQUIRED',
           credentials: {
             accessKeyId: storage.accessKeyId,
             secretAccessKey: storage.secretAccessKey,

@@ -1,0 +1,57 @@
+name: Backend proof candidate image - No Deployment
+on:
+  push:
+    branches: [mr-backend-proof-grants-20261123]
+permissions:
+  contents: read
+concurrency:
+  group: backend-proof-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  candidate:
+    if: github.repository == 'pickupandgo/PickUp' && github.ref == 'refs/heads/mr-backend-proof-grants-20261123'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    env:
+      NODE_IMAGE: node:24.21.0-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
+      IMAGE: ghcr.io/pickupandgo/mr-backend-proof-lab
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Test storage, proof security and safety configuration without network or DB
+        run: |
+          set -euo pipefail
+          docker build --target deps --build-arg NODE_IMAGE="$NODE_IMAGE" -t mr-proof-test-deps .
+          docker run --rm --network none --memory 2g --memory-swap 2g --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/source,readonly" mr-proof-test-deps sh -ec '
+              cp /source/tsconfig.json /source/prisma.config.ts /app/
+              cp -R /source/src /source/prisma /source/test /app/
+              npm run prisma:generate
+              npm test -- --runInBand --runTestsByPath src/onboarding/document-storage.service.spec.ts src/delivery-proofs/delivery-proofs.service.spec.ts src/chat/chat-cleanup.service.spec.ts src/config/app-config.spec.ts src/auth/auth.guard.spec.ts src/prisma/prisma.service.spec.ts
+            '
+      - name: Build a NEW candidate, preserving the old Backend image
+        run: |
+          set -euo pipefail
+          docker build --target runtime --build-arg NODE_IMAGE="$NODE_IMAGE" \
+            --label org.opencontainers.image.source=https://github.com/pickupandgo/PickUp \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" -t "$IMAGE:$GITHUB_SHA" .
+          test "$(docker image inspect --format '{{.Config.User}}' "$IMAGE:$GITHUB_SHA")" = node
+          test "$(docker image inspect --format '{{json .Config.Cmd}}' "$IMAGE:$GITHUB_SHA")" = '["node","dist/main.js"]'
+          docker run --rm --network none --read-only --memory 128m --memory-swap 128m --pids-limit 32 --cap-drop ALL --security-opt no-new-privileges --entrypoint node "$IMAGE:$GITHUB_SHA" \
+            -e "const f=require('node:fs');for(const p of ['/app/.env','/app/.git','/app/test'])if(f.existsSync(p))throw Error('UNEXPECTED_RUNTIME_CONTENT');console.log('RUNTIME_CONTENT_PASS')"
+      - name: Publish candidate for subsequent joint synthetic verification
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$RUNNER_TEMP/proof-registry"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -f -- "$DOCKER_CONFIG/config.json"' EXIT
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          unset REGISTRY_TOKEN
+          docker push "$IMAGE:$GITHUB_SHA"
+          docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE:$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

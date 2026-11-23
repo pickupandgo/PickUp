@@ -25,6 +25,27 @@ const config = {
 } as unknown as AppConfig;
 
 describe('DocumentStorageService', () => {
+  it('presigns unknown nonempty photo bytes without an empty-body checksum', async () => {
+    const service = new DocumentStorageService(config);
+    const plan = await service.uploadUrl({
+      key: 'delivery-proofs/synthetic/1/photo',
+      contentType: 'image/jpeg',
+      sizeBytes: 512,
+      documentId: 'synthetic-photo',
+    });
+    const url = new URL(plan.url);
+    expect(url.protocol).toBe('https:');
+    expect(url.searchParams.get('x-amz-checksum-crc32')).toBeNull();
+    expect(url.searchParams.get('x-amz-sdk-checksum-algorithm')).toBeNull();
+    expect(url.searchParams.get('x-amz-meta-documentid')).toBe('synthetic-photo');
+    expect(url.searchParams.get('X-Amz-SignedHeaders')).toContain('x-amz-server-side-encryption');
+    expect(plan.headers).toEqual({
+      'content-type': 'image/jpeg',
+      'content-length': '512',
+      'x-amz-server-side-encryption': 'AES256',
+    });
+  });
+
   it('rejects disallowed content types and oversized files before storage access', () => {
     const service = new DocumentStorageService(config);
     expect(() => service.assertInput('text/html', 10)).toThrow('content type');
