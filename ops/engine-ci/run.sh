@@ -33,15 +33,26 @@ test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainer
 docker run --rm --network none --read-only --memory 128m --memory-swap 128m --pids-limit 32 --cap-drop ALL --security-opt no-new-privileges \
  --entrypoint node "$image" -e "const f=require('node:fs');for(const p of ['/app/.env','/app/.env.example','/app/.git','/app/test','/app/node_modules/prisma','/app/node_modules/@nestjs/cli'])if(f.existsSync(p))throw Error('UNEXPECTED_RUNTIME_CONTENT');console.log('RUNTIME_CONTENT_PASS')"
 phase unit-and-typecheck
-docker run --name "$prefix-unit" --label io.multipleride.engine-ci="$prefix" --network none --read-only \
+wait_test(){
+ local name=$1 kind=$2
+ for i in $(seq 1 600); do
+  if docker exec "$name" test -f /tmp/test-exit-code; then break; fi
+  test "$(docker inspect --format '{{.State.Running}}' "$name")" = true
+  sleep 1
+ done
+ docker logs "$name" 2>&1 | python3 "$scripts/evidence.py" sanitize | tee "$out/$kind.log"
+ if docker exec "$name" test -s "/tmp/$kind.json"; then
+  docker cp "$name:/tmp/$kind.json" "$out/$kind.raw.json"
+  python3 "$scripts/evidence.py" sanitize < "$out/$kind.raw.json" > "$out/$kind.json"
+  rm "$out/$kind.raw.json"
+ fi
+ test "$(docker exec "$name" cat /tmp/test-exit-code)" = 0
+}
+docker run -d --name "$prefix-unit" --label io.multipleride.engine-ci="$prefix" --network none --read-only \
  --memory 1536m --memory-swap 1536m --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges \
- --tmpfs /tmp:rw,nosuid,nodev,size=536870912,mode=1777 --entrypoint sh "$tools" -ec '
- node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit --incremental false
- node node_modules/jest/bin/jest.js --runInBand --json --outputFile=/tmp/unit.json
- ' 2>&1 | python3 "$scripts/evidence.py" sanitize | tee "$out/unit.log"
-docker cp "$prefix-unit:/tmp/unit.json" "$out/unit.raw.json"
-python3 "$scripts/evidence.py" sanitize < "$out/unit.raw.json" > "$out/unit.json"
-rm "$out/unit.raw.json"
+ --tmpfs /tmp:rw,nosuid,nodev,size=536870912,mode=1777 \
+ --mount "type=bind,source=$scripts,target=/ci,readonly" --entrypoint sh "$tools" /ci/run-tests.sh unit
+wait_test "$prefix-unit" unit
 phase internal-network
 python3 - <<'PY'
 import ipaddress,json,subprocess
@@ -123,15 +134,11 @@ done
 psql < "$state/runtime.sql"
 rm "$state/runtime.sql"
 phase existing-synthetic-regression-suite
-docker run --name "$prefix-suite" --label io.multipleride.engine-ci="$prefix" --network "container:$prefix-guard" \
+docker run -d --name "$prefix-suite" --label io.multipleride.engine-ci="$prefix" --network "container:$prefix-guard" \
  --read-only --memory 1536m --memory-swap 1536m --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges \
  --tmpfs /tmp:rw,nosuid,nodev,size=536870912,mode=1777 --env-file "$state/suite.env" \
- --mount "type=bind,source=$scripts,target=/ci,readonly" --entrypoint node "$tools" \
- node_modules/jest/bin/jest.js --config test/jest-e2e.json --globalSetup /ci/suite-setup.cjs --runInBand --json --outputFile=/tmp/suite.json \
- 2>&1 | python3 "$scripts/evidence.py" sanitize | tee "$out/suite.log"
-docker cp "$prefix-suite:/tmp/suite.json" "$out/suite.raw.json"
-python3 "$scripts/evidence.py" sanitize < "$out/suite.raw.json" > "$out/suite.json"
-rm "$out/suite.raw.json"
+ --mount "type=bind,source=$scripts,target=/ci,readonly" --entrypoint sh "$tools" /ci/run-tests.sh suite
+wait_test "$prefix-suite" suite
 phase production-mode-runtime-with-HTTPS-mocks
 docker run -d --name "$prefix-mock" --label io.multipleride.engine-ci="$prefix" --network "container:$prefix-guard" \
  --read-only --memory 128m --memory-swap 128m --cpus .5 --pids-limit 64 --cap-drop ALL --security-opt no-new-privileges \
