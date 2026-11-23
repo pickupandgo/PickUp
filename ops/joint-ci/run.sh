@@ -128,6 +128,8 @@ GRANT USAGE,SELECT ON SEQUENCE engine_outbox_id_seq TO engine_ci_runtime;
 SQL
 rm "$state/roles.sql"
 phase synthetic-fixture-and-private-TLS-forwarder
+# This public synthetic pricing fixture is mounted into an unprivileged UID.
+chmod 444 "$state/backend-source/pricing/prototype-leg-distance-v1.json"
 docker run --rm --name "$prefix-seed" "${common[@]}" --network "container:$prefix-backguard" \
  --memory 384m --memory-swap 384m --cpus 1 --pids-limit 64 --env-file "$state/seed.env" \
  --mount "type=bind,source=$scripts,target=/ci,readonly" \

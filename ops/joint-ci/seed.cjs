@@ -7,6 +7,7 @@ const { PrismaClient } = r('/app/dist/generated/prisma/client.js');
 const { PrismaPg } = r('@prisma/adapter-pg');
 const { runProvisionCommand } = r('/app/dist/cli/provision-commands.js');
 const { parseProvisionArgs } = r('/app/dist/cli/provision-args.js');
+let stage = 'validation';
 (async () => {
   const u = new URL(process.env.DATABASE_URL);
   a.equal(u.hostname, '172.29.63.2');
@@ -80,8 +81,10 @@ const { parseProvisionArgs } = r('/app/dist/cli/provision-args.js');
         'Synthetic CI prototype; never production rates',
       ],
     ];
-    for (const cmd of cmds)
+    for (const cmd of cmds) {
+      stage = cmd[0];
       await runProvisionCommand(p, 'firebase', parseProvisionArgs(cmd));
+    }
     console.log(
       JSON.stringify({
         result: 'PASS',
@@ -97,6 +100,6 @@ const { parseProvisionArgs } = r('/app/dist/cli/provision-args.js');
     await p.$disconnect();
   }
 })().catch((e) => {
-  console.error('SYNTHETIC_SEED_FAILED ' + (e?.code || e?.name || 'UNKNOWN'));
+  console.error('SYNTHETIC_SEED_FAILED ' + stage + ' ' + (e?.code || e?.name || 'UNKNOWN'));
   process.exitCode = 1;
 });
