@@ -8,7 +8,7 @@ prefix=mr-joint-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT
 state=$RUNNER_TEMP/$prefix
 mkdir -p joint-evidence
 failed=0
-for suffix in backend engine gateway storage scanner;do
+for suffix in backend engine gateway storage scanner db;do
  if docker inspect "$prefix-$suffix" >/dev/null 2>&1;then
   if test "$(docker inspect --format '{{index .Config.Labels "io.multipleride.joint-ci"}}' "$prefix-$suffix")" = "$prefix";then
    docker logs "$prefix-$suffix" 2>&1 | python3 ops/joint-ci/evidence.py sanitize > "joint-evidence/$suffix.log"

@@ -63,7 +63,13 @@ docker run -d --name "$prefix-db" "${common[@]}" --network "$prefix-net" --ip 17
  --tmpfs /var/run/postgresql:rw,noexec,nosuid,nodev,size=8388608,uid=70,gid=70,mode=775 \
  --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16777216,mode=1777 "$postgres" \
  -c shared_buffers=64MB -c max_connections=40 -c max_wal_size=128MB -c min_wal_size=32MB -c track_functions=all
-for i in $(seq 1 45); do if docker exec "$prefix-db" pg_isready -U ci_owner -d mr_joint_backend_e2e >/dev/null; then break; fi;sleep 1;done
+for i in $(seq 1 45); do
+ # The initdb temporary server accepts Unix sockets and then exits. Require the
+ # final TCP listener, so we cannot race that transition.
+ if docker exec "$prefix-db" pg_isready -h 127.0.0.1 -U ci_owner -d mr_joint_backend_e2e >/dev/null;then break;fi
+ test "$(docker inspect --format '{{.State.Running}}' "$prefix-db")" = true;sleep 1
+done
+docker exec "$prefix-db" pg_isready -h 127.0.0.1 -U ci_owner -d mr_joint_backend_e2e >/dev/null
 psql(){ docker exec -i "$prefix-db" psql -X -q -v ON_ERROR_STOP=1 -U ci_owner -d "$1" "${@:2}"; }
 test "$(psql mr_joint_backend_e2e -Atc 'SHOW server_version')" = 16.15
 psql mr_joint_backend_e2e -c 'CREATE DATABASE mr_engine_synthetic_test OWNER ci_owner;'
