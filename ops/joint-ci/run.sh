@@ -109,9 +109,10 @@ SQL
   hash=$(sha256sum "$file" | cut -d' ' -f1)
   psql "$db" < "$file" >> "$out/migrations-$service.log" 2>&1
   id=$(cat /proc/sys/kernel/random/uuid)
-  psql "$db" -c "INSERT INTO _prisma_migrations(id,checksum,finished_at,migration_name,applied_steps_count) VALUES('$id','$hash',now(),'$name',1);"
+  psql "$db" -c "INSERT INTO _prisma_migrations(id,checksum,finished_at,migration_name,applied_steps_count) VALUES('$id','$hash',now(),'$name',1);" < /dev/null
   count=$((count+1))
  done < <(find "$state/$service-source/prisma/migrations" -mindepth 2 -maxdepth 2 -type f -name migration.sql | LC_ALL=C sort)
+ printf '%s synthetic migrations applied: %s (expected %s)\n' "$service" "$count" "$expected"
  test "$count" = "$expected"
  test "$(psql "$db" -Atc "SELECT count(*) FROM pg_tables WHERE schemaname='public'")" = "$tables"
  printf '%s migrations=%s public_tables=%s\n' "$service" "$count" "$tables" > "$out/migrations-$service.txt"
