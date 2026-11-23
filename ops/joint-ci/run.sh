@@ -119,6 +119,7 @@ SQL
 done
 psql mr_joint_backend_e2e < "$state/roles.sql"
 psql mr_joint_backend_e2e < "$state/backend-source/prisma/sql/02-app-grants.sql"
+psql mr_joint_backend_e2e -Atc "SELECT json_build_object('runtime_role','mr_app','delivery_proofs_select',has_table_privilege('mr_app','public.delivery_proofs','SELECT'),'delivery_proofs_insert',has_table_privilege('mr_app','public.delivery_proofs','INSERT'),'delivery_proofs_update',has_table_privilege('mr_app','public.delivery_proofs','UPDATE'))" > "$out/delivery-proof-grants.json"
 psql mr_engine_synthetic_test <<'SQL'
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO engine_ci_runtime;

@@ -489,12 +489,13 @@ async function business() {
     },
   );
   await check(
-    'both services complete synthetic one-stop trip with gated handover',
+    'both services reach active drop with real payment-gated OTP handover',
     async () => {
       requireState('tripId');
       await eng('POST', '/trips/' + state.tripId + '/start', 'driver', {}, 201);
       const [s] = (await eng('GET', '/trips/' + state.tripId, 'driver')).trip
         .stops;
+      state.stopId = s.id;
       const arrived = await eng(
         'POST',
         '/trips/' + state.tripId + '/stop/arrive',
@@ -515,33 +516,42 @@ async function business() {
         { stopId: s.id, otp: o.stops[0].otp },
         201,
       );
+      a.equal((await remote(state.bookingId)).trip.status, 'DROP_PROGRESS');
+    },
+  );
+  await check(
+    'unverified file URI cannot bypass durable delivery evidence',
+    async () => {
+      requireState('tripId', 'stopId');
       await eng(
         'POST',
         '/trips/' + state.tripId + '/stop/confirm-delivery',
         'driver',
-        { stopId: s.id, photo: { uri: 'file://synthetic-only.jpg' } },
-        201,
+        { stopId: state.stopId, photo: { uri: 'file://synthetic-only.jpg' } },
+        400,
       );
-      const done = await eng(
+      a.equal((await remote(state.bookingId)).trip.status, 'DROP_PROGRESS');
+    },
+  );
+  // External storage must stay disabled. Do not fake a verified proof or claim completion.
+  await check(
+    'actual Backend proof API fails closed with disabled object storage',
+    async () => {
+      requireState('tripId', 'stopId');
+      const r = await eng(
         'POST',
-        '/trips/' + state.tripId + '/complete',
+        '/trips/' + state.tripId + '/stops/' + state.stopId + '/proof',
         'driver',
-        {},
-        201,
+        { contentType: 'image/jpeg', sizeBytes: 1024 },
+        503,
       );
-      a.equal(done.tripStatus, 'COMPLETED');
-      const b = await remote(state.bookingId);
-      a.equal(b.status, 'COMPLETED');
-      a.equal(b.paidWith, 'CASH');
-      a.equal(b.trip.status, 'COMPLETED');
-      const repeated = await eng(
-        'POST',
-        '/trips/' + state.tripId + '/complete',
-        'driver',
-        {},
-        201,
-      );
-      a.equal(repeated.changed, false);
+      a.equal(r.code, 'PAYMENT_BACKEND_UNAVAILABLE');
+      const call = (await trace())
+        .filter((x) => x.path === '/v1/internal/delivery-proofs')
+        .at(-1);
+      a.ok(call.forwarded);
+      a.equal(call.backendStatus, 503);
+      a.equal((await remote(state.bookingId)).trip.status, 'DROP_PROGRESS');
     },
   );
 }
@@ -641,7 +651,7 @@ async function restart() {
       const b = await byRef(state.externalRef);
       a.equal(b.bookingId, state.bookingId);
       a.equal(b.trip.tripId, state.paymentTripId);
-      a.equal(b.status, 'COMPLETED');
+      a.equal(b.trip.status, 'DROP_PROGRESS');
     },
   );
   await check(
@@ -668,6 +678,9 @@ async function restart() {
       passed: checks.length - failed,
       failed,
       checks,
+      limitations: [
+        'Positive DELIVERED/COMPLETED flow is not verified: durable object storage/scanning intentionally disabled; no proof is forged.',
+      ],
       ...(mode === 'business' ? { state } : {}),
     }),
   );

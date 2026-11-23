@@ -40,7 +40,7 @@ const jwk = {
 const calls = [];
 let fault = null;
 const allowed =
-  /^\/(?:health(?:\/live|\/ready)?|v1\/(?:internal\/(?:drivers|fare-quotes|bookings|trips)(?:\/.*)?|fare\/quotes(?:\/.*)?|wallet|admin\/wallets\/[0-9a-f-]+\/adjustments|trips\/[0-9a-f-]+\/collections))$/i;
+  /^\/(?:health(?:\/live|\/ready)?|v1\/(?:internal\/(?:drivers|fare-quotes|bookings|trips|delivery-proofs)(?:\/.*)?|fare\/quotes(?:\/.*)?|wallet|admin\/wallets\/[0-9a-f-]+\/adjustments|trips\/[0-9a-f-]+\/collections))$/i;
 const server = https.createServer(
   {
     key: readFileSync('/tmp/joint-pki/key.pem'),

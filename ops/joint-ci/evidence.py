@@ -79,7 +79,7 @@ elif mode=='summary':
   'recorded_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'last_phase':phase,
   'image_rebuild':False,'AWS_Render_contact':False,'production_credentials_or_data':False,
   'background_workers_enabled':False,'live_financial_providers':False,'synthetic_cash_and_wallet_records_only':True}
- for n in ['images','safety','network-core','network-backguard','configuration-backend','configuration-engine','seed','baseline','business','faults','after-backend-restart','after-engine-restart','background','cleanup']:
+ for n in ['images','safety','network-core','network-backguard','configuration-backend','configuration-engine','seed','baseline','business','faults','after-backend-restart','after-engine-restart','background','delivery-proof-grants','cleanup']:
   result[n]=read(n+'.json')
  (out/'summary.json').write_text(json.dumps(result,indent=2)+'\n')
  print(json.dumps(result,indent=2))
