@@ -189,3 +189,11 @@ GRANT UPDATE(push_enabled, sound_enabled, language, updated_at) ON notification_
 -- Persisted notification inbox (after 20261031220000).
 GRANT SELECT, INSERT ON inbox_notifications TO mr_app;
 GRANT UPDATE(read_at) ON inbox_notifications TO mr_app;
+
+-- Durable delivery evidence (after 20261123120000_delivery_proof_immutability).
+-- Binding, object key, size, type, identity and creation time remain immutable.
+-- The receipt is written once, only after byte verification and scanning; the
+-- database trigger independently rejects pre-verified inserts and receipt rewrites.
+GRANT SELECT, INSERT ON delivery_proofs TO mr_app;
+GRANT UPDATE (checksum_sha256, storage_version_id, storage_etag, verified_at)
+    ON delivery_proofs TO mr_app;
