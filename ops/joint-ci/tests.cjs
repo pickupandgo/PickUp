@@ -692,7 +692,7 @@ async function business() {
     },
   );
   await check(
-    'verified proof reference synchronizes DELIVERED to actual Backend',
+    'verified proof delivers Engine trip and Backend stop; prepaid trip reaches PAYMENT_CONFIRMED',
     async () => {
       requireState('proofVersion');
       const r = await eng(
@@ -703,7 +703,9 @@ async function business() {
         201,
       );
       a.equal(r.tripStatus, 'DELIVERED');
-      a.equal((await remote(state.bookingId)).trip.status, 'DELIVERED');
+      const b = await remote(state.bookingId);
+      a.equal(b.stops[0].status, 'DELIVERED');
+      a.equal(b.trip.status, 'PAYMENT_CONFIRMED');
     },
   );
   await check(

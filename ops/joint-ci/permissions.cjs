@@ -62,6 +62,15 @@ async function deny(sql, params, code = '42501') {
       source.checksum_sha256,
       createHash('sha256').update(photo()).digest('hex'),
     );
+    const delivered = (
+      await c.query(
+        'SELECT status,delivered_at IS NOT NULL AS delivered,completed_at IS NOT NULL AS completed FROM trips WHERE id=$1',
+        [source.payment_trip_id],
+      )
+    ).rows[0];
+    a.equal(delivered.status, 'COMPLETED');
+    a.equal(delivered.delivered, true);
+    a.equal(delivered.completed, true);
     a.notEqual(
       (
         await c.query(
