@@ -1,0 +1,192 @@
+{
+  "source_commit": "abcd1034116c493e73b660d77552d9c21a4caab3",
+  "baseline_commit": "1fc2d3645f0a6412a8f11e82b2037006f57d8eff",
+  "count": 33,
+  "baseline_count": 32,
+  "only_pending_migration": {
+    "name": "20261123120000_delivery_proof_immutability",
+    "sha256": "a68679aba90da7daacc685793adb39f38c6087056e91b8f5db8ea2a0bd60649c"
+  },
+  "migrations": [
+    {
+      "name": "20261002120000_payments_wallet_foundation",
+      "sha256": "b20a40830291750367b7ef739ec2427fbfceab6153f939b5796fe8d49cb095d3"
+    },
+    {
+      "name": "20261006120000_bookings_collections_earnings_payouts",
+      "sha256": "fb553276cfc10b047a5d11ccc72848ab2a4f7031d2f798f496a2cc4fdc4d0748"
+    },
+    {
+      "name": "20261007120000_earning_awaiting_settlement",
+      "sha256": "06efd3b173b40d23e5bcbfdd7e943d4813240599db4ed933be73bcea54bc0d4d"
+    },
+    {
+      "name": "20261007120100_settlements_bank_validation_tds",
+      "sha256": "a1e6bb5b4c84c5aba5debe2317fae09bb761cc3a631889e7934568f7575d05e0"
+    },
+    {
+      "name": "20261008120000_bank_account_change_requests",
+      "sha256": "5c120d9c1368f07ee4b5ccf29137667191519607d390a80ec8cdcfb3d13b54b5"
+    },
+    {
+      "name": "20261014120000_customer_self_registration",
+      "sha256": "077bdfebbd78de9bcb5dd690c87056e321a4fde994140087d952e73523f5495c"
+    },
+    {
+      "name": "20261014120100_fare_quotes",
+      "sha256": "02ce1bea72ed60f477083aa43f739565f6e5dd8dcb3074eb9eb92a8ad7bfedd9"
+    },
+    {
+      "name": "20261015120000_booking_quote_snapshot",
+      "sha256": "3461e8ef5b5e361c4fe74e6bca9cf0f43530692d69b729c8f792bfa68dc6880e"
+    },
+    {
+      "name": "20261016120000_per_stop_obligation_schema",
+      "sha256": "8dcdbb97ccd7f7d6b42cda9b5b4d819375894fb57b070d5f2e0671b15801dd9a"
+    },
+    {
+      "name": "20261017120000_payment_gate_stop_lifecycle",
+      "sha256": "0f0ef86ff8846e78388d9555dd32fd29106875982d50378387d441e77eb3b34d"
+    },
+    {
+      "name": "20261018120000_partially_paid_mixed_enums",
+      "sha256": "0e3d68f7c6712b1c944f835db1cb9b78d1b4186ae9f3f935d1277e038d00817d"
+    },
+    {
+      "name": "20261018120100_obligation_collections",
+      "sha256": "ec63b109909cc8379b08d38900d5d6690347065c03cb689775c82f8f62b3f72e"
+    },
+    {
+      "name": "20261019120000_mixed_earnings_payout_hold",
+      "sha256": "f6e1070fb46dcdeb25108ac954650fe969580f59a6c64db378aa4bba6e79fae3"
+    },
+    {
+      "name": "20261020120000_partially_refunded_enum",
+      "sha256": "2be1f45eb67ab0d72a8f9f6a95a44c098cb8bd7dfc32821656e6833c7d8a7b19"
+    },
+    {
+      "name": "20261020120100_refunds",
+      "sha256": "12eaba616101237152cb4fb80ac78786c7591dbc5f314cfd4ef55b96fdf20b5c"
+    },
+    {
+      "name": "20261021120000_driver_self_registration",
+      "sha256": "26846477e3844d709f2d02ab06ae79c495417e2d1aa440b88635e6ce8c471d3c"
+    },
+    {
+      "name": "20261021130000_driver_registration_details",
+      "sha256": "01b7dca1e30e12ffd4248abbd379bcee6b438bb0f04cb0f82fb107ed7b53598a"
+    },
+    {
+      "name": "20261021140000_customer_registration_details",
+      "sha256": "c5305f513a41431c2db897ce6718b808aa59b663944d06ab4849d1cf814e47a4"
+    },
+    {
+      "name": "20261027120000_phase2a_driver_onboarding",
+      "sha256": "373671b7c4d878e5b0294e4ddfbb99df08bd2346ff751d2cf9bdb64cb2019175"
+    },
+    {
+      "name": "20261027123000_kyc_open_application_guard",
+      "sha256": "256c8432e8ffde5baab40e55ce0caab4e2500f72dd2db1c4cbdf75b7dae57c0e"
+    },
+    {
+      "name": "20261027123500_vehicle_document_upload_statuses",
+      "sha256": "80c0f5ddaba27c58a6338ea6ef7205db4bc8cb7cb8f920ed31898f7fe55244d5"
+    },
+    {
+      "name": "20261027124000_secure_onboarding_documents",
+      "sha256": "74916245f7d83336b4971fc74b1febe9f02cd474f2b945128b8a1e8935067031"
+    },
+    {
+      "name": "20261027125000_guard_driver_admin_decisions",
+      "sha256": "e3cd348f29b85c40525dc2742f1f0afc6fe46b9d72748365c389914eadaafe7d"
+    },
+    {
+      "name": "20261028110000_guardduty_document_scan",
+      "sha256": "348f63a344b90eff6e113f6cf53c9c7e1909942ab34649fb11710dae571cceea"
+    },
+    {
+      "name": "20261029130000_driver_profile_details",
+      "sha256": "518bda1e64e84ae12851ee07d92d1f2b67abf25cf1860381cefbaa757b2da32a"
+    },
+    {
+      "name": "20261030180000_customer_editable_profile",
+      "sha256": "be02398bbdf6ecba338dd8e3b6152f9418f37d35d4ac81901c558d04efd69f8a"
+    },
+    {
+      "name": "20261030180100_preserve_customer_profile_on_registration",
+      "sha256": "cabf7508816b775156b25990c47cc2cf9af18e46b6351f56b54cf8065c17c629"
+    },
+    {
+      "name": "20261031210000_chat_notification_persistence",
+      "sha256": "c5ef758a6ccd4603f42026507473d3dbae72c980a1c85d336062ed9e9d6f99e1"
+    },
+    {
+      "name": "20261031220000_notification_inbox",
+      "sha256": "3cb1521454102a3d424080810bce15c2de79e13dfe5b09c86f14e6b6d54bfa7e"
+    },
+    {
+      "name": "20261101190000_customer_quote_charge_snapshot",
+      "sha256": "c23b9bbd27b6eab8bad68383688846fd6d1141af461a661e63b658771aa49064"
+    },
+    {
+      "name": "20261102120000_active_trip_chat_cleanup",
+      "sha256": "5d8d70eec6bdc8b016f94a4e55f26d8494443830a2d5e56d6049462d207a12bf"
+    },
+    {
+      "name": "20261107000000_delivery_proofs",
+      "sha256": "5abfd07260ad90dbf32186c1384e79c6e18a8c64ef0d24ede1b07307a20205ae"
+    },
+    {
+      "name": "20261123120000_delivery_proof_immutability",
+      "sha256": "a68679aba90da7daacc685793adb39f38c6087056e91b8f5db8ea2a0bd60649c"
+    }
+  ],
+  "all_history_files": {
+    "prisma/migrations/20261002120000_payments_wallet_foundation/migration.sql": "b20a40830291750367b7ef739ec2427fbfceab6153f939b5796fe8d49cb095d3",
+    "prisma/migrations/20261006120000_bookings_collections_earnings_payouts/migration.sql": "fb553276cfc10b047a5d11ccc72848ab2a4f7031d2f798f496a2cc4fdc4d0748",
+    "prisma/migrations/20261007120000_earning_awaiting_settlement/migration.sql": "06efd3b173b40d23e5bcbfdd7e943d4813240599db4ed933be73bcea54bc0d4d",
+    "prisma/migrations/20261007120100_settlements_bank_validation_tds/migration.sql": "a1e6bb5b4c84c5aba5debe2317fae09bb761cc3a631889e7934568f7575d05e0",
+    "prisma/migrations/20261008120000_bank_account_change_requests/migration.sql": "5c120d9c1368f07ee4b5ccf29137667191519607d390a80ec8cdcfb3d13b54b5",
+    "prisma/migrations/20261014120000_customer_self_registration/migration.sql": "077bdfebbd78de9bcb5dd690c87056e321a4fde994140087d952e73523f5495c",
+    "prisma/migrations/20261014120100_fare_quotes/migration.sql": "02ce1bea72ed60f477083aa43f739565f6e5dd8dcb3074eb9eb92a8ad7bfedd9",
+    "prisma/migrations/20261015120000_booking_quote_snapshot/down.sql": "6eddb6998ff5bd05fce86d8d955637c99d869d59e33830ab5cd3ff4f3d606fa3",
+    "prisma/migrations/20261015120000_booking_quote_snapshot/migration.sql": "3461e8ef5b5e361c4fe74e6bca9cf0f43530692d69b729c8f792bfa68dc6880e",
+    "prisma/migrations/20261016120000_per_stop_obligation_schema/down.sql": "349f93ee30148437162d9b08fc22ecd83e882769456fec3a9a6f3dfd35745328",
+    "prisma/migrations/20261016120000_per_stop_obligation_schema/migration.sql": "8dcdbb97ccd7f7d6b42cda9b5b4d819375894fb57b070d5f2e0671b15801dd9a",
+    "prisma/migrations/20261017120000_payment_gate_stop_lifecycle/down.sql": "743b3fbc7ca80d39ece51d98a2bebd2a55bae7bcc75d04e9f87ec99e6be6cbb6",
+    "prisma/migrations/20261017120000_payment_gate_stop_lifecycle/migration.sql": "0f0ef86ff8846e78388d9555dd32fd29106875982d50378387d441e77eb3b34d",
+    "prisma/migrations/20261018120000_partially_paid_mixed_enums/down.sql": "ad396db9287c623df2717479c01ff05634db875fc5c50e477ec2a72cd839d194",
+    "prisma/migrations/20261018120000_partially_paid_mixed_enums/migration.sql": "0e3d68f7c6712b1c944f835db1cb9b78d1b4186ae9f3f935d1277e038d00817d",
+    "prisma/migrations/20261018120100_obligation_collections/down.sql": "df50101c16a6a6f566a67afc384dc2aaf9990e95376b6eb49faac4385b50a6f2",
+    "prisma/migrations/20261018120100_obligation_collections/migration.sql": "ec63b109909cc8379b08d38900d5d6690347065c03cb689775c82f8f62b3f72e",
+    "prisma/migrations/20261019120000_mixed_earnings_payout_hold/down.sql": "57faede804ba3dfafef82ecb86371a3c52c91947289c23f57a6aa9cbffc54509",
+    "prisma/migrations/20261019120000_mixed_earnings_payout_hold/migration.sql": "f6e1070fb46dcdeb25108ac954650fe969580f59a6c64db378aa4bba6e79fae3",
+    "prisma/migrations/20261020120000_partially_refunded_enum/down.sql": "7ffa095cdcd62053dae8e837fbe140ddd70177a634bca3ab42730303c0892b76",
+    "prisma/migrations/20261020120000_partially_refunded_enum/migration.sql": "2be1f45eb67ab0d72a8f9f6a95a44c098cb8bd7dfc32821656e6833c7d8a7b19",
+    "prisma/migrations/20261020120100_refunds/down.sql": "a75f5cca313b478d1d95f555246ed69fd9c18ba937ee21a6194ba8cc75aeebe4",
+    "prisma/migrations/20261020120100_refunds/migration.sql": "12eaba616101237152cb4fb80ac78786c7591dbc5f314cfd4ef55b96fdf20b5c",
+    "prisma/migrations/20261021120000_driver_self_registration/migration.sql": "26846477e3844d709f2d02ab06ae79c495417e2d1aa440b88635e6ce8c471d3c",
+    "prisma/migrations/20261021130000_driver_registration_details/down.sql": "f93eedc300f715264a5249f45702ca52abb66ca3eefac6b05b9a470e79fdbf0f",
+    "prisma/migrations/20261021130000_driver_registration_details/migration.sql": "01b7dca1e30e12ffd4248abbd379bcee6b438bb0f04cb0f82fb107ed7b53598a",
+    "prisma/migrations/20261021140000_customer_registration_details/down.sql": "5d982555c7cf2818c9aa137cc7ee2e27eaa4fe1bf9ba4aa10ed46d61b458f724",
+    "prisma/migrations/20261021140000_customer_registration_details/migration.sql": "c5305f513a41431c2db897ce6718b808aa59b663944d06ab4849d1cf814e47a4",
+    "prisma/migrations/20261027120000_phase2a_driver_onboarding/migration.sql": "373671b7c4d878e5b0294e4ddfbb99df08bd2346ff751d2cf9bdb64cb2019175",
+    "prisma/migrations/20261027123000_kyc_open_application_guard/migration.sql": "256c8432e8ffde5baab40e55ce0caab4e2500f72dd2db1c4cbdf75b7dae57c0e",
+    "prisma/migrations/20261027123500_vehicle_document_upload_statuses/migration.sql": "80c0f5ddaba27c58a6338ea6ef7205db4bc8cb7cb8f920ed31898f7fe55244d5",
+    "prisma/migrations/20261027124000_secure_onboarding_documents/migration.sql": "74916245f7d83336b4971fc74b1febe9f02cd474f2b945128b8a1e8935067031",
+    "prisma/migrations/20261027125000_guard_driver_admin_decisions/migration.sql": "e3cd348f29b85c40525dc2742f1f0afc6fe46b9d72748365c389914eadaafe7d",
+    "prisma/migrations/20261028110000_guardduty_document_scan/migration.sql": "348f63a344b90eff6e113f6cf53c9c7e1909942ab34649fb11710dae571cceea",
+    "prisma/migrations/20261029130000_driver_profile_details/migration.sql": "518bda1e64e84ae12851ee07d92d1f2b67abf25cf1860381cefbaa757b2da32a",
+    "prisma/migrations/20261030180000_customer_editable_profile/migration.sql": "be02398bbdf6ecba338dd8e3b6152f9418f37d35d4ac81901c558d04efd69f8a",
+    "prisma/migrations/20261030180100_preserve_customer_profile_on_registration/migration.sql": "cabf7508816b775156b25990c47cc2cf9af18e46b6351f56b54cf8065c17c629",
+    "prisma/migrations/20261031210000_chat_notification_persistence/migration.sql": "c5ef758a6ccd4603f42026507473d3dbae72c980a1c85d336062ed9e9d6f99e1",
+    "prisma/migrations/20261031220000_notification_inbox/migration.sql": "3cb1521454102a3d424080810bce15c2de79e13dfe5b09c86f14e6b6d54bfa7e",
+    "prisma/migrations/20261101190000_customer_quote_charge_snapshot/migration.sql": "c23b9bbd27b6eab8bad68383688846fd6d1141af461a661e63b658771aa49064",
+    "prisma/migrations/20261102120000_active_trip_chat_cleanup/migration.sql": "5d8d70eec6bdc8b016f94a4e55f26d8494443830a2d5e56d6049462d207a12bf",
+    "prisma/migrations/20261107000000_delivery_proofs/migration.sql": "5abfd07260ad90dbf32186c1384e79c6e18a8c64ef0d24ede1b07307a20205ae",
+    "prisma/migrations/20261123120000_delivery_proof_immutability/migration.sql": "a68679aba90da7daacc685793adb39f38c6087056e91b8f5db8ea2a0bd60649c",
+    "prisma/migrations/migration_lock.toml": "99836963713b4f5b269ad49af0ed3d7b0b2e336115c2f92dc9ac683d139d0900"
+  },
+  "schema_sha256": "b8b0d256245997973f3f60f11f4bb3f628389ccb1039c4fa41ce197ba628f6ab",
+  "lock_sha256": "276f43e094d23e9053a8459743108ed54b3f8e11940e3762b423d59f572735e6"
+}

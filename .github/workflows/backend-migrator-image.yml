@@ -1,0 +1,53 @@
+name: Pinned Backend migrator validation and publication - No AWS Execution
+on:
+  push:
+    branches: [mr-backend-migrator-ci-20261123]
+permissions:
+  contents: read
+concurrency:
+  group: backend-migrator-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate-publish:
+    if: github.repository == 'pickupandgo/PickUp' && github.ref == 'refs/heads/mr-backend-migrator-ci-20261123'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    env:
+      SOURCE_COMMIT: abcd1034116c493e73b660d77552d9c21a4caab3
+      IMAGE: ghcr.io/pickupandgo/mr-backend-proof-migrator
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Build existing migrate target and validate only disposable databases
+        run: bash ops/migrator-ci/run.sh
+      - name: Always clean up this run's synthetic databases and credentials
+        if: always()
+        run: bash ops/migrator-ci/cleanup.sh
+      - name: Publish the exact validated migrator without rebuilding
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$RUNNER_TEMP/migrator-registry-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -f -- "$DOCKER_CONFIG/config.json"' EXIT
+          test "$(python3 -c 'import json; print(json.load(open("migrator-evidence/summary.json"))["result"])')" = PASS
+          test "$(docker image inspect --format '{{.Id}}' "$IMAGE:$GITHUB_SHA")" = "$(cat migrator-evidence/tested-image-id.txt)"
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          unset REGISTRY_TOKEN
+          docker push "$IMAGE:$GITHUB_SHA"
+          docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE:$GITHUB_SHA" > migrator-evidence/published-digest.txt
+          cat migrator-evidence/published-digest.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Save sanitized release evidence and complete inventory
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: backend-migrator-${{ github.run_id }}-${{ github.run_attempt }}
+          path: migrator-evidence/
+          retention-days: 7
+          if-no-files-found: error
