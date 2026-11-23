@@ -19,7 +19,7 @@ git diff --exit-code "$SOURCE_COMMIT" -- Dockerfile .dockerignore src prisma pac
 git archive "$SOURCE_COMMIT" | tar -x -C "$s/source"
 find "$s/source" -type d -exec chmod 755 {} +
 find "$s/source" -type f -exec chmod 644 {} +
-docker build --target migrate --build-arg NODE_IMAGE=node:24.21.0-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 \
+docker build --target migrate --build-arg NODE_IMAGE=node:22.22.0-alpine@sha256:48f53c3f0105ccddcc5e4f520347398dfc0ba9b3008fbfd98a2add27e5797957 \
  --label org.opencontainers.image.source=https://github.com/pickupandgo/PickUp \
  --label org.opencontainers.image.revision="$SOURCE_COMMIT" --label io.multipleride.target=migrate -t "$image" "$s/source"
 test "$(docker image inspect --format '{{.Config.User}}' "$image")" = node
