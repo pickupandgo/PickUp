@@ -1,0 +1,50 @@
+name: Joint immutable Backend and Engine synthetic integration - No Deployment
+on:
+  push:
+    branches: [mr-joint-synthetic-ci-20261123]
+permissions:
+  contents: read
+  packages: read
+concurrency:
+  group: joint-synthetic-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  integration:
+    if: github.repository == 'pickupandgo/PickUp' && github.ref == 'refs/heads/mr-joint-synthetic-ci-20261123'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Pull immutable images then remove registry credentials
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$RUNNER_TEMP/joint-pull-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -f -- "$DOCKER_CONFIG/config.json"' EXIT
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          unset REGISTRY_TOKEN
+          docker pull ghcr.io/pickupandgo/mr-backend-rds-lab@sha256:f0514b3330d0cbb4f7f55ea62eaf6e39ca41a59c9edad2ed14b8b4bbc87ae1d4
+          docker pull ghcr.io/pickupandgo/mr-trip-engine-lab@sha256:881dfd1efb49e0354c76b1613531dc793f4feb93e7490fc920c2c367cedb607e
+          docker pull postgres:16.15-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
+      - name: Test the real pair with disposable synthetic data
+        run: bash ops/joint-ci/run.sh
+      - name: Always remove this run's containers, data and dummy credentials
+        if: always()
+        run: bash ops/joint-ci/cleanup.sh
+      - name: Save sanitized compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: joint-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: joint-evidence/
+          retention-days: 7
+          if-no-files-found: error
